@@ -1,0 +1,849 @@
+/* Main Container */
+.screen {
+  min-height: 100vh;
+  background-color: #f8f9fa;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+}
+
+/* Header */
+.header {
+  position: sticky;
+  top: 0;
+  background-color: #ffffff;
+  border-bottom: 1px solid #e9ecef;
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 100;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.backButton {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #4a5568;
+  padding: 8px;
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.backButton:hover {
+  background-color: #f1f3f5;
+}
+
+.headerCenter {
+  text-align: center;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 4px 0;
+  color: #2c3e50;
+}
+
+.statusBadge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.statusBadge.pending {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.statusBadge.approved {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.statusBadge.declined {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.headerActions {
+  display: flex;
+  gap: 8px;
+}
+
+.iconButton {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.iconButton:hover {
+  background-color: #f1f3f5;
+}
+
+.saveButton {
+  background-color: #4dabf7;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.saveButton:hover {
+  background-color: #339af0;
+}
+
+.saveButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Content */
+.content {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Cards */
+.card {
+  background-color: #ffffff;
+  border-radius: 12px;
+  padding: 24px;
+  border: 1px solid #e9ecef;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.cardTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0 0 16px 0;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #e9ecef;
+}
+
+/* Status Card */
+.statusCard {
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+  font-size: 14px;
+}
+
+.statusCard.approved {
+  background-color: #d1fae5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.statusCard.declined {
+  background-color: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.buttonGroup {
+  display: flex;
+  gap: 12px;
+}
+
+.statusButton {
+  flex: 1;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.approveButton {
+  background-color: #16a34a;
+  color: white;
+}
+
+.approveButton:hover {
+  background-color: #15803d;
+}
+
+.declineButton {
+  background-color: #dc2626;
+  color: white;
+}
+
+.declineButton:hover {
+  background-color: #b91c1c;
+}
+
+/* Client Section */
+.clientInfo {
+  padding: 8px 0;
+}
+
+.clientName {
+  font-size: 18px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 8px;
+}
+
+.clientDetails {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 13px;
+  color: #6c757d;
+}
+
+/* Description & Notes */
+.descriptionText,
+.notesText {
+  color: #4a5568;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: #4dabf7;
+  box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.1);
+}
+
+.textareaSmall {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+/* Inputs */
+.input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.input:focus {
+  outline: none;
+  border-color: #4dabf7;
+  box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.1);
+}
+
+.inputSmall {
+  width: 100px;
+  padding: 6px 8px;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.select {
+  padding: 8px 12px;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  font-size: 14px;
+  background-color: white;
+}
+
+/* Projects */
+.projectCard {
+  margin-bottom: 32px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.projectCard:last-child {
+  border-bottom: none;
+}
+
+.projectHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.projectTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0;
+}
+
+.removeButton {
+  background-color: #fee2e2;
+  color: #dc2626;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.removeButton:hover {
+  background-color: #fecaca;
+}
+
+/* Images */
+.imagesSection {
+  margin: 16px 0;
+}
+
+.imagesGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.imageWrapper {
+  position: relative;
+  aspect-ratio: 1;
+}
+
+.projectImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.removeImageButton {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: #dc2626;
+  color: white;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+.uploadSection {
+  margin-top: 12px;
+}
+
+.uploadButton {
+  display: inline-block;
+  padding: 10px 16px;
+  background-color: #4dabf7;
+  color: white;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.uploadButton:hover {
+  background-color: #339af0;
+}
+
+.uploadingText {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #4dabf7;
+}
+
+.errorText {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #dc2626;
+}
+
+/* Line Items */
+.lineItemsSection {
+  margin: 16px 0;
+}
+
+.sectionSubtitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #6c757d;
+  margin: 0 0 12px 0;
+}
+
+.lineItemCard {
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.lineItemHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.category {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6c757d;
+  text-transform: uppercase;
+}
+
+.removeLineItemButton {
+  background: none;
+  border: none;
+  color: #dc2626;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.removeLineItemButton:hover {
+  background-color: #fee2e2;
+}
+
+.itemName {
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.lineItemDetails {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-end;
+  margin-top: 12px;
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fieldLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6c757d;
+  text-transform: uppercase;
+}
+
+.itemTotal {
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.itemTaxable {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #6c757d;
+}
+
+.projectTotal {
+  text-align: right;
+  padding-top: 12px;
+  border-top: 1px solid #dee2e6;
+  margin-top: 12px;
+  font-size: 16px;
+}
+
+/* Buttons */
+.addButton {
+  width: 100%;
+  padding: 10px;
+  background-color: #f8f9fa;
+  border: 1px dashed #dee2e6;
+  border-radius: 8px;
+  color: #4dabf7;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.addButton:hover {
+  background-color: #f1f3f5;
+  border-color: #4dabf7;
+}
+
+.addProjectButton {
+  width: 100%;
+  padding: 12px;
+  background-color: #f8f9fa;
+  border: 2px dashed #dee2e6;
+  border-radius: 8px;
+  color: #4dabf7;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  margin-top: 16px;
+  transition: all 0.2s;
+}
+
+.addProjectButton:hover {
+  background-color: #f1f3f5;
+  border-color: #4dabf7;
+}
+
+/* Financial Summary */
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid #f1f3f5;
+  font-size: 14px;
+}
+
+.totalRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 16px 0 0 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #2c3e50;
+  border-top: 2px solid #e9ecef;
+  margin-top: 8px;
+}
+
+.summaryInput {
+  width: 120px;
+  padding: 6px 8px;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  font-size: 14px;
+  text-align: right;
+}
+
+/* Checkbox Row */
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+/* Error */
+.error {
+  background-color: #fee2e2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 12px;
+  color: #dc2626;
+  font-size: 14px;
+  text-align: center;
+}
+
+.emptyText {
+  color: #adb5bd;
+  text-align: center;
+  padding: 20px;
+}
+
+
+/* Convert to Invoice Button */
+.convertButton {
+  width: 100%;
+  padding: 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.convertButton:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.convertButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Signature Modal */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal {
+  background: white;
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 600px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.modal h3 {
+  margin: 0 0 20px 0;
+  font-size: 24px;
+  color: #333;
+}
+
+.signatureTypeSelector {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.typeButton {
+  flex: 1;
+  padding: 10px;
+  background: #f5f5f5;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.typeButton.active {
+  background: #667eea;
+  color: white;
+  border-color: #667eea;
+}
+
+.canvasContainer {
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  background: white;
+  cursor: crosshair;
+}
+
+.signatureCanvas {
+  width: 100%;
+  height: 200px;
+  display: block;
+  cursor: crosshair;
+  background: white;
+}
+
+.typedNameInput {
+  width: 100%;
+  padding: 12px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 16px;
+  margin-bottom: 20px;
+  font-family: 'Courier New', monospace;
+}
+
+.typedNameInput:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.modalButtons {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.clearButton,
+.cancelButton,
+.saveButton {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.clearButton {
+  background: #ff9800;
+  color: white;
+}
+
+.clearButton:hover {
+  background: #f57c00;
+}
+
+.cancelButton {
+  background: #f5f5f5;
+  color: #666;
+}
+
+.cancelButton:hover {
+  background: #e0e0e0;
+}
+
+.saveButton {
+  background: #4caf50;
+  color: white;
+}
+
+.saveButton:hover {
+  background: #45a049;
+}
+
+/* Signature Display */
+.signatureContainer {
+  text-align: center;
+  padding: 20px;
+  background: #f9f9f9;
+  border-radius: 8px;
+}
+
+.signatureImage {
+  max-width: 100%;
+  max-height: 150px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  margin-bottom: 12px;
+}
+
+.typedSignature {
+  font-size: 28px;
+  font-family: 'Brush Script MT', cursive, 'Courier New', monospace;
+  color: #333;
+  margin-bottom: 12px;
+  padding: 20px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background: white;
+}
+
+.signatureDate {
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 12px;
+}
+
+.resignButton,
+.signButton {
+  padding: 8px 16px;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s;
+}
+
+.resignButton:hover,
+.signButton:hover {
+  background: #5a67d8;
+}
+
+.signaturePrompt {
+  text-align: center;
+  padding: 30px;
+  background: #f9f9f9;
+  border-radius: 8px;
+  border: 2px dashed #e0e0e0;
+}
+
+.signaturePrompt p {
+  margin: 0 0 16px 0;
+  color: #666;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .header {
+    padding: 12px 16px;
+  }
+
+  .title {
+    font-size: 14px;
+  }
+
+  .content {
+    padding: 16px;
+  }
+
+  .card {
+    padding: 16px;
+  }
+
+  .buttonGroup {
+    flex-direction: column;
+  }
+
+  .lineItemDetails {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .inputSmall {
+    width: 100%;
+  }
+
+  .summaryInput {
+    width: 100%;
+  }
+
+  .imagesGrid {
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  }
+
+
+}
+
