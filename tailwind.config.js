@@ -26,9 +26,7 @@ warning: "#F59E0B",
 error: "#EF4444",
 success: "#10B981",
 }
-fontFamily: {
-sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
-},
+ 
 },
 },
 plugins: [],
