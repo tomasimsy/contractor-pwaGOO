@@ -27,6 +27,7 @@ export type Project = {
 export type Estimate = {
   id: string;
   client_id: string;
+  estimate_number?: string;  // Add this line (optional since old estimates may not have it)
   description: string | null;
   notes: string | null;
   subtotal: number;

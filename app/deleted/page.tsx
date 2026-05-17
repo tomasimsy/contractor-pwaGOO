@@ -73,7 +73,7 @@ export default function DeletedPage() {
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
        {/* Header */}
-            <Header
+            {/* <Header
               title="Delete Items"
               backLink="/"
               rightAction={
@@ -84,7 +84,7 @@ export default function DeletedPage() {
                   +
                 </button>
               }
-            />
+            /> */}
 
       <div className="p-4 max-w-4xl mx-auto">
         {loading && <div className="text-center py-8">Loading...</div>}

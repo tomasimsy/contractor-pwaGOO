@@ -4,47 +4,46 @@ import { supabase } from "@/lib/supabase/client";
 import EstimatePDF from "@/components/pdf/EstimatePDF";
 
 export async function GET(
-req: NextRequest,
-{ params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
-try {
-// Load estimate data
-const { data: estimate } = await supabase
-.from("estimates")
-.select("*")
-.eq("id", params.id)
-.single();
+  try {
+    const { id } = await params;
 
-if (!estimate) {
-return new NextResponse("Estimate not found", { status: 404 });
-}
+    const { data: estimate } = await supabase
+      .from("estimates")
+      .select("*")
+      .eq("id", id)
+      .single();
 
-// Load client
-const { data: client } = await supabase
-.from("clients")
-.select("*")
-.eq("id", estimate.client_id)
-.single();
+    if (!estimate) {
+      return new NextResponse("Not found", { status: 404 });
+    }
 
-// Load items
-const { data: items } = await supabase
-.from("estimate_items")
-.select("*")
-.eq("estimate_id", params.id);
+    const { data: client } = await supabase
+      .from("clients")
+      .select("*")
+      .eq("id", estimate.client_id)
+      .single();
 
-// Generate PDF
-const stream = await renderToStream(
-<EstimatePDF estimate={estimate} client={client} items={items || []} signature={estimate.signature} />
-);
+    const { data: items } = await supabase
+      .from("estimate_items")
+      .select("*")
+      .eq("estimate_id", id);
 
-return new NextResponse(stream as any, {
-headers: {
-"Content-Type": "application/pdf",
-"Content-Disposition": `attachment; filename=estimate-${params.id}.pdf`,
-},
-});
-} catch (error) {
-console.error("PDF generation error:", error);
-return new NextResponse("Error generating PDF", { status: 500 });
-}
+    // Create the PDF element
+    const pdfElement = EstimatePDF({ estimate, client: client || {}, items: items || [] });
+    
+    const pdfStream = await renderToStream(pdfElement);
+
+    return new NextResponse(pdfStream as any, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename=estimate-${id}.pdf`,
+      },
+    });
+  } catch (error) {
+    console.error("PDF error:", error);
+    return new NextResponse("Error generating PDF", { status: 500 });
+  }
 }

@@ -85,6 +85,40 @@ export default function InvoicePage() {
 
   const isPaid = invoice?.status === "paid";
 
+  const recordPayment = async (amount: number, method: string) => {
+  setSavingPayment(true);
+  
+  const { error } = await supabase
+    .from("invoice_payments")
+    .insert({
+      invoice_id: id,
+      amount: amount,
+      method: method,
+    });
+  
+  if (error) {
+    alert("Error recording payment");
+  } else {
+    const newAmountPaid = (invoice?.amount_paid || 0) + amount;
+    const newRemaining = (invoice?.total || 0) - newAmountPaid;
+    
+    await supabase
+      .from("invoices")
+      .update({
+        amount_paid: newAmountPaid,
+        remaining_balance: newRemaining,
+        status: newRemaining === 0 ? "paid" : "partial"
+      })
+      .eq("id", id);
+    
+    alert(`Payment of $${amount.toFixed(2)} recorded!`);
+    loadInvoice();
+  }
+  
+  setSavingPayment(false);
+  setShowPaymentModal(false);
+};
+
   const isOverdue =
     invoice?.due_date &&
     !isPaid &&
@@ -234,16 +268,15 @@ export default function InvoicePage() {
               <span>{formatCurrency(invoice?.total || 0)}</span>
             </div>
 
-            {invoice?.amount_paid > 0 && (
+            {invoice?.amount_paid && invoice.amount_paid > 0 && (
               <>
                 <div className="flex justify-between text-green-600">
                   <span>Paid</span>
                   <span>-{formatCurrency(invoice.amount_paid)}</span>
                 </div>
-
-                <div className="flex justify-between text-blue-600 font-semibold">
-                  <span>Balance</span>
-                  <span>{formatCurrency(remainingBalance)}</span>
+                <div className="flex justify-between font-bold">
+                  <span>Balance Due</span>
+                  <span>{formatCurrency(invoice.total - invoice.amount_paid)}</span>
                 </div>
               </>
             )}
@@ -270,13 +303,15 @@ export default function InvoicePage() {
         </Card>
       </div>
 
-      <PaymentModal
-        isOpen={showPaymentModal}
-        onClose={() => setShowPaymentModal(false)}
-        onSave={() => {}}
-        remainingBalance={remainingBalance}
-        saving={savingPayment}
-      />
+<PaymentModal
+  isOpen={showPaymentModal}
+  onClose={() => setShowPaymentModal(false)}
+  onSave={recordPayment}  // Change this from () => {} to recordPayment
+  remainingBalance={remainingBalance}
+  saving={savingPayment}
+/>
+
+      
     </div>
   );
 }

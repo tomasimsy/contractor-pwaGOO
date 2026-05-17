@@ -1,29 +1,28 @@
 "use client";
 
-import { supabase } from "@/lib/supabase";
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
-import CreateEstimateScreen from "@/components/CreateEstimateScreen";
+import { useParams, useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase/client";
 
 export default function EditEstimatePage() {
   const { id } = useParams();
-  const [estimateData, setEstimateData] = useState(null);
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const load = async () => {
-      const { data } = await supabase
-        .from("estimates")
-        .select("*, estimate_items(*)")
-        .eq("id", id)
-        .single();
+    // Redirect to the main estimate page which has edit mode built in
+    router.push(`/estimates/${id}`);
+  }, [id, router]);
 
-      setEstimateData(data);
-    };
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-lg">Redirecting...</div>
+        </div>
+      </div>
+    );
+  }
 
-    load();
-  }, [id]);
-
-  if (!estimateData) return <div>Loading…</div>;
-
-  return <CreateEstimateScreen existingEstimate={estimateData} />;
+  return null;
 }

@@ -6,94 +6,63 @@ import {
   StyleSheet,
 } from "@react-pdf/renderer";
 
-const COLORS = {
-  navy: "#0b1630",
-  gold: "#d4a048",
-  green: "#2ecc71",
-  gray: "#666",
-  lightGray: "#f5f5f5",
-};
-
-const formatCurrency = (value: number | string) => {
-  const num = Number(value || 0);
-  return num.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  });
-};
-
-const formatDate = (date?: string) => {
-  if (date) return new Date(date).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-  return new Date().toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-};
-
 const styles = StyleSheet.create({
   page: {
     padding: 40,
     fontSize: 10,
     fontFamily: "Helvetica",
-    color: COLORS.navy,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: 20,
     paddingBottom: 10,
-    borderBottom: `1px solid ${COLORS.gold}`,
+    borderBottom: "1px solid #ccc",
   },
   companyName: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "bold",
-    color: COLORS.navy,
     marginBottom: 8,
   },
   companyDetails: {
     fontSize: 9,
-    color: COLORS.gray,
+    color: "#666",
     marginBottom: 2,
   },
   documentTitle: {
     fontSize: 16,
     fontWeight: "bold",
-    color: COLORS.gold,
     textAlign: "right",
     marginBottom: 8,
   },
-  invoiceNumber: {
+  documentNumber: {
     fontSize: 9,
-    color: COLORS.gray,
+    color: "#666",
     textAlign: "right",
   },
   clientSection: {
     marginBottom: 20,
     padding: 15,
-    backgroundColor: COLORS.lightGray,
-    borderRadius: 8,
+    backgroundColor: "#f5f5f5",
   },
   sectionTitle: {
     fontSize: 10,
     fontWeight: "bold",
     marginBottom: 8,
-    textTransform: "uppercase",
-    color: COLORS.navy,
   },
   clientName: {
     fontSize: 14,
     fontWeight: "bold",
     marginBottom: 4,
   },
+  clientDetails: {
+    fontSize: 9,
+    color: "#666",
+    marginBottom: 2,
+  },
   tableHeader: {
     flexDirection: "row",
-    backgroundColor: COLORS.navy,
+    backgroundColor: "#2c3e50",
     paddingVertical: 8,
     paddingHorizontal: 6,
     marginTop: 15,
@@ -111,35 +80,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
   },
-  colItem: { width: "25%", fontSize: 9 },
-  colDescription: { width: "35%", fontSize: 9 },
+  colItem: { width: "30%", fontSize: 9 },
+  colDescription: { width: "40%", fontSize: 9 },
   colQty: { width: "10%", fontSize: 9, textAlign: "center" },
-  colPrice: { width: "15%", fontSize: 9, textAlign: "right" },
-  colTotal: { width: "15%", fontSize: 9, textAlign: "right" },
+  colPrice: { width: "10%", fontSize: 9, textAlign: "right" },
+  colTotal: { width: "10%", fontSize: 9, textAlign: "right" },
   totalRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 12,
-    paddingHorizontal: 10,
     marginTop: 20,
+    padding: 10,
     backgroundColor: "#f0f7ff",
+    alignItems: "flex-end",
   },
   totalAmount: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "bold",
-    color: COLORS.gold,
-  },
-  signatureBox: {
-    marginTop: 30,
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: "#eee",
-  },
-  signatureLine: {
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.navy,
-    width: 200,
-    marginTop: 10,
   },
   footer: {
     position: "absolute",
@@ -148,16 +102,15 @@ const styles = StyleSheet.create({
     right: 40,
     textAlign: "center",
     fontSize: 8,
-    color: COLORS.gray,
+    color: "#999",
     borderTopWidth: 1,
     borderTopColor: "#eee",
     paddingTop: 10,
   },
 });
 
-export default function InvoicePDF({ invoice, client, items, payments, signature }) {
-  const totalPaid = payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
-  const remainingBalance = (invoice?.total || 0) - totalPaid;
+export default function InvoicePDF({ invoice, client, items }: any) {
+  const subtotal = items?.reduce((sum: number, item: any) => sum + (item.total || 0), 0) || 0;
 
   return (
     <Document>
@@ -171,10 +124,10 @@ export default function InvoicePDF({ invoice, client, items, payments, signature
           </View>
           <View>
             <Text style={styles.documentTitle}>INVOICE</Text>
-            <Text style={styles.invoiceNumber}>Invoice #{invoice?.invoice_number || invoice?.id?.slice(0, 8)}</Text>
-            <Text style={styles.invoiceNumber}>Date: {formatDate(invoice?.created_at)}</Text>
+            <Text style={styles.documentNumber}>{invoice?.invoice_number || invoice?.id?.slice(0, 8)}</Text>
+            <Text style={styles.documentNumber}>Date: {new Date(invoice?.created_at).toLocaleDateString()}</Text>
             {invoice?.due_date && (
-              <Text style={styles.invoiceNumber}>Due Date: {formatDate(invoice.due_date)}</Text>
+              <Text style={styles.documentNumber}>Due: {new Date(invoice.due_date).toLocaleDateString()}</Text>
             )}
           </View>
         </View>
@@ -182,56 +135,47 @@ export default function InvoicePDF({ invoice, client, items, payments, signature
         <View style={styles.clientSection}>
           <Text style={styles.sectionTitle}>Bill To</Text>
           <Text style={styles.clientName}>{client?.name || "Client Name"}</Text>
-          {client?.phone && <Text style={styles.companyDetails}>Phone: {client.phone}</Text>}
-          {client?.email && <Text style={styles.companyDetails}>Email: {client.email}</Text>}
-          {client?.address && <Text style={styles.companyDetails}>Address: {client.address}</Text>}
+          {client?.phone && <Text style={styles.clientDetails}>Phone: {client.phone}</Text>}
+          {client?.email && <Text style={styles.clientDetails}>Email: {client.email}</Text>}
+          {client?.address && <Text style={styles.clientDetails}>Address: {client.address}</Text>}
         </View>
 
-        <View style={styles.tableHeader}>
-          <Text style={[styles.tableHeaderText, styles.colItem]}>Item</Text>
-          <Text style={[styles.tableHeaderText, styles.colDescription]}>Description</Text>
-          <Text style={[styles.tableHeaderText, styles.colQty]}>Qty</Text>
-          <Text style={[styles.tableHeaderText, styles.colPrice]}>Unit Price</Text>
-          <Text style={[styles.tableHeaderText, styles.colTotal]}>Total</Text>
-        </View>
-
-        {items?.map((item) => (
-          <View key={item.id} style={styles.tableRow}>
-            <Text style={styles.colItem}>{item.name || "-"}</Text>
-            <Text style={styles.colDescription}>{item.description || "-"}</Text>
-            <Text style={[styles.colQty, { textAlign: "center" }]}>{item.quantity || 0}</Text>
-            <Text style={[styles.colPrice, { textAlign: "right" }]}>{formatCurrency(item.unit_price || 0)}</Text>
-            <Text style={[styles.colTotal, { textAlign: "right" }]}>{formatCurrency(item.total || 0)}</Text>
+        <View>
+          <View style={styles.tableHeader}>
+            <Text style={[styles.tableHeaderText, styles.colItem]}>Item</Text>
+            <Text style={[styles.tableHeaderText, styles.colDescription]}>Description</Text>
+            <Text style={[styles.tableHeaderText, styles.colQty]}>Qty</Text>
+            <Text style={[styles.tableHeaderText, styles.colPrice]}>Price</Text>
+            <Text style={[styles.tableHeaderText, styles.colTotal]}>Total</Text>
           </View>
-        ))}
+
+          {items?.map((item: any) => (
+            <View key={item.id} style={styles.tableRow}>
+              <Text style={styles.colItem}>{item.name || "-"}</Text>
+              <Text style={styles.colDescription}>{item.description || "-"}</Text>
+              <Text style={styles.colQty}>{item.quantity || 0}</Text>
+              <Text style={styles.colPrice}>${(item.unit_price || 0).toFixed(2)}</Text>
+              <Text style={styles.colTotal}>${(item.total || 0).toFixed(2)}</Text>
+            </View>
+          ))}
+        </View>
 
         <View style={styles.totalRow}>
-          <Text style={{ fontWeight: "bold" }}>TOTAL DUE</Text>
-          <Text style={styles.totalAmount}>{formatCurrency(remainingBalance)}</Text>
+          <Text style={styles.totalAmount}>Total Due: ${subtotal.toFixed(2)}</Text>
         </View>
 
-        {totalPaid > 0 && (
-          <View style={{ marginTop: 10, paddingHorizontal: 10 }}>
-            <Text style={{ fontSize: 9, color: COLORS.green }}>
-              Amount Paid: {formatCurrency(totalPaid)}
+        {invoice?.signature && (
+          <View style={{ marginTop: 30 }}>
+            <Text style={styles.sectionTitle}>Customer Signature</Text>
+            <View style={{ borderBottomWidth: 1, borderBottomColor: "#000", width: 200, marginTop: 10 }} />
+            <Text style={{ fontSize: 8, marginTop: 5 }}>
+              Signed on {new Date(invoice.signature.date).toLocaleDateString()}
             </Text>
           </View>
         )}
 
-        {signature && (
-          <View style={styles.signatureBox}>
-            <Text style={styles.sectionTitle}>Customer Signature</Text>
-            {signature.type === "type" ? (
-              <Text style={{ fontSize: 12, marginTop: 5 }}>Signed by: {signature.value}</Text>
-            ) : (
-              <Text style={{ fontSize: 10 }}>[Electronic signature on file]</Text>
-            )}
-            <Text style={{ fontSize: 8, marginTop: 5 }}>Date: {formatDate(signature.date)}</Text>
-          </View>
-        )}
-
         <View style={styles.footer}>
-          <Text>Thank you for your business! • Payment is due upon receipt unless otherwise specified</Text>
+          <Text>Thank you for your business!</Text>
         </View>
       </Page>
     </Document>
