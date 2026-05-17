@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import Image from "next/image";
@@ -11,6 +11,17 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Check if already logged in
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        router.push("/dashboard");
+      }
+    };
+    checkSession();
+  }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,8 +48,8 @@ export default function LoginPage() {
         <div className="text-center mb-8">
           <div className="relative w-20 h-20 mx-auto mb-3">
             <Image
-              src="/OSR_logo.png"  // Replace with your logo path
-              alt="OSR Logo"
+              src="/logo.png"
+              alt="Company Logo"
               fill
               className="object-contain"
               priority
