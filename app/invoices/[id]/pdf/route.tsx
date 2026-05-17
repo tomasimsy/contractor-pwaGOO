@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { renderToStream } from "@react-pdf/renderer";
-import EstimatePDF from "@/components/pdf/EstimatePDF";
+import InvoicePDF from "@/components/pdf/InvoicePDF";
 import { supabase } from "@/lib/supabase/client";
 import React from "react";
 
@@ -9,39 +9,44 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    console.log("Generating PDF for estimate:", params.id);
+    console.log("Generating PDF for invoice:", params.id);
 
-    // Load estimate
-    const { data: estimate, error: estimateError } = await supabase
-      .from("estimates")
+    // Load invoice
+    const { data: invoice, error: invoiceError } = await supabase
+      .from("invoices")
       .select("*")
       .eq("id", params.id)
       .single();
 
-    if (estimateError) {
-      console.error("Estimate error:", estimateError);
-      return new NextResponse("Estimate not found", { status: 404 });
+    if (invoiceError) {
+      console.error("Invoice error:", invoiceError);
+      return new NextResponse("Invoice not found", { status: 404 });
     }
 
     // Load client
     const { data: client } = await supabase
       .from("clients")
       .select("*")
-      .eq("id", estimate.client_id)
+      .eq("id", invoice.client_id)
       .single();
 
     // Load items
     const { data: items } = await supabase
-      .from("estimate_items")
+      .from("invoice_items")
       .select("*")
-      .eq("estimate_id", params.id);
+      .eq("invoice_id", params.id);
+
+    // Load payments
+    const { data: payments } = await supabase
+      .from("invoice_payments")
+      .select("*")
+      .eq("invoice_id", params.id);
 
     // Load company settings
     let company_name = "One Square Roof LLC";
     let company_address = "Charlotte, North Carolina";
     let company_phone = "(704) 303-4112";
     let company_email = "onesquareroof@gmail.com";
-    let deposit_percentage = 50;
 
     const { data: settings } = await supabase
       .from("company_settings")
@@ -53,28 +58,27 @@ export async function GET(
       company_address = settings.company_address || company_address;
       company_phone = settings.company_phone || company_phone;
       company_email = settings.company_email || company_email;
-      deposit_percentage = settings.default_deposit_percentage || deposit_percentage;
     }
 
-    // Generate PDF
+    // Generate PDF using React.createElement
     const stream = await renderToStream(
-      React.createElement(EstimatePDF, {
-        estimate: estimate,
+      React.createElement(InvoicePDF, {
+        invoice: invoice,
         client: client || {},
         items: items || [],
-        signature: estimate.signature,
+        payments: payments || [],
+        signature: invoice.signature,
         company_name: company_name,
         company_address: company_address,
         company_phone: company_phone,
         company_email: company_email,
-        deposit_percentage: deposit_percentage,
       })
     );
 
     return new NextResponse(stream as any, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename=estimate-${params.id}.pdf`,
+        "Content-Disposition": `attachment; filename=invoice-${params.id}.pdf`,
       },
     });
   } catch (error) {
