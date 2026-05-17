@@ -8,7 +8,7 @@ content: [
 theme: {
 extend: {
 colors: {
-primary: "#0F172A", // deep navy
+primary: "#0F172A", // deep navy TEST COMMENT UPDATE
 secondary: "#1E293B", // slate navy
 accent: "#C19A6B", // warm tan / gold
 background: "#F5EFE6", // soft tan background
