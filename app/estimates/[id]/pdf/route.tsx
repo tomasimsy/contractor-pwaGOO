@@ -1,57 +1,65 @@
-import React from "react";
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
 import { renderToStream } from "@react-pdf/renderer";
-import EstimatePDF from "@/components/pdf/EstimatePDF";
+import { supabase } from "@/lib/supabase/client";
+import InvoicePDF from "@/components/pdf/InvoicePDF";
 
 export async function GET(
-request: NextRequest,
-context: { params: { id: string } | Promise<{ id: string }> }
-  ) {
-  const { id } = await context.params;
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    console.log("Generating PDF for invoice:", params.id);
+    
+    // Load invoice data
+    const { data: invoice, error: invoiceError } = await supabase
+      .from("invoices")
+      .select("*")
+      .eq("id", params.id)
+      .single();
 
-  if (!id) {
-  return NextResponse.json(
-  { error: "Missing estimate id in route params" },
-  { status: 400 }
-  );
+    if (invoiceError) {
+      console.error("Invoice error:", invoiceError);
+      return new NextResponse("Invoice not found", { status: 404 });
+    }
+
+    // Load client
+    const { data: client } = await supabase
+      .from("clients")
+      .select("*")
+      .eq("id", invoice.client_id)
+      .single();
+
+    // Load items
+    const { data: items } = await supabase
+      .from("invoice_items")
+      .select("*")
+      .eq("invoice_id", params.id);
+
+    // Load payments
+    const { data: payments } = await supabase
+      .from("invoice_payments")
+      .select("*")
+      .eq("invoice_id", params.id);
+
+    // Generate PDF
+    // const stream = await renderToStream(
+    //   <InvoicePDF 
+    //     invoice={invoice} 
+    //     client={client || {}} 
+    //     items={items || []}
+    //     payments={payments || []}
+    //     signature={invoice.signature}
+    //   />
+    // );
+
+    return new NextResponse(stream as any, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename=invoice-${params.id}.pdf`,
+      },
+    });
+  } catch (error) {
+    console.error("PDF generation error:", error);
+    return new NextResponse("Error generating PDF: " + (error as Error).message, { status: 500 });
   }
-
-  const { data: estimate, error } = await supabase
-  .from("estimates")
-  .select("*")
-  .eq("id", id)
-  .single();
-
-  if (error || !estimate) {
-  return NextResponse.json(
-  { error: "Estimate not found", details: error?.message },
-  { status: 404 }
-  );
-  }
-// Testing comment
-  const { data: client } = await supabase
-  .from("clients")
-  .select("*")
-  .eq("id", estimate.client_id)
-  .single();
-
-  const { data: items } = await supabase
-  .from("estimate_items")
-  .select("*")
-  .eq("estimate_id", id);
-
-  const stream = await renderToStream(
-  React.createElement(EstimatePDF, {
-  estimate,
-  client,
-  items: items || [],
-  })
-  );
-
-  return new NextResponse(stream as any, {
-  headers: {
-  "Content-Type": "application/pdf",
-  },
-  });
-  }
+}
