@@ -80,6 +80,15 @@ const sendSMSLink = (estimate: Estimate) => {
   window.location.href = `sms:${phoneNumber}?body=${message}`;
 };
 
+// Copy Link function for sms
+const copyLink = (estimate: Estimate) => {
+  const baseUrl = window.location.origin;
+  const documentUrl = `${baseUrl}/public/estimates/${estimate.id}`;
+  navigator.clipboard.writeText(documentUrl);
+  alert(`Link copied: ${documentUrl}`);
+};
+
+
 const getStatus = (est: Estimate) => {
   if (est.signature)
     return {
@@ -253,6 +262,17 @@ return (
                       shadow-sm
                       mt-2
                     "
+                  >
+                    <Send size={16} />
+                  </button>
+                  {/* // Add copy link to your estimate card */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      copyLink(estimate);
+                    }}
+                    className="p-1.5 rounded-lg text-gold hover:bg-gold/10 transition"
+                    title="Copy Link"
                   >
                     <Send size={16} />
                   </button>

@@ -8,44 +8,52 @@ import { formatCurrency } from "@/lib/utils/formatting";
 
 type Signature = { type: "draw" | "type"; value: string; date: string };
 
-export default function PublicEstimatePage() {
+export default function PublicInvoicePage() {
   const { id } = useParams();
-  const [estimate, setEstimate] = useState<any>(null);
+  const [invoice, setInvoice] = useState<any>(null);
   const [client, setClient] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
+  const [payments, setPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [signed, setSigned] = useState(false);
   const [signature, setSignature] = useState<Signature | null>(null);
 
   useEffect(() => {
-    loadEstimate();
+    loadInvoice();
   }, [id]);
 
-  async function loadEstimate() {
+  async function loadInvoice() {
     try {
-      const { data: est } = await supabase
-        .from("estimates")
+      const { data: inv } = await supabase
+        .from("invoices")
         .select("*")
         .eq("id", id)
         .single();
       
-      if (est) {
-        setEstimate(est);
-        setSigned(!!est.signature);
-        if (est.signature) setSignature(est.signature);
+      if (inv) {
+        setInvoice(inv);
+        setSigned(!!inv.signature);
+        if (inv.signature) setSignature(inv.signature);
         
         const { data: clientData } = await supabase
           .from("clients")
           .select("*")
-          .eq("id", est.client_id)
+          .eq("id", inv.client_id)
           .single();
         setClient(clientData);
         
         const { data: itemsData } = await supabase
-          .from("estimate_items")
+          .from("invoice_items")
           .select("*")
-          .eq("estimate_id", id);
+          .eq("invoice_id", id);
         setItems(itemsData || []);
+        
+        const { data: paymentsData } = await supabase
+          .from("invoice_payments")
+          .select("*")
+          .eq("invoice_id", id)
+          .order("created_at", { ascending: false });
+        setPayments(paymentsData || []);
       }
     } catch (err) {
       console.error(err);
@@ -56,15 +64,15 @@ export default function PublicEstimatePage() {
 
   const saveSignature = async (newSignature: Signature) => {
     const { error } = await supabase
-      .from("estimates")
-      .update({ signature: newSignature, status: "approved" })
+      .from("invoices")
+      .update({ signature: newSignature, status: "signed" })
       .eq("id", id);
     
     if (!error) {
       setSigned(true);
       setSignature(newSignature);
       alert("Thank you! Your signature has been saved.");
-      loadEstimate();
+      loadInvoice();
     } else {
       alert("Error saving signature. Please try again.");
     }
@@ -87,24 +95,25 @@ export default function PublicEstimatePage() {
   }));
 
   const subtotal = items.reduce((sum, i) => sum + (i.total || 0), 0);
-  const depositAmount = estimate?.deposit_amount || subtotal * 0.5;
-  const balanceDue = subtotal - depositAmount;
+  const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+  const remainingBalance = (invoice?.total || subtotal) - totalPaid;
+  const isPaid = remainingBalance === 0;
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">Loading estimate...</div>
+        <div className="text-center">Loading invoice...</div>
       </div>
     );
   }
 
-  if (!estimate) {
+  if (!invoice) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="text-4xl mb-2">🔍</div>
-          <h1 className="text-xl font-bold">Estimate Not Found</h1>
-          <p className="text-gray-500 mt-2">This estimate may have been removed or the link is invalid.</p>
+          <h1 className="text-xl font-bold">Invoice Not Found</h1>
+          <p className="text-gray-500 mt-2">This invoice may have been removed or the link is invalid.</p>
         </div>
       </div>
     );
@@ -113,11 +122,14 @@ export default function PublicEstimatePage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-primary text-white p-4 text-center">
+      <div className="bg-navy text-white p-4 text-center">
         <h1 className="text-xl font-bold">One Square Roofing LLC</h1>
         <p className="text-sm text-gold mt-1">Licensed & Insured</p>
-        <p className="text-xs text-gray-300 mt-2">Estimate #{estimate?.estimate_number || id?.slice(0, 8)}</p>
-        <p className="text-xs text-gray-300">Issued: {new Date(estimate?.created_at).toLocaleDateString()}</p>
+        <p className="text-xs text-gray-300 mt-2">Invoice #{invoice?.invoice_number || id?.slice(0, 8)}</p>
+        <p className="text-xs text-gray-300">Date: {new Date(invoice?.created_at).toLocaleDateString()}</p>
+        {invoice?.due_date && (
+          <p className="text-xs text-gray-300">Due: {new Date(invoice.due_date).toLocaleDateString()}</p>
+        )}
       </div>
 
       <div className="max-w-2xl mx-auto p-4 space-y-4 pb-24">
@@ -125,11 +137,11 @@ export default function PublicEstimatePage() {
         <div className="bg-white rounded-xl p-4 shadow-md">
           <h2 className="font-semibold text-navy mb-2">Hello, {client?.name || "Valued Customer"}!</h2>
           <p className="text-gray-600 text-sm">
-            Please review your estimate below and sign at the bottom to approve.
+            Please review your invoice below. You can sign to confirm.
           </p>
         </div>
 
-        {/* Customer Info */}
+        {/* Customer Information */}
         <div className="bg-white rounded-xl p-4 shadow-md">
           <h3 className="font-semibold text-navy mb-2">Customer Information</h3>
           <div className="space-y-1 text-sm">
@@ -141,10 +153,10 @@ export default function PublicEstimatePage() {
         </div>
 
         {/* Description */}
-        {estimate?.description && (
+        {invoice?.description && (
           <div className="bg-white rounded-xl p-4 shadow-md">
-            <h3 className="font-semibold text-navy mb-2">Project Description</h3>
-            <p className="text-gray-600">{estimate.description}</p>
+            <h3 className="font-semibold text-navy mb-2">Description</h3>
+            <p className="text-gray-600">{invoice.description}</p>
           </div>
         )}
 
@@ -152,20 +164,22 @@ export default function PublicEstimatePage() {
         {projects.map((project) => (
           <div key={project.name} className="bg-white rounded-xl p-4 shadow-md">
             <h3 className="font-semibold text-navy mb-3">{project.name}</h3>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {project.items.map((item) => (
-                <div key={item.id} className="flex justify-between border-b pb-2">
-                  <div className="flex-1">
-                    <div className="font-medium">{item.name}</div>
-                    <div className="text-xs text-gray-500">{item.category}</div>
-                    {item.description && (
-                      <div className="text-sm text-gray-500">{item.description}</div>
-                    )}
-                  </div>
-                  <div className="text-right">
-                    <div className="font-semibold">{formatCurrency(item.total)}</div>
-                    <div className="text-xs text-gray-400">
-                      {item.quantity} × {formatCurrency(item.unit_price)}
+                <div key={item.id} className="border-b pb-3 last:border-0">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <div className="font-medium">{item.name}</div>
+                      <div className="text-xs text-gray-500">{item.category}</div>
+                      {item.description && (
+                        <div className="text-sm text-gray-500 mt-1">{item.description}</div>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <div className="font-semibold">{formatCurrency(item.total)}</div>
+                      <div className="text-xs text-gray-400">
+                        {item.quantity} × {formatCurrency(item.unit_price)}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -177,62 +191,78 @@ export default function PublicEstimatePage() {
           </div>
         ))}
 
-        {/* Summary */}
+        {/* Financial Summary */}
         <div className="bg-white rounded-xl p-4 shadow-md">
-          <h3 className="font-semibold text-navy mb-3">Estimate Summary</h3>
+          <h3 className="font-semibold text-navy mb-3">Financial Summary</h3>
           <div className="space-y-2">
             <div className="flex justify-between">
               <span>Subtotal:</span>
               <span>{formatCurrency(subtotal)}</span>
             </div>
-            {estimate?.markup > 0 && (
+            {invoice?.markup > 0 && (
               <div className="flex justify-between">
                 <span>Markup:</span>
-                <span>{formatCurrency(estimate.markup)}</span>
+                <span>{formatCurrency(invoice.markup)}</span>
               </div>
             )}
-            {estimate?.discount > 0 && (
+            {invoice?.discount > 0 && (
               <div className="flex justify-between">
                 <span>Discount:</span>
-                <span>-{formatCurrency(estimate.discount)}</span>
+                <span>-{formatCurrency(invoice.discount)}</span>
+              </div>
+            )}
+            {invoice?.tax > 0 && (
+              <div className="flex justify-between">
+                <span>Tax:</span>
+                <span>{formatCurrency(invoice.tax)}</span>
               </div>
             )}
             <div className="flex justify-between pt-2 border-t font-bold">
-              <span>Total Estimate:</span>
-              <span className="text-gold">{formatCurrency(subtotal)}</span>
+              <span>Total Amount:</span>
+              <span className="text-gold">{formatCurrency(invoice?.total || subtotal)}</span>
             </div>
+            
+            {totalPaid > 0 && (
+              <>
+                <div className="flex justify-between text-green-600">
+                  <span>Amount Paid:</span>
+                  <span>-{formatCurrency(totalPaid)}</span>
+                </div>
+                <div className="flex justify-between font-bold text-lg pt-2 border-t">
+                  <span>Balance Due:</span>
+                  <span className={isPaid ? "text-green-600" : "text-gold"}>
+                    {formatCurrency(remainingBalance)}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
-        {/* Deposit Info */}
-        {depositAmount > 0 && !signed && (
-          <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
-            <h3 className="font-semibold text-amber-800 mb-2">Deposit & Payment</h3>
+        {/* Payment History */}
+        {payments.length > 0 && (
+          <div className="bg-white rounded-xl p-4 shadow-md">
+            <h3 className="font-semibold text-navy mb-3">Payment History</h3>
             <div className="space-y-2">
-              <div className="flex justify-between">
-                <span>Deposit Required (50%):</span>
-                <span className="font-bold">{formatCurrency(depositAmount)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Balance Due Upon Completion:</span>
-                <span>{formatCurrency(balanceDue)}</span>
-              </div>
+              {payments.map((payment) => (
+                <div key={payment.id} className="flex justify-between border-b pb-2 text-sm">
+                  <div>
+                    <span className="font-medium">{formatCurrency(payment.amount)}</span>
+                    <span className="text-gray-500 ml-2 capitalize">({payment.method})</span>
+                  </div>
+                  <div className="text-gray-500">
+                    {new Date(payment.created_at).toLocaleDateString()}
+                  </div>
+                </div>
+              ))}
+              {isPaid && (
+                <div className="mt-2 text-center text-green-600 font-semibold text-sm">
+                  ✓ This invoice has been paid in full
+                </div>
+              )}
             </div>
           </div>
         )}
-
-        {/* Terms & Conditions */}
-        <div className="bg-white rounded-xl p-4 shadow-md">
-          <h3 className="font-semibold text-navy mb-2">Terms & Conditions</h3>
-          <div className="space-y-2 text-sm text-gray-600">
-            <p>1. This estimate is valid for 30 days from the date issued.</p>
-            <p>2. A 50% deposit is required to begin work. Remaining balance due upon completion.</p>
-            <p>3. Any changes or additions to scope must be approved in writing and may incur additional charges.</p>
-            <p>4. Client is responsible for providing safe access to work areas.</p>
-            <p>5. By signing below, you agree to all terms and conditions stated in this estimate.</p>
-            <p className="mt-3 text-xs text-gray-400">One Square Roof LLC is licensed and insured in North Carolina.</p>
-          </div>
-        </div>
 
         {/* Signature Section */}
         <div className="bg-white rounded-xl p-4 shadow-md">
@@ -242,7 +272,7 @@ export default function PublicEstimatePage() {
             <div className="text-center py-6 bg-green-50 rounded-lg border border-green-200">
               <div className="text-3xl mb-2">✅</div>
               <div className="font-semibold text-green-700">Thank You!</div>
-              <div className="text-sm text-green-600 mt-1">This estimate has been signed and approved.</div>
+              <div className="text-sm text-green-600 mt-1">This invoice has been signed.</div>
               {signature && (
                 <div className="mt-3 text-sm">
                   {signature.type === "type" ? (
@@ -258,21 +288,21 @@ export default function PublicEstimatePage() {
             </div>
           ) : (
             <>
-              <p className="text-sm text-gray-500 mb-3">By signing below, you agree to the terms and conditions above.</p>
+              <p className="text-sm text-gray-500 mb-3">By signing below, you confirm the information above.</p>
               <SignaturePad
                 onSave={saveSignature}
                 existingSignature={null}
-                buttonText="Sign & Approve Estimate"
+                buttonText="Sign Invoice"
               />
             </>
           )}
         </div>
 
-        {/* Company Footer */}
+        {/* Terms & Footer */}
         <div className="text-center text-xs text-gray-400 py-4 border-t border-gray-200">
           <p>One Square Roof LLC • Charlotte, NC • (704) 303-4112</p>
           <p className="mt-1">onesquareroof@gmail.com</p>
-          <p className="mt-2">© {new Date().getFullYear()} One Square Roof LLC. All rights reserved.</p>
+          <p className="mt-2">Thank you for your business!</p>
         </div>
       </div>
     </div>
