@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import SignaturePad from "@/components/signature/SignaturePad";
 import { formatCurrency } from "@/lib/utils/formatting";
+import { Smile, ThumbsUp, FileSignature, BadgeCheck, ShieldCheck } from "lucide-react";
 
 type Signature = { type: "draw" | "type"; value: string; date: string };
 
@@ -122,7 +123,7 @@ export default function PublicInvoicePage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-navy text-white p-4 text-center">
+      <div className="bg-primary text-white p-4 text-center">
         <h1 className="text-xl font-bold">One Square Roofing LLC</h1>
         <p className="text-sm text-gold mt-1">Licensed & Insured</p>
         <p className="text-xs text-gray-300 mt-2">Invoice #{invoice?.invoice_number || id?.slice(0, 8)}</p>
@@ -270,7 +271,9 @@ export default function PublicInvoicePage() {
           
           {signed ? (
             <div className="text-center py-6 bg-green-50 rounded-lg border border-green-200">
-              <div className="text-3xl mb-2">✅</div>
+              <div className="flex justify-center">
+                <Smile className="w-12 h-12 text-green-500 mb-2" strokeWidth={1.5} />
+              </div>
               <div className="font-semibold text-green-700">Thank You!</div>
               <div className="text-sm text-green-600 mt-1">This invoice has been signed.</div>
               {signature && (
@@ -280,9 +283,9 @@ export default function PublicInvoicePage() {
                   ) : (
                     <div>✓ Electronic signature on file</div>
                   )}
-                  <div className="text-xs text-gray-500 mt-1">
+                  {/* <div className="text-xs text-gray-500 mt-1">
                     Date: {new Date(signature.date).toLocaleDateString()}
-                  </div>
+                  </div> */}
                 </div>
               )}
             </div>
