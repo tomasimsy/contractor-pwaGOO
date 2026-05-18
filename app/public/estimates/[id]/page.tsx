@@ -3,333 +3,280 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
-import SignaturePad from "@/components/signature/SignaturePad";
-import { formatCurrency } from "@/lib/utils/formatting";
+import SignaturePadInvoice from "@/components/signature/SignaturePadInvoice";
+import styles from "@/app/estimates/page.module.css";
+
+const formatCurrency = (amount: number) => {
+return new Intl.NumberFormat('en-US', {
+style: 'currency',
+currency: 'USD',
+minimumFractionDigits: 2,
+}).format(amount);
+};
 
 type Signature = { type: "draw" | "type"; value: string; date: string };
 
 export default function PublicEstimatePage() {
-  const { id } = useParams();
-  const [estimate, setEstimate] = useState<any>(null);
+const { id } = useParams();
+const [estimate, setEstimate] = useState<any>(null);
   const [client, setClient] = useState<any>(null);
-  const [items, setItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [signed, setSigned] = useState(false);
-  const [signature, setSignature] = useState<Signature | null>(null);
+    const [items, setItems] = useState<any[]>([]);
+      const [loading, setLoading] = useState(true);
+      const [signed, setSigned] = useState(false);
+      const [signature, setSignature] = useState<Signature | null>(null);
 
-  useEffect(() => {
-    loadEstimate();
-  }, [id]);
+        useEffect(() => {
+        loadEstimate();
+        }, [id]);
 
-  async function loadEstimate() {
-    try {
-      const { data: est } = await supabase
+        async function loadEstimate() {
+        try {
+        const { data: est } = await supabase
         .from("estimates")
         .select("*")
         .eq("id", id)
         .single();
-      
-      if (est) {
+
+        if (est) {
         setEstimate(est);
         setSigned(!!est.signature);
         if (est.signature) setSignature(est.signature);
-        
+
         const { data: clientData } = await supabase
-          .from("clients")
-          .select("*")
-          .eq("id", est.client_id)
-          .single();
+        .from("clients")
+        .select("*")
+        .eq("id", est.client_id)
+        .single();
         setClient(clientData);
-        
+
         const { data: itemsData } = await supabase
-          .from("estimate_items")
-          .select("*")
-          .eq("estimate_id", id);
+        .from("estimate_items")
+        .select("*")
+        .eq("estimate_id", id);
         setItems(itemsData || []);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }
+        }
+        } catch (err) {
+        console.error(err);
+        } finally {
+        setLoading(false);
+        }
+        }
 
-  // Function to send notification when signed
-  const sendSignatureNotification = async () => {
-    try {
-      // Create notification in database
-      await supabase.from("notifications").insert({
-        document_type: "estimate",
-        document_id: id,
-        document_number: estimate?.estimate_number,
-        client_name: client?.name,
-        status: "signed",
-        read: false,
-      });
+        const saveSignature = async (newSignature: Signature) => {
+        const { error } = await supabase
+        .from("estimates")
+        .update({ signature: newSignature, status: "approved" })
+        .eq("id", id);
 
-      // Optional: Send email via API
-      await fetch("/api/send-notification", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "estimate_signed",
-          clientName: client?.name,
-          documentNumber: estimate?.estimate_number,
-          documentId: id,
-        }),
-      });
+        if (!error) {
+        setSigned(true);
+        setSignature(newSignature);
+        alert("Thank you! Your signature has been saved.");
+        loadEstimate();
+        } else {
+        alert("Error saving signature. Please try again.");
+        }
+        };
 
-      // Optional: Browser notification for admin (if they have the page open)
-      if ("Notification" in window && Notification.permission === "granted") {
-        new Notification("Document Signed!", {
-          body: `${client?.name} has signed Estimate #${estimate?.estimate_number}`,
-          icon: "/icons/icon-192.png",
-        });
-      }
-    } catch (err) {
-      console.error("Notification error:", err);
-    }
-  };
+        useEffect(() => {
+        if ("Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission();
+        }
+        }, []);
 
-const saveSignature = async (newSignature: Signature) => {
-  const { error } = await supabase
-    .from("estimates")
-    .update({ signature: newSignature, status: "approved" })
-    .eq("id", id);
-  
-  if (!error) {
-    setSigned(true);
-    setSignature(newSignature);
-    
-    // Send notification
-    if ("Notification" in window && Notification.permission === "granted") {
-      new Notification("📝 Document Signed!", {
-        body: `${client?.name || "A client"} signed Estimate #${estimate?.estimate_number}`,
-        icon: "/icons/icon-192.png",
-        tag: "signature",
-        silent: false,
-      });
-    }
-    
-    alert("Thank you! Your signature has been saved.");
-    loadEstimate();
-  } else {
-    alert("Error saving signature. Please try again.");
-  }
-};
+        const subtotal = items.reduce((sum, i) => sum + (i.total || 0), 0);
+        const depositAmount = estimate?.deposit_amount || subtotal * 0.5;
+        const balanceDue = subtotal - depositAmount;
 
-  // Request notification permission on load
-  useEffect(() => {
-    if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission();
-    }
-  }, []);
-
-  // Group items by project
-  const projectMap: Record<string, any[]> = {};
-  items.forEach(item => {
-    const projectName = item.project_name || "Main Project";
-    if (!projectMap[projectName]) {
-      projectMap[projectName] = [];
-    }
-    projectMap[projectName].push(item);
-  });
-
-  const projects = Object.entries(projectMap).map(([name, items]) => ({
-    name,
-    items,
-    total: items.reduce((sum, i) => sum + (i.total || 0), 0)
-  }));
-
-  const subtotal = items.reduce((sum, i) => sum + (i.total || 0), 0);
-  const depositAmount = estimate?.deposit_amount || subtotal * 0.5;
-  const balanceDue = subtotal - depositAmount;
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">Loading estimate...</div>
-      </div>
-    );
-  }
-
-  if (!estimate) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-4xl mb-2">🔍</div>
-          <h1 className="text-xl font-bold">Estimate Not Found</h1>
-          <p className="text-gray-500 mt-2">This estimate may have been removed or the link is invalid.</p>
+        if (loading) {
+        return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center text-gray-400">Loading estimate...</div>
         </div>
-      </div>
-    );
-  }
+        );
+        }
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-navy text-white p-4 text-center">
-        <h1 className="text-xl font-bold">One Square Roof LLC</h1>
-        <p className="text-sm text-gold mt-1">Licensed & Insured</p>
-        <p className="text-xs text-gray-300 mt-2">Estimate #{estimate?.estimate_number || id?.slice(0, 8)}</p>
-        <p className="text-xs text-gray-300">Issued: {new Date(estimate?.created_at).toLocaleDateString()}</p>
-      </div>
-
-      <div className="max-w-2xl mx-auto p-4 space-y-4 pb-24">
-        {/* Welcome Message */}
-        <div className="bg-white rounded-xl p-4 shadow-md">
-          <h2 className="font-semibold text-navy mb-2">Hello, {client?.name || "Valued Customer"}!</h2>
-          <p className="text-gray-600 text-sm">
-            Please review your estimate below and sign at the bottom to approve.
-          </p>
-        </div>
-
-        {/* Customer Info */}
-        <div className="bg-white rounded-xl p-4 shadow-md">
-          <h3 className="font-semibold text-navy mb-2">Customer Information</h3>
-          <div className="space-y-1 text-sm">
-            <p><span className="font-medium">Name:</span> {client?.name}</p>
-            {client?.phone && <p><span className="font-medium">Phone:</span> {client.phone}</p>}
-            {client?.email && <p><span className="font-medium">Email:</span> {client.email}</p>}
-            {client?.address && <p><span className="font-medium">Address:</span> {client.address}</p>}
+        if (!estimate) {
+        return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-4xl mb-2">🔍</div>
+            <h1 className="text-lg font-medium text-gray-700">Estimate Not Found</h1>
+            <p className="text-gray-400 text-sm mt-2">This link may be invalid or expired.</p>
           </div>
         </div>
+        );
+        }
 
-        {/* Description */}
-        {estimate?.description && (
-          <div className="bg-white rounded-xl p-4 shadow-md">
-            <h3 className="font-semibold text-navy mb-2">Project Description</h3>
-            <p className="text-gray-600">{estimate.description}</p>
+        return (
+        <div className="min-h-screen bg-gray-100">
+          {/* Header - Dark Blue */}
+          <div className="bg-green-900 border border-green-900 text-white px-5 py-5 text-center">
+            <h1 className="text-lg font-bold">One Square Roofing LLC</h1>
+            <p className="text-xs text-gold mt-0.5">Insured</p>
+            <div className="mt-3 text-xs text-gray-300">
+              Estimate #{estimate?.estimate_number || id?.slice(0, 8)}
+            </div>
+            <div className="text-xs text-gray-400">
+              {new Date(estimate?.created_at).toLocaleDateString()}
+            </div>
           </div>
-        )}
 
-        {/* Projects and Items */}
-        {projects.map((project) => (
-          <div key={project.name} className="bg-white rounded-xl p-4 shadow-md">
-            <h3 className="font-semibold text-navy mb-3">{project.name}</h3>
-            <div className="space-y-2">
-              {project.items.map((item) => (
-                <div key={item.id} className="flex justify-between border-b pb-2">
-                  <div className="flex-1">
-                    <div className="font-medium">{item.name}</div>
-                    <div className="text-xs text-gray-500">{item.category}</div>
-                    {item.description && (
-                      <div className="text-sm text-gray-500">{item.description}</div>
-                    )}
-                  </div>
-                  <div className="text-right">
-                    <div className="font-semibold">{formatCurrency(item.total)}</div>
-                    <div className="text-xs text-gray-400">
-                      {item.quantity} × {formatCurrency(item.unit_price)}
-                    </div>
+          <div className="max-w-2xl mx-auto px-4 py-5 space-y-5 pb-28">
+
+            {/* Greeting - Dark Green Accent */}
+            <div className="bg-white rounded-xl p-5 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="w-1 h-10 bg-green-700 rounded-full"></div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-800">Hello, {client?.name || "Valued Customer"}</h2>
+                  <p className="text-[12px] text-green-700 mt-1">{client?.address || "Please update your address"}</p>
+                  <p className="text-[12px] text-green-800 mt-1">Please review and sign below to approve.</p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2  text-green- text-[10px]">
+                    {client?.phone && <span>📞 {client.phone}</span>}
+                    {client?.email && <span>✉️ {client.email}</span>}
                   </div>
                 </div>
-              ))}
-            </div>
-            <div className="mt-3 pt-2 border-t text-right font-semibold">
-              Project Total: {formatCurrency(project.total)}
-            </div>
-          </div>
-        ))}
-
-        {/* Summary */}
-        <div className="bg-white rounded-xl p-4 shadow-md">
-          <h3 className="font-semibold text-navy mb-3">Estimate Summary</h3>
-          <div className="space-y-2">
-            <div className="flex justify-between">
-              <span>Subtotal:</span>
-              <span>{formatCurrency(subtotal)}</span>
-            </div>
-            {estimate?.markup > 0 && (
-              <div className="flex justify-between">
-                <span>Markup:</span>
-                <span>{formatCurrency(estimate.markup)}</span>
               </div>
+            </div>
+
+            {/* Description */}
+            {estimate?.description && (
+            <div className="bg-gray-50 rounded-xl px-5 py-4 border border-gray-200   text-[12px] ">
+              <span className="bold">Project Desription:</span> <p className=" text-gray-600 italic">{estimate.description}</p>
+            </div>
             )}
-            {estimate?.discount > 0 && (
-              <div className="flex justify-between">
-                <span>Discount:</span>
-                <span>-{formatCurrency(estimate.discount)}</span>
+
+            {/* Items Table */}
+            <div className="bg-white rounded-xl overflow-hidden shadow-md border border-gray-200">
+              <div className="bg-navy px-5 py-3 bg-green-900">
+                <h3 className="text-sm font-semibold text-white">Estimate Details</h3>
               </div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-100 border-b border-gray-200">
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-600">Item</th>
+                    <th className={`text-left text-sm px-5 py-3 font-semibold text-gray-600 capitalize`}> Description
+                    </th>
+                    <th className="text-right px-5 py-3 text-xs font-semibold text-gray-600">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {items.map((item) => (
+                  <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
+
+                    {/* ITEM NAME + META */}
+                    <td className="px-5 py-3 align-top ">
+                      <div className="text-[11px] font-medium text-slate-800   capitalize ">
+                        {item.name}
+                      </div>
+
+                      <div className="text-[8px] text-slate-400 mt-0.5 capitalize">
+                        {item.quantity} × {formatCurrency(item.unit_price)}
+                      </div>
+                    </td>
+
+                    {/* DESCRIPTION */}
+                    <td className="px-5 py-3 align-top">
+                      <div className="text-[11px] text-slate-500 leading-relaxed capitalize">
+                        {item.description || "—"}
+                      </div>
+                    </td>
+
+                    {/* TOTAL */}
+                    <td className="px-5 py-3 text-right align-top">
+                      <div className="text-sm font-semibold text-emerald-700">
+                        {formatCurrency(item.total)}
+                      </div>
+                    </td>
+
+                  </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Total - Dark Blue with Green Total */}
+            <div className="bg-navy rounded-xl p-4 shadow-md">
+              <div className="flex justify-between items-center bg-green">
+                <span className="text-sm font-medium text-green-900">Total Amount</span>
+                <span className="text-md font-bold text-gold text-green-900">{formatCurrency(subtotal)}</span>
+              </div>
+            </div>
+
+            {/* Deposit (if needed) - Green accent */}
+            {depositAmount > 0 && !signed && (
+            <div className="bg-green-50 rounded-xl px-5 py-4 border border-green-200 ">
+              <div className="flex justify-between items-center text-[12px]">
+                <span className="text-green-800 font-medium ">Deposit Required (50%)</span>
+                <span className="font-bold text-green-900">{formatCurrency(depositAmount)}</span>
+              </div>
+              <div className="flex justify-between items-center text-[12px] mt-2">
+                <span className="text-green-700">Balance Due</span>
+                <span className="text-green-800 font-medium">{formatCurrency(balanceDue)}</span>
+              </div>
+            </div>
             )}
-            <div className="flex justify-between pt-2 border-t font-bold">
-              <span>Total Estimate:</span>
-              <span className="text-gold">{formatCurrency(subtotal)}</span>
+
+            {/* Terms */}
+            <div className="text-xs text-gray-500 px-1 text-center">
+              <p>✓ Valid for 30 days • 50% deposit required to begin work</p>
             </div>
-          </div>
-        </div>
 
-        {/* Deposit Info */}
-        {depositAmount > 0 && !signed && (
-          <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
-            <h3 className="font-semibold text-amber-800 mb-2">Deposit & Payment</h3>
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span>Deposit Required (50%):</span>
-                <span className="font-bold">{formatCurrency(depositAmount)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Balance Due Upon Completion:</span>
-                <span>{formatCurrency(balanceDue)}</span>
-              </div>
-            </div>
-          </div>
-        )}
+            {/* Signature */}
+<div className="bg-white rounded-xl p-5 shadow-md border border-gray-200 mt-4 transition-all duration-200 hover:shadow-lg hover:-translate-y-[1px]">
+  <h3 className="text-sm font-semibold text-gray-700 mb-3">
+    Customer Signature
+  </h3>
 
-        {/* Terms & Conditions */}
-        <div className="bg-white rounded-xl p-4 shadow-md">
-          <h3 className="font-semibold text-navy mb-2">Terms & Conditions</h3>
-          <div className="space-y-2 text-sm text-gray-600">
-            <p>1. This estimate is valid for 30 days from the date issued.</p>
-            <p>2. A 50% deposit is required to begin work. Remaining balance due upon completion.</p>
-            <p>3. Any changes or additions to scope must be approved in writing and may incur additional charges.</p>
-            <p>4. Client is responsible for providing safe access to work areas.</p>
-            <p>5. By signing below, you agree to all terms and conditions stated in this estimate.</p>
-            <p className="mt-3 text-xs text-gray-400">One Square Roof LLC is licensed and insured in North Carolina.</p>
-          </div>
-        </div>
+  {signed ? (
+    <div className="text-center py-6 bg-green-50 rounded-xl border-2 border-green-600 transition-all duration-200 hover:shadow-md hover:bg-green-100/60">
+      
+      <div className="text-4xl mb-2">✅</div>
 
-        {/* Signature Section */}
-        <div className="bg-white rounded-xl p-4 shadow-md">
-          <h3 className="font-semibold text-navy mb-3">Customer Signature</h3>
-          
-          {signed ? (
-            <div className="text-center py-6 bg-green-50 rounded-lg border border-green-200">
-              <div className="text-3xl mb-2">✅</div>
-              <div className="font-semibold text-green-700">Thank You!</div>
-              <div className="text-sm text-green-600 mt-1">This estimate has been signed and approved.</div>
-              {signature && (
-                <div className="mt-3 text-sm">
-                  {signature.type === "type" ? (
-                    <div>Signed by: {signature.value}</div>
-                  ) : (
-                    <div>✓ Electronic signature on file</div>
-                  )}
-                  <div className="text-xs text-gray-500 mt-1">
-                    Date: {new Date(signature.date).toLocaleDateString()}
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <>
-              <p className="text-sm text-gray-500 mb-3">By signing below, you agree to the terms and conditions above.</p>
-              <SignaturePad
-                onSave={saveSignature}
-                existingSignature={null}
-                buttonText="Sign & Approve Estimate"
-              />
-            </>
-          )}
-        </div>
-
-        {/* Company Footer */}
-        <div className="text-center text-xs text-gray-400 py-4 border-t border-gray-200">
-          <p>One Square Roof LLC • Charlotte, NC • (704) 303-4112</p>
-          <p className="mt-1">onesquareroof@gmail.com</p>
-          <p className="mt-2">© {new Date().getFullYear()} One Square Roof LLC. All rights reserved.</p>
-        </div>
+      <div className="text-lg font-bold text-green-700">
+        Signed & Approved!
       </div>
+
+      <div className="text-sm text-green-600 mt-1">
+        Thank you for your business
+      </div>
+
+      {signature && (
+        <div className="mt-4 text-sm text-gray-600">
+          {signature.type === "type"
+            ? `Signed by: ${signature.value}`
+            : "Electronic signature on file"}
+
+          <div className="text-xs text-gray-400 mt-1">
+            {new Date(signature.date).toLocaleDateString()}
+          </div>
+        </div>
+      )}
+
     </div>
-  );
-}
+  ) : (
+    <>
+      <p className="text-xs text-gray-500 mb-4">
+        By signing below, you agree to the terms and conditions above.
+      </p>
+
+      <div className="transition-all duration-200 hover:shadow-sm">
+        <SignaturePadInvoice
+          onSave={saveSignature}
+          existingSignature={null}
+          buttonText="Sign & Approve Estimate"
+        />
+      </div>
+    </>
+  )}
+</div>
+
+            {/* Footer */}
+            <div className="text-center text-[11px] text-gray-400 pt-2">
+              One Square Roof LLC • Charlotte, NC • (704) 303-4112
+            </div>
+          </div>
+        </div>
+        );
+        }

@@ -123,7 +123,7 @@ export default function EditClientPage() {
               type="email"
               value={client.email}
               onChange={(e) => setClient({ ...client, email: e.target.value })}
-              className="w-full border border-gray-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-gold"
+              className="w-full border border-gray-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-gold capitalize"
               placeholder="john@example.com"
             />
           </div>
@@ -136,7 +136,7 @@ export default function EditClientPage() {
             <textarea
               value={client.address}
               onChange={(e) => setClient({ ...client, address: e.target.value })}
-              className="w-full border border-gray-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-gold"
+              className="w-full border border-gray-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-gold capitalize"
               rows={3}
               placeholder="123 Main St, Charlotte, NC 28202"
             />
@@ -146,7 +146,11 @@ export default function EditClientPage() {
           <button
             onClick={saveClient}
             disabled={saving}
-            className="w-full py-3 bg-gold text-navy font-semibold rounded-lg hover:bg-gold-dark transition disabled:opacity-50"
+            className="w-full py-3 rounded-xl font-semibold text-white transition-all duration-200
+                      bg-[#0e542c] hover:bg-[#0c4726]
+                      hover:shadow-md hover:-translate-y-[1px]
+                      active:scale-[0.98]
+                      disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none disabled:hover:translate-y-0"
           >
             {saving ? "Saving..." : "Save Changes"}
           </button>
