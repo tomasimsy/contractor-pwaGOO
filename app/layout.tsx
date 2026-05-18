@@ -1,29 +1,41 @@
-import type { Metadata } from "next";
+"use client";
+
+import { useEffect } from "react";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import BottomNav from "@/components/ui/BottomNav";
 
 const inter = Inter({ subsets: ["latin"] });
 
-export const metadata: Metadata = {
-  title: "Estimate & Invoice App",
-  description: "Manage estimates and invoices",
-};
-
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js')
+        .then((registration) => {
+          console.log('Service Worker registered:', registration);
+        })
+        .catch((error) => {
+          console.error('Service Worker registration failed:', error);
+        });
+    }
+  }, []);
+
   return (
     <html lang="en">
-      <body
-        className={`${inter.className} bg-gray-200 min-h-screen flex justify-center`}
-      >
-        <div className="w-full max-w-md min-h-screen bg-gray-50 shadow-xl relative pb-20">
-          {children}
-          <BottomNav />
-        </div>
+      <head>
+        <link rel="manifest" href="/manifest.json" />
+        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="theme-color" content="#d4a048" />
+      </head>
+      <body className={`${inter.className} bg-gray-50`}>
+        {children}
+        <BottomNav />
       </body>
     </html>
   );

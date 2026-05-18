@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+ 
 
 export default function HomePage() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -80,6 +81,7 @@ export default function HomePage() {
           {/* BADGE */}
           <div className="mb-5 rounded-full border border-gray-200 bg-gray-50 px-4 py-1.5 text-xs font-medium uppercase tracking-wide text-gray-500">
             Roofing CRM & Estimate Platform
+            
           </div>
 
           {/* TITLE */}

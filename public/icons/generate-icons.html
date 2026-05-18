@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Generate Icons</title>
+</head>
+<body>
+  <canvas id="canvas" width="512" height="512"></canvas>
+  <button onclick="download()">Download 512x512</button>
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    function drawIcon() {
+      ctx.fillStyle = '#0b1630';
+      ctx.fillRect(0, 0, 512, 512);
+      
+      ctx.fillStyle = '#d4a048';
+      ctx.font = 'bold 200px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🏠', 256, 256);
+    }
+    
+    drawIcon();
+    
+    function download() {
+      const link = document.createElement('a');
+      link.download = 'icon-512.png';
+      link.href = canvas.toDataURL();
+      link.click();
+    }
+  </script>
+</body>
+</html>
