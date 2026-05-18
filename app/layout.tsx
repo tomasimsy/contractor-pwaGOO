@@ -1,10 +1,11 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import BottomNav from "@/components/ui/BottomNav";
-
+ 
 const inter = Inter({ subsets: ["latin"] });
 
 export default function RootLayout({
@@ -12,6 +13,13 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
+  
+  // Hide BottomNav on public pages
+  const isPublicPage = pathname?.startsWith('/public');
+  const isAuthPage = pathname === '/login' || pathname === '/signup';
+  const showBottomNav = !isPublicPage && !isAuthPage;
+
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js')
@@ -39,7 +47,7 @@ export default function RootLayout({
       <body className={`${inter.className} bg-gray-200 flex justify-center`}>
         <div className="w-full max-w-[430px] min-h-screen bg-gray-50 shadow-xl relative">
           {children}
-          <BottomNav />
+          {showBottomNav && <BottomNav />}
          </div>
       </body>
     </html>
