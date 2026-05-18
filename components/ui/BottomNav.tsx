@@ -14,22 +14,13 @@ export default function BottomNav() {
 
   useEffect(() => {
     checkAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsLoggedIn(!!session);
-      setLoading(false);
-      if (!session) {
-        router.push("/login");
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [router]);
+  }, []);
 
   async function checkAuth() {
-    const { data: { session } } = await supabase.auth.getSession();
-    setIsLoggedIn(!!session);
+    const { data: { user } } = await supabase.auth.getUser();
+    setIsLoggedIn(!!user);
     setLoading(false);
+    // REMOVED THE REDIRECT - DO NOT redirect here
   }
 
   const hideNavPages = ["/login", "/signup", "/"];
@@ -52,7 +43,7 @@ export default function BottomNav() {
   };
 
   return (
-<div className="fixed bottom-0 left-0 right-0 border-t bg-primary border-gray-200 z-2    shadow-lg">
+<div className="fixed bottom-0 left-0 right-0 border-t bg-primary border-gray-200 z-2   shadow-lg">
   <div className="w-full max-w-md mx-auto  bg-white flex justify-around px-4 ">
         {navItems.map((item) => {
           const active = isActive(item.href);
