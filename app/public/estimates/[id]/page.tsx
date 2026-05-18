@@ -113,7 +113,7 @@ export default function PublicEstimatePage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-navy text-white p-4 text-center">
+      <div className="bg-primary text-white p-4 text-center">
         <h1 className="text-xl font-bold">One Square Roof LLC</h1>
         <p className="text-sm text-gold mt-1">Licensed & Insured</p>
         <p className="text-xs text-gray-300 mt-2">Estimate #{estimate?.estimate_number || id?.slice(0, 8)}</p>
