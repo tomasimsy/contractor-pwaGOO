@@ -76,7 +76,7 @@ const getStatus = (est: Estimate) => {
 };
 
 return (
-  // <ProtectedRoute>
+   <ProtectedRoute>
   <div className="min-h-screen bg-[#f6f7f9] pb-24">
 
     {/* HEADER */}
@@ -269,6 +269,6 @@ return (
       id={deleteModal.id}
     />
   </div>
-  // </ProtectedRoute>
+   </ProtectedRoute>
 );
   }

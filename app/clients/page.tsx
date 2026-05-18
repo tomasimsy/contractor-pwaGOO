@@ -98,11 +98,15 @@ export default function ClientsPage() {
 
         <DeleteModal
           isOpen={deleteModal.isOpen}
-          onClose={() => setDeleteModal({ isOpen: false, id: "", name: "" })}
+          onClose={() =>
+            setDeleteModal({ isOpen: false, id: "", name: "" })
+          }
           onConfirm={handleDelete}
           title="Delete Client"
-          message={`Are you sure you want to delete ${deleteModal.name}? This will also delete all associated estimates and invoices. This action cannot be undone.`}
+          message="Are you sure you want to delete this client?"
           deleting={deleting}
+          type="client"
+          id={deleteModal.id}
         />
       </div>
     </ProtectedRoute>

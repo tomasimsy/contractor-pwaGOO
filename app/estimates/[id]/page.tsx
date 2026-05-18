@@ -231,7 +231,7 @@ const [estimate, setEstimate] = useState<Estimate | null>(null);
 
           const message = encodeURIComponent(
           `Hello ${client?.name}! Please review and sign your estimate: ${documentUrl}\n\n` +
-          `Estimate #${estimate?.estimate_number || id.slice(0, 8)}\n` +
+          `Estimate #${estimate?.estimate_number }\n` +
           `Total: $${total.toFixed(2)}\n\n` +
           `Click the link above to view and sign. Thank you!`
           );
