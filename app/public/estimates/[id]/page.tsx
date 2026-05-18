@@ -22,31 +22,36 @@ export default function PublicEstimatePage() {
   }, [id]);
 
   async function loadEstimate() {
-    const { data: est } = await supabase
-      .from("estimates")
-      .select("*")
-      .eq("id", id)
-      .single();
-    
-    if (est) {
-      setEstimate(est);
-      setSigned(!!est.signature);
-      if (est.signature) setSignature(est.signature);
-      
-      const { data: clientData } = await supabase
-        .from("clients")
+    try {
+      const { data: est } = await supabase
+        .from("estimates")
         .select("*")
-        .eq("id", est.client_id)
+        .eq("id", id)
         .single();
-      setClient(clientData);
       
-      const { data: itemsData } = await supabase
-        .from("estimate_items")
-        .select("*")
-        .eq("estimate_id", id);
-      setItems(itemsData || []);
+      if (est) {
+        setEstimate(est);
+        setSigned(!!est.signature);
+        if (est.signature) setSignature(est.signature);
+        
+        const { data: clientData } = await supabase
+          .from("clients")
+          .select("*")
+          .eq("id", est.client_id)
+          .single();
+        setClient(clientData);
+        
+        const { data: itemsData } = await supabase
+          .from("estimate_items")
+          .select("*")
+          .eq("estimate_id", id);
+        setItems(itemsData || []);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   const saveSignature = async (newSignature: Signature) => {
@@ -59,6 +64,8 @@ export default function PublicEstimatePage() {
       setSigned(true);
       setSignature(newSignature);
       alert("Thank you! Your signature has been saved.");
+      // Reload to show signature
+      loadEstimate();
     } else {
       alert("Error saving signature. Please try again.");
     }
@@ -71,7 +78,19 @@ export default function PublicEstimatePage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">Loading...</div>
+        <div className="text-center">Loading estimate...</div>
+      </div>
+    );
+  }
+
+  if (!estimate) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-4xl mb-2">🔍</div>
+          <h1 className="text-xl font-bold">Estimate Not Found</h1>
+          <p className="text-gray-500 mt-2">This estimate may have been removed or the link is invalid.</p>
+        </div>
       </div>
     );
   }
@@ -81,13 +100,14 @@ export default function PublicEstimatePage() {
       {/* Header */}
       <div className="bg-navy text-white p-4 text-center">
         <h1 className="text-xl font-bold">One Square Roof LLC</h1>
-        <p className="text-sm text-gold">Estimate #{estimate?.estimate_number || id?.slice(0, 8)}</p>
+        <p className="text-sm text-gold mt-1">Licensed & Insured</p>
+        <p className="text-xs text-gray-300 mt-2">Estimate #{estimate?.estimate_number || id?.slice(0, 8)}</p>
       </div>
 
       <div className="max-w-2xl mx-auto p-4 space-y-4 pb-24">
         {/* Welcome Message */}
         <div className="bg-white rounded-xl p-4 shadow-md">
-          <h2 className="font-semibold text-navy mb-2">Hello, {client?.name}!</h2>
+          <h2 className="font-semibold text-navy mb-2">Hello, {client?.name || "Valued Customer"}!</h2>
           <p className="text-gray-600 text-sm">
             Please review your estimate below and sign at the bottom to approve.
           </p>
@@ -103,7 +123,7 @@ export default function PublicEstimatePage() {
 
         {/* Items */}
         <div className="bg-white rounded-xl p-4 shadow-md">
-          <h3 className="font-semibold text-navy mb-3">Items</h3>
+          <h3 className="font-semibold text-navy mb-3">Estimate Details</h3>
           <div className="space-y-2">
             {items.map((item) => (
               <div key={item.id} className="flex justify-between border-b pb-2">
