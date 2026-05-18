@@ -217,27 +217,51 @@ const [estimate, setEstimate] = useState<Estimate | null>(null);
           const editTotal = calculateTotal(editSubtotal, editMarkup, editDiscount, editTax);
 
           // Add this function in your component for SMS
-          const sendSMSLink = () => {
-          const phoneNumber = client?.phone;
-          if (!phoneNumber) {
-          alert("No phone number on file. Please add a phone number to this client first.");
-          return;
-          }
+// Send SMS function
+const sendSMSLink = async () => {
+  // First, ensure we have the latest client data with phone
+  let currentClient = client;
+  
+  if (!currentClient?.phone && estimate?.client_id) {
+    // Fetch fresh client data if phone is missing
+    const { data: freshClient } = await supabase
+      .from("clients")
+      .select("*")
+      .eq("id", estimate.client_id)
+      .single();
+    
+    if (freshClient) {
+      currentClient = freshClient;
+      setClient(freshClient);
+    }
+  }
+  
+  const phoneNumber = currentClient?.phone;
+  
+  if (!phoneNumber) {
+    alert("No phone number on file. Please add a phone number to this client first.");
+    return;
+  }
+  
+  const baseUrl = window.location.origin;
+  const documentUrl = `${baseUrl}/public/estimates/${id}`;
+  
+  // Calculate total
+  const totalAmount = projects.reduce((sum, p) =>
+    sum + p.line_items.reduce((s, i) => s + (i.total || 0), 0), 0);
+  
+  const message = encodeURIComponent(
+    `Hello ${currentClient?.name || "Customer"}! Please review and sign your estimate: ${documentUrl}\n\n` +
+    `Estimate #${estimate?.estimate_number }\n` +
+    `Total: $${totalAmount.toFixed(2)}\n\n` +
+    `Click the link above to view and sign. Thank you!`
+  );
+  
+  // Open SMS app
+  window.location.href = `sms:${phoneNumber}?body=${message}`;
+};
 
-          const baseUrl = window.location.origin;
-          const documentUrl = `${baseUrl}/public/estimates/${id}`;
-          const total = projects.reduce((sum, p) =>
-          sum + p.line_items.reduce((s, i) => s + (i.total || 0), 0), 0);
-
-          const message = encodeURIComponent(
-          `Hello ${client?.name}! Please review and sign your estimate: ${documentUrl}\n\n` +
-          `Estimate #${estimate?.estimate_number }\n` +
-          `Total: $${total.toFixed(2)}\n\n` +
-          `Click the link above to view and sign. Thank you!`
-          );
-
-          window.location.href = `sms:${phoneNumber}?body=${message}`;
-          };
+ 
 
           // Add this function to convert estimate to invoice
           const convertToInvoice = async () => {

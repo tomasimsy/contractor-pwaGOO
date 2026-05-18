@@ -7,16 +7,18 @@ import { Estimate } from "@/types";
 import { formatCurrency, formatShortDate } from "@/lib/utils/formatting";
 import Header from "@/components/ui/Header";
 import DeleteModal from "@/components/ui/DeleteModal";
-import { Trash2 } from "lucide-react";
-import ProtectedRoute from "@/components/auth/ProtectedRoute";
-import { MessageSquare } from "lucide-react";
-
+ import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import { MessageSquare, SquarePen, Send, Trash2, Edit3, FileText, MessageCircle  } from "lucide-react";
+ 
+ 
 export default function EstimatesPage() {
 const router = useRouter();
 
 const [estimates, setEstimates] = useState<Estimate[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [deleteModal, setDeleteModal] = useState({
+const [loading, setLoading] = useState(true);
+// const [client, setClient] = useState<Client | null>(null);
+const [deleteModal, setDeleteModal] = useState({
+    
   isOpen: false,
   id: "",
   name: "",
@@ -29,8 +31,8 @@ const [estimates, setEstimates] = useState<Estimate[]>([]);
 
   async function loadEstimates() {
   const { data } = await supabase
-  .from("estimates")
-  .select("*, clients(name)")
+   .from("estimates")
+  .select("*, clients(name, phone)")  // Add phone here
   .is("deleted_at", null)
   .order("created_at", { ascending: false });
 
@@ -55,6 +57,28 @@ const [estimates, setEstimates] = useState<Estimate[]>([]);
 
   setDeleting(false);
   }
+// Send SMS function
+// Send SMS function
+const sendSMSLink = (estimate: Estimate) => {
+  const phoneNumber = estimate.clients?.phone;
+  
+  if (!phoneNumber) {
+    alert("No phone number on file. Please add a phone number to this client first.");
+    return;
+  }
+  
+  const baseUrl = window.location.origin;
+  const documentUrl = `${baseUrl}/public/estimates/${estimate.id}`;
+  
+  const message = encodeURIComponent(
+    `Hello ${estimate.clients?.name || "Customer"}! Please review and sign your estimate: ${documentUrl}\n\n` +
+    `Estimate #${estimate.estimate_number || estimate.id.slice(0, 8)}\n` +
+    `Total: $${estimate.total?.toFixed(2) || "0.00"}\n\n` +
+    `Click the link above to view and sign. Thank you!`
+  );
+  
+  window.location.href = `sms:${phoneNumber}?body=${message}`;
+};
 
 const getStatus = (est: Estimate) => {
   if (est.signature)
@@ -211,37 +235,27 @@ return (
                   </button>
 
                   {/* // Add SMS button to each estimate card */}
-                  
-
-                <button
-                  onClick={() => {
-                    const phone = estimate.clients?.phone;
-
-                    if (!phone) {
-                      alert("No phone number");
-                      return;
-                    }
-
-                    const url = `${window.location.origin}/public/estimates/${estimate.id}`;
-
-                    window.location.href = `sms:${phone}?body=${encodeURIComponent(
-                      `Please sign your estimate: ${url}`
-                    )}`;
-                  }}
-                  className="
-                    flex items-center justify-center
-    w-9 h-9
-    rounded-full
-    bg-green-100
-    text-green-600
-    hover:bg-green-200
-    active:scale-95
-    transition
-    shadow-sm
-                  "
-                >
-                  <MessageSquare size={18} />
-                </button>
+ 
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      sendSMSLink(estimate);
+                    }}
+                    className="
+                      flex items-center justify-center
+                      w-9 h-9
+                      rounded-full
+                      bg-green-100
+                      text-green-600
+                      hover:bg-green-200
+                      active:scale-95
+                      transition
+                      shadow-sm
+                      mt-2
+                    "
+                  >
+                    <Send size={16} />
+                  </button>
                 </div>
 
               </div>
