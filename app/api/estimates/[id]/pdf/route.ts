@@ -69,6 +69,47 @@ export async function GET(
       });
     };
 
+    // Generate project pages HTML (each project on its own page)
+    const projectPagesHtml = projects.map((project, idx) => `
+      <div class="page">
+        <div class="project-header">
+          <div class="project-name">📋 ${project.name}</div>
+          <div class="project-badge">Project ${idx + 1}</div>
+        </div>
+
+        <table class="project-table">
+          <thead>
+            <tr>
+              <th style="width: 25%">Item / Service</th>
+              <th style="width: 45%">Description</th>
+              <th style="width: 10%">Qty</th>
+              <th style="width: 10%">Unit Price</th>
+              <th style="width: 10%">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${project.items.map(item => `
+              <tr>
+                <td><strong>${item.name || "-"}</strong></td>
+                <td>${item.description || "-"}</td>
+                <td style="text-align: center">${item.quantity || 0}</td>
+                <td style="text-align: right">${formatCurrency(item.unit_price || 0)}</td>
+                <td style="text-align: right"><strong>${formatCurrency(item.total || 0)}</strong></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+
+        <div class="project-total-box">
+          <span class="project-total">Project Total: ${formatCurrency(project.total)}</span>
+        </div>
+
+        <div class="footer">
+          <p>Page ${idx + 2} of ${projects.length + 3}</p>
+        </div>
+      </div>
+    `).join("");
+
     const html = `
       <!DOCTYPE html>
       <html>
@@ -226,10 +267,11 @@ export async function GET(
           }
           /* Summary Box */
           .summary-box {
-            background: #0b1630;
+            background: #ffffffff;
             padding: 20px;
             border-radius: 12px;
-            color: white;
+            color: #0b1630;
+            font-size: 11px;
           }
           .summary-row {
             display: flex;
@@ -245,13 +287,13 @@ export async function GET(
           }
           .summary-amount {
             font-weight: 700;
-            font-size: 14px;
+            font-size: 11px;
           }
           .total-row {
-            background: #d4a048;
+            background: #ecdfc9ff;
             margin-top: 10px;
             padding: 12px;
-            border-radius: 8px;
+            // border-radius: 8px;
             color: #0b1630;
           }
           /* Table Styles */
@@ -413,12 +455,12 @@ export async function GET(
         <button class="print-btn no-print" onclick="window.print()">🖨️ Save as PDF</button>
 
         <div class="document">
-          <!-- PAGE 1 - Cover Page -->
+          <!-- PAGE 1 - Cover Page (All Formal Information) -->
           <div class="page">
             <div class="header">
               <div class="company-section">
-                <div class="company-name">One Square Roof LLC</div>
-                <div class="company-tagline">Licensed & Insured</div>
+                <div class="company-name">One Square Roofing LLC</div>
+                <div class="company-tagline"> Insured</div>
                 <div class="company-details">
                   123 Business Street<br>
                   Charlotte, NC 28202<br>
@@ -488,63 +530,14 @@ export async function GET(
             </div>
 
             <div class="footer">
-              <p>Thank you for choosing One Square Roof LLC • Licensed & Insured</p>
+              <p>Page 1 of ${projects.length + 3}</p>
             </div>
           </div>
 
-          <!-- PAGE 2+ - Project Details -->
-          ${projects.map((project, idx) => `
-            <div class="page">
-              <div class="project-header">
-                <div class="project-name">📋 ${project.name}</div>
-                <div class="project-badge">Project ${idx + 1}</div>
-              </div>
+          <!-- PROJECT PAGES (Each project on its own page with its details and subtotal) -->
+          ${projectPagesHtml}
 
-              <table class="project-table">
-                <thead>
-                  <tr>
-                    <th style="width: 25%">Item / Service</th>
-                    <th style="width: 45%">Description</th>
-                    <th style="width: 10%">Qty</th>
-                    <th style="width: 10%">Unit Price</th>
-                    <th style="width: 10%">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${project.items.map(item => `
-                    <tr>
-                      <td><strong>${item.name || "-"}</strong></td>
-                      <td>${item.description || "-"}</td>
-                      <td>${item.quantity || 0}</td>
-                      <td>${formatCurrency(item.unit_price || 0)}</td>
-                      <td><strong>${formatCurrency(item.total || 0)}</strong></td>
-                    </tr>
-                  `).join("")}
-                </tbody>
-              </table>
-
-              <div class="project-total-box">
-                <span class="project-total">Project Total: ${formatCurrency(project.total)}</span>
-              </div>
-
-              <div class="signature-section">
-                <div class="signature-box">
-                  <div class="signature-line"></div>
-                  <div class="signature-label">Client Approval (Initials)</div>
-                </div>
-                <div class="signature-box">
-                  <div class="signature-line"></div>
-                  <div class="signature-label">Contractor Approval (Initials)</div>
-                </div>
-              </div>
-
-              <div class="footer">
-                <p>Page ${idx + 2} of ${projects.length + 3}</p>
-              </div>
-            </div>
-          `).join("")}
-
-          <!-- PAGE 3 - Summary & Acknowledgment Page -->
+          <!-- FINAL PAGE - Summary of each project, grand total, and acknowledgment information -->
           <div class="page">
             <div class="section">
               <div class="section-title">Estimate Summary</div>
@@ -580,10 +573,10 @@ export async function GET(
             </div>
 
             <div class="acknowledgment-box">
-              <div class="acknowledgment-title">📝 DEPOSIT PAID ACKNOWLEDGMENT</div>
+              <div class="acknowledgment-title"> DEPOSIT PAID ACKNOWLEDGMENT</div>
               <div class="acknowledgment-text">
                 We, the undersigned, confirm that the deposit amount of ${formatCurrency(depositAmount)} has been paid 
-                and received by One Square Roof LLC. This deposit secures the commencement of work as outlined in this estimate.
+                and received by One Square Roofing LLC. This deposit secures the commencement of work as outlined in this estimate.
               </div>
               <div class="signature-field">
                 <span class="signature-field-label">Client / Owner Signature:</span>
@@ -600,7 +593,7 @@ export async function GET(
             </div>
 
             <div class="acknowledgment-box">
-              <div class="acknowledgment-title">✅ FINAL PAYMENT RECEIVED ACKNOWLEDGMENT</div>
+              <div class="acknowledgment-title"> FINAL PAYMENT RECEIVED ACKNOWLEDGMENT</div>
               <div class="acknowledgment-text">
                 We, the undersigned, confirm that the final payment of ${formatCurrency(balanceAmount)} has been received in full 
                 and that all work outlined in this agreement has been completed to satisfaction. Any additional work or 
@@ -621,7 +614,7 @@ export async function GET(
             </div>
 
             <div class="terms-box">
-              <div class="terms-title">📋 Terms & Conditions</div>
+              <div class="terms-title">Terms & Conditions</div>
               <ul class="terms-list">
                 <li>This estimate is valid for 30 days from the date issued.</li>
                 <li>A 50% deposit is required to begin work. Remaining balance due upon completion.</li>
@@ -635,6 +628,7 @@ export async function GET(
             <div class="footer">
               <p>One Square Roof LLC • (704) 303-4112 • onesquareroof@gmail.com</p>
               <p>Thank you for your business!</p>
+              <p>Page ${projects.length + 3} of ${projects.length + 3}</p>
             </div>
           </div>
         </div>

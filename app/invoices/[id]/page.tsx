@@ -194,7 +194,7 @@ const deletePayment = async (paymentId: string) => {
           backLink="/invoices"
           rightAction={
             <div className="flex gap-2">
-              <Link href={`/api/invoices/${id}/pdf`} target="_blank">
+              <Link href={`/api/invoices/${id}/pdf`}  target="_blank">
                 <button className="h-9 w-9 rounded-xl border border-gray-200 bg-white shadow-sm hover:bg-gray-50">
                   📄
                 </button>

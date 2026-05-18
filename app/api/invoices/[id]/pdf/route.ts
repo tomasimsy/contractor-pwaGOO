@@ -42,7 +42,6 @@ export async function GET(
 
     const totalPaid = payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
     const remainingBalance = (invoice?.total || 0) - totalPaid;
-    const isPaid = remainingBalance === 0;
 
     // Group items by project
     const projectMap: Record<string, any[]> = {};
@@ -61,6 +60,9 @@ export async function GET(
     }));
 
     const subtotal = items?.reduce((sum, i) => sum + (i.total || 0), 0) || 0;
+    const grandTotal = projects.reduce((sum, p) => sum + p.total, 0);
+    const depositAmount = grandTotal * 0.5;
+    const balanceDue = grandTotal - depositAmount;
 
     const formatCurrency = (amount: number) => {
       return new Intl.NumberFormat('en-US', {
@@ -78,6 +80,59 @@ export async function GET(
       });
     };
 
+    // Generate project pages HTML
+    const projectPagesHtml = projects.map((project, index) => `
+      <div class="page" style="page-break-after: always;">
+        <div class="project-header">
+          <div class="project-name">Project ${index + 1}: ${project.name}</div>
+          <div class="project-total-badge">Total: ${formatCurrency(project.total)}</div>
+        </div>
+
+        <table class="project-table">
+          <thead>
+            <tr>
+              <th style="width: 25%">Item</th>
+              <th style="width: 45%">Description</th>
+              <th style="width: 10%">Qty</th>
+              <th style="width: 10%">Price</th>
+              <th style="width: 10%">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${project.items.map(item => `
+              <tr>
+                <td>${item.name || "-"}</td>
+                <td>${item.description || "-"}</td>
+                <td style="text-align: center">${item.quantity || 0}</td>
+                <td style="text-align: right">${formatCurrency(item.unit_price || 0)}</td>
+                <td style="text-align: right"><strong>${formatCurrency(item.total || 0)}</strong></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+
+        <div class="project-total-box">
+          <div class="project-total-label">Project Total</div>
+          <div class="project-total-amount">${formatCurrency(project.total)}</div>
+        </div>
+
+        <div class="signature-section">
+          <div class="signature-block">
+            <div class="signature-line"></div>
+            <div class="signature-label">Client Approval (Initials)</div>
+          </div>
+          <div class="signature-block">
+            <div class="signature-line"></div>
+            <div class="signature-label">Contractor Approval (Initials)</div>
+          </div>
+        </div>
+
+        <div class="footer">
+          <p>Page ${index + 2} of ${projects.length + 2}</p>
+        </div>
+      </div>
+    `).join("");
+
     const html = `
       <!DOCTYPE html>
       <html>
@@ -86,13 +141,15 @@ export async function GET(
         <title>Invoice ${invoice.invoice_number || invoice.id.slice(0, 8)}</title>
         <style>
           @media print {
-            body { margin: 0; padding: 0; }
+            body { margin: 0; padding: 0; background: white; }
             .no-print { display: none; }
+            .page { page-break-after: always; }
+            .page:last-child { page-break-after: auto; }
           }
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body {
             font-family: 'Helvetica', Arial, sans-serif;
-            background: #e8eef2;
+            background: #f5f7fa;
             padding: 20px;
           }
           .print-btn {
@@ -102,66 +159,83 @@ export async function GET(
             background: #d4a048;
             color: #0b1630;
             border: none;
-            padding: 12px 24px;
-            border-radius: 8px;
+            padding: 10px 20px;
+            border-radius: 40px;
             cursor: pointer;
-            font-weight: bold;
+            font-weight: 500;
+            font-size: 13px;
             z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+          }
+          .print-btn:hover {
+            background: #c08d35;
           }
           .document {
             max-width: 1100px;
             margin: 0 auto;
             background: white;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.05);
           }
           .page {
-            padding: 50px;
+            padding: 48px;
             background: white;
+            page-break-after: always;
           }
+          .page:last-child {
+            page-break-after: auto;
+          }
+          /* Header */
           .header {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 3px solid #d4a048;
+            margin-bottom: 32px;
+            padding-bottom: 24px;
+            border-bottom: 2px solid #e8eef2;
           }
           .company-name {
-            font-size: 26px;
-            font-weight: 800;
-            color: #0b1630;
+            font-size: 22px;
+            font-weight: 600;
+            color: #1a2a3a;
+            letter-spacing: -0.3px;
           }
           .company-details {
             font-size: 10px;
-            color: #666;
-            margin-top: 8px;
+            color: #8a9aaa;
+            margin-top: 6px;
           }
           .invoice-title {
-            font-size: 24px;
-            font-weight: 800;
+            font-size: 22px;
+            font-weight: 600;
             color: #d4a048;
             text-align: right;
           }
           .invoice-number {
-            font-size: 12px;
-            color: #0b1630;
+            font-size: 11px;
+            color: #8a9aaa;
             text-align: right;
-            margin-top: 5px;
+            margin-top: 4px;
           }
+          /* Section Titles */
           .section-title {
-            font-size: 13px;
-            font-weight: 700;
+            font-size: 12px;
+            font-weight: 600;
             text-transform: uppercase;
-            color: #0b1630;
-            background: #f5f0e6;
-            padding: 8px 12px;
-            margin: 20px 0 15px 0;
-            border-left: 4px solid #d4a048;
+            letter-spacing: 0.5px;
+            color: #5a6e7e;
+            margin: 24px 0 12px 0;
+            background: none;
+            border-left: none;
+            padding-left: 0;
           }
+          /* Client Card */
           .client-card {
-            background: #fafaf8;
-            padding: 20px;
-            border-radius: 12px;
+            background: #f8fafc;
+            padding: 20px 24px;
+            border-radius: 16px;
             margin-bottom: 20px;
+            border: 1px solid #eef2f4;
           }
           .client-row {
             display: flex;
@@ -170,54 +244,161 @@ export async function GET(
           }
           .client-label {
             width: 100px;
-            font-weight: 700;
+            font-weight: 500;
+            color: #5a6e7e;
           }
+          /* Tables */
           table {
             width: 100%;
             border-collapse: collapse;
-            margin: 15px 0;
+            margin: 16px 0;
           }
           th {
-            background: #0b1630;
-            color: white;
+            background: #f8fafc;
+            color: #3a4a5a;
             padding: 10px;
             text-align: left;
             font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            border-bottom: 1px solid #e8eef2;
           }
           td {
             padding: 10px;
-            border-bottom: 1px solid #e8e2d4;
+            border-bottom: 1px solid #f0f2f4;
             font-size: 10px;
+            color: #2a3a4a;
           }
+          /* Summary Box */
           .summary-box {
-            background: #0b1630;
-            padding: 20px;
-            border-radius: 12px;
-            color: white;
+            background: #f8fafc;
+            padding: 20px 24px;
+            border-radius: 16px;
             margin: 20px 0;
+            border: 1px solid #eef2f4;
           }
           .summary-row {
             display: flex;
             justify-content: space-between;
-            padding: 8px 0;
+            padding: 6px 0;
+            font-size: 11px;
           }
           .paid-row {
-            color: #4caf50;
+            color: #3b7c5e;
           }
           .balance-row {
-            background: #d4a048;
-            margin-top: 10px;
+            background: #fff8eb;
+            margin-top: 12px;
+            padding: 10px 16px;
+            border-radius: 12px;
+            border: 1px solid #f0e6d0;
+          }
+          /* Project Page Styles */
+          .project-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid #d4a048;
+          }
+          .project-name {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1a2a3a;
+          }
+          .project-total-badge {
+            font-size: 12px;
+            font-weight: 600;
+            color: #d4a048;
+            background: #f5f0e6;
+            padding: 6px 12px;
+            border-radius: 20px;
+          }
+          .project-table {
+            margin: 20px 0;
+          }
+          .project-total-box {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 20px;
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid #e8eef2;
+          }
+          .project-total-label {
+            font-size: 12px;
+            font-weight: 500;
+            color: #5a6e7e;
+          }
+          .project-total-amount {
+            font-size: 16px;
+            font-weight: 700;
+            color: #d4a048;
+          }
+          /* Signature Section */
+          .signature-section {
+            display: flex;
+            justify-content: space-between;
+            margin: 40px 0 20px;
+            gap: 40px;
+          }
+          .signature-block {
+            flex: 1;
+          }
+          .signature-line {
+            border-bottom: 1px solid #1a2a3a;
+            margin-top: 40px;
+            margin-bottom: 6px;
+          }
+          .signature-label {
+            font-size: 9px;
+            color: #8a9aaa;
+            text-align: center;
+          }
+          /* Summary Table */
+          .summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+          }
+          .summary-table th {
+            background: #f8fafc;
+            color: #3a4a5a;
             padding: 12px;
-            border-radius: 8px;
-            color: #0b1630;
+            text-align: left;
+            font-size: 11px;
+          }
+          .summary-table td {
+            padding: 10px;
+            border-bottom: 1px solid #eef2f4;
+            font-size: 11px;
+          }
+          .grand-total-row {
+            background: #fafcfc;
+            font-weight: 700;
+          }
+          .deposit-section {
+            background: #f8fafc;
+            padding: 20px 24px;
+            border-radius: 16px;
+            margin: 20px 0;
+            border: 1px solid #eef2f4;
+          }
+          .deposit-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            font-size: 11px;
           }
           .footer {
             text-align: center;
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid #e8e2d4;
+            margin-top: 48px;
+            padding-top: 24px;
+            border-top: 1px solid #eef2f4;
             font-size: 9px;
-            color: #999;
+            color: #a0b0bc;
           }
         </style>
       </head>
@@ -225,6 +406,7 @@ export async function GET(
         <button class="print-btn no-print" onclick="window.print()">🖨️ Save as PDF</button>
 
         <div class="document">
+          <!-- PAGE 1 - Cover / Invoice Info -->
           <div class="page">
             <div class="header">
               <div>
@@ -260,28 +442,30 @@ export async function GET(
               </div>
             </div>
 
-            <div class="section-title">Invoice Items</div>
+            ${invoice?.description ? `
+              <div class="section-title">Description</div>
+              <div style="margin-bottom: 20px; font-size: 11px; color: #555;">${invoice.description}</div>
+            ` : ""}
 
-            <table>
+            <div class="section-title">Projects Overview</div>
+            <table class="summary-table">
               <thead>
                 <tr>
-                  <th>Item</th>
-                  <th>Description</th>
-                  <th>Qty</th>
-                  <th>Price</th>
-                  <th>Total</th>
+                  <th>Project Name</th>
+                  <th style="text-align: right">Total Amount</th>
                 </tr>
               </thead>
               <tbody>
-                ${items?.map(item => `
+                ${projects.map(project => `
                   <tr>
-                    <td>${item.name || "-"}</td>
-                    <td>${item.description || "-"}</td>
-                    <td>${item.quantity || 0}</td>
-                    <td>${formatCurrency(item.unit_price || 0)}</td>
-                    <td>${formatCurrency(item.total || 0)}</td>
+                    <td>${project.name}</td>
+                    <td style="text-align: right">${formatCurrency(project.total)}</td>
                   </tr>
                 `).join("")}
+                <tr class="grand-total-row">
+                  <td><strong>GRAND TOTAL</strong></td>
+                  <td style="text-align: right"><strong>${formatCurrency(grandTotal)}</strong></td>
+                </tr>
               </tbody>
             </table>
 
@@ -333,7 +517,7 @@ export async function GET(
                     <tr>
                       <td>${formatDate(p.created_at)}</td>
                       <td>${formatCurrency(p.amount)}</td>
-                      <td class="capitalize">${p.method}</td>
+                      <td>${p.method}</td>
                     </tr>
                   `).join("")}
                 </tbody>
@@ -349,8 +533,52 @@ export async function GET(
             ` : ""}
 
             <div class="footer">
+              <p>Page 1 of ${projects.length + 2}</p>
+            </div>
+          </div>
+
+          <!-- PROJECT PAGES -->
+          ${projectPagesHtml}
+
+          <!-- FINAL SUMMARY PAGE -->
+          <div class="page">
+            <div class="section-title">Estimate Summary</div>
+            
+            <table class="summary-table">
+              <thead>
+                <tr>
+                  <th>Project Name</th>
+                  <th style="text-align: right">Total Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${projects.map(project => `
+                  <tr>
+                    <td>${project.name}</td>
+                    <td style="text-align: right">${formatCurrency(project.total)}</td>
+                  </tr>
+                `).join("")}
+                <tr class="grand-total-row">
+                  <td><strong>GRAND TOTAL</strong></td>
+                  <td style="text-align: right"><strong>${formatCurrency(grandTotal)}</strong></td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div class="deposit-section">
+              <div class="deposit-row">
+                <span>Deposit Required (50%)</span>
+                <span><strong>${formatCurrency(depositAmount)}</strong></span>
+              </div>
+              <div class="deposit-row">
+                <span>Balance Due Upon Completion</span>
+                <span><strong>${formatCurrency(balanceDue)}</strong></span>
+              </div>
+            </div>
+
+            <div class="footer">
               <p>Thank you for your business! • One Square Roof LLC • (704) 303-4112</p>
-              <p>Payment is due upon receipt unless otherwise specified</p>
+              <p>Page ${projects.length + 2} of ${projects.length + 2}</p>
             </div>
           </div>
         </div>

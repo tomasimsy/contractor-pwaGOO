@@ -54,21 +54,76 @@ export default function PublicEstimatePage() {
     }
   }
 
-  const saveSignature = async (newSignature: Signature) => {
-    const { error } = await supabase
-      .from("estimates")
-      .update({ signature: newSignature, status: "approved" })
-      .eq("id", id);
-    
-    if (!error) {
-      setSigned(true);
-      setSignature(newSignature);
-      alert("Thank you! Your signature has been saved.");
-      loadEstimate();
-    } else {
-      alert("Error saving signature. Please try again.");
+  // Function to send notification when signed
+  const sendSignatureNotification = async () => {
+    try {
+      // Create notification in database
+      await supabase.from("notifications").insert({
+        document_type: "estimate",
+        document_id: id,
+        document_number: estimate?.estimate_number,
+        client_name: client?.name,
+        status: "signed",
+        read: false,
+      });
+
+      // Optional: Send email via API
+      await fetch("/api/send-notification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "estimate_signed",
+          clientName: client?.name,
+          documentNumber: estimate?.estimate_number,
+          documentId: id,
+        }),
+      });
+
+      // Optional: Browser notification for admin (if they have the page open)
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification("Document Signed!", {
+          body: `${client?.name} has signed Estimate #${estimate?.estimate_number}`,
+          icon: "/icons/icon-192.png",
+        });
+      }
+    } catch (err) {
+      console.error("Notification error:", err);
     }
   };
+
+const saveSignature = async (newSignature: Signature) => {
+  const { error } = await supabase
+    .from("estimates")
+    .update({ signature: newSignature, status: "approved" })
+    .eq("id", id);
+  
+  if (!error) {
+    setSigned(true);
+    setSignature(newSignature);
+    
+    // Send notification
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification("📝 Document Signed!", {
+        body: `${client?.name || "A client"} signed Estimate #${estimate?.estimate_number}`,
+        icon: "/icons/icon-192.png",
+        tag: "signature",
+        silent: false,
+      });
+    }
+    
+    alert("Thank you! Your signature has been saved.");
+    loadEstimate();
+  } else {
+    alert("Error saving signature. Please try again.");
+  }
+};
+
+  // Request notification permission on load
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, []);
 
   // Group items by project
   const projectMap: Record<string, any[]> = {};
@@ -113,8 +168,8 @@ export default function PublicEstimatePage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-primary text-white p-4 text-center">
-        <h1 className="text-xl font-bold">One Square Roofing LLC</h1>
+      <div className="bg-navy text-white p-4 text-center">
+        <h1 className="text-xl font-bold">One Square Roof LLC</h1>
         <p className="text-sm text-gold mt-1">Licensed & Insured</p>
         <p className="text-xs text-gray-300 mt-2">Estimate #{estimate?.estimate_number || id?.slice(0, 8)}</p>
         <p className="text-xs text-gray-300">Issued: {new Date(estimate?.created_at).toLocaleDateString()}</p>

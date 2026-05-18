@@ -15,6 +15,7 @@ import {
 import { formatCurrency } from "@/lib/utils/formatting";
 import { generateDocumentNumber } from "@/lib/utils/documentNumber";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import { generateEstimateNumber } from "@/lib/utils/estimateNumber";
 
 type Project = {
   id: string;
@@ -117,75 +118,78 @@ export default function CreateEstimate() {
     );
   };
 
-  const saveEstimate = async () => {
-    if (!clientId) {
-      return alert("Select a client");
-    }
+ 
+const saveEstimate = async () => {
+  if (!clientId) {
+    return alert("Select a client");
+  }
 
-    if (
-      projects.some((project) =>
-        project.items.some((item) => !item.name.trim())
-      )
-    ) {
-      return alert("Name all line items");
-    }
+  if (
+    projects.some((project) =>
+      project.items.some((item) => !item.name.trim())
+    )
+  ) {
+    return alert("Name all line items");
+  }
 
-    const documentNumber = await generateDocumentNumber();
+  // Generate unique estimate number (OSR20260001 format)
+  const estimateNumber = await generateEstimateNumber();
 
-    setSaving(true);
+  setSaving(true);
 
-    const { data: estimate, error } = await supabase
-      .from("estimates")
-      .insert({
-        client_id: clientId,
-        estimate_number: documentNumber,
-        description: description || null,
-        notes: notes || null,
-        subtotal,
-        total,
-        status: "pending",
-      })
-      .select()
-      .single();
+  const { data: estimate, error } = await supabase
+    .from("estimates")
+    .insert({
+      client_id: clientId,
+      estimate_number: estimateNumber,  // Use the generated number
+      description: description || null,
+      notes: notes || null,
+      subtotal,
+      total,
+      status: "pending",
+    })
+    .select()
+    .single();
 
-    if (error) {
-      alert("Error: " + error.message);
-      setSaving(false);
-      return;
-    }
-
-    const itemsToInsert = projects.flatMap((project) =>
-      project.items.map((item) => ({
-        estimate_id: estimate.id,
-
-        // PROJECT INFO
-        project_name: project.name || null,
-        project_description: project.description || null,
-
-        // ITEM INFO
-        category: item.category,
-        name: item.name,
-        description: item.description || null,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        taxable: item.taxable,
-        total: item.quantity * item.unit_price,
-      }))
-    );
-
-    const { error: itemsError } = await supabase
-      .from("estimate_items")
-      .insert(itemsToInsert);
-
-    if (itemsError) {
-  console.error(itemsError);
-  alert(itemsError.message);
-} else {
-      router.push(`/estimates/${estimate.id}`);
-    }
-
+  if (error) {
+    alert("Error: " + error.message);
     setSaving(false);
-  };
+    return;
+  }
+
+  const itemsToInsert = projects.flatMap((project) =>
+    project.items.map((item) => ({
+      estimate_id: estimate.id,
+
+      // PROJECT INFO
+      project_name: project.name || null,
+      project_description: project.description || null,
+
+      // ITEM INFO
+      category: item.category,
+      name: item.name,
+      description: item.description || null,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      taxable: item.taxable,
+      total: item.quantity * item.unit_price,
+    }))
+  );
+
+  const { error: itemsError } = await supabase
+    .from("estimate_items")
+    .insert(itemsToInsert);
+
+  if (itemsError) {
+    console.error(itemsError);
+    alert(itemsError.message);
+  } else {
+    alert(`Estimate #${estimateNumber} created successfully!`);
+    router.push(`/estimates/${estimate.id}`);
+  }
+
+  setSaving(false);
+};
 
   return (
     <ProtectedRoute>
