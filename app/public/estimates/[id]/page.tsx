@@ -111,56 +111,87 @@ const [estimate, setEstimate] = useState<any>(null);
         return (
         <div className="min-h-screen bg-gray-100">
           {/* Header - Dark Blue */}
-          <div className="bg-green-900 border border-green-900 text-white px-5 py-5 text-center">
-            <h1 className="text-lg font-bold">One Square Roofing LLC</h1>
-            <p className="text-xs text-gold mt-0.5">Insured</p>
-            <div className="mt-3 text-xs text-gray-300">
-              Estimate #{estimate?.estimate_number || id?.slice(0, 8)}
-            </div>
-            <div className="text-xs text-gray-400">
-              {new Date(estimate?.created_at).toLocaleDateString()}
-            </div>
-          </div>
 
-          <div className="max-w-2xl mx-auto px-4 py-5 space-y-5 pb-28">
+          <div className="max-w-2xl mx-auto px-2 py-5 space-y-5 pb-28">
 
-            {/* Greeting - Dark Green Accent */}
-            <div className="bg-white rounded-xl p-5 shadow-sm">
-              <div className="flex items-start gap-3">
-                <div className="w-1 h-10 bg-green-700 rounded-full"></div>
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-800">Hello, {client?.name || "Valued Customer"}</h2>
-                  <p className="text-[12px] text-green-700 mt-1">{client?.address || "Please update your address"}</p>
-                  <p className="text-[12px] text-green-800 mt-1">Please review and sign below to approve.</p>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2  text-green- text-[10px]">
-                    {client?.phone && <span>📞 {client.phone}</span>}
-                    {client?.email && <span>✉️ {client.email}</span>}
-                  </div>
-                </div>
-              </div>
-            </div>
+            {/* COMPANY + CUSTOMER (SINGLE COMPACT BLOCK) */}
+            <div className="bg-green-900 text-white rounded-xl p-3 shadow-sm">
 
-            {/* Description */}
-            {(estimate?.description || estimate?.notes) && (
-              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-5">
-                
-                {estimate?.description && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-gray-300">
+
+                {/* Customer Side */}
+                <div className="flex items-start gap-3">
+                  <div className="w-1 h-10 bg-green-700 rounded-full"></div>
+
                   <div>
-                    <h3 className="text-sm font-semibold text-gray-900 mb-2 tracking-wide uppercase">
-                      Description
-                    </h3>
+                    <h2 className="text-lg font-semibold  ">
+                      Hello, {client?.name || "Valued Customer"}
+                    </h2>
 
-                    <div className="bg-gray-50 border border-gray-100 rounded-xl p-4">
-                      <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
-                        {estimate.description}
-                      </p>
+                    <p className="text-[12px]   mt-1 capitalize">
+                      {client?.address || "Please update your address"}
+                    </p>
+
+                    {/* <p className="text-[12px] text-green-800 mt-1">
+                      Please review and sign below to approve.
+                    </p> */}
+
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[10px] text-gray-300">
+                      {client?.phone && <span> {client.phone}</span>}
+                      {client?.email && <span> {client.email}</span>}
                     </div>
                   </div>
-                )}
+                </div>
 
-                
-                
+                {/* Company Side */}
+                <div className="flex items-start gap-3 md:justify-end md:text-right">
+
+                  <div className="md:order-2 w-1 h-10 bg-green-900 rounded-full"></div>
+
+                  <div className="md:order-1 text-orange-200">
+                    <h2 className="text-lg font-semibold ">
+                      One Square Roofing LLC
+                    </h2>
+
+                    <p className="text-[12px]   mt-1">
+                      Insured Contractor
+                    </p>
+
+                    <div className="text-[10px]   mt-2">
+                      Estimate #{estimate?.estimate_number || id?.slice(0, 8)}
+                    </div>
+
+                    <div className="text-[10px]  ">
+                      {new Date(estimate?.created_at).toLocaleDateString()}
+                    </div>
+                  </div>
+
+                </div>
+
               </div>
+
+            </div>
+
+            {/* DESCRIPTION */}
+            {(estimate?.description || estimate?.notes) && (
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 space-y-5">
+
+              {estimate?.description && (
+              <div>
+                <h3 className="text-xs font-semibold  leading-relaxed. text-gray-700 mb-2   uppercase">
+                  Description
+                </h3>
+
+                <div className="text-[12px] rounded-xl capitalize leading-relaxed">
+                  <p className="  whitespace-pre-line">
+                    {estimate.description}</p>
+                  <p>***{estimate.notes}</p>
+
+                </div>
+              </div>
+              )}
+
+            </div>
             )}
 
             {/* Items Table */}
@@ -236,75 +267,60 @@ const [estimate, setEstimate] = useState<any>(null);
 
             {/* Terms */}
             <div className="text-xs text-gray-500 px-1 text-center">
-              
-              {estimate?.notes && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-900 mb-2 tracking-wide uppercase">
-                      Notes
-                    </h3>
-
-                    <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
-                      <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line italic">
-                        {estimate.notes}
-                      </p>
-                    </div>
-                    
-                  </div>
-                )}
+              <p>✓ Valid for 30 days • 50% deposit required to begin work</p>
             </div>
 
             {/* Signature */}
-<div className="bg-white rounded-xl p-5 shadow-md border border-gray-200 mt-4 transition-all duration-200 hover:shadow-lg hover:-translate-y-[1px]">
-  <h3 className="text-sm font-semibold text-gray-700 mb-3">
-    Customer Signature
-  </h3>
+            <div
+              className="bg-white rounded-xl p-5 shadow-md border border-gray-200 mt-4 transition-all duration-200 hover:shadow-lg hover:-translate-y-[1px]">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">
+                Customer Signature
+              </h3>
 
-  {signed ? (
-    <div className="text-center py-6 bg-green-50 rounded-xl border-2 border-green-600 transition-all duration-200 hover:shadow-md hover:bg-green-100/60">
-      
-      <div className="text-4xl mb-2">✅</div>
+              {signed ? (
+              <div
+                className="text-center py-6 bg-green-50 rounded-xl border-2 border-green-600 transition-all duration-200 hover:shadow-md hover:bg-green-100/60">
 
-      <div className="text-lg font-bold text-green-700">
-        Signed & Approved!
-      </div>
+                <div className="text-4xl mb-2">✅</div>
 
-      <div className="text-sm text-green-600 mt-1">
-        Thank you for your business
-      </div>
+                <div className="text-lg font-bold text-green-700">
+                  Signed & Approved!
+                </div>
 
-      {signature && (
-        <div className="mt-4 text-sm text-gray-600">
-          {signature.type === "type"
-            ? `Signed by: ${signature.value}`
-            : "Electronic signature on file"}
+                <div className="text-sm text-green-600 mt-1">
+                  Thank you for your business
+                </div>
 
-          <div className="text-xs text-gray-400 mt-1">
-            {new Date(signature.date).toLocaleDateString()}
-          </div>
-        </div>
-      )}
+                {signature && (
+                <div className="mt-4 text-sm text-gray-600">
+                  {signature.type === "type"
+                  ? `Signed by: ${signature.value}`
+                  : "Electronic signature on file"}
 
-    </div>
-  ) : (
-    <>
-      <p className="text-xs text-gray-500 mb-4">
-        By signing below, you agree to the terms and conditions above.
-      </p>
+                  <div className="text-xs text-gray-400 mt-1">
+                    {new Date(signature.date).toLocaleDateString()}
+                  </div>
+                </div>
+                )}
 
-      <div className="transition-all duration-200 hover:shadow-sm">
-        <SignaturePadInvoice
-          onSave={saveSignature}
-          existingSignature={null}
-          buttonText="Sign & Approve Estimate"
-        />
-      </div>
-    </>
-  )}
-</div>
+              </div>
+              ) : (
+              <>
+                <p className="text-xs text-gray-500 mb-4">
+                  By signing below, you agree to the terms and conditions above.
+                </p>
+
+                <div className="transition-all duration-200 hover:shadow-sm">
+                  <SignaturePadInvoice onSave={saveSignature} existingSignature={null}
+                    buttonText="Sign & Approve Estimate" />
+                </div>
+              </>
+              )}
+            </div>
 
             {/* Footer */}
             <div className="text-center text-[11px] text-gray-400 pt-2">
-              One Square Roof LLC • Charlotte, NC • (704) 303-4112
+              One Square Roofing LLC • Charlotte, NC • (704) 303-4112
             </div>
           </div>
         </div>
