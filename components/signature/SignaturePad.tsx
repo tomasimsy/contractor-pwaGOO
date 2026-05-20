@@ -231,16 +231,23 @@ export default function SignaturePad({
   return (
     <>
       {/* Terms & Conditions */}
-      <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-        <div className="text-xs font-semibold text-gray-700 mb-2">Terms & Conditions</div>
-        <div className="space-y-1 text-[11px] text-gray-600">
-          <p>1. This estimate is valid for 30 days from the date issued.</p>
-          <p>2. A 50% deposit is required to begin work. Remaining balance due upon completion.</p>
-          <p>3. Any changes or additions to scope must be approved in writing and may incur additional charges.</p>
-          <p>4. Client is responsible for providing safe access to work areas.</p>
-          <p>5. By signing below, you agree to all terms and conditions stated in this estimate.</p>
-        </div>
-      </div>
+      {/* Terms & Conditions */}
+<div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+  <div className="text-xs font-semibold text-gray-700 mb-2">Terms & Conditions</div>
+  <div className="space-y-1 text-[11px] text-gray-600">
+    <p>✓ Valid for 30 days from date issued</p>
+    <p>✓ 50% deposit required to begin, balance due upon completion</p>
+    <p>✓ Changes must be approved in writing (additional charges may apply)</p>
+    <p>✓ Client must provide safe access to work areas</p>
+    <p>✓ Client responsible for marking underground lines, irrigation, drain lines, low-voltage wires, and hidden utilities</p>
+    <p>✓ Contractor not liable for damage from unmarked underground items</p>
+    <p>✓ Warranty excludes: weather, tree roots, drainage, soil movement, customer neglect, or third-party work</p>
+    <p>✓ NC residential jobs: cancellation rights per state and federal law</p>
+    <p>✓ Schedule may be affected by weather, material delays, or hidden conditions</p>
+    <p>✓ Debris cleanup limited to approved scope of work</p>
+    <p className="mt-2 text-[10px] text-gray-400 italic">By signing, you agree to all terms above</p>
+  </div>
+</div>
 
       <button
         onClick={() => setShowModal(true)}

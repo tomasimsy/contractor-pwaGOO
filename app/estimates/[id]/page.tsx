@@ -794,13 +794,13 @@ const addEditItem = (projectId: string) => {
         {!isEditMode && (
           <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
             <div className="text-[11px] text-gray-500 mb-2">Customer Signature</div>
-            {/* <SignaturePad
+            <SignaturePad
               onSave={saveSignature}
               onRemove={removeSignature}
               existingSignature={estimate?.signature}
               buttonText="Sign & Approve Estimate"
               showRemoveButton={true}
-            /> */}
+            />
           </div>
         )}
 
