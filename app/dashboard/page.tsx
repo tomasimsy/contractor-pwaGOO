@@ -8,6 +8,7 @@ import { formatCurrency, formatShortDate } from "@/lib/utils/formatting";
 import Header from "@/components/ui/Header";
 import Image from "next/image";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import FinancialDashboard from "@/components/FinancialDashboard";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -144,17 +145,12 @@ export default function Dashboard() {
             </Link>
           </div>
 
-          {/* IMAGE */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="relative w-full h-48">
-              <Image
-                src="/hero.jpeg"
-                alt="Hero"
-                fill
-                className="object-cover rounded-xl"
-                priority
-              />
-            </div>
+          {/* Financial dashboard */}
+          <div className="rounded-2xl border border-gray-200 bg-white p-2 shadow-sm">
+            <div className="max-w-4xl mx-auto">
+  <FinancialDashboard />
+  {/* rest of your dashboard content */}
+</div>
           </div>
 
           {/* OVERVIEW */}
