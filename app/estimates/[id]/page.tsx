@@ -169,17 +169,22 @@ async function loadSubcontractorPaid() {
     }
   };
 
-  const removeSignature = async () => {
-    const { error } = await supabase
-      .from("estimates")
-      .update({ signature: null, status: "pending" })
-      .eq("id", id);
-    if (!error) {
-      setEstimate((prev) => (prev ? { ...prev, signature: null, status: "pending" } : prev));
-      alert("Signature has been removed.");
-      loadEstimate();
-    }
-  };
+const removeSignature = async () => {
+  if (!confirm("Remove the signature? The estimate will need to be resigned.")) return;
+  
+  const { error } = await supabase
+    .from("estimates")
+    .update({ signature: null, status: "pending" })
+    .eq("id", id);
+  
+  if (!error) {
+    setEstimate((prev) => (prev ? { ...prev, signature: null, status: "pending" } : prev));
+    alert("Signature removed. Customer will need to sign again.");
+    loadEstimate();
+  } else {
+    alert("Error removing signature");
+  }
+};
 
   // Edit mode functions
   const addEditItem = (projectId: string) => {
@@ -682,8 +687,13 @@ async function loadSubcontractorPaid() {
         {!isEditMode && (
           <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
             <div className="text-[11px] text-gray-500 mb-2">Customer Signature</div>
-            <SignaturePad onSave={saveSignature} onRemove={removeSignature} existingSignature={estimate?.signature} buttonText="Sign & Approve Estimate" showRemoveButton={true} />
-          </div>
+<SignaturePad
+  onSave={saveSignature}
+  onRemove={removeSignature}  // ← This must be passed
+  existingSignature={estimate?.signature}
+  buttonText="Sign & Approve Estimate"
+  showRemoveButton={true}  // ← This must be true
+/>          </div>
         )}
 
         {/* Notes */}
