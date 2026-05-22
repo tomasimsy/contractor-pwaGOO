@@ -151,7 +151,11 @@ export default function SignaturePad({
     }
   };
 
-  const handleRemove = () => {
+  const handleRemoveClick = () => {
+    setShowRemoveConfirm(true);
+  };
+
+  const confirmRemove = () => {
     if (onRemove) {
       onRemove();
     }
@@ -163,10 +167,12 @@ export default function SignaturePad({
     return (
       <>
         <div className="bg-white border border-gray-200 rounded-xl p-3 text-center shadow-sm relative">
+          {/* Remove Button - Top Right Corner */}
           {showRemoveButton && onRemove && (
             <button
-              onClick={() => setShowRemoveConfirm(true)}
-              className="absolute top-2 right-2 text-xs text-red-500 hover:text-red-700 transition"
+              type="button"
+              onClick={handleRemoveClick}
+              className="absolute top-2 right-2 w-6 h-6 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center hover:bg-red-600 transition z-10 shadow-sm"
               title="Remove Signature"
             >
               ✕
@@ -174,7 +180,11 @@ export default function SignaturePad({
           )}
           
           {existingSignature.type === "draw" ? (
-            <img src={existingSignature.value} alt="Signature" className="max-h-16 mx-auto" />
+            <img
+              src={existingSignature.value}
+              alt="Signature"
+              className="max-h-16 mx-auto"
+            />
           ) : (
             <div className="text-xl font-semibold text-gray-800">
               {existingSignature.value}
@@ -214,7 +224,7 @@ export default function SignaturePad({
                   Cancel
                 </button>
                 <button
-                  onClick={handleRemove}
+                  onClick={confirmRemove}
                   className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
                 >
                   Remove Signature
@@ -227,28 +237,9 @@ export default function SignaturePad({
     );
   }
 
-  /* ---------------- BUTTON WITH TERMS ---------------- */
+  /* ---------------- NO SIGNATURE ---------------- */
   return (
     <>
-      {/* Terms & Conditions */}
-      {/* Terms & Conditions */}
-<div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-  <div className="text-xs font-semibold text-gray-700 mb-2">Terms & Conditions</div>
-  <div className="space-y-1 text-[11px] text-gray-600">
-    <p>✓ Valid for 30 days from date issued</p>
-    <p>✓ 50% deposit required to begin, balance due upon completion</p>
-    <p>✓ Changes must be approved in writing (additional charges may apply)</p>
-    <p>✓ Client must provide safe access to work areas</p>
-    <p>✓ Client responsible for marking underground lines, irrigation, drain lines, low-voltage wires, and hidden utilities</p>
-    <p>✓ Contractor not liable for damage from unmarked underground items</p>
-    <p>✓ Warranty excludes: weather, tree roots, drainage, soil movement, customer neglect, or third-party work</p>
-    <p>✓ NC residential jobs: cancellation rights per state and federal law</p>
-    <p>✓ Schedule may be affected by weather, material delays, or hidden conditions</p>
-    <p>✓ Debris cleanup limited to approved scope of work</p>
-    <p className="mt-2 text-[10px] text-gray-400 italic">By signing, you agree to all terms above</p>
-  </div>
-</div>
-
       <button
         onClick={() => setShowModal(true)}
         className="w-full py-2.5 rounded-xl text-sm text-white transition active:scale-95"
@@ -257,7 +248,7 @@ export default function SignaturePad({
         ✍️ {buttonText}
       </button>
 
-      {/* ---------------- MODAL ---------------- */}
+      {/* Signature Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl w-full max-w-md p-5 shadow-lg border border-green-100">
@@ -265,7 +256,6 @@ export default function SignaturePad({
               Customer Signature
             </h3>
 
-            {/* TYPE / DRAW SWITCH */}
             <div className="flex gap-2 mb-4">
               <button
                 onClick={() => setSignatureType("type")}
@@ -299,7 +289,6 @@ export default function SignaturePad({
               </button>
             </div>
 
-            {/* INPUT AREA */}
             {signatureType === "type" ? (
               <input
                 type="text"
@@ -335,7 +324,6 @@ export default function SignaturePad({
               </div>
             )}
 
-            {/* ACTIONS */}
             <div className="flex gap-2 mt-4">
               <button
                 onClick={() => setShowModal(false)}

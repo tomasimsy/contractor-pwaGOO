@@ -27,7 +27,7 @@ export type Project = {
 export type Estimate = {
   id: string;
   client_id: string;
-  estimate_number?: string;  // Add this line (optional since old estimates may not have it)
+  estimate_number?: string;
   description: string | null;
   notes: string | null;
   subtotal: number;
@@ -37,10 +37,17 @@ export type Estimate = {
   total: number;
   deposit_amount: number;
   deposit_paid: boolean;
-  status: "pending" | "approved" | "converted";
+  status: "pending" | "approved" | "converted" | "completed";  // ← Add "completed" here
   signature: Signature | null;
   created_at: string;
   clients?: Client;
+  // Tracking fields
+  opened_at?: string;
+  opened_count?: number;
+  opened_device?: string;
+  opened_ip?: string;
+  view_locations?: any[];
+  unique_locations?: number;
 };
 
 export type Invoice = {

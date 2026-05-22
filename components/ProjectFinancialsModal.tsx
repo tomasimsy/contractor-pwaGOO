@@ -930,183 +930,221 @@ async function recordAgentPayment() {
           )}
 
           {/* AGENTS TAB */}
-          {activeTab === "agents" && (
-            <div className="space-y-4">
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="text-sm font-medium text-gray-700">Add Agent</label>
-                  <button onClick={() => setShowNewAgentForm(!showNewAgentForm)} className="text-xs text-blue-600">
-                    + New Agent
-                  </button>
-                </div>
+{activeTab === "agents" && (
+  <div className="space-y-4">
+    <div>
+      <div className="flex justify-between items-center mb-2">
+        <label className="text-sm font-medium text-gray-700">Add Agent</label>
+        <button onClick={() => setShowNewAgentForm(!showNewAgentForm)} className="text-xs text-blue-600">
+          + New Agent
+        </button>
+      </div>
 
-                {showNewAgentForm && (
-                  <div className="mb-3 p-3 bg-gray-50 rounded-lg space-y-2">
-                    <input
-                      type="text"
-                      placeholder="Name *"
-                      value={newAgent.name}
-                      onChange={(e) => setNewAgent({ ...newAgent, name: e.target.value })}
-                      className="w-full border rounded-lg p-2 text-sm"
-                    />
-                    <input
-                      type="email"
-                      placeholder="Email"
-                      value={newAgent.email}
-                      onChange={(e) => setNewAgent({ ...newAgent, email: e.target.value })}
-                      className="w-full border rounded-lg p-2 text-sm"
-                    />
-                    <input
-                      type="tel"
-                      placeholder="Phone"
-                      value={newAgent.phone}
-                      onChange={(e) => setNewAgent({ ...newAgent, phone: e.target.value })}
-                      className="w-full border rounded-lg p-2 text-sm"
-                    />
-                    <div className="flex gap-2 pt-1">
-                      <button onClick={() => setShowNewAgentForm(false)} className="flex-1 py-2 border rounded-lg text-sm">
-                        Cancel
+      {showNewAgentForm && (
+        <div className="mb-3 p-3 bg-gray-50 rounded-lg space-y-2">
+          <input
+            type="text"
+            placeholder="Name *"
+            value={newAgent.name}
+            onChange={(e) => setNewAgent({ ...newAgent, name: e.target.value })}
+            className="w-full border rounded-lg p-2 text-sm"
+          />
+          <input
+            type="email"
+            placeholder="Email"
+            value={newAgent.email}
+            onChange={(e) => setNewAgent({ ...newAgent, email: e.target.value })}
+            className="w-full border rounded-lg p-2 text-sm"
+          />
+          <input
+            type="tel"
+            placeholder="Phone"
+            value={newAgent.phone}
+            onChange={(e) => setNewAgent({ ...newAgent, phone: e.target.value })}
+            className="w-full border rounded-lg p-2 text-sm"
+          />
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => setShowNewAgentForm(false)} className="flex-1 py-2 border rounded-lg text-sm">
+              Cancel
+            </button>
+            <button onClick={createAgent} className="flex-1 py-2 bg-green-700 text-white rounded-lg text-sm">
+              Create
+            </button>
+          </div>
+        </div>
+      )}
+
+      <select
+        value={selectedAgentId}
+        onChange={(e) => setSelectedAgentId(e.target.value)}
+        className="w-full border rounded-lg p-2 text-sm mb-2"
+      >
+        <option value="">Select agent...</option>
+        {agents
+          .filter((a) => !assignedAgents.some((assigned) => assigned.agent_id === a.id))
+          .map((agent) => (
+            <option key={agent.id} value={agent.id}>
+              {agent.name}
+            </option>
+          ))}
+      </select>
+
+      <div className="flex gap-2">
+        <button onClick={assignAgent} className="flex-1 py-2 bg-green-700 text-white rounded-lg text-sm">
+          Add Agent
+        </button>
+      </div>
+      <textarea
+        placeholder="Notes (optional)"
+        value={agentNotes}
+        onChange={(e) => setAgentNotes(e.target.value)}
+        className="w-full mt-2 border rounded-lg p-2 text-sm"
+        rows={1}
+      />
+    </div>
+
+    {loading ? (
+      <div className="text-center py-8 text-gray-400">Loading...</div>
+    ) : assignedAgents.length === 0 ? (
+      <div className="text-center py-8 text-gray-400">No agents assigned</div>
+    ) : (
+      <>
+        {/* Split Evenly Button */}
+        {assignedAgents.length > 0 && remainingForAgents > 0 && (
+          <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+            <div className="flex justify-between items-center">
+              <div>
+                <div className="text-sm font-semibold text-blue-800">Split Remaining Amount</div>
+                <div className="text-xs text-blue-600">
+                  {formatCurrency(remainingForAgents)} to split among {assignedAgents.length} agents
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  if (!confirm(`Split ${formatCurrency(remainingForAgents)} evenly among ${assignedAgents.length} agents?`)) return;
+                  
+                  const equalShare = remainingForAgents / assignedAgents.length;
+                  
+                  for (const agent of assignedAgents) {
+                    await supabase
+                      .from("estimate_agents")
+                      .update({ amount: equalShare })
+                      .eq("id", agent.id);
+                  }
+                  
+                  await loadAllData();
+                  onRefresh();
+                  alert(`Split ${formatCurrency(remainingForAgents)} evenly among ${assignedAgents.length} agents!`);
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition"
+              >
+                Split Evenly
+              </button>
+            </div>
+            <div className="text-xs text-blue-500 mt-2">
+              Each agent gets: {formatCurrency(remainingForAgents / assignedAgents.length)}
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-3">
+          {assignedAgents.map((agent) => (
+            <div key={agent.id} className="border rounded-lg p-3">
+              <div className="flex justify-between items-start">
+                <div className="flex-1">
+                  <div className="font-semibold text-gray-800">{agent.agents?.name}</div>
+                  {editingAgent === agent.id ? (
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-sm text-gray-500">$</span>
+                      <input
+                        type="number"
+                        value={editAgentAmount}
+                        onChange={(e) => setEditAgentAmount(Number(e.target.value))}
+                        className="w-28 border rounded-lg p-1 text-sm"
+                        step="0.01"
+                        autoFocus
+                      />
+                      <button onClick={() => updateAgentAmount(agent.id, editAgentAmount)} className="text-green-600">
+                        <Check size={16} />
                       </button>
-                      <button onClick={createAgent} className="flex-1 py-2 bg-green-700 text-white rounded-lg text-sm">
-                        Create
+                      <button onClick={() => setEditingAgent(null)} className="text-gray-400">
+                        <X size={16} />
                       </button>
                     </div>
+                  ) : (
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-sm font-semibold text-green-700">Earns: {formatCurrency(agent.amount || 0)}</span>
+                      <button
+                        onClick={() => {
+                          setEditingAgent(agent.id);
+                          setEditAgentAmount(agent.amount || 0);
+                        }}
+                        className="text-gray-400 hover:text-blue-500"
+                      >
+                        <Edit2 size={12} />
+                      </button>
+                    </div>
+                  )}
+                  {agent.notes && <div className="text-xs text-gray-400 mt-1">{agent.notes}</div>}
+                  
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs text-gray-500">Paid: {formatCurrency(agent.paid_amount || 0)}</span>
+                    <button
+                      onClick={() => {
+                        setSelectedAgentForHistory(agent);
+                        loadAgentPayments(agent.agent_id);
+                        setShowAgentPaymentHistory(true);
+                      }}
+                      className="text-xs text-blue-500 hover:text-blue-600"
+                    >
+                      View History
+                    </button>
                   </div>
-                )}
-
-                <select
-                  value={selectedAgentId}
-                  onChange={(e) => setSelectedAgentId(e.target.value)}
-                  className="w-full border rounded-lg p-2 text-sm mb-2"
-                >
-                  <option value="">Select agent...</option>
-                  {agents
-                    .filter((a) => !assignedAgents.some((assigned) => assigned.agent_id === a.id))
-                    .map((agent) => (
-                      <option key={agent.id} value={agent.id}>
-                        {agent.name}
-                      </option>
-                    ))}
-                </select>
-
-                <div className="flex gap-2">
-                  <button onClick={assignAgent} className="flex-1 py-2 bg-green-700 text-white rounded-lg text-sm">
-                    Add Agent
-                  </button>
-                </div>
-                <textarea
-                  placeholder="Notes (optional)"
-                  value={agentNotes}
-                  onChange={(e) => setAgentNotes(e.target.value)}
-                  className="w-full mt-2 border rounded-lg p-2 text-sm"
-                  rows={1}
-                />
-              </div>
-
-              {loading ? (
-                <div className="text-center py-8 text-gray-400">Loading...</div>
-              ) : assignedAgents.length === 0 ? (
-                <div className="text-center py-8 text-gray-400">No agents assigned</div>
-              ) : (
-                <div className="space-y-3">
-                  {assignedAgents.map((agent) => (
-  <div key={agent.id} className="border rounded-lg p-3">
-    <div className="flex justify-between items-start">
-      <div className="flex-1">
-        <div className="font-semibold text-gray-800">{agent.agents?.name}</div>
-        {editingAgent === agent.id ? (
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-sm text-gray-500">$</span>
-            <input
-              type="number"
-              value={editAgentAmount}
-              onChange={(e) => setEditAgentAmount(Number(e.target.value))}
-              className="w-28 border rounded-lg p-1 text-sm"
-              step="0.01"
-              autoFocus
-            />
-            <button onClick={() => updateAgentAmount(agent.id, editAgentAmount)} className="text-green-600">
-              <Check size={16} />
-            </button>
-            <button onClick={() => setEditingAgent(null)} className="text-gray-400">
-              <X size={16} />
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-sm font-semibold text-green-700">Earns: {formatCurrency(agent.amount || 0)}</span>
-            <button
-              onClick={() => {
-                setEditingAgent(agent.id);
-                setEditAgentAmount(agent.amount || 0);
-              }}
-              className="text-gray-400 hover:text-blue-500"
-            >
-              <Edit2 size={12} />
-            </button>
-          </div>
-        )}
-        {agent.notes && <div className="text-xs text-gray-400 mt-1">{agent.notes}</div>}
-        
-        {/* Show paid amount and payment history button */}
-        <div className="flex items-center gap-2 mt-1">
-          <span className="text-xs text-gray-500">Paid: {formatCurrency(agent.paid_amount || 0)}</span>
-          <button
-            onClick={() => {
-              setSelectedAgentForHistory(agent);
-              loadAgentPayments(agent.agent_id);
-              setShowAgentPaymentHistory(true);
-            }}
-            className="text-xs text-blue-500 hover:text-blue-600"
-          >
-            View History
-          </button>
-        </div>
-        
-        {/* Show owed amount if any */}
-        {(agent.amount || 0) > (agent.paid_amount || 0) && (
-          <div className="text-xs text-amber-600 mt-1">
-            Owed: {formatCurrency((agent.amount || 0) - (agent.paid_amount || 0))}
-          </div>
-        )}
-      </div>
-      <div className="flex gap-1">
-        <button
-          onClick={() => {
-            setSelectedAgentForPayment(agent);
-            setAgentPaymentAmount((agent.amount || 0) - (agent.paid_amount || 0));
-            setShowAgentPaymentModal(true);
-          }}
-          className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200"
-          disabled={(agent.amount || 0) - (agent.paid_amount || 0) <= 0}
-        >
-          Pay
-        </button>
-        <button onClick={() => removeAgentAssignment(agent.id)} className="text-red-500 text-sm px-2">
-          ✕
-        </button>
-      </div>
-    </div>
-  </div>
-))}
-                </div>
-              )}
-
-              {assignedAgents.length > 0 && (
-                <div className="border-t pt-3">
-                  <div className="flex justify-between text-sm font-semibold">
-                    <span>Total Commission:</span>
-                    <span className="text-green-700">
-                      {formatCurrency(totalAgentAssigned)} / {formatCurrency(remainingForAgents)}
-                    </span>
-                  </div>
-                  {remainingToDistribute !== 0 && (
-                    <div className="text-xs text-orange-600 mt-1">Remaining: {formatCurrency(remainingToDistribute)}</div>
+                  
+                  {(agent.amount || 0) > (agent.paid_amount || 0) && (
+                    <div className="text-xs text-amber-600 mt-1">
+                      Owed: {formatCurrency((agent.amount || 0) - (agent.paid_amount || 0))}
+                    </div>
                   )}
                 </div>
-              )}
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => {
+                      setSelectedAgentForPayment(agent);
+                      setAgentPaymentAmount((agent.amount || 0) - (agent.paid_amount || 0));
+                      setShowAgentPaymentModal(true);
+                    }}
+                    className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200"
+                    disabled={(agent.amount || 0) - (agent.paid_amount || 0) <= 0}
+                  >
+                    Pay
+                  </button>
+                  <button onClick={() => removeAgentAssignment(agent.id)} className="text-red-500 text-sm px-2">
+                    ✕
+                  </button>
+                </div>
+              </div>
             </div>
-          )}
+          ))}
+        </div>
+
+        {assignedAgents.length > 0 && (
+          <div className="border-t pt-3">
+            <div className="flex justify-between text-sm font-semibold">
+              <span>Total Commission:</span>
+              <span className="text-green-700">
+                {formatCurrency(totalAgentAssigned)} / {formatCurrency(remainingForAgents)}
+              </span>
+            </div>
+            {remainingToDistribute !== 0 && (
+              <div className="text-xs text-orange-600 mt-1">Remaining: {formatCurrency(remainingToDistribute)}</div>
+            )}
+          </div>
+        )}
+      </>
+    )}
+  </div>
+)}
         </div>
       </div>
 

@@ -1,184 +1,197 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency, formatShortDate } from "@/lib/utils/formatting";
 import Header from "@/components/ui/Header";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import { Trash2, RotateCcw, AlertTriangle } from "lucide-react";
 
-export default function DeletedPage() {
+export default function DeletedEstimatesPage() {
+  const router = useRouter();
   const [deletedEstimates, setDeletedEstimates] = useState<any[]>([]);
-  const [deletedInvoices, setDeletedInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [restoring, setRestoring] = useState(false);
+  const [restoring, setRestoring] = useState<string | null>(null);
+  const [permanentDeleting, setPermanentDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     loadDeleted();
   }, []);
 
   async function loadDeleted() {
-    // Load soft-deleted estimates
-    const { data: estimates } = await supabase
+    const { data } = await supabase
       .from("estimates")
-      .select("*, clients(name)")
+      .select("*, clients(name, phone)")
       .not("deleted_at", "is", null)
       .order("deleted_at", { ascending: false });
     
-    // Load soft-deleted invoices
-    const { data: invoices } = await supabase
-      .from("invoices")
-      .select("*, clients(name)")
-      .not("deleted_at", "is", null)
-      .order("deleted_at", { ascending: false });
-    
-    setDeletedEstimates(estimates || []);
-    setDeletedInvoices(invoices || []);
+    if (data) setDeletedEstimates(data);
     setLoading(false);
   }
 
   async function restoreEstimate(id: string) {
-    setRestoring(true);
+    setRestoring(id);
     const { error } = await supabase
       .from("estimates")
-      .update({ deleted_at: null })
+      .update({ deleted_at: null, is_deleted: false })
       .eq("id", id);
     
-    if (error) {
-      alert("Error restoring");
+    if (!error) {
+      await loadDeleted();
+      alert("Estimate restored!");
     } else {
-      alert("Restored successfully!");
-      loadDeleted();
+      alert("Error restoring estimate");
     }
-    setRestoring(false);
+    setRestoring(null);
   }
 
-  async function restoreInvoice(id: string) {
-    setRestoring(true);
+  async function permanentDelete(id: string) {
+    if (!confirm("Permanently delete this estimate? This action CANNOT be undone.")) return;
+    
+    setPermanentDeleting(id);
     const { error } = await supabase
-      .from("invoices")
-      .update({ deleted_at: null })
+      .from("estimates")
+      .delete()
       .eq("id", id);
     
-    if (error) {
-      alert("Error restoring");
+    if (!error) {
+      await loadDeleted();
+      alert("Estimate permanently deleted");
     } else {
-      alert("Restored successfully!");
-      loadDeleted();
+      alert("Error deleting estimate");
     }
-    setRestoring(false);
+    setPermanentDeleting(null);
   }
 
-  const totalDeleted = deletedEstimates.length + deletedInvoices.length;
+  async function deleteAllPermanently() {
+    if (!confirm(`Permanently delete ALL ${deletedEstimates.length} estimates? This action CANNOT be undone.`)) return;
+    
+    for (const est of deletedEstimates) {
+      await supabase.from("estimates").delete().eq("id", est.id);
+    }
+    await loadDeleted();
+    alert("All estimates permanently deleted");
+  }
+
+  async function restoreAll() {
+    if (!confirm(`Restore ALL ${deletedEstimates.length} estimates?`)) return;
+    
+    for (const est of deletedEstimates) {
+      await supabase
+        .from("estimates")
+        .update({ deleted_at: null, is_deleted: false })
+        .eq("id", est.id);
+    }
+    await loadDeleted();
+    alert("All estimates restored!");
+  }
+
+  const getStatusBadge = (est: any) => {
+    if (est.signature) return "Signed";
+    if (est.status === "converted") return "Converted";
+    return "Pending";
+  };
+
+  if (loading) {
+    return (
+      <ProtectedRoute>
+        <div className="min-h-screen bg-gray-50">
+          <Header title="Trash" backLink="/estimates" />
+          <div className="p-8 text-center">Loading...</div>
+        </div>
+      </ProtectedRoute>
+    );
+  }
 
   return (
     <ProtectedRoute>
-    <div className="min-h-screen bg-gray-50 pb-24">
-       {/* Header */}
-            {/* <Header
-              title="Delete Items"
-              backLink="/"
-              rightAction={
+      <div className="min-h-screen bg-gray-50 pb-24">
+        <Header title="Trash - Deleted Estimates" backLink="/estimates" />
+
+        <div className="max-w-4xl mx-auto p-4">
+          {/* Batch Actions */}
+          {deletedEstimates.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={18} className="text-amber-600" />
+                <span className="text-sm text-amber-800">
+                  {deletedEstimates.length} estimate(s) in trash
+                </span>
+              </div>
+              <div className="flex gap-2">
                 <button
-                  onClick={() => router.push("/estimates/create")}
-                  className="text-white text-2xl"
+                  onClick={restoreAll}
+                  className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
                 >
-                  +
+                  Restore All
                 </button>
-              }
-            /> */}
-
-      <div className="p-4 max-w-4xl mx-auto">
-        {loading && <div className="text-center py-8">Loading...</div>}
-
-        {!loading && totalDeleted === 0 && (
-          <div className="bg-white rounded-xl p-8 text-center">
-            <div className="text-5xl mb-3">🗑️</div>
-            <div className="text-gray-500">No deleted items</div>
-            <div className="text-xs text-gray-400 mt-1">
-              Soft-deleted items will appear here
+                <button
+                  onClick={deleteAllPermanently}
+                  className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
+                >
+                  Delete All Permanently
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Deleted Estimates */}
-        {deletedEstimates.length > 0 && (
-          <div className="mb-6">
-            <h2 className="font-semibold text-navy mb-3 flex items-center gap-2">
-              <span>📄</span> Deleted Estimates ({deletedEstimates.length})
-            </h2>
-            <div className="space-y-2">
-              {deletedEstimates.map((est) => (
-                <div key={est.id} className="bg-white rounded-xl p-3 shadow-sm">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <div className="font-semibold text-navy">
-                        {est.clients?.name || "No client"}
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        #{est.estimate_number || est.id.slice(0, 8)}
-                      </div>
-                      <div className="text-xs text-red-500">
-                        Deleted: {formatShortDate(est.deleted_at)}
-                      </div>
+          {/* Deleted List */}
+          <div className="space-y-3">
+            {deletedEstimates.length === 0 && (
+              <div className="text-center py-16 bg-white rounded-xl">
+                <div className="text-5xl mb-3">🗑️</div>
+                <div className="text-gray-400">Trash is empty</div>
+                <div className="text-xs text-gray-300 mt-1">Deleted estimates appear here</div>
+              </div>
+            )}
+
+            {deletedEstimates.map((est) => (
+              <div key={est.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <div className="font-semibold text-gray-800">
+                      {est.clients?.name || "No client"}
                     </div>
-                    <div className="text-right">
-                      <div className="font-bold">{formatCurrency(est.total)}</div>
+                    <div className="text-xs text-gray-400">
+                      #{est.estimate_number || est.id.slice(0, 8)}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {getStatusBadge(est)}
+                    </div>
+                    <div className="text-xs text-red-500 mt-2 flex items-center gap-1">
+                      <Trash2 size={12} />
+                      Deleted: {formatShortDate(est.deleted_at)}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-bold text-gray-800">
+                      {formatCurrency(est.total)}
+                    </div>
+                    <div className="flex gap-2 mt-2">
                       <button
                         onClick={() => restoreEstimate(est.id)}
-                        disabled={restoring}
-                        className="mt-1 px-3 py-1 bg-green-500 text-white rounded-lg text-xs hover:bg-green-600 transition"
+                        disabled={restoring === est.id}
+                        className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50 flex items-center gap-1"
                       >
-                        Restore
+                        <RotateCcw size={14} />
+                        {restoring === est.id ? "..." : "Restore"}
                       </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Deleted Invoices */}
-        {deletedInvoices.length > 0 && (
-          <div>
-            <h2 className="font-semibold text-navy mb-3 flex items-center gap-2">
-              <span>💰</span> Deleted Invoices ({deletedInvoices.length})
-            </h2>
-            <div className="space-y-2">
-              {deletedInvoices.map((inv) => (
-                <div key={inv.id} className="bg-white rounded-xl p-3 shadow-sm">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <div className="font-semibold text-navy">
-                        {inv.clients?.name || "No client"}
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        {inv.invoice_number}
-                      </div>
-                      <div className="text-xs text-red-500">
-                        Deleted: {formatShortDate(inv.deleted_at)}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold">{formatCurrency(inv.total)}</div>
                       <button
-                        onClick={() => restoreInvoice(inv.id)}
-                        disabled={restoring}
-                        className="mt-1 px-3 py-1 bg-green-500 text-white rounded-lg text-xs hover:bg-green-600 transition"
+                        onClick={() => permanentDelete(est.id)}
+                        disabled={permanentDeleting === est.id}
+                        className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50"
                       >
-                        Restore
+                        {permanentDeleting === est.id ? "..." : "Permanent Delete"}
                       </button>
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
           </div>
-        )}
+        </div>
       </div>
-    </div>
-
     </ProtectedRoute>
   );
 }

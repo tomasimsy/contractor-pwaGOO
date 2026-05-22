@@ -66,11 +66,19 @@ export default function Dashboard() {
 
     // Load recent estimates
     const { data: recentEst } = await supabase
-      .from("estimates")
-      .select("id, created_at, total, estimate_number, clients(name), signature")
-      .order("created_at", { ascending: false })
-      .limit(5);
-    if (recentEst) setRecentEstimates(recentEst);
+  .from("estimates")
+  .select(`
+    id,
+    created_at,
+    total,
+    estimate_number,
+    signature,
+    clients(name)
+  `)
+  .is("deleted_at", null)
+  .neq("status", "converted")  // Exclude converted
+  .order("created_at", { ascending: false })
+  .limit(5);
 
     // Load recent invoices
     const { data: recentInv } = await supabase
@@ -219,7 +227,7 @@ export default function Dashboard() {
           )}
 
           {/* RECENT ESTIMATES */}
-          <div>
+          {/* <div>
             <div className="mb-2 flex items-center justify-between">
               <div className="text-sm font-semibold text-gray-900">
                 Recent Estimates
@@ -268,10 +276,10 @@ export default function Dashboard() {
                 ))
               )}
             </div>
-          </div>
+          </div> */}
 
           {/* RECENT INVOICES */}
-          <div>
+          {/* <div>
             <div className="mb-2 flex items-center justify-between">
               <div className="text-sm font-semibold text-gray-900">
                 Recent Invoices
@@ -322,7 +330,7 @@ export default function Dashboard() {
                 ))
               )}
             </div>
-          </div>
+          </div> */}
         </div>
       </div>
     </ProtectedRoute>

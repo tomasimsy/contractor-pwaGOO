@@ -110,7 +110,9 @@ async function loadSubcontractorPaid() {
       const { data: est } = await supabase
         .from("estimates")
         .select("*")
+        .is("deleted_at", null)  // ← ADD THIS
         .eq("id", id)
+        
         .single();
       setEstimate(est);
 
@@ -185,6 +187,31 @@ const removeSignature = async () => {
     alert("Error removing signature");
   }
 };
+
+
+// Add this function
+const markAsCompleted = async () => {
+  if (!confirm("Mark this estimate as completed? It will be moved to completed list and won't be editable.")) return;
+  
+  const { error } = await supabase
+    .from("estimates")
+    .update({ 
+      completed_at: new Date().toISOString(),
+      is_completed: true,
+      status: "completed"
+    })
+    .eq("id", id);
+  
+  if (!error) {
+    alert("Estimate marked as completed!");
+    loadEstimate();
+    router.push("/estimates/completed");
+  } else {
+    alert("Error marking as completed");
+  }
+};
+
+
 
   // Edit mode functions
   const addEditItem = (projectId: string) => {
@@ -717,7 +744,15 @@ const removeSignature = async () => {
           </button>
         )}
       </div>
-
+{/* // Add button in the action area (near convert button) */}
+{!isEditMode && estimate?.signature && estimate?.status !== "converted" && estimate?.status !== "completed" && (
+  <button
+    onClick={markAsCompleted}
+    className="w-full py-3 rounded-xl bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 transition"
+  >
+    ✅ Mark as Completed
+  </button>
+)}
       {/* FAB */}
       {!isEditMode && (
         <div ref={fabRef} className="fixed bottom-24 right-6 z-50 flex flex-col items-end gap-3">
