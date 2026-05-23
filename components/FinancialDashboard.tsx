@@ -3,268 +3,275 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils/formatting";
-import { DollarSign, TrendingUp, TrendingDown, Calendar, Wallet, Users, Receipt, CheckCircle, AlertCircle } from "lucide-react";
+import {
+  DollarSign,
+  TrendingUp,
+  Receipt,
+  AlertCircle,
+} from "lucide-react";
 
 type FinancialStats = {
-estimates: number;
-invoices: number;
-signed: number;
-converted: number;
-paid: number;
-pending: number;
- netProfit: number;
-monthlyProfit: number;
-profitMargin: number;
-totalExpenses: number;
-totalSubcontractorPaid: number;
-pendingSubPayments: number;
-pendingAgentPayments: number;
-totalRevenue: number;
-monthlyRevenue: number;
-totalAgentPaid: number;
-overdueInvoices: number;
-};
+  estimates: number;
+  invoices: number;
+  signed: number;
+  converted: number;
+  paid: number;
+  pending: number;
 
+  netProfit: number;
+  monthlyProfit: number;
+  profitMargin: number;
 
-type EstimateSummary = {
-  id: string;
-  estimate_number: string;
-  total: number;
-  sub_paid: number;
-  expenses: number;
-  agent_paid: number;
-  profit: number;
-  status: string;
-  client_name: string;
+  totalExpenses: number;
+  totalSubcontractorPaid: number;
+  totalAgentPaid: number;
+
+  pendingSubPayments: number;
+  pendingAgentPayments: number;
+
+  totalRevenue: number;
+  monthlyRevenue: number;
+
+  overdueInvoices: number;
 };
 
 export default function FinancialDashboard() {
   const [stats, setStats] = useState<FinancialStats>({
-    totalRevenue: 0,
-    totalSubcontractorPaid: 0,
-    totalExpenses: 0,
-    totalAgentPaid: 0,
-    netProfit: 0,
-    profitMargin: 0,
-    pendingSubPayments: 0,
-    pendingAgentPayments: 0,
-    overdueInvoices: 0,
-    monthlyRevenue: 0,
-    monthlyProfit: 0,
-     estimates: 0,
+    estimates: 0,
     invoices: 0,
     signed: 0,
     converted: 0,
     paid: 0,
     pending: 0,
+
+    netProfit: 0,
+    monthlyProfit: 0,
+    profitMargin: 0,
+
+    totalExpenses: 0,
+    totalSubcontractorPaid: 0,
+    totalAgentPaid: 0,
+
+    pendingSubPayments: 0,
+    pendingAgentPayments: 0,
+
+    totalRevenue: 0,
+    monthlyRevenue: 0,
+
+    overdueInvoices: 0,
   });
-  
-  const [topEstimates, setTopEstimates] = useState<EstimateSummary[]>([]);
-  const [recentActivity, setRecentActivity] = useState<any[]>([]);
+
   const [loading, setLoading] = useState(true);
-  const [timeRange, setTimeRange] = useState<"all" | "month" | "quarter" | "year">("all");
 
   useEffect(() => {
     loadFinancialData();
-  }, [timeRange]);
+  }, []);
 
   async function loadFinancialData() {
     setLoading(true);
+
     try {
-      // Get date filters
-      const now = new Date();
-      let startDate = null;
-      
-      if (timeRange === "month") {
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-      } else if (timeRange === "quarter") {
-        startDate = new Date(now.getFullYear(), now.getMonth() - 3, 1).toISOString();
-      } else if (timeRange === "year") {
-        startDate = new Date(now.getFullYear() - 1, now.getMonth(), 1).toISOString();
-      }
-      
-      // Build date filter for estimates
-      let estimateQuery = supabase.from("estimates").select(`
-        id,
-        estimate_number,
-        total,
-        status,
-        created_at,
-        clients(name)
-      `);
-      
-      if (startDate) {
-        estimateQuery = estimateQuery.gte("created_at", startDate);
-      }
-      
-      const { data: estimates } = await estimateQuery;
-      
+      // -----------------------------
+      // 1. FETCH ESTIMATES (LIMITED)
+      // -----------------------------
+      const { data: estimates } = await supabase
+        .from("estimates")
+        .select("id, created_at")
+        .order("created_at", { ascending: false })
+        .limit(50);
+
       if (!estimates) return;
-      
-      // For each estimate, calculate financials
+
+      const estimateIds = estimates.map((e) => e.id);
+
+      // -----------------------------
+      // 2. BATCH ALL RELATED DATA
+      // -----------------------------
+      const [
+        invoicesRes,
+        subRes,
+        expenseRes,
+        agentRes,
+        assignedSubsRes,
+        assignedAgentsRes,
+      ] = await Promise.all([
+        supabase
+          .from("invoices")
+          .select("estimate_id, status, due_date, invoice_payments(amount)"),
+
+        supabase
+          .from("subcontractor_payments")
+          .select("estimate_id, amount"),
+
+        supabase
+          .from("estimate_expenses")
+          .select("estimate_id, amount"),
+
+        supabase
+          .from("agent_payments")
+          .select("estimate_id, amount"),
+
+        supabase
+          .from("estimate_subcontractors")
+          .select("estimate_id, amount"),
+
+        supabase
+          .from("estimate_agents")
+          .select("estimate_id, amount"),
+      ]);
+
+      const invoices = invoicesRes.data || [];
+      const subPayments = subRes.data || [];
+      const expenses = expenseRes.data || [];
+      const agentPayments = agentRes.data || [];
+      const assignedSubs = assignedSubsRes.data || [];
+      const assignedAgents = assignedAgentsRes.data || [];
+
+      // -----------------------------
+      // 3. GROUP BY ESTIMATE ID
+      // -----------------------------
+      const groupBy = (arr: any[]) =>
+        arr.reduce((acc: any, item: any) => {
+          const id = item.estimate_id;
+          if (!acc[id]) acc[id] = [];
+          acc[id].push(item);
+          return acc;
+        }, {});
+
+      const invoicesByEst = groupBy(invoices);
+      const subByEst = groupBy(subPayments);
+      const expByEst = groupBy(expenses);
+      const agentByEst = groupBy(agentPayments);
+      const assignedSubsByEst = groupBy(assignedSubs);
+      const assignedAgentsByEst = groupBy(assignedAgents);
+
+      // -----------------------------
+      // 4. CALCULATE STATS IN MEMORY
+      // -----------------------------
       let totalRevenue = 0;
       let totalSubPaid = 0;
       let totalExpenses = 0;
       let totalAgentPaid = 0;
-      let monthlyRevenue = 0;
-      let monthlyProfit = 0;
       let pendingSubPayments = 0;
       let pendingAgentPayments = 0;
       let overdueInvoices = 0;
-      
-      const estimateSummaries: EstimateSummary[] = [];
-      const currentMonth = new Date().getMonth();
-      const currentYear = new Date().getFullYear();
-      
+
+      const now = new Date();
+      const currentMonth = now.getMonth();
+      const currentYear = now.getFullYear();
+
+      let monthlyRevenue = 0;
+      let monthlyProfit = 0;
+
       for (const est of estimates) {
-        // Get invoice payments (revenue)
-        const { data: invoices } = await supabase
-          .from("invoices")
-          .select("*, invoice_payments(amount)")
-          .eq("estimate_id", est.id);
-        
-const revenue =
-  invoices?.reduce(
-    (sum: number, inv: any) =>
-      sum +
-      (inv.invoice_payments?.reduce(
-        (s: number, p: any) => s + p.amount,
-        0
-      ) || 0),
-    0
-  ) || 0;
-          
+        const estInvoices = invoicesByEst[est.id] || [];
+        const estSubs = subByEst[est.id] || [];
+        const estExpenses = expByEst[est.id] || [];
+        const estAgents = agentByEst[est.id] || [];
+        const estAssignedSubs = assignedSubsByEst[est.id] || [];
+        const estAssignedAgents = assignedAgentsByEst[est.id] || [];
+
+        const revenue =
+          estInvoices.reduce((sum: number, inv: any) => {
+            const payments =
+              inv.invoice_payments?.reduce(
+                (s: number, p: any) => s + p.amount,
+                0
+              ) || 0;
+            return sum + payments;
+          }, 0) || 0;
+
         totalRevenue += revenue;
-        
-        // Check if this estimate is from current month
+
         const estDate = new Date(est.created_at);
-        if (estDate.getMonth() === currentMonth && estDate.getFullYear() === currentYear) {
+
+        if (
+          estDate.getMonth() === currentMonth &&
+          estDate.getFullYear() === currentYear
+        ) {
           monthlyRevenue += revenue;
         }
-        
-        // Get subcontractor payments
-        const { data: subPayments } = await supabase
-          .from("subcontractor_payments")
-          .select("amount")
-          .eq("estimate_id", est.id);
-        
-        const subPaid = subPayments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+
+        const subPaid =
+          estSubs.reduce((sum: number, s: any) => sum + s.amount, 0) || 0;
+
+        const expenseTotal =
+          estExpenses.reduce((sum: number, e: any) => sum + e.amount, 0) || 0;
+
+        const agentPaid =
+          estAgents.reduce((sum: number, a: any) => sum + a.amount, 0) || 0;
+
         totalSubPaid += subPaid;
-        
-        // Get assigned subcontractor amounts to calculate pending
-        const { data: assignedSubs } = await supabase
-          .from("estimate_subcontractors")
-          .select("amount")
-          .eq("estimate_id", est.id);
-        
-        const subAssigned = assignedSubs?.reduce((sum, s) => sum + (s.amount || 0), 0) || 0;
-        pendingSubPayments += Math.max(0, subAssigned - subPaid);
-        
-        // Get expenses
-        const { data: expenses } = await supabase
-          .from("estimate_expenses")
-          .select("amount")
-          .eq("estimate_id", est.id);
-        
-        const expenseTotal = expenses?.reduce((sum, e) => sum + e.amount, 0) || 0;
         totalExpenses += expenseTotal;
-        
-        // Get agent payments
-        const { data: agentPayments } = await supabase
-          .from("agent_payments")
-          .select("amount")
-          .eq("estimate_id", est.id);
-        
-        const agentPaid = agentPayments?.reduce((sum, a) => sum + a.amount, 0) || 0;
         totalAgentPaid += agentPaid;
-        
-        // Get assigned agent amounts for pending
-        const { data: assignedAgents } = await supabase
-          .from("estimate_agents")
-          .select("amount")
-          .eq("estimate_id", est.id);
-        
-        const agentAssigned = assignedAgents?.reduce((sum, a) => sum + (a.amount || 0), 0) || 0;
+
+        const subAssigned =
+          estAssignedSubs.reduce(
+            (sum: number, s: any) => sum + (s.amount || 0),
+            0
+          ) || 0;
+
+        const agentAssigned =
+          estAssignedAgents.reduce(
+            (sum: number, a: any) => sum + (a.amount || 0),
+            0
+          ) || 0;
+
+        pendingSubPayments += Math.max(0, subAssigned - subPaid);
         pendingAgentPayments += Math.max(0, agentAssigned - agentPaid);
-        
-        // Calculate profit for this estimate
-        const afterSubAndExpenses = revenue - subPaid - expenseTotal;
-        const companyAmount = afterSubAndExpenses * 0.3;
-        const agentEarnings = afterSubAndExpenses - companyAmount;
-        const actualAgentPaid = agentPaid;
-        const profit = revenue - subPaid - expenseTotal - actualAgentPaid;
-        
-        if (estDate.getMonth() === currentMonth && estDate.getFullYear() === currentYear) {
+
+        const profit = revenue - subPaid - expenseTotal - agentPaid;
+
+        if (
+          estDate.getMonth() === currentMonth &&
+          estDate.getFullYear() === currentYear
+        ) {
           monthlyProfit += profit;
         }
-        
-        // Check for overdue invoices
-        const hasUnpaidInvoices = invoices?.some(inv => 
-          inv.status !== "paid" && inv.due_date && new Date(inv.due_date) < new Date()
+
+        const hasOverdue = estInvoices.some(
+          (inv: any) =>
+            inv.status !== "paid" &&
+            inv.due_date &&
+            new Date(inv.due_date) < new Date()
         );
-        if (hasUnpaidInvoices) overdueInvoices++;
-        
-        estimateSummaries.push({
-          id: est.id,
-          estimate_number: est.estimate_number,
-          total: est.total,
-          sub_paid: subPaid,
-          expenses: expenseTotal,
-          agent_paid: agentPaid,
-          profit: profit,
-          status: est.status,
-          client_name: est.clients?.[0]?.name || "Unknown Client",
-        });
+
+        if (hasOverdue) overdueInvoices++;
       }
-      
-      const netProfit = totalRevenue - totalSubPaid - totalExpenses - totalAgentPaid;
-      const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
-      
-setStats({
-  estimates: 0,
-  invoices: 0,
-  signed: 0,
-  converted: 0,
-  paid: 0,
-  pending: 0,
 
-  totalRevenue,
-  monthlyRevenue,
+      const netProfit =
+        totalRevenue - totalSubPaid - totalExpenses - totalAgentPaid;
 
-  totalSubcontractorPaid: totalSubPaid,
-  totalAgentPaid: totalAgentPaid,
+      const profitMargin =
+        totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
 
-  totalExpenses,
-  netProfit,
-  profitMargin,
+      // -----------------------------
+      // 5. SET STATE
+      // -----------------------------
+      setStats({
+        estimates: estimates.length,
+        invoices: invoices.length,
+        signed: 0,
+        converted: 0,
+        paid: 0,
+        pending: 0,
 
-  pendingSubPayments,
-  pendingAgentPayments,
+        totalRevenue,
+        monthlyRevenue,
 
-  overdueInvoices,
-  monthlyProfit,
-});
-      
-      // Sort by profit and get top 5
-      const sortedEstimates = [...estimateSummaries].sort((a, b) => b.profit - a.profit);
-      setTopEstimates(sortedEstimates.slice(0, 5));
-      
-      // Get recent activities (last 5 payments)
-      const { data: recentPayments } = await supabase
-        .from("subcontractor_payments")
-        .select("*, estimate_id, estimates(estimate_number)")
-        .order("payment_date", { ascending: false })
-        .limit(5);
-      
-      if (recentPayments) {
-        setRecentActivity(recentPayments.map(p => ({
-          type: "subcontractor",
-          amount: p.amount,
-          date: p.payment_date,
-          estimate: p.estimates?.estimate_number,
-        })));
-      }
-      
+        totalSubcontractorPaid: totalSubPaid,
+        totalAgentPaid,
+
+        totalExpenses,
+        netProfit,
+        profitMargin,
+
+        pendingSubPayments,
+        pendingAgentPayments,
+
+        overdueInvoices,
+        monthlyProfit,
+      });
     } catch (err) {
       console.error(err);
     } finally {
@@ -275,12 +282,15 @@ setStats({
   if (loading) {
     return (
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-        <div className="text-center py-8 text-gray-400">Loading financial data...</div>
+        <div className="text-center py-8 text-gray-400">
+          Loading financial data...
+        </div>
       </div>
     );
   }
 
   return (
+ 
     <div className="space-y-4">
       {/* Summary Cards */}
 <div className="grid grid-cols-2 gap-2">

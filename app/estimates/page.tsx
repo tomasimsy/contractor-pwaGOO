@@ -184,7 +184,7 @@ export default function EstimatesPage() {
     return (
       <div
         key={estimate.id}
-        className="group rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm transition hover:border-gray-300 hover:shadow-md"
+        className="group rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm transition hover:border-gray-300 hover:shadow-md capitalize cursor-pointer"
       >
         <div className="flex items-start justify-between gap-3">
           {/* LEFT */}

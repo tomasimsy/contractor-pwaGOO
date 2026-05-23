@@ -102,19 +102,21 @@ export default function Dashboard() {
   <div className="flex items-center justify-between px-4 py-2">
     
     <div className="flex items-center gap-3">
-      <Image
-        src="/OSR_logo.png"
-        alt="OSR Pros LLC"
-        width={40}
-        height={20}
-        className="h-6 w-auto object-contain"
-        priority
-      />
-    </div>
+              <Link href="/" className="flex items-center">
+                <Image
+                  src="/OSR_logo.png"
+                  alt="One Square Roof"
+                  width={150}
+                  height={42}
+                  className="h-10 w-auto object-contain cursor-pointer"
+                  priority
+                />
+              </Link>
+            </div>
 
 <button
   onClick={handleLogout}
-  className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-800 border border-gray-200 rounded-lg hover:border-gray-300 transition-all"
+  className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 border border-gray-400 rounded-lg hover:bg-gray-600 hover:text-white transition-all"
 >
   Logout
 </button>

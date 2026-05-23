@@ -143,75 +143,75 @@ export default function InvoicesPage() {
             const totalPaid = (inv.total || 0) - (inv.remaining_balance || 0);
 
             return (
-<div
-  key={inv.id}
-  onClick={() => router.push(`/invoices/${inv.id}`)}
-  className="group cursor-pointer rounded-xl border border-gray-200 bg-white p-3 shadow-sm transition hover:border-gray-300 hover:shadow-md"
->
-  <div className="flex items-start justify-between gap-2.5">
-    {/* LEFT */}
-    <div className="min-w-0 flex-1">
-      <div className="flex items-center gap-1.5 flex-wrap">
-        <div className="truncate text-[12.5px] font-semibold text-gray-800">
-          {inv.clients?.name || "No client"}
-        </div>
+                <div
+                  key={inv.id}
+                  onClick={() => router.push(`/invoices/${inv.id}`)}
+                  className="group cursor-pointer rounded-xl border border-gray-200 bg-white p-3 shadow-sm transition hover:border-gray-300 hover:shadow-md"
+                >
+                  <div className="flex items-start justify-between gap-2.5">
+                    {/* LEFT */}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <div className="truncate text-[12.5px] font-semibold text-gray-800">
+                          {inv.clients?.name || "No client"}
+                        </div>
 
-        <span
-          className={`rounded-full px-1.5 py-[1.5px] text-[8.5px] font-medium ${status.className}`}
-        >
-          {status.label}
-        </span>
+                        <span
+                          className={`rounded-full px-1.5 py-[1.5px] text-[8.5px] font-medium ${status.className}`}
+                        >
+                          {status.label}
+                        </span>
 
-        {overdue && (
-          <span className="rounded-full bg-red-100 px-1.5 py-[1.5px] text-[8.5px] font-medium text-red-600">
-            Overdue
-          </span>
-        )}
-      </div>
+                        {overdue && (
+                          <span className="rounded-full bg-red-100 px-1.5 py-[1.5px] text-[8.5px] font-medium text-red-600">
+                            Overdue
+                          </span>
+                        )}
+                      </div>
 
-      <div className="mt-0.5 text-[10.5px] text-gray-400">
-        {inv.invoice_number}
-      </div>
+                      <div className="mt-0.5 text-[10.5px] text-gray-400">
+                        {inv.invoice_number}
+                      </div>
 
-      <div className="mt-0.5 flex items-center gap-2 text-[10.5px] text-gray-500">
-        <div>
-          Due:{" "}
-          <span className="text-gray-700">
-            {inv.due_date ? formatShortDate(inv.due_date) : "—"}
-          </span>
-        </div>
-      </div>
-    </div>
+                      <div className="mt-0.5 flex items-center gap-2 text-[10.5px] text-gray-500">
+                        <div>
+                          Due:{" "}
+                          <span className="text-gray-700">
+                            {inv.due_date ? formatShortDate(inv.due_date) : "—"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
 
-    {/* RIGHT */}
-    <div className="shrink-0 text-right">
-      <div className="text-[12.5px] font-semibold text-gray-900">
-        {formatCurrency(inv.total)}
-      </div>
+                    {/* RIGHT */}
+                    <div className="shrink-0 text-right">
+                      <div className="text-[12.5px] font-semibold text-gray-900">
+                        {formatCurrency(inv.total)}
+                      </div>
 
-      {inv.status === "paid" ? (
-        <div className="mt-1 text-[10.5px] font-bold text-green-600">Fully Paid</div>
-      ) : inv.remaining_balance > 0 ? (
-        <div className="mt-1 text-[10.5px] font-bold uppercase text-red-500">
-          Remaining{" "}
-          <span>{formatCurrency(inv.remaining_balance)}</span>
-        </div>
-      ) : null}
+                      {inv.status === "paid" ? (
+                        <div className="mt-1 text-[10.5px] font-bold text-green-600">Fully Paid</div>
+                      ) : inv.remaining_balance > 0 ? (
+                        <div className="mt-1 text-[10.5px] font-bold uppercase text-red-500">
+                          Remaining{" "}
+                          <span>{formatCurrency(inv.remaining_balance)}</span>
+                        </div>
+                      ) : null}
 
-      <div className="mt-1 flex justify-end gap-1.5">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            sendSMSLink(inv);
-          }}
-          className="flex items-center gap-1 rounded-md text-white bg-green-600 px-2 py-[3px] text-[10px] shadow-sm hover:bg-green-800 transition"
-        >
-          <Send size={11} /> SMS
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
+                      <div className="mt-1 flex justify-end gap-1.5">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            sendSMSLink(inv);
+                          }}
+                          className="flex items-center gap-1 rounded-md text-white bg-green-600 px-2 py-[3px] text-[10px] shadow-sm hover:bg-green-800 transition"
+                        >
+                          <Send size={11} /> SMS
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
             );
           })}
