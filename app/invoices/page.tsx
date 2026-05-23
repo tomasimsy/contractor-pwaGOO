@@ -107,9 +107,10 @@ export default function InvoicesPage() {
           {/* TOP */}
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <div className="text-lg font-semibold text-gray-900">Invoices</div>
-              <div className="text-sm text-gray-500">Track invoices and payments</div>
+              <div className="text-base font-semibold text-gray-900 leading-tight">Invoices</div>
+              <div className="text-xs text-gray-500 leading-tight">Track invoices and payments</div>
             </div>
+
 
             {!loading && invoices.length > 0 && (
               <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
@@ -135,99 +136,87 @@ export default function InvoicesPage() {
           )}
 
           {/* LIST */}
-          <div className="space-y-3">
-            {invoices.map((inv) => {
-              const status = getStatus(inv);
-              const overdue = isOverdue(inv);
-              const totalPaid = (inv.total || 0) - (inv.remaining_balance || 0);
+        <div className="space-y-2.5">
+          {invoices.map((inv) => {
+            const status = getStatus(inv);
+            const overdue = isOverdue(inv);
+            const totalPaid = (inv.total || 0) - (inv.remaining_balance || 0);
 
-              return (
-                <div
-                  key={inv.id}
-                  onClick={() => router.push(`/invoices/${inv.id}`)}
-                  className="group cursor-pointer rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition hover:border-gray-300 hover:shadow-md"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    {/* LEFT */}
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <div className="truncate text-sm font-semibold text-gray-800">
-                          {inv.clients?.name || "No client"}
-                        </div>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${status.className}`}>
-                          {status.label}
-                        </span>
-                        {overdue && (
-                          <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-600">
-                            Overdue
-                          </span>
-                        )}
-                      </div>
+            return (
+<div
+  key={inv.id}
+  onClick={() => router.push(`/invoices/${inv.id}`)}
+  className="group cursor-pointer rounded-xl border border-gray-200 bg-white p-3 shadow-sm transition hover:border-gray-300 hover:shadow-md"
+>
+  <div className="flex items-start justify-between gap-2.5">
+    {/* LEFT */}
+    <div className="min-w-0 flex-1">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="truncate text-[12.5px] font-semibold text-gray-800">
+          {inv.clients?.name || "No client"}
+        </div>
 
-                      <div className="mt-1 text-xs text-gray-400">{inv.invoice_number}</div>
+        <span
+          className={`rounded-full px-1.5 py-[1.5px] text-[8.5px] font-medium ${status.className}`}
+        >
+          {status.label}
+        </span>
 
-                      <div className="mt-2 flex items-center gap-3 text-[11px] text-gray-500">
-                        <div>
-                          Due:{" "}
-                          <span className="text-gray-700">
-                            {inv.due_date ? formatShortDate(inv.due_date) : "—"}
-                          </span>
-                        </div>
-                        {inv.remaining_balance > 0 && inv.remaining_balance !== inv.total && (
-                          <div>
-                            Balance:{" "}
-                            <span className="font-medium text-gray-800">
-                              {formatCurrency(inv.remaining_balance)}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+        {overdue && (
+          <span className="rounded-full bg-red-100 px-1.5 py-[1.5px] text-[8.5px] font-medium text-red-600">
+            Overdue
+          </span>
+        )}
+      </div>
 
-                    {/* RIGHT */}
-                    <div className="shrink-0 text-right">
-                      <div className="text-sm font-semibold text-gray-900">
-                        {formatCurrency(inv.total)}
-                      </div>
+      <div className="mt-0.5 text-[10.5px] text-gray-400">
+        {inv.invoice_number}
+      </div>
 
-                      {inv.status === "paid" ? (
-                        <div className="mt-2 text-[11px] text-green-600">Fully Paid</div>
-                      ) : inv.remaining_balance > 0 ? (
-                        <div className="mt-2 text-[11px] text-gray-500">
-                          Remaining{" "}
-                          <span className="font-medium text-gray-700">
-                            {formatCurrency(inv.remaining_balance)}
-                          </span>
-                        </div>
-                      ) : null}
+      <div className="mt-0.5 flex items-center gap-2 text-[10.5px] text-gray-500">
+        <div>
+          Due:{" "}
+          <span className="text-gray-700">
+            {inv.due_date ? formatShortDate(inv.due_date) : "—"}
+          </span>
+        </div>
+      </div>
+    </div>
 
-                      <div className="mt-2 flex justify-end gap-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            sendSMSLink(inv);
-                          }}
-                          className="flex items-center gap-1 rounded-lg text-navy bg-white px-2 py-1 text-xs shadow-sm border border-gray-200 hover:bg-gray-50"
-                        >
-                          <Send size={12} /> SMS
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            copyLink(inv);
-                          }}
-                          className="p-1 text-gray-400 hover:text-gold transition"
-                          title="Copy Invoice Link"
-                        >
-                          <Link2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+    {/* RIGHT */}
+    <div className="shrink-0 text-right">
+      <div className="text-[12.5px] font-semibold text-gray-900">
+        {formatCurrency(inv.total)}
+      </div>
+
+      {inv.status === "paid" ? (
+        <div className="mt-1 text-[10.5px] font-bold text-green-600">Fully Paid</div>
+      ) : inv.remaining_balance > 0 ? (
+        <div className="mt-1 text-[10.5px] font-bold uppercase text-red-500">
+          Remaining{" "}
+          <span>{formatCurrency(inv.remaining_balance)}</span>
+        </div>
+      ) : null}
+
+      <div className="mt-1 flex justify-end gap-1.5">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            sendSMSLink(inv);
+          }}
+          className="flex items-center gap-1 rounded-md text-white bg-green-600 px-2 py-[3px] text-[10px] shadow-sm hover:bg-green-800 transition"
+        >
+          <Send size={11} /> SMS
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+            );
+          })}
+        </div>
+
         </div>
       </div>
     </ProtectedRoute>

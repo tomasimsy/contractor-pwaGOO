@@ -141,19 +141,20 @@ export default function EstimatesPage() {
         {/* CONTENT */}
         <div className="mx-auto max-w-4xl p-4">
           {/* TOP SECTION */}
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-2 flex items-center justify-between">
             <div>
-              <div className="text-lg font-semibold text-gray-900">Estimates</div>
-              <div className="text-sm text-gray-500">Manage customer estimates</div>
+              <div className="text-base font-semibold text-gray-900 leading-tight">Estimates</div>
+              <div className="text-xs text-gray-500 leading-tight">Manage customer estimates</div>
             </div>
 
             {!loading && estimates.length > 0 && (
-              <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
-                <div className="text-[11px] uppercase tracking-wide text-gray-400">Total</div>
-                <div className="text-sm font-semibold text-gray-800">{estimates.length}</div>
+              <div className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 shadow-sm">
+                <div className="text-[10px] uppercase tracking-wide text-gray-400 leading-none">Total</div>
+                <div className="text-xs font-semibold text-gray-800 leading-tight">{estimates.length}</div>
               </div>
             )}
           </div>
+
 
           {/* LOADING */}
           {loading && (
@@ -177,101 +178,118 @@ export default function EstimatesPage() {
           )}
 
           {/* LIST */}
-          <div className="space-y-3">
-            {estimates.map((estimate) => {
-              const status = getStatus(estimate);
-              return (
-                <div
-                  key={estimate.id}
-                  className="group rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition hover:border-gray-300 hover:shadow-md"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    {/* LEFT */}
-                    <div
-                      className="min-w-0 flex-1 cursor-pointer"
-                      onClick={() => router.push(`/estimates/${estimate.id}`)}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="truncate text-sm font-semibold text-gray-800">
-                          {estimate.clients?.name || "No client"}
-                        </div>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${status.className}`}>
-                          {status.label}
-                        </span>
-                      </div>
-                      <div className="mt-1 text-xs text-gray-400">
-                        #{estimate.estimate_number || estimate.id.slice(0, 8)}
-                      </div>
-                      <div className="mt-1 text-xs text-gray-400">{formatShortDate(estimate.created_at)}</div>
+<div className="space-y-2.5">
+  {estimates.map((estimate) => {
+    const status = getStatus(estimate);
+    return (
+      <div
+        key={estimate.id}
+        className="group rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm transition hover:border-gray-300 hover:shadow-md"
+      >
+        <div className="flex items-start justify-between gap-3">
+          {/* LEFT */}
+          <div
+            className="min-w-0 flex-1 cursor-pointer"
+            onClick={() => router.push(`/estimates/${estimate.id}`)}
+          >
+            <div className="flex items-center gap-1.5">
+              <div className="truncate text-[13px] font-semibold text-gray-800">
+                {estimate.clients?.name || "No client"}
+              </div>
+              <span
+                className={`rounded-full px-1.5 py-[2px] text-[9px] font-medium ${status.className}`}
+              >
+                {status.label}
+              </span>
+            </div>
 
-                      {estimate.description && (
-                        <div className="mt-2 line-clamp-1 text-xs leading-5 text-gray-500">{estimate.description}</div>
-                      )}
+            <div className="mt-0.5 text-[11px] text-gray-400">
+              #{estimate.estimate_number || estimate.id.slice(0, 8)}
+            </div>
+            <div className="mt-0.5 text-[11px] text-gray-400">
+              {formatShortDate(estimate.created_at)}
+            </div>
 
-                      {/* Opened tracking */}
-                      {(estimate as any).opened_at && (
-                        <div className="text-xs text-gray-500 mt-1">
-                          <span>👁️</span> {new Date((estimate as any).opened_at).toLocaleString()}
-                          {(estimate as any).opened_device && (
-                            <span className="ml-1 text-gray-400">• {(estimate as any).opened_device}</span>
-                          )}
-                          {(estimate as any).opened_ip && (
-                            <span className="ml-1 text-gray-400">• IP: {(estimate as any).opened_ip}</span>
-                          )}
-                          {(estimate as any).opened_count > 1 && (
-                            <span className="ml-1 text-gray-400">• {(estimate as any).opened_count} views</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
+            {estimate.description && (
+              <div className="mt-1 line-clamp-1 text-[11px] leading-4 text-gray-500">
+                {estimate.description}
+              </div>
+            )}
 
-                    {/* RIGHT */}
-                    <div className="flex shrink-0 flex-col items-end">
-                      <div className="text-sm font-semibold text-gray-900">{formatCurrency(estimate.total)}</div>
-
-                      {/* Action Buttons */}
-                      <div className="flex gap-2 mt-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            copyLink(estimate);
-                          }}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-gold hover:bg-gold/10 transition"
-                          title="Copy Link"
-                        >
-                          <Link2 size={14} />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            sendSMSLink(estimate);
-                          }}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 transition"
-                          title="Send SMS"
-                        >
-                          <Send size={14} />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteModal({
-                              isOpen: true,
-                              id: estimate.id,
-                              name: estimate.clients?.name || "this estimate",
-                            });
-                          }}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
-                          title="Delete"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            {(estimate as any).opened_at && (
+              <div className="mt-1 text-[11px] text-gray-500">
+                <span>👁️</span>{" "}
+                {new Date((estimate as any).opened_at).toLocaleString()}
+                {(estimate as any).opened_device && (
+                  <span className="ml-1 text-gray-400">
+                    • {(estimate as any).opened_device}
+                  </span>
+                )}
+                {(estimate as any).opened_ip && (
+                  <span className="ml-1 text-gray-400">
+                    • IP: {(estimate as any).opened_ip}
+                  </span>
+                )}
+                {(estimate as any).opened_count > 1 && (
+                  <span className="ml-1 text-gray-400">
+                    • {(estimate as any).opened_count} views
+                  </span>
+                )}
+              </div>
+            )}
           </div>
+
+          {/* RIGHT */}
+          <div className="flex shrink-0 flex-col items-end">
+            <div className="text-[13px] font-semibold text-gray-900">
+              {formatCurrency(estimate.total)}
+            </div>
+
+            <div className="flex gap-1.5 mt-1.5">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  copyLink(estimate);
+                }}
+                className="p-1.5 rounded-md text-gray-400 hover:text-gold hover:bg-gold/10 transition"
+                title="Copy Link"
+              >
+                <Link2 size={13} />
+              </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  sendSMSLink(estimate);
+                }}
+                className="p-1.5 rounded-md text-gray-400 hover:text-green-600 hover:bg-green-50 transition"
+                title="Send SMS"
+              >
+                <Send size={13} />
+              </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDeleteModal({
+                    isOpen: true,
+                    id: estimate.id,
+                    name: estimate.clients?.name || "this estimate",
+                  });
+                }}
+                className="p-1.5 rounded-md text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                title="Delete"
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  })}
+</div>
+
         </div>
 
         {/* DELETE MODAL - Soft Delete */}

@@ -59,40 +59,51 @@ export default function ClientsPage() {
             </div>
           )}
           {clients.map((client) => (
-            <div key={client.id} className="bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition">
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <div className="font-semibold text-lg text-navy">{client.name}</div>
-                  {client.phone && (
-                    <div className="text-sm text-gray-500 mt-1">📞 {client.phone}</div>
-                  )}
-                  {client.email && (
-                    <div className="text-sm text-gray-500">✉️ {client.email}</div>
-                  )}
-                  {client.address && (
-                    <div className="text-sm text-gray-500">📍 {client.address}</div>
-                  )}
+          <div
+            key={client.id}
+            className="bg-white rounded-xl p-3.5 shadow-sm hover:shadow-md transition"
+          >
+            <div className="flex justify-between items-start gap-3">
+              <div className="flex-1">
+                <div className="font-semibold text-[15px] text-navy leading-tight">
+                  {client.name}
                 </div>
-                <div className="flex gap-2">
-                  <Link
-                    href={`/clients/${client.id}/edit`}
-                    className="p-2 text-gray-400 hover:text-gold transition"
-                  >
-                    <Pencil size={18} />
-                  </Link>
-                  <button
-                    onClick={() => setDeleteModal({ 
-                      isOpen: true, 
-                      id: client.id, 
-                      name: client.name 
-                    })}
-                    className="p-2 text-gray-400 hover:text-red-500 transition"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
+
+                {client.phone && (
+                  <div className="text-[11px] text-gray-500 mt-0.5">📞 {client.phone}</div>
+                )}
+                {client.email && (
+                  <div className="text-[11px] text-gray-500 leading-tight">✉️ {client.email}</div>
+                )}
+                {client.address && (
+                  <div className="text-[11px] text-gray-500 leading-tight">📍 {client.address}</div>
+                )}
+              </div>
+
+              <div className="flex gap-1.5">
+                <Link
+                  href={`/clients/${client.id}/edit`}
+                  className="p-1.5 text-gray-400 hover:text-gold transition"
+                >
+                  <Pencil size={15} />
+                </Link>
+
+                <button
+                  onClick={() =>
+                    setDeleteModal({
+                      isOpen: true,
+                      id: client.id,
+                      name: client.name,
+                    })
+                  }
+                  className="p-1.5 text-gray-400 hover:text-red-500 transition"
+                >
+                  <Trash2 size={15} />
+                </button>
               </div>
             </div>
+          </div>
+
           ))}
         </div>
 

@@ -66,19 +66,13 @@ export default function Dashboard() {
 
     // Load recent estimates
     const { data: recentEst } = await supabase
-  .from("estimates")
-  .select(`
-    id,
-    created_at,
-    total,
-    estimate_number,
-    signature,
-    clients(name)
-  `)
-  .is("deleted_at", null)
-  .neq("status", "converted")  // Exclude converted
-  .order("created_at", { ascending: false })
-  .limit(5);
+      .from("estimates")
+      .select("id, created_at, total, estimate_number, clients(name), signature")
+      .order("created_at", { ascending: false })
+      .eq("is_completed", false)
+      .is("deleted_at", null)
+      .limit(5);
+    if (recentEst) setRecentEstimates(recentEst);
 
     // Load recent invoices
     const { data: recentInv } = await supabase
@@ -129,29 +123,29 @@ export default function Dashboard() {
 
         <div className="mx-auto max-w-4xl space-y-4 p-4">
           {/* QUICK ACTIONS */}
-          <div className="grid grid-cols-2 gap-3">
-            <Link href="/estimates/create">
-              <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition hover:border-gray-300 hover:shadow-md">
-                <div className="text-sm font-semibold text-gray-800">
-                  New Estimate
-                </div>
-                <div className="mt-1 text-xs text-gray-500">
-                  Create estimate
-                </div>
-              </div>
-            </Link>
+<div className="grid grid-cols-2 gap-2">
+  <Link href="/estimates/create">
+    <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-2.5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:bg-emerald-200 hover:border-emerald-200 active:translate-y-0">
+      <div className="text-xs font-semibold text-emerald-900">
+        New Estimate
+      </div>
+      <div className="mt-0.5 text-[10px] text-emerald-700 leading-tight">
+        Create estimate
+      </div>
+    </div>
+  </Link>
 
-            <Link href="/invoices">
-              <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition hover:border-gray-300 hover:shadow-md">
-                <div className="text-sm font-semibold text-gray-800">
-                  View Invoices
-                </div>
-                <div className="mt-1 text-xs text-gray-500">
-                  Track payments
-                </div>
-              </div>
-            </Link>
-          </div>
+  <Link href="/invoices">
+    <div className="rounded-xl border border-blue-100 bg-blue-50 p-2.5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:bg-blue-200 hover:border-blue-200 active:translate-y-0">
+      <div className="text-xs font-semibold text-blue-900">
+        View Invoices
+      </div>
+      <div className="mt-0.5 text-[10px] text-blue-700 leading-tight">
+        Track payments
+      </div>
+    </div>
+  </Link>
+</div>
 
           {/* Financial dashboard */}
           <div className="rounded-2xl border border-gray-200 bg-white p-2 shadow-sm">
@@ -159,37 +153,6 @@ export default function Dashboard() {
   <FinancialDashboard />
   {/* rest of your dashboard content */}
 </div>
-          </div>
-
-          {/* OVERVIEW */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="mb-3 text-xs font-medium uppercase tracking-wide text-gray-400">
-              Overview
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
-                <div className="text-xs text-gray-400">Estimates</div>
-                <div className="text-xl font-semibold text-gray-900">
-                  {stats.estimates}
-                </div>
-                <div className="mt-2 flex justify-between text-[11px] text-gray-500">
-                  <span>Signed: {stats.signed}</span>
-                  <span>Converted: {stats.converted}</span>
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
-                <div className="text-xs text-gray-400">Invoices</div>
-                <div className="text-xl font-semibold text-gray-900">
-                  {stats.invoices}
-                </div>
-                <div className="mt-2 flex justify-between text-[11px] text-gray-500">
-                  <span>Paid: {stats.paid}</span>
-                  <span>Pending: {stats.pending}</span>
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* OVERDUE */}
@@ -227,7 +190,7 @@ export default function Dashboard() {
           )}
 
           {/* RECENT ESTIMATES */}
-          {/* <div>
+          <div>
             <div className="mb-2 flex items-center justify-between">
               <div className="text-sm font-semibold text-gray-900">
                 Recent Estimates
@@ -244,42 +207,46 @@ export default function Dashboard() {
                 </div>
               ) : (
                 recentEstimates.map((est) => (
-                  <Link key={est.id} href={`/estimates/${est.id}`}>
-                    <div className="rounded-2xl border border-gray-200 bg-white mb-1 p-4 shadow-sm transition hover:border-gray-300 hover:shadow-md">
-                      <div className="flex items-start justify-between">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold text-gray-800">
-                            {est.clients?.name || "No client"}
-                          </div>
-                          <div className="text-xs text-gray-400">
-                            #{est.estimate_number || est.id.slice(0, 8)}
-                          </div>
-                          <div className="text-[11px] text-gray-400">
-                            {formatShortDate(est.created_at)}
-                          </div>
+                 <Link key={est.id} href={`/estimates/${est.id}`}>
+                  <div className="rounded-xl border border-gray-200 bg-white mb-1 p-2.5 shadow-sm transition hover:border-gray-300 hover:shadow">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-xs font-semibold text-gray-800">
+                          {est.clients?.name || "No client"}
                         </div>
-                        <div className="text-right">
-                          <div className="text-sm font-semibold text-gray-900">
-                            {formatCurrency(est.total)}
-                          </div>
-                          <div
-                            className={`mt-1 text-[11px] ${
-                              est.signature ? "text-green-600" : "text-yellow-600"
-                            }`}
-                          >
-                            {est.signature ? "Signed" : "Pending"}
-                          </div>
+
+                        <div className="text-[10px] text-gray-400 leading-tight">
+                          #{est.estimate_number || est.id.slice(0, 8)}
+                        </div>
+
+                        <div className="text-[10px] text-gray-400 leading-tight">
+                          {formatShortDate(est.created_at)}
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <div className="text-xs font-semibold text-gray-900">
+                          {formatCurrency(est.total)}
+                        </div>
+
+                        <div
+                          className={`mt-0.5 text-[10px] ${
+                            est.signature ? "text-green-600" : "text-yellow-600"
+                          }`}
+                        >
+                          {est.signature ? "Signed" : "Pending"}
                         </div>
                       </div>
                     </div>
-                  </Link>
+                  </div>
+                </Link>
                 ))
               )}
             </div>
-          </div> */}
+          </div>
 
           {/* RECENT INVOICES */}
-          {/* <div>
+          <div>
             <div className="mb-2 flex items-center justify-between">
               <div className="text-sm font-semibold text-gray-900">
                 Recent Invoices
@@ -296,41 +263,45 @@ export default function Dashboard() {
                 </div>
               ) : (
                 recentInvoices.map((inv) => (
-                  <Link key={inv.id} href={`/invoices/${inv.id}`}>
-                    <div className="rounded-2xl border border-gray-200 bg-white mb-1 p-4 shadow-sm transition hover:border-gray-300 hover:shadow-md">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="text-sm font-semibold text-gray-800">
-                            {inv.clients?.name || "No client"}
-                          </div>
-                          <div className="text-xs text-gray-400">
-                            {inv.invoice_number}
-                          </div>
-                          <div className="text-[11px] text-gray-400">
-                            {formatShortDate(inv.created_at)}
-                          </div>
+                <Link key={inv.id} href={`/invoices/${inv.id}`}>
+                  <div className="rounded-xl border border-gray-200 bg-white mb-1 p-2.5 shadow-sm transition hover:border-gray-300 hover:shadow">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-xs font-semibold text-gray-800">
+                          {inv.clients?.name || "No client"}
                         </div>
-                        <div className="text-right">
-                          <div className="text-sm font-semibold text-gray-900">
-                            {formatCurrency(inv.total)}
-                          </div>
-                          <span
-                            className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] ${
-                              inv.status === "paid"
-                                ? "bg-green-100 text-green-700"
-                                : "bg-yellow-100 text-yellow-700"
-                            }`}
-                          >
-                            {inv.status === "paid" ? "Paid" : "Pending"}
-                          </span>
+
+                        <div className="text-[10px] text-gray-400 leading-tight">
+                          {inv.invoice_number}
+                        </div>
+
+                        <div className="text-[10px] text-gray-400 leading-tight">
+                          {formatShortDate(inv.created_at)}
                         </div>
                       </div>
+
+                      <div className="text-right shrink-0">
+                        <div className="text-xs font-semibold text-gray-900">
+                          {formatCurrency(inv.total)}
+                        </div>
+
+                        <span
+                          className={`mt-0.5 inline-block rounded-full px-1.5 py-[1px] text-[10px] ${
+                            inv.status === "paid"
+                              ? "bg-green-100 text-green-700"
+                              : "bg-yellow-100 text-yellow-700"
+                          }`}
+                        >
+                          {inv.status === "paid" ? "Paid" : "Pending"}
+                        </span>
+                      </div>
                     </div>
-                  </Link>
+                  </div>
+                </Link>
                 ))
               )}
             </div>
-          </div> */}
+          </div>
         </div>
       </div>
     </ProtectedRoute>

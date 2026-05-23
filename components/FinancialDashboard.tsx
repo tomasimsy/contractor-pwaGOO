@@ -6,18 +6,25 @@ import { formatCurrency } from "@/lib/utils/formatting";
 import { DollarSign, TrendingUp, TrendingDown, Calendar, Wallet, Users, Receipt, CheckCircle, AlertCircle } from "lucide-react";
 
 type FinancialStats = {
-  totalRevenue: number;
-  totalSubcontractorPaid: number;
-  totalExpenses: number;
-  totalAgentPaid: number;
-  netProfit: number;
-  profitMargin: number;
-  pendingSubPayments: number;
-  pendingAgentPayments: number;
-  overdueInvoices: number;
-  monthlyRevenue: number;
-  monthlyProfit: number;
+estimates: number;
+invoices: number;
+signed: number;
+converted: number;
+paid: number;
+pending: number;
+ netProfit: number;
+monthlyProfit: number;
+profitMargin: number;
+totalExpenses: number;
+totalSubcontractorPaid: number;
+pendingSubPayments: number;
+pendingAgentPayments: number;
+totalRevenue: number;
+monthlyRevenue: number;
+totalAgentPaid: number;
+overdueInvoices: number;
 };
+
 
 type EstimateSummary = {
   id: string;
@@ -44,6 +51,12 @@ export default function FinancialDashboard() {
     overdueInvoices: 0,
     monthlyRevenue: 0,
     monthlyProfit: 0,
+     estimates: 0,
+    invoices: 0,
+    signed: 0,
+    converted: 0,
+    paid: 0,
+    pending: 0,
   });
   
   const [topEstimates, setTopEstimates] = useState<EstimateSummary[]>([]);
@@ -207,19 +220,30 @@ const revenue =
       const netProfit = totalRevenue - totalSubPaid - totalExpenses - totalAgentPaid;
       const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
       
-      setStats({
-        totalRevenue,
-        totalSubcontractorPaid: totalSubPaid,
-        totalExpenses,
-        totalAgentPaid,
-        netProfit,
-        profitMargin,
-        pendingSubPayments,
-        pendingAgentPayments,
-        overdueInvoices,
-        monthlyRevenue,
-        monthlyProfit,
-      });
+setStats({
+  estimates: 0,
+  invoices: 0,
+  signed: 0,
+  converted: 0,
+  paid: 0,
+  pending: 0,
+
+  totalRevenue,
+  monthlyRevenue,
+
+  totalSubcontractorPaid: totalSubPaid,
+  totalAgentPaid: totalAgentPaid,
+
+  totalExpenses,
+  netProfit,
+  profitMargin,
+
+  pendingSubPayments,
+  pendingAgentPayments,
+
+  overdueInvoices,
+  monthlyProfit,
+});
       
       // Sort by profit and get top 5
       const sortedEstimates = [...estimateSummaries].sort((a, b) => b.profit - a.profit);
@@ -259,82 +283,141 @@ const revenue =
   return (
     <div className="space-y-4">
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 gap-3">
-        {/* Revenue Card */}
-        <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-4 text-white">
-          <div className="flex justify-between items-start">
-            <div>
-              <div className="text-xs opacity-80">Total Revenue</div>
-              <div className="text-xl font-bold mt-1">{formatCurrency(stats.totalRevenue)}</div>
-            </div>
-            <DollarSign size={24} className="opacity-80" />
-          </div>
-          <div className="text-xs opacity-80 mt-2">
-            This month: {formatCurrency(stats.monthlyRevenue)}
-          </div>
-        </div>
-        
-        {/* Profit Card */}
-        <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-4 text-white">
-          <div className="flex justify-between items-start">
-            <div>
-              <div className="text-xs opacity-80">Net Profit</div>
-              <div className="text-xl font-bold mt-1">{formatCurrency(stats.netProfit)}</div>
-            </div>
-            <TrendingUp size={24} className="opacity-80" />
-          </div>
-          <div className="text-xs opacity-80 mt-2">
-            Margin: {stats.profitMargin.toFixed(1)}%
-          </div>
-        </div>
-        
-        {/* Expenses Card */}
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-          <div className="flex justify-between items-start">
-            <div>
-              <div className="text-xs text-gray-500">Expenses</div>
-              <div className="text-xl font-bold text-gray-800">{formatCurrency(stats.totalExpenses)}</div>
-            </div>
-            <Receipt size={20} className="text-gray-400" />
-          </div>
-          <div className="text-xs text-gray-400 mt-2">
-            Subcontractors: {formatCurrency(stats.totalSubcontractorPaid)}
-          </div>
-        </div>
-        
-        {/* Pending Payments Card */}
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-          <div className="flex justify-between items-start">
-            <div>
-              <div className="text-xs text-gray-500">Pending Payments</div>
-              <div className="text-xl font-bold text-amber-600">{formatCurrency(stats.pendingSubPayments + stats.pendingAgentPayments)}</div>
-            </div>
-            <AlertCircle size={20} className="text-amber-500" />
-          </div>
-          <div className="text-xs text-gray-400 mt-2">
-            Subs: {formatCurrency(stats.pendingSubPayments)} | Agents: {formatCurrency(stats.pendingAgentPayments)}
-          </div>
+<div className="grid grid-cols-2 gap-2">
+  {/* Revenue Card */}
+  <div className="rounded-lg bg-gradient-to-br from-green-500 to-green-600 p-2.5 text-white shadow-sm">
+    <div className="flex items-start justify-between">
+      <div>
+        <div className="text-[10px] opacity-80">Revenue</div>
+        <div className="text-sm font-bold mt-0.5">
+          {formatCurrency(stats.totalRevenue)}
         </div>
       </div>
+      <DollarSign size={18} className="opacity-70" />
+    </div>
+    <div className="text-[10px] opacity-70 mt-1">
+      Month: {formatCurrency(stats.monthlyRevenue)}
+    </div>
+  </div>
+
+  {/* Profit Card */}
+  <div className="rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 p-2.5 text-white shadow-sm">
+    <div className="flex items-start justify-between">
+      <div>
+        <div className="text-[10px] opacity-80">Profit</div>
+        <div className="text-sm font-bold mt-0.5">
+          {formatCurrency(stats.netProfit)}
+        </div>
+      </div>
+      <TrendingUp size={18} className="opacity-70" />
+    </div>
+    <div className="text-[10px] opacity-70 mt-1">
+      Margin: {stats.profitMargin.toFixed(1)}%
+    </div>
+  </div>
+
+  {/* Expenses Card */}
+  <div className="rounded-lg bg-white p-2.5 shadow-sm border border-gray-100">
+    <div className="flex items-start justify-between">
+      <div>
+        <div className="text-[10px] text-gray-500">Expenses</div>
+        <div className="text-sm font-bold text-gray-800 mt-0.5">
+          {formatCurrency(stats.totalExpenses)}
+        </div>
+      </div>
+      <Receipt size={16} className="text-gray-400" />
+    </div>
+    <div className="text-[10px] text-gray-400 mt-1">
+      Subs: {formatCurrency(stats.totalSubcontractorPaid)}
+    </div>
+  </div>
+
+  {/* Pending Card */}
+  <div className="rounded-lg bg-white p-2.5 shadow-sm border border-gray-100">
+    <div className="flex items-start justify-between">
+      <div>
+        <div className="text-[10px] text-gray-500">Pending</div>
+        <div className="text-sm font-bold text-amber-600 mt-0.5">
+          {formatCurrency(stats.pendingSubPayments + stats.pendingAgentPayments)}
+        </div>
+      </div>
+      <AlertCircle size={16} className="text-amber-500" />
+    </div>
+    <div className="text-[10px] text-gray-400 mt-1">
+      Subs: {formatCurrency(stats.pendingSubPayments)} | Agents: {formatCurrency(stats.pendingAgentPayments)}
+    </div>
+  </div>
+</div>
       
-      {/* Profit vs Revenue Bar */}
-      <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-        <div className="text-xs text-gray-500 mb-2">Profit vs Revenue</div>
-        <div className="relative h-8 bg-gray-100 rounded-full overflow-hidden">
-          <div 
-            className="absolute left-0 top-0 h-full bg-green-500 rounded-full"
-            style={{ width: `${Math.min(100, (stats.netProfit / stats.totalRevenue) * 100)}%` }}
-          />
-          <div 
-            className="absolute left-0 top-0 h-full bg-blue-500 rounded-full opacity-50"
-            style={{ width: `${Math.min(100, (stats.monthlyProfit / stats.monthlyRevenue) * 100)}%` }}
-          />
-        </div>
-        <div className="flex justify-between text-[10px] text-gray-400 mt-1">
-          <span>Net Profit: {formatCurrency(stats.netProfit)}</span>
-          <span>Monthly: {formatCurrency(stats.monthlyProfit)}</span>
-        </div>
+      {/* Overview & Profit vs Revenue Bar */}
+<div className="rounded-xl border border-gray-200 bg-white p-2.5 shadow-sm">
+  <div className="mb-2 flex items-center justify-between">
+    <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500">
+      Overview
+    </div>
+
+    <div className="text-[10px] text-gray-400">
+      Revenue vs Profit
+    </div>
+  </div>
+
+  <div className="grid grid-cols-2 gap-2">
+    <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-2">
+      <div className="text-[10px] text-emerald-600">Estimates</div>
+
+      <div className="text-lg font-semibold text-emerald-900 leading-tight">
+        {stats.estimates}
       </div>
+
+      <div className="mt-1 flex justify-between text-[10px] text-emerald-700">
+        <span>Signed: {stats.signed}</span>
+        <span>Converted: {stats.converted}</span>
+      </div>
+    </div>
+
+    <div className="rounded-lg border border-blue-100 bg-blue-50 p-2">
+      <div className="text-[10px] text-blue-600">Invoices</div>
+
+      <div className="text-lg font-semibold text-blue-900 leading-tight">
+        {stats.invoices}
+      </div>
+
+      <div className="mt-1 flex justify-between text-[10px] text-blue-700">
+        <span>Paid: {stats.paid}</span>
+        <span>Pending: {stats.pending}</span>
+      </div>
+    </div>
+  </div>
+
+  <div className="mt-2 rounded-lg border border-gray-100 bg-gray-50 p-2">
+    <div className="mb-1 flex justify-between text-[10px] text-gray-600">
+      <span>Net: {formatCurrency(stats.netProfit)}</span>
+      <span>Month: {formatCurrency(stats.monthlyProfit)}</span>
+    </div>
+
+    <div className="relative h-2 overflow-hidden rounded-full bg-gray-200">
+      <div
+        className="absolute left-0 top-0 h-full rounded-full bg-gray-800"
+        style={{
+          width: `${Math.min(
+            100,
+            (stats.netProfit / stats.totalRevenue) * 100
+          )}%`,
+        }}
+      />
+
+      <div
+        className="absolute left-0 top-0 h-full rounded-full bg-gray-500 opacity-60"
+        style={{
+          width: `${Math.min(
+            100,
+            (stats.monthlyProfit / stats.monthlyRevenue) * 100
+          )}%`,
+        }}
+      />
+    </div>
+  </div>
+</div>
       
       {/* Top Profitable Estimates */}
       {/* <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
