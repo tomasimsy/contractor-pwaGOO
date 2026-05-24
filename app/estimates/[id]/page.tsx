@@ -755,45 +755,106 @@ const markAsCompleted = async () => {
 )}
       {/* FAB */}
       {!isEditMode && (
-        <div
+<div
   ref={fabRef}
-  className="fixed bottom-24 right-6 flex flex-col items-end gap-3 pointer-events-none"
+  className="fixed bottom-24 right-6 z-50 flex flex-col items-end gap-3 pointer-events-none"
 >
-          <div className={`flex flex-col items-end gap-2 transition-all duration-200 origin-bottom-right ${fabOpen ? "opacity-100 translate-y-0 scale-100" : "opacity-0 translate-y-3 scale-95 pointer-events-none"}`}>
-            
-            {/* Edit Button */}
-            {!estimate?.signature && (
-              <button onClick={() => { setIsEditMode(true); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm shadow-md border border-gray-200 hover:bg-gray-50 transition">
-                <SquarePen size={14} /> Edit
-              </button>
-            )}
-            
-            <button onClick={() => { setShowFinancialsModal(true); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm shadow-md border border-gray-200 hover:bg-gray-50 transition">
-  <DollarSign size={14} /> Financials
-</button>
-            
-            {/* Expenses Button */}
-            <button onClick={() => { setShowExpenseModal(true); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm shadow-md border border-gray-200 hover:bg-gray-50 transition">
-              <Receipt size={14} /> Expenses
-            </button>
-            
-            {/* SMS Button */}
-            <button onClick={() => { sendSMSLink(); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm shadow-md border border-gray-200 hover:bg-gray-50 transition">
-              <Send size={14} /> Send SMS
-            </button>
-            
-            {/* PDF Button */}
-            <Link href={`/api/estimates/${id}/pdf`} target="_blank" onClick={() => setFabOpen(false)}>
-              <button className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm shadow-md border border-gray-200 hover:bg-gray-50 transition">
-                <FileText size={14} /> PDF
-              </button>
-            </Link>
-          </div>
-          
-          <button onClick={() => setFabOpen(!fabOpen)} className="h-14 w-14 rounded-full bg-green-700 text-white shadow-lg hover:bg-green-800 transition-all duration-200 flex items-center justify-center active:scale-95">
-            <span className={`text-2xl font-bold transition-transform duration-300 ${fabOpen ? "rotate-45" : "rotate-0"}`}>+</span>
-          </button>
-        </div>
+  
+  {/* FAB Menu */}
+  <div
+    className={`flex flex-col items-end gap-2 origin-bottom-right transition-all duration-200 ${
+      fabOpen
+        ? "opacity-100 translate-y-0 scale-100"
+        : "opacity-0 translate-y-3 scale-95"
+    }`}
+  >
+    
+    {/* Edit */}
+    {!estimate?.signature && (
+      <button
+        onClick={() => {
+          setIsEditMode(true);
+          setFabOpen(false);
+        }}
+        className={`pointer-events-auto flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm shadow-lg border border-gray-200 hover:bg-gray-50 active:scale-95 transition-all ${
+          fabOpen ? "" : "pointer-events-none"
+        }`}
+      >
+        <SquarePen size={14} />
+        Edit
+      </button>
+    )}
+
+    {/* Financials */}
+    <button
+      onClick={() => {
+        setShowFinancialsModal(true);
+        setFabOpen(false);
+      }}
+      className={`pointer-events-auto flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm shadow-lg border border-gray-200 hover:bg-gray-50 active:scale-95 transition-all ${
+        fabOpen ? "" : "pointer-events-none"
+      }`}
+    >
+      <DollarSign size={14} />
+      Financials
+    </button>
+
+    {/* Expenses */}
+    <button
+      onClick={() => {
+        setShowExpenseModal(true);
+        setFabOpen(false);
+      }}
+      className={`pointer-events-auto flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm shadow-lg border border-gray-200 hover:bg-gray-50 active:scale-95 transition-all ${
+        fabOpen ? "" : "pointer-events-none"
+      }`}
+    >
+      <Receipt size={14} />
+      Expenses
+    </button>
+
+    {/* SMS */}
+    <button
+      onClick={() => {
+        sendSMSLink();
+        setFabOpen(false);
+      }}
+      className={`pointer-events-auto flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm shadow-lg border border-gray-200 hover:bg-gray-50 active:scale-95 transition-all ${
+        fabOpen ? "" : "pointer-events-none"
+      }`}
+    >
+      <Send size={14} />
+      Send SMS
+    </button>
+
+    {/* PDF */}
+    <Link
+      href={`/api/estimates/${id}/pdf`}
+      target="_blank"
+      onClick={() => setFabOpen(false)}
+      className={`pointer-events-auto flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm shadow-lg border border-gray-200 hover:bg-gray-50 active:scale-95 transition-all ${
+        fabOpen ? "" : "pointer-events-none"
+      }`}
+    >
+      <FileText size={14} />
+      PDF
+    </Link>
+  </div>
+
+  {/* Main FAB */}
+  <button
+    onClick={() => setFabOpen(!fabOpen)}
+    className="pointer-events-auto h-14 w-14 rounded-full bg-green-700 text-white shadow-xl hover:bg-green-800 transition-all duration-200 flex items-center justify-center active:scale-95"
+  >
+    <span
+      className={`text-2xl font-bold transition-transform duration-300 ${
+        fabOpen ? "rotate-45" : "rotate-0"
+      }`}
+    >
+      +
+    </span>
+  </button>
+</div>
       )}
 
 
