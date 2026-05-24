@@ -151,9 +151,10 @@ export default function SignaturePad({
     }
   };
 
-  const handleRemoveClick = () => {
-    setShowRemoveConfirm(true);
-  };
+const handleRemoveClick = () => {
+  console.log("Remove button clicked, opening confirm modal");
+  setShowRemoveConfirm(true);
+};
 
   const confirmRemove = () => {
     if (onRemove) {
@@ -168,14 +169,15 @@ export default function SignaturePad({
       <>
         <div className="bg-white border border-gray-200 rounded-xl p-3 text-center shadow-sm relative">
           {/* Remove Button - Top Right Corner */}
+ 
           {showRemoveButton && onRemove && (
             <button
               type="button"
               onClick={handleRemoveClick}
-              className="  top-2 right-2 w-6 h-6 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center hover:bg-red-600 transition z-10 shadow-sm"
+              className="absolute top-2 right-2 w-6 h-6 rounded-full bg-red-500 text-white text-xs font-bold    shadow-sm"
               title="Remove Signature"
             >
-              ✕
+              X
             </button>
           )}
           

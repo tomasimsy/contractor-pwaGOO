@@ -755,7 +755,10 @@ const markAsCompleted = async () => {
 )}
       {/* FAB */}
       {!isEditMode && (
-        <div ref={fabRef} className="fixed bottom-24 right-6 z-50 flex flex-col items-end gap-3">
+        <div
+  ref={fabRef}
+  className="fixed bottom-24 right-6 flex flex-col items-end gap-3 pointer-events-none"
+>
           <div className={`flex flex-col items-end gap-2 transition-all duration-200 origin-bottom-right ${fabOpen ? "opacity-100 translate-y-0 scale-100" : "opacity-0 translate-y-3 scale-95 pointer-events-none"}`}>
             
             {/* Edit Button */}
