@@ -125,6 +125,17 @@ export default function LandingPage() {
 
   return (
     <main className="min-h-screen" style={{ backgroundColor: NAVY, color: "#f9fafb" }}>
+<div className="flex items-center gap-2 select-none" style={{ backgroundColor: "#080e1f"  }}>
+  <div className="font-extrabold text-lg flex items-center justify-center h-9 w-12 rounded-md"
+       style={{ backgroundColor: "#d4a048", color: "#0b1630", fontFamily: "Montserrat, sans-serif" }}>
+    OSR
+  </div>
+  <span className="font-semibold text-sm tracking-wide" style={{ color: "#f9fafb" }}>
+    Pros
+  </span>
+</div>
+
+
       {/* HERO */}
       <section className="relative overflow-hidden">
         {/* Parallax gradient background */}
