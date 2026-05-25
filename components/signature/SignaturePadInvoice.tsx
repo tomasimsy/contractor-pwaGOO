@@ -2,32 +2,50 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Signature } from "@/types";
+import Link from "next/link";
 
-interface SignaturePadProps {
+interface SignaturePadInvoiceProps {
   onSave: (signature: Signature) => void;
   onRemove?: () => void;
   existingSignature?: Signature | null;
   buttonText?: string;
   showRemoveButton?: boolean;
+  estimateId?: string;
+  showDetailedBreakdown?: boolean;
 }
 
 const BRAND_GREEN = "#0e542c";
 
-export default function SignaturePad({
+export default function SignaturePadInvoice({
   onSave,
   onRemove,
   existingSignature,
   buttonText = "Sign Document",
   showRemoveButton = true,
-}: SignaturePadProps) {
+  estimateId,
+  showDetailedBreakdown = true,
+}: SignaturePadInvoiceProps) {
   const [showModal, setShowModal] = useState(false);
   const [signatureType, setSignatureType] = useState<"type" | "draw">("type");
   const [typedName, setTypedName] = useState("");
   const [isDrawing, setIsDrawing] = useState(false);
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
+  const [signed, setSigned] = useState(!!existingSignature);
+  const [signature, setSignature] = useState<Signature | null>(existingSignature || null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
+
+  // Update signed state when existingSignature changes
+  useEffect(() => {
+    if (existingSignature) {
+      setSignature(existingSignature);
+      setSigned(true);
+    } else {
+      setSignature(null);
+      setSigned(false);
+    }
+  }, [existingSignature]);
 
   useEffect(() => {
     if (showModal && signatureType === "draw") {
@@ -52,8 +70,8 @@ export default function SignaturePad({
     ctx.lineWidth = 2;
     ctx.strokeStyle = "#111";
     ctx.fillStyle = "#fff";
-
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+
     ctxRef.current = ctx;
   };
 
@@ -140,11 +158,15 @@ export default function SignaturePad({
       return;
     }
 
-    onSave({
+    const newSignature = {
       type: signatureType,
       value,
       date: new Date().toISOString(),
-    });
+    };
+
+    setSignature(newSignature);
+    setSigned(true);
+    onSave(newSignature);
 
     setShowModal(false);
     setTypedName("");
@@ -157,112 +179,110 @@ export default function SignaturePad({
     if (onRemove) {
       onRemove();
     }
+    setSignature(null);
+    setSigned(false);
     setShowRemoveConfirm(false);
   };
 
-  /* ---------------- EXISTING SIGNATURE ---------------- */
-  if (existingSignature) {
-    return (
-      <>
-        <div className="bg-white border border-gray-200 rounded-xl p-3 text-center shadow-sm relative">
+  // Terms & Conditions Component
+  const TermsAndConditions = () => (
+    <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+      <div className="text-xs font-semibold text-gray-700 mb-2">Terms & Conditions</div>
+      <div className="space-y-1 text-[11px] text-gray-600">
+        <p>✓ Valid for 30 days from date issued</p>
+        <p>✓ 50% deposit required to begin, balance due upon completion</p>
+        <p>✓ Changes must be approved in writing (additional charges may apply)</p>
+        <p>✓ Client must provide safe access to work areas</p>
+        <p>✓ Client responsible for marking underground lines, irrigation, drain lines, low-voltage wires, and hidden utilities</p>
+        <p>✓ Contractor not liable for damage from unmarked underground items</p>
+        <p>✓ Warranty excludes: weather, tree roots, drainage, soil movement, customer neglect, or third-party work</p>
+        <p>✓ NC residential jobs: cancellation rights per state and federal law</p>
+        <p>✓ Schedule may be affected by weather, material delays, or hidden conditions</p>
+        <p>✓ Debris cleanup limited to approved scope of work</p>
+        <p className="mt-2 text-[10px] text-gray-400 italic">By signing, you agree to all terms above</p>
+      </div>
+    </div>
+  );
+
+  // Main Card Component
+  return (
+    <div className="bg-white rounded-xl p-5 shadow-md border border-gray-200 mt-4 transition-all duration-200 hover:shadow-lg hover:-translate-y-[1px]">
+      <h3 className="text-sm font-semibold text-gray-700 mb-3">
+        Customer Signature
+      </h3>
+
+      {signed ? (
+        <div className="text-center py-6 bg-green-50 rounded-xl border-2 border-green-600 transition-all duration-200 hover:shadow-md hover:bg-green-100/60">
+          <div className="text-4xl mb-2">✅</div>
+          <div className="text-lg font-bold text-green-700">
+            Signed & Approved!
+          </div>
+          <div className="text-sm text-green-600 mt-1">
+            Thank you for your business
+          </div>
+
+          {signature && (
+            <div className="mt-4">
+              {signature.type === "draw" ? (
+                <div className="flex justify-center mb-2">
+                  <img 
+                    src={signature.value} 
+                    alt="Signature" 
+                    className="max-h-16 object-contain border border-gray-200 rounded p-1 bg-white"
+                  />
+                </div>
+              ) : (
+                <div className="text-md font-semibold text-gray-700">
+                  {signature.value}
+                </div>
+              )}
+              <div className="text-sm text-gray-600 mt-1">
+                {signature.type === "type" ? `Signed by: ${signature.value}` : "Electronic signature on file"}
+              </div>
+              <div className="text-xs text-gray-400 mt-1">
+                {new Date(signature.date).toLocaleDateString()}
+              </div>
+            </div>
+          )}
+
           {showRemoveButton && onRemove && (
             <button
               onClick={() => setShowRemoveConfirm(true)}
-              className="absolute top-2 right-2 text-xs text-red-500 hover:text-red-700 transition"
-              title="Remove Signature"
+              className="mt-3 text-xs text-red-500 hover:text-red-700 transition"
             >
-              ✕
+              Remove Signature
             </button>
           )}
-          
-          {existingSignature.type === "draw" ? (
-            <img
-              src={existingSignature.value}
-              alt="Signature"
-              className="max-h-16 mx-auto"
-            />
-          ) : (
-            <div className="text-xl font-semibold text-gray-800">
-              {existingSignature.value}
-            </div>
-          )}
-
-          <div className="text-[11px] text-gray-400 mt-2">
-            Signed on {new Date(existingSignature.date).toLocaleDateString()}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSignatureType("draw");
-              setShowModal(true);
-            }}
-            className="mt-2 text-xs px-3 py-1 rounded-lg text-white transition-all duration-200 hover:shadow-md hover:brightness-110 active:scale-[0.97]"
-            style={{ backgroundColor: BRAND_GREEN }}
-          >
-            Re-sign
-          </button>
         </div>
+      ) : (
+        <>
+          <TermsAndConditions />
+          
+          <p className="text-xs text-gray-500 mb-4">
+            By signing below, you agree to the terms and conditions above.
+          </p>
 
-        {/* Remove Confirmation Modal */}
-        {showRemoveConfirm && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl max-w-sm w-full p-5">
-              <h3 className="text-lg font-semibold text-gray-800 mb-2">Remove Signature?</h3>
-              <p className="text-sm text-gray-500 mb-4">
-                This will remove the signature from this document. The customer will need to sign again.
-              </p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowRemoveConfirm(false)}
-                  className="flex-1 py-2 border border-gray-200 rounded-lg text-gray-600 text-sm hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleRemove}
-                  className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
-                >
-                  Remove Signature
-                </button>
-              </div>
-            </div>
+          <div className="transition-all duration-200 hover:shadow-sm">
+            <button
+              onClick={() => setShowModal(true)}
+              className="w-full py-2.5 rounded-xl text-sm text-white transition active:scale-95"
+              style={{ backgroundColor: BRAND_GREEN }}
+            >
+              ✍️ {buttonText}
+            </button>
           </div>
-        )}
-      </>
-    );
-  }
 
-  /* ---------------- BUTTON WITH TERMS ---------------- */
-  return (
-    <>
-      {/* Terms & Conditions */}
-<div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-  <div className="text-xs font-semibold text-gray-700 mb-2">Terms & Conditions</div>
-  <div className="space-y-1 text-[11px] text-gray-600">
-    <p>✓ Valid for 30 days from date issued</p>
-    <p>✓ 50% deposit required to begin, balance due upon completion</p>
-    <p>✓ Changes must be approved in writing (additional charges may apply)</p>
-    <p>✓ Client must provide safe access to work areas</p>
-    <p>✓ Client responsible for marking underground lines, irrigation, drain lines, low-voltage wires, and hidden utilities</p>
-    <p>✓ Contractor not liable for damage from unmarked underground items</p>
-    <p>✓ Warranty excludes: weather, tree roots, drainage, soil movement, customer neglect, or third-party work</p>
-    <p>✓ NC residential jobs: cancellation rights per state and federal law</p>
-    <p>✓ Schedule may be affected by weather, material delays, or hidden conditions</p>
-    <p>✓ Debris cleanup limited to approved scope of work</p>
-    <p className="mt-2 text-[10px] text-gray-400 italic">By signing, you agree to all terms above</p>
-  </div>
-</div>
+          {showDetailedBreakdown && estimateId && (
+            <Link href={`/public/estimates/${estimateId}/itemized`}>
+              <button className="w-full mt-3 py-2.5 rounded-xl border border-green-200 bg-green-50 text-green-700 text-sm font-medium hover:bg-green-100 transition flex items-center justify-center gap-2">
+                <span>📋</span> View Detailed Breakdown
+              </button>
+            </Link>
+          )}
+        </>
+      )}
 
-      <button
-        onClick={() => setShowModal(true)}
-        className="w-full py-2.5 rounded-xl text-sm text-white transition active:scale-95"
-        style={{ backgroundColor: BRAND_GREEN }}
-      >
-        ✍️ {buttonText}
-      </button>
-
-      {/* ---------------- MODAL ---------------- */}
+      {/* Signature Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div 
@@ -273,7 +293,7 @@ export default function SignaturePad({
               Customer Signature
             </h3>
 
-            {/* SWITCH */}
+            {/* Type Toggle */}
             <div className="flex gap-2 mb-4">
               <button
                 onClick={() => setSignatureType("type")}
@@ -288,7 +308,7 @@ export default function SignaturePad({
                     : undefined
                 }
               >
-                Type
+                Type Name
               </button>
 
               <button
@@ -304,21 +324,26 @@ export default function SignaturePad({
                     : undefined
                 }
               >
-                Draw
+                Draw Signature
               </button>
             </div>
 
-            {/* INPUT */}
+            {/* Input Area */}
             {signatureType === "type" ? (
-              <input
-                type="text"
-                placeholder="Type full name"
-                value={typedName}
-                onChange={(e) => setTypedName(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg p-2 text-sm focus:outline-none"
-                style={{ outlineColor: BRAND_GREEN }}
-                autoFocus
-              />
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  placeholder="Type your full name"
+                  value={typedName}
+                  onChange={(e) => setTypedName(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg p-3 text-base focus:outline-none focus:ring-2 focus:ring-green-500/30"
+                  style={{ outlineColor: BRAND_GREEN }}
+                  autoFocus
+                />
+                <p className="text-[10px] text-gray-400 text-center">
+                  This will be used as your electronic signature
+                </p>
+              </div>
             ) : (
               <div 
                 className="border border-gray-200 rounded-lg overflow-hidden"
@@ -341,13 +366,16 @@ export default function SignaturePad({
                     onClick={clearCanvas}
                     className="text-xs text-red-500 hover:text-red-600"
                   >
-                    Clear
+                    Clear Canvas
                   </button>
+                  <span className="text-[10px] text-gray-400">
+                    Sign in the box above
+                  </span>
                 </div>
               </div>
             )}
 
-            {/* ACTIONS */}
+            {/* Action Buttons */}
             <div className="flex gap-2 mt-4">
               <button
                 onClick={() => setShowModal(false)}
@@ -366,6 +394,32 @@ export default function SignaturePad({
           </div>
         </div>
       )}
-    </>
+
+      {/* Remove Confirmation Modal */}
+      {showRemoveConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-sm w-full p-5">
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">Remove Signature?</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              This will remove the signature from this document. The customer will need to sign again.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowRemoveConfirm(false)}
+                className="flex-1 py-2 border border-gray-200 rounded-lg text-gray-600 text-sm hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRemove}
+                className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
+              >
+                Remove Signature
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

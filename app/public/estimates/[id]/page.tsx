@@ -10,7 +10,8 @@ import Link from "next/link";
 type Signature = { type: "draw" | "type"; value: string; date: string };
 
 export default function PublicEstimatePage() {
-  const { id } = useParams();
+const { id: paramId } = useParams(); // ← Rename to avoid confusion
+  const id = Array.isArray(paramId) ? paramId[0] : paramId;
   const [estimate, setEstimate] = useState<any>(null);
   const [client, setClient] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
@@ -18,7 +19,7 @@ export default function PublicEstimatePage() {
   const [signed, setSigned] = useState(false);
   const [signature, setSignature] = useState<Signature | null>(null);
   const [tracked, setTracked] = useState(false);
-
+ 
   useEffect(() => {
     loadEstimate();
   }, [id]);
@@ -181,6 +182,23 @@ export default function PublicEstimatePage() {
         </div>
         );
         }
+
+const removeSignature = async () => {
+  try {
+    const { error } = await supabase
+      .from("estimates")
+      .update({ signature: null })
+      .eq("id", id);
+
+    if (error) throw error;
+
+    alert("Signature removed");
+    await loadEstimate(); // or whatever refresh function you use
+  } catch (err) {
+    console.error(err);
+    alert("Failed to remove signature");
+  }
+};
 
         return (
         <div className="min-h-screen bg-gray-100">
@@ -347,57 +365,15 @@ export default function PublicEstimatePage() {
             </div>
 
             {/* Signature */}
-            <div
-              className="bg-white rounded-xl p-5 shadow-md border border-gray-200 mt-4 transition-all duration-200 hover:shadow-lg hover:-translate-y-[1px]">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">
-                Customer Signature
-              </h3>
-
-              {signed ? (
-              <div
-                className="text-center py-6 bg-green-50 rounded-xl border-2 border-green-600 transition-all duration-200 hover:shadow-md hover:bg-green-100/60">
-
-                <div className="text-4xl mb-2">✅</div>
-
-                <div className="text-lg font-bold text-green-700">
-                  Signed & Approved!
-                </div>
-
-                <div className="text-sm text-green-600 mt-1">
-                  Thank you for your business
-                </div>
-
-                {signature && (
-                <div className="mt-4 text-sm text-gray-600">
-                  {signature.type === "type"
-                  ? `Signed by: ${signature.value}`
-                  : "Electronic signature on file"}
-
-                  <div className="text-xs text-gray-400 mt-1">
-                    {new Date(signature.date).toLocaleDateString()}
-                  </div>
-                </div>
-                )}
-
-              </div>
-              ) : (
-              <>
-                <p className="text-xs text-gray-500 mb-4">
-                  By signing below, you agree to the terms and conditions above.
-                </p>
-
-                <div className="transition-all duration-200 hover:shadow-sm">
-                  <SignaturePadInvoice onSave={saveSignature} existingSignature={null}
-                    buttonText="Sign & Approve Estimate" />
-                </div>
- {/* <Link href={`/public/estimates/${id}/itemized`}>
-  <button className="w-full py-2.5 rounded-xl border border-green-200 bg-green-50 text-green-700 text-sm font-medium hover:bg-green-100 transition flex items-center justify-center gap-2">
-    <span>📋</span> View Detailed Breakdown
-  </button>
-</Link> */}
-              </>
-              )}
-            </div>
+            <SignaturePadInvoice
+  onSave={saveSignature}
+  onRemove={removeSignature}
+  existingSignature={estimate?.signature}
+  buttonText="Sign & Approve Estimate"
+  showRemoveButton={true}
+  estimateId={id}
+  showDetailedBreakdown={true}
+/>
 
             {/* Footer */}
             <div className="text-center text-[11px] text-gray-400 pt-2">
