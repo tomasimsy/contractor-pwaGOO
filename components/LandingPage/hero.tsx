@@ -23,7 +23,7 @@ return (
     {/* BACKGROUND (PARALLAX) */}
     <div className="absolute inset-0 bg-cover bg-center scale-110" style={{
           backgroundImage:
-            "url('https://images.unsplash.com/photo-1484154218962-a197022b5858?q=80&w=2070&auto=format&fit=crop')",
+            "url('https://images.unsplash.com/photo-1588854337221-4cf9fa96059c?q=80&w=1600&auto=format&fit=crop')",
           transform: `translateY(${bgOffset}px) scale(1.1)`,
         }} />
 
