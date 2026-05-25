@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 
-export default function HomePage() {
+export default function HomePage({ isLoggedIn }: { isLoggedIn: boolean }) {
   useEffect(() => {
     // Initialize AOS (lightweight scroll animations)
     import("aos").then((AOS) => {
