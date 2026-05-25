@@ -48,6 +48,7 @@ export type Estimate = {
   opened_ip?: string;
   view_locations?: any[];
   unique_locations?: number;
+  is_completed: boolean;
 };
 
 export type Invoice = {
