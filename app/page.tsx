@@ -2,11 +2,11 @@
 
 import { useEffect, useRef } from "react";
 import NailSalonRenovationSection from "@/components/NailSalon/page";
-import Hero from "@/components/LandingPage/hero";
-import Services from "@/components/LandingPage/services";
-import Testimonials from "@/components/LandingPage/testimonials";
-import Footer from "@/components/LandingPage/footer";
-import BehindTheScene from "@/components/LandingPage/behindTheScene";
+import Hero from "@/app/public/LandingPage/hero";
+import Services from "@/app/public/LandingPage/services";
+import Testimonials from "@/app/public/LandingPage/testimonials";
+import Footer from "@/app/public/LandingPage/footer";
+import BehindTheScene from "@/app/public/LandingPage/behindTheScene";
 
 import {
 Phone,

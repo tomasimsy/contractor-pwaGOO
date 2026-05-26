@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
-const PUBLIC_ROUTES = ["/", "/login", "/signup"];
-const PROTECTED_ROUTES = ["/dashboard", "/projects"];
+const PUBLIC_ROUTES = ["/", "/login", "/signup", "/public"];
+const PROTECTED_ROUTES = ["/dashboard", "/estimates", "/invoices", "/projects", "/clients", "/settings"];
 
 export default function ProtectedRoute({
   children,
@@ -26,15 +26,23 @@ export default function ProtectedRoute({
         data: { user },
       } = await supabase.auth.getUser();
 
-      const isProtected = PROTECTED_ROUTES.includes(pathname);
+      // Check if current route is public
+      const isPublicRoute = PUBLIC_ROUTES.some(route => pathname === route || pathname?.startsWith('/public/'));
+      const isProtectedRoute = PROTECTED_ROUTES.some(route => pathname?.startsWith(route));
 
-      // ❌ Not logged in → block only protected routes
-      if (!user && isProtected) {
+      // Allow public routes without authentication
+      if (isPublicRoute) {
+        if (active) setChecking(false);
+        return;
+      }
+
+      // For all other routes, require authentication
+      if (!user) {
         router.replace("/login");
         return;
       }
 
-      // ❌ Logged in → don't stay on login page
+      // If logged in and on login page, redirect to dashboard
       if (user && pathname === "/login") {
         router.replace("/dashboard");
         return;
@@ -53,7 +61,10 @@ export default function ProtectedRoute({
   if (checking) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        Loading...
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto"></div>
+          <p className="text-sm text-gray-500 mt-2">Loading...</p>
+        </div>
       </div>
     );
   }
