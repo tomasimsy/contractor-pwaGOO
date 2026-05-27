@@ -14,7 +14,7 @@ export default function HeroSection() {
         className="absolute inset-0 bg-cover  "
         style={{
           backgroundImage:
-            "url('/LandingPageImages/kitchen.jpg')",
+            "url('/landingPageImages/kitchen.jpg')",
         }}
       />
 
