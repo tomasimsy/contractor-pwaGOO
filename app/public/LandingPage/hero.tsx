@@ -10,13 +10,12 @@ export default function HeroSection() {
     <section className="relative h-screen w-full overflow-hidden bg-black text-white">
 
       {/* BACKGROUND */}
-      <div
-        className="absolute inset-0 bg-cover  "
-        style={{
-          backgroundImage:
-            "url('/landingPageImages/kitchen.jpg')",
-        }}
-      />
+ <div
+  className="absolute inset-0 bg-cover bg-center"
+  style={{
+    backgroundImage: "url('/landingPageImages/kitchen.jpg')",
+  }}
+/>
 
       {/* OVERLAY */}
       <div className="absolute inset-0 bg-black/50" />
