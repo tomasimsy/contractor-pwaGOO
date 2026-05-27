@@ -44,7 +44,7 @@ export async function middleware(req: NextRequest) {
   const isStaticFile = staticExtensions.some(ext => path.endsWith(ext))
   
   // Public routes - no authentication needed
-  const publicRoutes = ['/', '/public', '/login', '/signup']
+  const publicRoutes = ['/', '/public', '/login', '/signup','text']
   const isPublicRoute = publicRoutes.includes(path) || path.startsWith('/public/')
   
   // Also allow _next directory
