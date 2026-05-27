@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
-const PUBLIC_ROUTES = ["/", "/login", "/signup", "/public"];
+const PUBLIC_ROUTES = ["/", "/login", "/signup", "/public",'text'];
 // Make sure to include the root path and public
 const PROTECTED_ROUTES = ["/dashboard", "/estimates", "/invoices", "/projects", "/clients", "/settings"];
 
