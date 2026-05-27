@@ -128,3 +128,16 @@
     @apply font-sans;
   }
 }
+
+/* Prevent text selection while dragging */
+.cursor-ew-resize {
+  cursor: ew-resize;
+  user-select: none;
+}
+
+/* Smooth transitions */
+.transition-all {
+  transition-property: all;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 500ms;
+}
