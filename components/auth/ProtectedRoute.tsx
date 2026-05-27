@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
 const PUBLIC_ROUTES = ["/", "/login", "/signup", "/public"];
+// Make sure to include the root path and public
 const PROTECTED_ROUTES = ["/dashboard", "/estimates", "/invoices", "/projects", "/clients", "/settings"];
 
 export default function ProtectedRoute({
@@ -30,14 +31,16 @@ export default function ProtectedRoute({
       const isPublicRoute = PUBLIC_ROUTES.some(route => pathname === route || pathname?.startsWith('/public/'));
       const isProtectedRoute = PROTECTED_ROUTES.some(route => pathname?.startsWith(route));
 
+      console.log("Route check:", { pathname, isPublicRoute, isProtectedRoute, hasUser: !!user });
+
       // Allow public routes without authentication
       if (isPublicRoute) {
         if (active) setChecking(false);
         return;
       }
 
-      // For all other routes, require authentication
-      if (!user) {
+      // For protected routes, require authentication
+      if (isProtectedRoute && !user) {
         router.replace("/login");
         return;
       }
