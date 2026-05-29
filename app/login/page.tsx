@@ -1,99 +1,108 @@
-// app/login/page.tsx
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import Image from "next/image";
 
-// Move the login logic into a separate component inside the same file
-function LoginForm() {
+export default function LoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const redirectTo = searchParams.get('redirectTo') || '/dashboard';
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        router.push(redirectTo);
-      }
-    });
-  }, [router, redirectTo]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
 
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error) {
       setError(error.message);
-    } else if (data.session) {
-      router.push(redirectTo);
+    } else {
+      router.push("/dashboard");
     }
     setLoading(false);
   };
 
   return (
-    <form onSubmit={handleLogin} className="space-y-4">
-      {error && (
-        <div className="bg-red-100 text-red-700 p-3 rounded text-sm">
-          {error}
+    <div className="min-h-screen bg-navy flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-8">
+        {/* Logo/Header */}
+        <div className="text-center mb-8">
+          <div className="relative w-20 h-20 mx-auto mb-3">
+            <Image
+              src="/OSR_logo.png"  // Replace with your logo path
+              alt="OSR Logo"
+              fill
+              className="object-contain"
+              priority
+            />
+          </div>
+          <h1 className="text-2xl font-bold text-navy">OSR</h1>
+          <p className="text-gray-500 text-sm mt-1">Sign in to access your dashboard</p>
         </div>
-      )}
-      <input
-        type="email"
-        placeholder="Email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        className="w-full p-3 border rounded-lg"
-        required
-      />
-      <input
-        type="password"
-        placeholder="Password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        className="w-full p-3 border rounded-lg"
-        required
-      />
-      <button
-        type="submit"
-        disabled={loading}
-        className="w-full bg-[#d4a048] text-white p-3 rounded-lg hover:bg-[#b8892d] disabled:opacity-50"
-      >
-        {loading ? "Loading..." : "Login"}
-      </button>
-    </form>
-  );
-}
 
-// Loading fallback
-function LoginFallback() {
-  return (
-    <div className="text-center text-gray-500">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#d4a048] mx-auto mb-2"></div>
-      Loading...
-    </div>
-  );
-}
+        {/* Login Form */}
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Email Address
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-gold"
+              placeholder="admin@example.com"
+              required
+            />
+          </div>
 
-// Main page component with Suspense
-export default function LoginPage() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="bg-white p-8 rounded-lg shadow-md w-96">
-        <h1 className="text-2xl font-bold mb-6 text-center">Login to OSR Pros</h1>
-        <Suspense fallback={<LoginFallback />}>
-          <LoginForm />
-        </Suspense>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Password
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-gold"
+              placeholder="••••••••"
+              required
+            />
+          </div>
+
+          {error && (
+            <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full text-navy font-semibold py-2 border-gray-400 border rounded-lg hover:bg-gray-800 hover:text-white transition disabled:opacity-50"
+          >
+            {loading ? "Signing in..." : "Sign In"}
+          </button>
+        </form>
+
+        {/* Sign Up Link */}
+        {/* <p className="text-center text-sm text-gray-500 mt-6">
+          Don't have an account?{" "}
+          <button
+            onClick={() => router.push("/signup")}
+            className="text-gold hover:underline"
+          >
+            Sign up
+          </button>
+        </p> */}
       </div>
     </div>
   );
