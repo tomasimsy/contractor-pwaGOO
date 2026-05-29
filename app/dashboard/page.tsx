@@ -9,6 +9,7 @@ import Header from "@/components/ui/Header";
 import Image from "next/image";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import FinancialDashboard from "@/components/FinancialDashboard";
+import { Plus, FilePlus, FileText } from "lucide-react";
 
 // Define strict types instead of any[]
 interface DashboardStats {
@@ -23,6 +24,7 @@ interface DashboardStats {
 export default function Dashboard() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [isFabOpen, setIsFabOpen] = useState(false);
   const [stats, setStats] = useState<DashboardStats>({
     estimates: 0,
     signed: 0,
@@ -114,17 +116,13 @@ export default function Dashboard() {
     return <div className="p-6 text-center text-gray-500">Loading dashboard...</div>;
   }
 
- 
-
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-[#f6f7f9] pb-24">
+      <div className="min-h-screen bg-[#f6f7f9] pb-24 relative">
         {/* HEADER */}
-
-<div className="sticky top-0 z-50 border-b border-gray-200 bg-white/80 backdrop-blur">
-  <div className="flex items-center justify-between px-4 py-2">
-    
-    <div className="flex items-center gap-3">
+        <div className="sticky top-0 z-40 border-b border-gray-200 bg-white/80 backdrop-blur">
+          <div className="flex items-center justify-between px-4 py-2">
+            <div className="flex items-center gap-3">
               <Link href="/" className="flex items-center">
                 <Image
                   src="/OSR_logo.png"
@@ -137,47 +135,21 @@ export default function Dashboard() {
               </Link>
             </div>
 
-<button
-  onClick={handleLogout}
-  className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 border border-gray-400 rounded-lg hover:bg-gray-600 hover:text-white transition-all"
->
-  Logout
-</button>
-  </div>
-</div>
+            <button
+              onClick={handleLogout}
+              className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 border border-gray-400 rounded-lg hover:bg-gray-600 hover:text-white transition-all"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
 
         <div className="mx-auto max-w-4xl space-y-4 p-4">
-          {/* QUICK ACTIONS */}
-<div className="grid grid-cols-2 gap-2">
-  <Link href="/estimates/create">
-    <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-2.5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:bg-emerald-200 hover:border-emerald-200 active:translate-y-0">
-      <div className="text-xs font-semibold text-emerald-900">
-        New Estimate
-      </div>
-      <div className="mt-0.5 text-[10px] text-emerald-700 leading-tight">
-        Create estimate
-      </div>
-    </div>
-  </Link>
-
-  <Link href="/invoices">
-    <div className="rounded-xl border border-blue-100 bg-blue-50 p-2.5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:bg-blue-200 hover:border-blue-200 active:translate-y-0">
-      <div className="text-xs font-semibold text-blue-900">
-        View Invoices
-      </div>
-      <div className="mt-0.5 text-[10px] text-blue-700 leading-tight">
-        Track payments
-      </div>
-    </div>
-  </Link>
-</div>
-
           {/* Financial dashboard */}
           <div className="rounded-2xl border border-gray-200 bg-white p-2 shadow-sm">
             <div className="max-w-4xl mx-auto">
-  <FinancialDashboard />
-  {/* rest of your dashboard content */}
-</div>
+              <FinancialDashboard />
+            </div>
           </div>
 
           {/* OVERDUE */}
@@ -232,39 +204,39 @@ export default function Dashboard() {
                 </div>
               ) : (
                 recentEstimates.map((est) => (
-                 <Link key={est.id} href={`/estimates/${est.id}`}>
-                  <div className="rounded-xl border border-gray-200 bg-white mb-1 p-2.5 shadow-sm transition hover:border-gray-300 hover:shadow">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="truncate text-xs font-semibold text-gray-800">
-                          {est.clients?.name || "No client"}
+                  <Link key={est.id} href={`/estimates/${est.id}`}>
+                    <div className="rounded-xl border border-gray-200 bg-white mb-1 p-2.5 shadow-sm transition hover:border-gray-300 hover:shadow">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-xs font-semibold text-gray-800">
+                            {est.clients?.name || "No client"}
+                          </div>
+
+                          <div className="text-[10px] text-gray-400 leading-tight">
+                            #{est.estimate_number || est.id.slice(0, 8)}
+                          </div>
+
+                          <div className="text-[10px] text-gray-400 leading-tight">
+                            {formatShortDate(est.created_at)}
+                          </div>
                         </div>
 
-                        <div className="text-[10px] text-gray-400 leading-tight">
-                          #{est.estimate_number || est.id.slice(0, 8)}
-                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-xs font-semibold text-gray-900">
+                            {formatCurrency(est.total)}
+                          </div>
 
-                        <div className="text-[10px] text-gray-400 leading-tight">
-                          {formatShortDate(est.created_at)}
-                        </div>
-                      </div>
-
-                      <div className="text-right shrink-0">
-                        <div className="text-xs font-semibold text-gray-900">
-                          {formatCurrency(est.total)}
-                        </div>
-
-                        <div
-                          className={`mt-0.5 text-[10px] ${
-                            est.signature ? "text-green-600" : "text-yellow-600"
-                          }`}
-                        >
-                          {est.signature ? "Signed" : "Pending"}
+                          <div
+                            className={`mt-0.5 text-[10px] ${
+                              est.signature ? "text-green-600" : "text-yellow-600"
+                            }`}
+                          >
+                            {est.signature ? "Signed" : "Pending"}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                </Link>
+                  </Link>
                 ))
               )}
             </div>
@@ -288,45 +260,95 @@ export default function Dashboard() {
                 </div>
               ) : (
                 recentInvoices.map((inv) => (
-                <Link key={inv.id} href={`/invoices/${inv.id}`}>
-                  <div className="rounded-xl border border-gray-200 bg-white mb-1 p-2.5 shadow-sm transition hover:border-gray-300 hover:shadow">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="truncate text-xs font-semibold text-gray-800">
-                          {inv.clients?.name || "No client"}
+                  <Link key={inv.id} href={`/invoices/${inv.id}`}>
+                    <div className="rounded-xl border border-gray-200 bg-white mb-1 p-2.5 shadow-sm transition hover:border-gray-300 hover:shadow">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-xs font-semibold text-gray-800">
+                            {inv.clients?.name || "No client"}
+                          </div>
+
+                          <div className="text-[10px] text-gray-400 leading-tight">
+                            {inv.invoice_number}
+                          </div>
+
+                          <div className="text-[10px] text-gray-400 leading-tight">
+                            {formatShortDate(inv.created_at)}
+                          </div>
                         </div>
 
-                        <div className="text-[10px] text-gray-400 leading-tight">
-                          {inv.invoice_number}
-                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-xs font-semibold text-gray-900">
+                            {formatCurrency(inv.total)}
+                          </div>
 
-                        <div className="text-[10px] text-gray-400 leading-tight">
-                          {formatShortDate(inv.created_at)}
+                          <span
+                            className={`mt-0.5 inline-block rounded-full px-1.5 py-[1px] text-[10px] ${
+                              inv.status === "paid"
+                                ? "bg-green-100 text-green-700"
+                                : "bg-yellow-100 text-yellow-700"
+                            }`}
+                          >
+                            {inv.status === "paid" ? "Paid" : "Pending"}
+                          </span>
                         </div>
-                      </div>
-
-                      <div className="text-right shrink-0">
-                        <div className="text-xs font-semibold text-gray-900">
-                          {formatCurrency(inv.total)}
-                        </div>
-
-                        <span
-                          className={`mt-0.5 inline-block rounded-full px-1.5 py-[1px] text-[10px] ${
-                            inv.status === "paid"
-                              ? "bg-green-100 text-green-700"
-                              : "bg-yellow-100 text-yellow-700"
-                          }`}
-                        >
-                          {inv.status === "paid" ? "Paid" : "Pending"}
-                        </span>
                       </div>
                     </div>
-                  </div>
-                </Link>
+                  </Link>
                 ))
               )}
             </div>
           </div>
+        </div>
+
+        {/* FLOATING ACTION BUTTON SPEED DIAL */}
+        <div 
+          className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3"
+          onMouseEnter={() => setIsFabOpen(true)}
+          onMouseLeave={() => setIsFabOpen(false)}
+        >
+          {/* Action List Container */}
+          <div className={`flex flex-col items-end gap-2 transition-all duration-300 transform origin-bottom ${
+            isFabOpen ? "scale-100 opacity-100 translate-y-0" : "scale-75 opacity-0 translate-y-4 pointer-events-none"
+          }`}>
+            {/* Action: View Invoices */}
+            <div className="flex items-center gap-2 group">
+              <span className="bg-gray-900 text-white text-xs font-medium px-2 py-1 rounded-md shadow-sm opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                View Invoices
+              </span>
+              <button
+                onClick={() => router.push("/invoices")}
+                className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-gray-600 shadow-lg border border-gray-100 hover:bg-gray-50 hover:text-blue-600 transition-all"
+                title="View Invoices"
+              >
+                <FileText size={18} />
+              </button>
+            </div>
+
+            {/* Action: New Estimate */}
+            <div className="flex items-center gap-2 group">
+              <span className="bg-gray-900 text-white text-xs font-medium px-2 py-1 rounded-md shadow-sm opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                New Estimate
+              </span>
+              <button
+                onClick={() => router.push("/estimates/create")}
+                className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-gray-600 shadow-lg border border-gray-100 hover:bg-gray-50 hover:text-green-600 transition-all"
+                title="New Estimate"
+              >
+                <FilePlus size={18} />
+              </button>
+            </div>
+          </div>
+
+          {/* Main Trigger Button */}
+          <button
+            onClick={() => setIsFabOpen(!isFabOpen)}
+            className={`flex h-14 w-14 mb-7 items-center justify-center rounded-full bg-green-600 text-white shadow-xl hover:bg-green-700 transition-all duration-300 ${
+              isFabOpen ? "rotate-45" : "rotate-0"
+            }`}
+          >
+            <Plus size={24} />
+          </button>
         </div>
       </div>
     </ProtectedRoute>
