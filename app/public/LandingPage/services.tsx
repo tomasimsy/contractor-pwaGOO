@@ -66,7 +66,7 @@ return (
 
       {/* Title */}
       <div className="absolute bottom-0 p-6">
-        <h3 className="text-xl font-semibold text-white">
+        <h3 className="text-lg font-semibold text-white rounded-full px-4 py-2  ">
           {service.title}
         </h3>
       </div>

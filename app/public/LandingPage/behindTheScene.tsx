@@ -179,12 +179,12 @@ export default function WorkProcessSection() {
 
                 {/* Labels on image */}
                 <div className="absolute top-4 left-4 flex gap-2">
-                  <span className="text-[10px] md:text-xs font-semibold text-white bg-black/60 px-2 py-1 rounded-full backdrop-blur-sm">
+                  <span className="text-[10px] md:text-xs font-semibold text-white bg-gradient-to-r from-orange-500 to-orange-600   px-2 py-1 rounded-full backdrop-blur-sm">
                     BEFORE
                   </span>
                 </div>
                 <div className="absolute top-4 right-4 flex gap-2">
-                  <span className="text-[10px] md:text-xs font-semibold text-white bg-black/60 px-2 py-1 rounded-full backdrop-blur-sm">
+                  <span className="text-[10px] md:text-xs font-semibold text-white bg-gradient-to-r from-orange-500 to-orange-600  px-2 py-1 rounded-full backdrop-blur-sm">
                     AFTER
                   </span>
                 </div>

@@ -20,7 +20,7 @@ export default function Footer() {
             </p>
 
             <p className="mt-4 text-white/60 text-sm">
-              Licensed remodeling & construction services focused on quality, durability, and modern design.
+              Remodeling & construction services focused on quality, durability, and modern design.
             </p>
           </div>
 
