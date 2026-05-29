@@ -337,9 +337,9 @@ export default function EstimatesPage() {
           }`}>
             {/* Action: Trash */}
             <div className="flex items-center gap-2 group ">
-              <span className="bg-gray-900 text-white text-xs font-medium px-2 py-1 rounded-md shadow-sm opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                View Trash
-              </span>
+              <span className="bg-gray-900/90 backdrop-blur-sm text-white text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-md whitespace-nowrap">
+          Trash
+      </span>
               <button
                 onClick={() => router.push("/deleted")}
 
@@ -352,9 +352,9 @@ export default function EstimatesPage() {
 
             {/* Action: New Estimate */}
             <div className="flex items-center gap-2 group">
-              <span className="bg-gray-900 text-white text-xs font-medium px-2 py-1 rounded-md shadow-sm opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                New Estimate
-              </span>
+              <span className="bg-gray-900/90 backdrop-blur-sm text-white text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-md whitespace-nowrap">
+        New Estimate
+      </span>
               <button
                 onClick={() => router.push("/estimates/create")}
                 className="flex h-11 w-11 items-center justify-center rounded-full bg-green-600 text-white shadow-lg hover:bg-green-700 transition-all"
