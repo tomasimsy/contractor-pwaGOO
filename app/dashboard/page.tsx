@@ -318,7 +318,7 @@ export default function Dashboard() {
               </span>
               <button
                 onClick={() => router.push("/invoices")}
-                className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-gray-600 shadow-lg border border-gray-100 hover:bg-gray-50 hover:text-blue-600 transition-all"
+                className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-700 text-white shadow-lg border border-gray-100 hover:bg-gray-200 hover:text-blue-600 transition-all"
                 title="View Invoices"
               >
                 <FileText size={18} />
@@ -332,7 +332,7 @@ export default function Dashboard() {
               </span>
               <button
                 onClick={() => router.push("/estimates/create")}
-                className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-gray-600 shadow-lg border border-gray-100 hover:bg-gray-50 hover:text-green-600 transition-all"
+                className="flex h-11 w-11 items-center justify-center rounded-full bg-green-600 text-white shadow-lg hover:bg-green-700 transition-all"
                 title="New Estimate"
               >
                 <FilePlus size={18} />
@@ -343,7 +343,7 @@ export default function Dashboard() {
           {/* Main Trigger Button */}
           <button
             onClick={() => setIsFabOpen(!isFabOpen)}
-            className={`flex h-14 w-14 mb-7 items-center justify-center rounded-full bg-green-600 text-white shadow-xl hover:bg-green-700 transition-all duration-300 ${
+            className={`flex h-14 w-14 mb-8 items-center justify-center rounded-full bg-green-600 text-white shadow-xl hover:bg-green-700 transition-all duration-300 ${
               isFabOpen ? "rotate-45" : "rotate-0"
             }`}
           >

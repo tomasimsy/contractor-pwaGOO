@@ -361,7 +361,7 @@ export default function EstimatesPage() {
           {/* Main Trigger Button */}
           <button
             onClick={() => setIsFabOpen(!isFabOpen)}
-            className={`flex h-14 w-14 items-center justify-center rounded-full bg-green-600 text-white shadow-xl hover:bg-green-700 transition-all duration-300 ${
+            className={`flex h-14 w-14 mb-8 items-center justify-center rounded-full bg-green-600 text-white shadow-xl hover:bg-green-700 transition-all duration-300 ${
               isFabOpen ? "rotate-45" : "rotate-0"
             }`}
           >
