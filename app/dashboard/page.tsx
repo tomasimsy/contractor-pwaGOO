@@ -325,57 +325,57 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* FLOATING ACTION BUTTON SPEED DIAL */}
-<div 
-  className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3"
-  onMouseEnter={() => setIsFabOpen(true)}
-  onMouseLeave={() => setIsFabOpen(false)}
->
-  {/* Action List Container */}
-  <div className={`flex flex-col items-end gap-2 transition-all duration-300 transform origin-bottom ${
-    isFabOpen ? "scale-100 opacity-100 translate-y-0" : "scale-75 opacity-0 translate-y-4 pointer-events-none"
-  }`}>
-    {/* Action: View Invoices */}
-    <div className="flex items-center gap-2">
-      {/* Label styled to match your theme language */}
-      <span className="bg-gray-900/90 backdrop-blur-sm text-white text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-md whitespace-nowrap">
-        View Invoices
-      </span>
+            {/* FLOATING ACTION BUTTON SPEED DIAL */}
+    <div 
+      className="fixed bottom-6 right-6 z-50 mb-8"
+      onMouseEnter={() => setIsFabOpen(true)}
+      onMouseLeave={() => setIsFabOpen(false)}
+    >
+      {/* Action List Container */}
+      <div className={`absolute bottom-16 right-0 flex flex-col items-end gap-2 transition-all duration-300 transform origin-bottom ${
+        isFabOpen ? "scale-100 opacity-100 translate-y-0" : "scale-75 opacity-0 translate-y-4 pointer-events-none"
+      }`}>
+        {/* Action: View Invoices */}
+        <div className="flex items-center gap-2">
+          {/* Label styled to match your theme language */}
+          <span className="bg-gray-900/90 backdrop-blur-sm text-white text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-md whitespace-nowrap">
+            View Invoices
+          </span>
+          <button
+            onClick={() => router.push("/invoices")}
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-700 text-white shadow-lg border border-gray-100 hover:bg-gray-800 transition-all"
+            title="View Invoices"
+          >
+            <FileText size={18} />
+          </button>
+        </div>
+
+        {/* Action: New Estimate */}
+        <div className="flex items-center gap-2">
+          {/* Label styled to match your theme language */}
+          <span className="bg-gray-900/90 backdrop-blur-sm text-white text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-md whitespace-nowrap">
+            New Estimate
+          </span>
+          <button
+            onClick={() => router.push("/estimates/create")}
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-green-600 text-white shadow-lg hover:bg-green-700 transition-all"
+            title="New Estimate"
+          >
+            <FilePlus size={18} />
+          </button>
+        </div>
+      </div>
+
+      {/* Main Trigger Button */}
       <button
-        onClick={() => router.push("/invoices")}
-        className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-700 text-white shadow-lg border border-gray-100 hover:bg-gray-800 transition-all"
-        title="View Invoices"
+        onClick={() => setIsFabOpen(!isFabOpen)}
+        className={`flex h-14 w-14 items-center justify-center rounded-full bg-green-600 text-white shadow-xl hover:bg-green-700 transition-all duration-300 ${
+          isFabOpen ? "rotate-45" : "rotate-0"
+        }`}
       >
-        <FileText size={18} />
+        <Plus size={24} />
       </button>
     </div>
-
-    {/* Action: New Estimate */}
-    <div className="flex items-center gap-2">
-      {/* Label styled to match your theme language */}
-      <span className="bg-gray-900/90 backdrop-blur-sm text-white text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-md whitespace-nowrap">
-        New Estimate
-      </span>
-      <button
-        onClick={() => router.push("/estimates/create")}
-        className="flex h-11 w-11 items-center justify-center rounded-full bg-green-600 text-white shadow-lg hover:bg-green-700 transition-all"
-        title="New Estimate"
-      >
-        <FilePlus size={18} />
-      </button>
-    </div>
-  </div>
-
-  {/* Main Trigger Button */}
-  <button
-    onClick={() => setIsFabOpen(!isFabOpen)}
-    className={`flex h-14 w-14 mb-8 items-center justify-center rounded-full bg-green-600 text-white shadow-xl hover:bg-green-700 transition-all duration-300 ${
-      isFabOpen ? "rotate-45" : "rotate-0"
-    }`}
-  >
-    <Plus size={24} />
-  </button>
-</div>
       </div>
     </ProtectedRoute>
   );

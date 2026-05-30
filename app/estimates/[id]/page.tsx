@@ -783,7 +783,7 @@ export default function EstimatePage() {
               onRemove={removeSignature}
               isCompleted={estimate?.is_completed}
               existingSignature={estimate?.signature}
-              buttonText="Sign & Approve Estimate"
+              buttonText="Need Customer Signature"
               showRemoveButton={true}
             />
           </div>
@@ -838,19 +838,16 @@ export default function EstimatePage() {
 
       {/* FAB */}
 {!isEditMode && (
-  <div
-    ref={fabRef}
-    className="fixed bottom-15 right-6 z-50 flex flex-col items-end gap-3"
-    onMouseEnter={() => setFabOpen(true)}
-    onMouseLeave={() => setFabOpen(false)}
-  >
+  <div className="fixed bottom-8 mb-8 right-6 z-50">
     {/* FAB Menu */}
     <div
-      className={`flex flex-col items-end gap-2 transition-all duration-300 transform origin-bottom ${
+      className={`absolute bottom-16 right-0 flex flex-col items-end gap-2 transition-all duration-300 transform origin-bottom ${
         fabOpen
           ? "scale-100 opacity-100 translate-y-0"
           : "scale-75 opacity-0 translate-y-4 pointer-events-none"
       }`}
+      onMouseEnter={() => setFabOpen(true)}
+      onMouseLeave={() => setFabOpen(false)}
     >
       {/* Edit */}
       {!estimate?.signature && (
@@ -917,6 +914,8 @@ export default function EstimatePage() {
     {/* Main FAB Trigger */}
     <button
       onClick={() => setFabOpen(!fabOpen)}
+      onMouseEnter={() => setFabOpen(true)}
+      onMouseLeave={() => setFabOpen(false)}
       className="h-14 w-14 rounded-full bg-green-600 text-white shadow-xl hover:bg-green-700 transition-all duration-300 flex items-center justify-center active:scale-95"
     >
       <Plus
