@@ -8,13 +8,14 @@ import { formatCurrency, formatShortDate } from "@/lib/utils/formatting";
 import Header from "@/components/ui/Header";
 import DeleteModal from "@/components/ui/DeleteModal";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
-import { Send, Trash2, MessageCircle, Link2, Plus, FilePlus } from "lucide-react";
+import { Send, Trash2, MessageCircle, Link2, Plus, FilePlus, Eye, Search } from "lucide-react";
 
 export default function EstimatesPage() {
   const router = useRouter();
 
   const [estimates, setEstimates] = useState<Estimate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
   const [deleteModal, setDeleteModal] = useState({
     isOpen: false,
     id: "",
@@ -28,7 +29,6 @@ export default function EstimatesPage() {
     try {
       setLoading(true);
       
-      // Explicitly define columns instead of '*' to keep network payloads lightweight
       const { data, error } = await supabase
         .from("estimates")
         .select(`
@@ -58,15 +58,19 @@ export default function EstimatesPage() {
     loadEstimates();
   }, [loadEstimates]);
 
+  // Client-side search matching client name or estimate identifier number
+  const filteredEstimates = estimates.filter((est) =>
+    est.clients?.name?.toLowerCase().includes(search.toLowerCase()) ||
+    (est.estimate_number || est.id.slice(0, 8)).toString().includes(search)
+  );
+
   // 2. Optimistic UI update during deletion
   async function handleSoftDelete() {
     const targetId = deleteModal.id;
     setDeleting(true);
 
-    // Capture current state in case we need to roll back on database error
     const previousEstimates = [...estimates];
 
-    // Optimistically update local UI instantly before the server responds
     setEstimates((prev) => prev.filter((est) => est.id !== targetId));
     setDeleteModal({ isOpen: false, id: "", name: "" });
 
@@ -80,18 +84,15 @@ export default function EstimatesPage() {
         .eq("id", targetId);
 
       if (error) throw error;
-      alert("Estimate moved to trash");
     } catch (error) {
       console.error("Deletion failed:", error);
       alert("Error deleting estimate. Restoring item.");
-      // Rollback UI state if database call fails
       setEstimates(previousEstimates);
     } finally {
       setDeleting(false);
     }
   }
 
-  // 3. String concatenation and URL performance cleanup
   const getEstimateUrl = (id: string) => `${window.location.origin}/public/estimates/${id}`;
 
   const sendSMSLink = (estimate: Estimate) => {
@@ -119,176 +120,194 @@ export default function EstimatesPage() {
   const copyLink = (estimate: Estimate) => {
     const documentUrl = getEstimateUrl(estimate.id);
     navigator.clipboard.writeText(documentUrl);
-    alert(`Link copied: ${documentUrl}`);
+    alert(`Link copied to clipboard!`);
   };
 
-  // 4. Static lookup map instead of continuous evaluation
+  // 3. Branded luxury lookup maps to mirror the financial stats grid
   const getStatus = (est: Estimate) => {
     if (est.signature) {
-      return { label: "Signed", className: "bg-green-100 text-green-700" };
+      return { label: "Signed", className: "bg-emerald-50 text-emerald-700 border border-emerald-100" };
     }
     if (est.status === "converted") {
-      return { label: "Converted", className: "bg-purple-100 text-purple-700" };
+      return { label: "Converted", className: "bg-teal-50 text-teal-700 border border-teal-100" };
     }
-    return { label: "Pending", className: "bg-yellow-100 text-yellow-700" };
+    return { label: "Pending", className: "bg-amber-50 text-amber-700 border border-amber-100/70" };
   };
 
   if (loading) {
-    return <div className="p-6 text-center text-gray-500">Loading estimates...</div>;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50/60 p-6 text-center text-xs font-medium text-slate-400 tracking-wide">
+        Loading estimates system...
+      </div>
+    );
   }
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-[#f6f7f9] pb-24 relative">
-        {/* HEADER */}
-        <div className="sticky top-0 z-40 border-b border-gray-200 bg-white/80 backdrop-blur">
-          <div className="flex items-center justify-between px-4 py-2">
-            <div className="flex items-center gap-2">
-              <button onClick={() => router.back()} className="text-gray-600 text-xl">
+      <div className="min-h-screen bg-slate-50/50 pb-28 relative font-sans antialiased">
+        
+        {/* FIXED STICKY HEADER CONTAINER WITH INTEGRATED SEARCH BAR */}
+        <div className="sticky top-0 z-40 border-b border-slate-200/60 bg-white/80 backdrop-blur-md">
+          <div className="mx-auto max-w-4xl flex items-center justify-between px-4 py-2.5 gap-4">
+            <div className="flex items-center gap-3 min-w-0 flex-1 md:flex-initial">
+              <button 
+                onClick={() => router.back()} 
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 transition text-sm font-medium"
+              >
                 ←
               </button>
-              <h1 className="text-base font-semibold text-gray-800">Estimates</h1>
+              <h1 className="text-sm font-semibold text-slate-900 tracking-tight hidden sm:block shrink-0">Estimates</h1>
             </div>
-            <div className="sticky top-0 z-40 border-b border-gray-200 bg-white/80 backdrop-blur">
-              <div className="flex items-center justify-between px-4 py-2">
-                 
-                
-                {/* This container will now be hidden on mobile, and display on desktop/tablet */}
-                <div className="hidden md:flex gap-2">
-                  <button
-                    onClick={() => router.push("/deleted")}
-                    className="text-gray-500 text-sm px-2 py-1 rounded-lg hover:bg-gray-100"
-                  >
-                    🗑️ Trash
-                  </button>
-                  <button
-                    onClick={() => router.push("/estimates/create")}
-                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-lg text-gray-700 shadow-sm transition hover:bg-gray-50"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
+
+            {/* NEW ADDED COMPACT SEARCH CONTROLLER PANEL */}
+            <div className="relative flex-1 max-w-md">
+              <Search size={13} className="absolute left-3 top-2.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search active estimates..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50/50 text-xs focus:bg-white focus:outline-hidden focus:border-[#05291e] transition-all"
+              />
+            </div>
+            
+            {/* Desktop Quick Actions Group */}
+            <div className="hidden md:flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => router.push("/deleted")}
+                className="text-xs font-medium text-slate-500 px-2.5 py-1.5 rounded-lg hover:bg-slate-100 transition"
+              >
+                🗑️ Trash Bin
+              </button>
+              <button
+                onClick={() => router.push("/estimates/create")}
+                className="flex h-8 px-3 items-center gap-1.5 rounded-lg bg-[#05291e] text-xs font-semibold text-white shadow-sm hover:bg-[#0b3c2d] transition"
+              >
+                <Plus size={14} />
+                New Estimate
+              </button>
             </div>
           </div>
         </div>
 
-        {/* CONTENT */}
+        {/* MAIN BODY LAYOUT */}
         <div className="mx-auto max-w-4xl p-4">
-          {/* TOP SECTION */}
-          <div className="mb-2 flex items-center justify-between">
+          
+          {/* CONTROL META COMPONENT HEADLINE */}
+          <div className="mb-4 flex items-center justify-between">
             <div>
-              <div className="text-base font-semibold text-gray-900 leading-tight">Estimates</div>
-              <div className="text-xs text-gray-500 leading-tight">Manage customer estimates</div>
+              <div className="text-base font-bold text-slate-900 tracking-tight">Active Estimates</div>
+              <div className="text-xs text-slate-400">Draft, send, track pipeline conversions</div>
             </div>
 
-            {!loading && estimates.length > 0 && (
-              <div className="rounded-lg border border-gray-200 bg-green-600 text-white  px-2.5 py-1.5 shadow-sm">
-                <div className="text-[10px] uppercase tracking-wide   leading-none">Total</div>
-                <div className="text-xs font-semibold leading-tight">{estimates.length}</div>
+            {!loading && filteredEstimates.length > 0 && (
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-1 text-center shadow-xs">
+                <div className="text-[9px] uppercase tracking-wider font-bold text-emerald-800">Pipeline Total</div>
+                <div className="text-xs font-bold text-emerald-950">{filteredEstimates.length}</div>
               </div>
             )}
           </div>
 
-          {/* LOADING */}
-          {loading && (
-            <div className="rounded-2xl border border-gray-200 bg-white py-10 text-center text-sm text-gray-500 shadow-sm">
-              Loading estimates...
+          {/* EMPTY CONTENT STATE CONTAINER */}
+          {!loading && filteredEstimates.length === 0 && (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-white py-16 text-center shadow-sm max-w-md mx-auto mt-8 p-6">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-50 text-slate-400 mb-3">
+                <FilePlus size={22} />
+              </div>
+              <div className="text-sm font-semibold text-slate-800">No active estimates found</div>
+              <div className="mt-1 text-xs text-slate-400 max-w-xs mx-auto">
+                {search ? "No records match your active filtering queries criteria." : "Create records to track pipeline, secure signatures, and push jobs to your dashboard."}
+              </div>
+              {!search && (
+                <button
+                  onClick={() => router.push("/estimates/create")}
+                  className="mt-5 inline-flex items-center gap-1.5 rounded-xl bg-[#05291e] px-4 py-2 text-xs font-semibold text-white shadow-md hover:bg-[#0b3c2d] transition"
+                >
+                  <Plus size={14} /> Create Estimate
+                </button>
+              )}
             </div>
           )}
 
-          {/* EMPTY */}
-          {!loading && estimates.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-gray-300 bg-white py-14 text-center shadow-sm">
-              <div className="text-sm font-medium text-gray-700">No estimates yet</div>
-              <div className="mt-1 text-xs text-gray-400">Create your first estimate to get started</div>
-              <button
-                onClick={() => router.push("/estimates/create")}
-                className="mt-4 rounded-xl bg-gray-900 px-4 py-2 text-sm text-white transition hover:bg-black"
-              >
-                Create Estimate
-              </button>
-            </div>
-          )}
-
-          {/* LIST */}
-          <div className="space-y-2.5">
-            {estimates.map((estimate) => {
+          {/* ESTIMATES POPULATED ROW CONTENT LIST */}
+          <div className="space-y-2">
+            {filteredEstimates.map((estimate) => {
               const status = getStatus(estimate);
               return (
                 <div
                   key={estimate.id}
-                  className="group rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm transition hover:border-gray-300 hover:shadow-md capitalize cursor-pointer"
+                  className="group rounded-xl border border-slate-200/70 bg-white px-3.5 py-2.5 shadow-2xs transition-all duration-150 hover:border-[#05291e]/30 hover:shadow-xs capitalize"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    {/* LEFT */}
+                    
+                    {/* LEFT DATA INTERACTION CLUSTER */}
                     <div
                       className="min-w-0 flex-1 cursor-pointer"
                       onClick={() => router.push(`/estimates/${estimate.id}`)}
                     >
-                      <div className="flex items-center gap-1.5">
-                        <div className="truncate text-[13px] font-semibold text-gray-800">
-                          {estimate.clients?.name || "No client"}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <div className="truncate text-xs font-bold text-slate-800 group-hover:text-[#05291e] transition-colors tracking-tight">
+                          {estimate.clients?.name || "No client specified"}
                         </div>
-                        <span
-                          className={`rounded-full px-1.5 py-[2px] text-[9px] font-medium ${status.className}`}
-                        >
+                        <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold tracking-wide uppercase ${status.className}`}>
                           {status.label}
                         </span>
                       </div>
 
-                      <div className="mt-0.5 text-[11px] text-gray-400">
-                        #{estimate.estimate_number || estimate.id.slice(0, 8)}
-                      </div>
-                      <div className="mt-0.5 text-[11px] text-gray-400">
-                        {formatShortDate(estimate.created_at)}
+                      {/* SUBTITLE LABELS META STRIP */}
+                      <div className="mt-0.5 flex items-center gap-1.5 text-[10px] font-medium text-slate-400">
+                        <span className="font-semibold text-slate-600 bg-slate-50 px-1 rounded border border-slate-200 font-mono text-[9px]">
+                          #{estimate.estimate_number || estimate.id.slice(0, 8)}
+                        </span>
+                        <span>•</span>
+                        <span>{formatShortDate(estimate.created_at)}</span>
                       </div>
 
+                      {/* OPTIONAL DESCRIPTION SUBTEXT */}
                       {estimate.description && (
-                        <div className="mt-1 line-clamp-1 text-[11px] leading-4 text-gray-500">
+                        <div className="mt-1.5 line-clamp-1 text-[11px] leading-relaxed text-slate-500 font-normal normal-case">
                           {estimate.description}
                         </div>
                       )}
 
+                      {/* LIVE EVENT VIEW METRICS FOOTER */}
                       {(estimate as any).opened_at && (
-                        <div className="mt-1 text-[11px] text-gray-500">
-                          <span>👁️</span>{" "}
-                          {new Date((estimate as any).opened_at).toLocaleString()}
-                          {(estimate as any).opened_device && (
-                            <span className="ml-1 text-gray-400">
-                              • {(estimate as any).opened_device}
-                            </span>
-                          )}
-                          {(estimate as any).opened_ip && (
-                            <span className="ml-1 text-gray-400">
-                              • IP: {(estimate as any).opened_ip}
-                            </span>
-                          )}
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-md bg-slate-50 p-1.5 text-[10px] text-slate-500 border border-slate-100 normal-case">
+                          <Eye size={11} className="text-slate-400 shrink-0" />
+                          <span className="font-medium text-slate-600">
+                            Viewed: {new Date((estimate as any).opened_at).toLocaleDateString()}
+                          </span>
                           {(estimate as any).opened_count > 1 && (
-                            <span className="ml-1 text-gray-400">
-                              • {(estimate as any).opened_count} views
+                            <span className="bg-emerald-50 text-emerald-700 font-bold px-1 rounded text-[9px]">
+                              {(estimate as any).opened_count}x
+                            </span>
+                          )}
+                          {(estimate as any).opened_device && (
+                            <span className="text-slate-400 truncate max-w-[120px]">
+                              • {(estimate as any).opened_device}
                             </span>
                           )}
                         </div>
                       )}
                     </div>
 
-                    {/* RIGHT */}
-                    <div className="flex shrink-0 flex-col items-end">
-                      <div className="text-[13px] font-semibold text-gray-900">
+                    {/* RIGHT VALUES & STRUCTURAL ACTIONS PANEL */}
+                    <div className="flex shrink-0 flex-col items-end justify-between self-stretch">
+                      <div className="text-xs font-bold text-slate-900 tracking-tight">
                         {formatCurrency(estimate.total)}
                       </div>
 
-                      <div className="flex gap-1.5 mt-1.5">
+                      {/* ICON ACTION UTILITY BUTTONS PACK */}
+                      <div className="flex gap-1 mt-2">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             copyLink(estimate);
                           }}
-                          className="p-1.5 rounded-md text-gray-400 hover:text-gold hover:bg-gold/10 transition"
-                          title="Copy Link"
+                          className="p-1 rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors border border-transparent hover:border-blue-100"
+                          title="Copy Document Link"
                         >
-                          <Link2 size={13} />
+                          <Link2 size={12} />
                         </button>
 
                         <button
@@ -296,10 +315,10 @@ export default function EstimatesPage() {
                             e.stopPropagation();
                             sendSMSLink(estimate);
                           }}
-                          className="p-1.5 rounded-md text-gray-400 hover:text-green-600 hover:bg-green-50 transition"
-                          title="Send SMS"
+                          className="p-1 rounded-md text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition-colors border border-transparent hover:border-emerald-100"
+                          title="Send Mobile SMS"
                         >
-                          <Send size={13} />
+                          <Send size={12} />
                         </button>
 
                         <button
@@ -311,13 +330,14 @@ export default function EstimatesPage() {
                               name: estimate.clients?.name || "this estimate",
                             });
                           }}
-                          className="p-1.5 rounded-md text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
-                          title="Delete"
+                          className="p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors border border-transparent hover:border-red-100"
+                          title="Move to Trash"
                         >
-                          <Trash2 size={13} />
+                          <Trash2 size={12} />
                         </button>
                       </div>
                     </div>
+
                   </div>
                 </div>
               );
@@ -325,59 +345,55 @@ export default function EstimatesPage() {
           </div>
         </div>
 
-        {/* FLOATING ACTION BUTTON SPEED DIAL */}
+        {/* FLOATING ACTION BUTTON SPEED DIAL SYSTEM */}
         <div 
-          className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3 "
-          onMouseEnter={() => setIsFabOpen(true)}
-          onMouseLeave={() => setIsFabOpen(false)}
+          className="fixed bottom-22 right-6 z-50 flex flex-col items-end gap-2.5"
         >
-          {/* Action List Container */}
-          <div className={`flex flex-col items-end gap-2 transition-allbg-green-600 duration-300 transform origin-bottom ${
-            isFabOpen ? "scale-100 opacity-100 translate-y-0" : "scale-75 opacity-0 translate-y-4 pointer-events-none"
-          }`}>
-            {/* Action: Trash */}
-            <div className="flex items-center gap-2 group ">
-              <span className="bg-gray-900/90 backdrop-blur-sm text-white text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-md whitespace-nowrap">
-          Trash
-      </span>
+          {/* Popout Speed Dial List Container */}
+          <div className={`flex flex-col items-end gap-2 transition-all duration-200 transform origin-bottom ${
+            isFabOpen ? "scale-100 opacity-100 translate-y-0" : "scale-90 opacity-0 translate-y-3 pointer-events-none"
+          }`
+          }>
+            
+            {/* Speed Dial Item: Trash Action */}
+            <div className="flex items-center gap-2 group" onMouseEnter={() => setIsFabOpen(true)} onMouseLeave={() => setIsFabOpen(false)}>
+              <span className="bg-slate-900/90 backdrop-blur-xs text-white text-[10px] font-semibold tracking-wide uppercase px-2 py-1 rounded-md shadow-sm">
+                Trash Bin
+              </span>
               <button
                 onClick={() => router.push("/deleted")}
-
-                className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-gray-600 shadow-lg border border-gray-100 hover:bg-gray-50 hover:text-red-500 transition-all"
-                title="View Trash"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-slate-500 shadow-md border border-slate-200 hover:bg-slate-50 hover:text-red-500 transition"
               >
-                <Trash2 size={18} />
+                <Trash2 size={15} />
               </button>
             </div>
 
-            {/* Action: New Estimate */}
+            {/* Speed Dial Item: Create Estimate Action */}
             <div className="flex items-center gap-2 group">
-              <span className="bg-gray-900/90 backdrop-blur-sm text-white text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-md whitespace-nowrap">
-        New Estimate
-      </span>
+              <span className="bg-slate-900/90 backdrop-blur-xs text-white text-[10px] font-semibold tracking-wide uppercase px-2 py-1 rounded-md shadow-sm">
+                New Estimate
+              </span>
               <button
                 onClick={() => router.push("/estimates/create")}
-                className="flex h-11 w-11 items-center justify-center rounded-full bg-green-600 text-white shadow-lg hover:bg-green-700 transition-all"
-                title="New Estimate"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-[#05291e] text-white shadow-md hover:bg-[#0b3c2d] transition"
               >
-                <FilePlus size={18} />
+                <FilePlus size={15} />
               </button>
             </div>
           </div>
 
-          {/* Main Trigger Button */}
-          {/* Main Trigger Button */}
+          {/* Main Fab Trigger Button Accent */}
           <button
             onClick={() => setIsFabOpen(!isFabOpen)}
-            className={`flex h-14 w-14 mb-8 items-center justify-center rounded-full bg-green-600 text-white shadow-xl hover:bg-green-700 transition-all duration-300 ${
+            className={`flex h-12 w-12 items-center justify-center rounded-full bg-[#05291e] text-white shadow-lg hover:bg-[#0b3c2d] transition-all duration-300 ${
               isFabOpen ? "rotate-45" : "rotate-0"
             }`}
           >
-            <Plus size={24} />
+            <Plus size={20} />
           </button>
         </div>
 
-        {/* DELETE MODAL - Soft Delete */}
+        {/* DELETE MODAL UTILITY POPUP */}
         <DeleteModal
           isOpen={deleteModal.isOpen}
           onClose={() => setDeleteModal({ isOpen: false, id: "", name: "" })}

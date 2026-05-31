@@ -1,271 +1,204 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
-import { Invoice } from "@/types";
 import { formatCurrency, formatShortDate } from "@/lib/utils/formatting";
-import Header from "@/components/ui/Header";
-import { Trash2, Send, Link2, Lock } from "lucide-react";
-import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import { ArrowLeft, Search, AlertCircle, Link2, Send } from "lucide-react";
 
 export default function InvoicesPage() {
-  const router = useRouter();
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
-    loadInvoices();
+    async function fetchInvoices() {
+      try {
+        setLoading(true);
+        const { data, error } = await supabase
+          .from("invoices")
+          .select("id, invoice_number, total, remaining_balance, due_date, created_at, status, clients(name, phone)")
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+        if (data) setInvoices(data);
+      } catch (err) {
+        console.error("Error fetching invoices:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchInvoices();
   }, []);
 
-  async function loadInvoices() {
-    const { data } = await supabase
-      .from("invoices")
-      .select("*, clients(name, phone)")
-      .order("locked_at", { ascending: false });
+  const filteredInvoices = invoices.filter((inv) =>
+    inv.clients?.name?.toLowerCase().includes(search.toLowerCase()) ||
+    inv.invoice_number?.toString().includes(search)
+  );
 
-    if (data) setInvoices(data as Invoice[]);
-    setLoading(false);
-  }
-
-  const getStatus = (inv: Invoice) => {
-    if (inv.status === "paid")
-      return {
-        label: "Paid",
-        className: "bg-green-100 text-green-700",
-      };
-
-    if (inv.signature)
-      return {
-        label: "Signed",
-        className: "bg-blue-100 text-blue-700",
-      };
-
-    return {
-      label: "Pending",
-      className: "bg-yellow-100 text-yellow-700",
-    };
+  const isOverdue = (dueDate: string, status: string) => {
+    if (status === "paid") return false;
+    const todayString = new Date().toISOString().split("T")[0];
+    return dueDate < todayString;
   };
 
-  const isOverdue = (inv: Invoice) => {
-    if (!inv.due_date) return false;
-    if (inv.status === "paid") return false;
-    if (inv.remaining_balance === 0) return false;
-    return new Date(inv.due_date) < new Date();
+  const getInvoiceUrl = (id: string) => `${window.location.origin}/public/invoices/${id}`;
+
+  const copyLink = (inv: any) => {
+    const documentUrl = getInvoiceUrl(inv.id);
+    navigator.clipboard.writeText(documentUrl);
+    alert(`Link copied to clipboard!`);
   };
 
-  // Send SMS Link
-  const sendSMSLink = (inv: Invoice) => {
+  const sendSMSLink = (inv: any) => {
     const phoneNumber = inv.clients?.phone;
-    
     if (!phoneNumber) {
-      alert("No phone number on file. Please add a phone number to this client first.");
+      alert("No phone number on file for this client.");
       return;
     }
-    
-    const baseUrl = window.location.origin;
-    const documentUrl = `${baseUrl}/public/invoices/${inv.id}`;
-    
-    const totalPaid = (inv.total || 0) - (inv.remaining_balance || 0);
-    const remainingBalance = inv.remaining_balance || inv.total || 0;
-    
-    let paymentStatus = "";
-    if (totalPaid === 0) {
-      paymentStatus = `Total Due: $${(inv.total || 0).toFixed(2)}`;
-    } else if (remainingBalance === 0) {
-      paymentStatus = `✓ FULLY PAID - Thank you!`;
-    } else {
-      paymentStatus = `Paid: $${totalPaid.toFixed(2)} | Balance: $${remainingBalance.toFixed(2)}`;
-    }
-    
+
+    const documentUrl = getInvoiceUrl(inv.id);
+    const balance = inv.remaining_balance || inv.total;
     const message = encodeURIComponent(
-      `Hello ${inv.clients?.name}! Please review your invoice: ${documentUrl}\n\n` +
-      `Invoice #${inv.invoice_number}\n` +
-      `${paymentStatus}\n\n` +
-      `Click the link above to view and sign. Thank you!`
+      `Hello ${inv.clients?.name || "Customer"}! Please find your invoice #${inv.invoice_number || inv.id.slice(0, 8)} here: ${documentUrl}\n\nTotal Due: ${formatCurrency(balance)}\nThank you!`
     );
-    
     window.location.href = `sms:${phoneNumber}?body=${message}`;
   };
 
-  // Copy Link function for invoice
-  const copyLink = (invoice: Invoice) => {
-    const baseUrl = window.location.origin;
-    const documentUrl = `${baseUrl}/public/invoices/${invoice.id}`;
-    navigator.clipboard.writeText(documentUrl);
-    alert(`Link copied: ${documentUrl}`);
-  };
-// Helper function to get status config for invoice list item
-const getInvoiceStatusConfig = (invoice: any) => {
-  if (invoice.is_locked) {
-    return {
-      label: "🔒 Locked",
-      className: "bg-gray-100 text-gray-600"
-    };
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50/60 flex items-center justify-center font-sans antialiased">
+        <div className="text-xs font-semibold text-slate-400 bg-white px-4 py-2 rounded-xl shadow-xs border border-slate-200/50 tracking-wide">
+          Loading pipeline...
+        </div>
+      </div>
+    );
   }
-  if (invoice.status === "paid") {
-    return {
-      label: "Paid",
-      className: "bg-green-50 text-green-700"
-    };
-  }
-  if (invoice.status === "partial") {
-    return {
-      label: "Partial",
-      className: "bg-blue-50 text-blue-700"
-    };
-  }
-  return {
-    label: "Pending",
-    className: "bg-amber-50 text-amber-700"
-  };
-};
 
   return (
-    <ProtectedRoute>
-      <div className="min-h-screen bg-[#f6f7f9] pb-24">
-        {/* HEADER */}
-        <Header title="Invoices" backLink="/" />
-
-        {/* CONTENT */}
-        <div className="mx-auto max-w-4xl p-4">
-          {/* TOP */}
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <div className="text-base font-semibold text-gray-900 leading-tight">Invoices</div>
-              <div className="text-xs text-gray-500 leading-tight">Track invoices and payments</div>
-            </div>
-
-
-            {!loading && invoices.length > 0 && (
-              <div className="rounded-xl border border-gray-200 bg-green-600 text-white px-3 py-2 shadow-sm">
-                <div className="text-[11px] uppercase tracking-wide  ">Total</div>
-                <div className="text-sm font-semibold  ">{invoices.length}</div>
-              </div>
-            )}
+    <div className="min-h-screen bg-slate-50/40 pb-32 font-sans antialiased text-slate-800">
+      
+      {/* HEADER CONTROLS */}
+      <div className="sticky top-0 z-40 border-b border-slate-200/60 bg-white/80 backdrop-blur-md">
+        <div className="mx-auto max-w-xl px-4 py-2.5 flex items-center gap-3">
+          <Link href="/dashboard" className="p-1 text-slate-400 hover:text-[#05291e] transition-colors">
+            <ArrowLeft size={16} />
+          </Link>
+          <div className="relative flex-1">
+            <Search size={13} className="absolute left-3 top-2.5 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search invoices..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50/50 text-xs focus:bg-white focus:outline-hidden focus:border-[#05291e] transition-all"
+            />
           </div>
+        </div>
+      </div>
 
-          {/* LOADING */}
-          {loading && (
-            <div className="rounded-2xl border border-gray-200 bg-white py-10 text-center text-sm text-gray-500 shadow-sm">
-              Loading invoices...
-            </div>
-          )}
-
-          {/* EMPTY */}
-          {!loading && invoices.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-gray-300 bg-white py-14 text-center shadow-sm">
-              <div className="text-sm font-medium text-gray-700">No invoices yet</div>
-              <div className="mt-1 text-xs text-gray-400">Converted invoices will appear here</div>
-            </div>
-          )}
-
-          {/* LIST */}
-        <div className="space-y-2.5">
-          {invoices.map((inv) => {
-            const status = getStatus(inv);
-            const overdue = isOverdue(inv);
-            const totalPaid = (inv.total || 0) - (inv.remaining_balance || 0);
-
-            return (
-<div
-  key={inv.id}
-  onClick={() => router.push(`/invoices/${inv.id}`)}
-  className="group cursor-pointer rounded-xl border border-gray-200 bg-white p-3 shadow-sm transition hover:border-gray-300 hover:shadow-md"
->
-  <div className="flex items-start justify-between gap-2.5">
-    {/* LEFT */}
-    <div className="min-w-0 flex-1">
-      <div className="flex items-center gap-1.5 flex-wrap">
-        <div className="truncate text-[12.5px] font-semibold text-gray-800">
-          {inv.clients?.name || "No client"}
+      {/* RENDER LISTING */}
+      <div className="mx-auto max-w-xl p-4 space-y-2">
+        <div className="px-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+          All Invoices ({filteredInvoices.length})
         </div>
 
-        {/* Status Badge - Now shows Locked status */}
-        <span
-          className={`rounded-full px-1.5 py-[1.5px] text-[8.5px] font-medium ${
-            inv.is_locked 
-              ? "bg-gray-100 text-gray-600" 
-              : inv.status === "paid" 
-                ? "bg-green-50 text-green-700" 
-                : inv.status === "partial" 
-                  ? "bg-blue-50 text-blue-700"
-                  : "bg-amber-50 text-amber-700"
-          }`}
-        >
-          {inv.is_locked ? "🔒 Locked" : inv.status === "paid" ? "Paid" : inv.status === "partial" ? "Partial" : "Pending"}
-        </span>
+        {filteredInvoices.length === 0 ? (
+          <div className="rounded-xl border border-slate-100 bg-white py-8 text-center text-xs text-slate-400">
+            No invoices found
+          </div>
+        ) : (
+          filteredInvoices.map((inv) => {
+            const itemOverdue = isOverdue(inv.due_date, inv.status);
 
-        {/* Overdue badge - only show if overdue AND not paid AND not locked */}
-        {overdue && inv.status !== "paid" && !inv.is_locked && (
-          <span className="rounded-full bg-red-100 px-1.5 py-[1.5px] text-[8.5px] font-medium text-red-600">
-            Overdue
-          </span>
+            return (
+              <div
+                key={inv.id}
+                className={`group rounded-xl border p-3.5 py-2.5 shadow-2xs transition-all duration-150 capitalize relative ${
+                  itemOverdue 
+                    ? "border-rose-200 bg-rose-50/40 hover:bg-rose-50/70" 
+                    : "border-slate-200/70 bg-white hover:border-[#05291e]/30 hover:shadow-xs"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  
+                  {/* LEFT COLUMN */}
+                  <Link href={`/invoices/${inv.id}`} className="min-w-0 flex-1 block">
+                    <div className="flex items-center gap-1.5">
+                      {itemOverdue && <AlertCircle size={12} className="text-rose-500 shrink-0" />}
+                      <div className={`truncate text-xs font-bold tracking-tight transition-colors ${
+                        itemOverdue ? "text-rose-950" : "text-slate-800 group-hover:text-[#05291e]"
+                      }`}>
+                        {inv.clients?.name || "Untitled Client"}
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-1.5 mt-0.5 text-[10px] font-medium text-slate-400">
+                      <span className={`font-semibold bg-slate-50 px-1 rounded border font-mono text-[9px] ${
+                        itemOverdue ? "text-rose-600 border-rose-200/60 bg-rose-50" : "text-slate-600 border-slate-200"
+                      }`}>
+                        #{inv.invoice_number}
+                      </span>
+                      <span>•</span>
+                      <span>{formatShortDate(inv.created_at)}</span>
+                    </div>
+
+                    <div className="text-[9px] font-medium mt-1">
+                      {inv.status !== "paid" ? (
+                        <span className={itemOverdue ? "text-rose-500 font-bold" : "text-slate-400"}>
+                          Due {formatShortDate(inv.due_date)}
+                        </span>
+                      ) : (
+                        <span className="text-teal-600 font-medium">Closed</span>
+                      )}
+                    </div>
+                  </Link>
+
+                  {/* RIGHT COLUMN */}
+                  <div className="text-right shrink-0 flex flex-col items-end justify-between self-stretch">
+                    <div className="flex flex-col items-end">
+                      <div className={`text-xs font-bold tracking-tight ${itemOverdue ? "text-rose-700" : "text-slate-900"}`}>
+                        {formatCurrency(inv.remaining_balance || inv.total)}
+                      </div>
+                      
+                      <span className={`mt-1 inline-block text-[9px] font-bold uppercase px-1.5 py-0.5 rounded tracking-wider border ${
+                        inv.status === "paid" 
+                          ? "bg-teal-100/50 text-teal-700 border-teal-200/50" 
+                          : itemOverdue
+                            ? "bg-rose-100/60 text-rose-700 border-rose-200"
+                            : "bg-amber-100/50 text-amber-700 border-amber-200/60"
+                      }`}>
+                        {inv.status === "paid" ? "Paid" : itemOverdue ? "Overdue" : "Pending"}
+                      </span>
+                    </div>
+
+                    {/* INTERACTIVE ACTION LINKS TRUNK */}
+                    <div className="flex gap-1.5 mt-2">
+                      <button
+                        onClick={() => copyLink(inv)}
+                        className="p-1 rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors border border-transparent hover:border-blue-100"
+                        title="Copy Link"
+                      >
+                        <Link2 size={12} />
+                      </button>
+
+                      <button
+                        onClick={() => sendSMSLink(inv)}
+                        className="p-1 rounded-md text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition-colors border border-transparent hover:border-emerald-100"
+                        title="Send SMS"
+                      >
+                        <Send size={12} />
+                      </button>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            );
+          })
         )}
       </div>
 
-      <div className="mt-0.5 text-[10.5px] text-gray-400">
-        {inv.invoice_number}
-      </div>
-
-      <div className="mt-0.5 flex items-center gap-2 text-[10.5px] text-gray-500">
-        <div>
-          Due:{" "}
-          <span className="text-gray-700">
-            {inv.due_date ? formatShortDate(inv.due_date) : "—"}
-          </span>
-        </div>
-      </div>
     </div>
-
-    {/* RIGHT */}
-    <div className="shrink-0 text-right">
-      <div className="text-[12.5px] font-semibold text-gray-900">
-        {formatCurrency(inv.total)}
-      </div>
-
-      {/* Status text - shows Locked instead of Fully Paid */}
-      {inv.is_locked ? (
-        <div className="mt-1 text-[10.5px] font-bold text-gray-500 flex items-center justify-end gap-0.5">
-          <Lock size={10} /> Locked
-        </div>
-      ) : inv.status === "paid" ? (
-        <div className="mt-1 text-[10.5px] font-bold text-green-600">Fully Paid</div>
-      ) : inv.remaining_balance > 0 ? (
-        <div className="mt-1 text-[10.5px] font-bold uppercase text-red-500">
-          Remaining{" "}
-          <span>{formatCurrency(inv.remaining_balance)}</span>
-        </div>
-      ) : null}
-
-<div className="mt-1 flex justify-end gap-1.5">
-  <button
-    onClick={(e) => {
-      e.stopPropagation();
-      if (!inv.is_locked) {
-        sendSMSLink(inv);
-      }
-    }}
-    disabled={inv.is_locked}
-    className={`flex items-center gap-1 rounded-md px-2 py-[3px] text-[10px] shadow-sm transition ${
-      inv.is_locked 
-        ? "bg-gray-300 text-gray-500 cursor-not-allowed" 
-        : "bg-green-600 text-white hover:bg-green-800"
-    }`}
-  >
-    <Send size={11} /> SMS
-  </button>
-</div>
-    </div>
-  </div>
-</div>
-
-            );
-          })}
-        </div>
-
-        </div>
-      </div>
-    </ProtectedRoute>
   );
 }
