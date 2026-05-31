@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils/formatting";
-import { X, Trash2, Edit2, Check, DollarSign, Users, Plus, Receipt } from "lucide-react";
+import { X, Trash2, Edit2, Check, DollarSign, Users, Plus, Receipt, Eye } from "lucide-react";
 
 type Subcontractor = {
   id: string;
@@ -13,6 +13,13 @@ type Subcontractor = {
   email: string;
 };
 
+type SubcontractorPayment = {
+  id: string;
+  amount: number;
+  payment_method: string;
+  created_at: string;
+};
+
 type AssignedSub = {
   id: string;
   amount: number;
@@ -20,6 +27,7 @@ type AssignedSub = {
   notes: string;
   subcontractor_id: string;
   subcontractors?: Subcontractor;
+  payments?: SubcontractorPayment[];
 };
 
 type Expense = {
@@ -38,6 +46,14 @@ type Agent = {
   phone: string;
 };
 
+type AgentPayment = {
+  id: string;
+  amount: number;
+  payment_method: string;
+  payment_date: string;
+  notes?: string;
+};
+
 type AssignedAgent = {
   id: string;
   amount: number;
@@ -45,6 +61,7 @@ type AssignedAgent = {
   notes: string;
   agent_id: string;
   agents?: Agent;
+  payments?: AgentPayment[];
 };
 
 interface ProjectFinancialsModalProps {
@@ -73,11 +90,12 @@ export default function ProjectFinancialsModal({
   onRefresh,
 }: ProjectFinancialsModalProps) {
   const [activeTab, setActiveTab] = useState<"subcontractors" | "expenses" | "agents">("subcontractors");
-
-  // Split percentage options
   const [companyPercentage, setCompanyPercentage] = useState<30 | 60>(30);
   const agentPercentage = companyPercentage === 30 ? 70 : 40;
-
+  // ✅ ADD THESE TWO LINES:
+  const [newSub, setNewSub] = useState({ name: "", company_name: "", phone: "", email: "" });
+  const [newAgent, setNewAgent] = useState({ name: "", email: "", phone: "" });
+  
   // Subcontractor state
   const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
   const [assignedSubs, setAssignedSubs] = useState<AssignedSub[]>([]);
@@ -88,9 +106,13 @@ export default function ProjectFinancialsModal({
   const [editingSub, setEditingSub] = useState<string | null>(null);
   const [editSubAmount, setEditSubAmount] = useState(0);
   const [showSubPaymentModal, setShowSubPaymentModal] = useState(false);
-  const [selectedSub, setSelectedSub] = useState<AssignedSub | null>(null);
+  const [selectedSubForPayment, setSelectedSubForPayment] = useState<AssignedSub | null>(null);
   const [subPaymentAmount, setSubPaymentAmount] = useState(0);
   const [subPaymentMethod, setSubPaymentMethod] = useState("cash");
+  const [showSubPaymentHistory, setShowSubPaymentHistory] = useState(false);
+  const [selectedSubForHistory, setSelectedSubForHistory] = useState<AssignedSub | null>(null);
+  const [editingSubPayment, setEditingSubPayment] = useState<string | null>(null);
+  const [editSubPaymentAmount, setEditSubPaymentAmount] = useState(0);
 
   // Expense state
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -112,19 +134,14 @@ export default function ProjectFinancialsModal({
   const [agentNotes, setAgentNotes] = useState("");
   const [editingAgent, setEditingAgent] = useState<string | null>(null);
   const [editAgentAmount, setEditAgentAmount] = useState(0);
-  const [showAgentPaymentHistory, setShowAgentPaymentHistory] = useState(false);
-  const [selectedAgentForHistory, setSelectedAgentForHistory] = useState<AssignedAgent | null>(null);
-  const [agentPayments, setAgentPayments] = useState<any[]>([]);
-  const [editingAgentPayment, setEditingAgentPayment] = useState<string | null>(null);
-  const [editPaymentAmount, setEditPaymentAmount] = useState(0);
   const [showAgentPaymentModal, setShowAgentPaymentModal] = useState(false);
   const [selectedAgentForPayment, setSelectedAgentForPayment] = useState<AssignedAgent | null>(null);
   const [agentPaymentAmount, setAgentPaymentAmount] = useState(0);
   const [agentPaymentMethod, setAgentPaymentMethod] = useState("bank_transfer");
-
-  // New item forms
-  const [newSub, setNewSub] = useState({ name: "", company_name: "", phone: "", email: "" });
-  const [newAgent, setNewAgent] = useState({ name: "", email: "", phone: "" });
+  const [showAgentPaymentHistory, setShowAgentPaymentHistory] = useState(false);
+  const [selectedAgentForHistory, setSelectedAgentForHistory] = useState<AssignedAgent | null>(null);
+  const [editingAgentPayment, setEditingAgentPayment] = useState<string | null>(null);
+  const [editAgentPaymentAmount, setEditAgentPaymentAmount] = useState(0);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -133,13 +150,12 @@ export default function ProjectFinancialsModal({
   const totalSubAssigned = assignedSubs.reduce((sum, s) => sum + (s.amount || 0), 0);
   const totalSubPaid = assignedSubs.reduce((sum, s) => sum + (s.paid_amount || 0), 0);
   const totalSubOwed = totalSubAssigned - totalSubPaid;
-  
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
-  
   const afterSubcontractorAndExpenses = estimateTotal - totalSubPaid - totalExpenses;
   const companyAmount = (afterSubcontractorAndExpenses * companyPercentage) / 100;
   const remainingForAgents = afterSubcontractorAndExpenses - companyAmount;
   const totalAgentAssigned = assignedAgents.reduce((sum, a) => sum + (a.amount || 0), 0);
+  const totalAgentPaid = assignedAgents.reduce((sum, a) => sum + (a.paid_amount || 0), 0);
   const remainingToDistribute = remainingForAgents - totalAgentAssigned;
 
   useEffect(() => {
@@ -149,7 +165,7 @@ export default function ProjectFinancialsModal({
   async function loadAllData() {
     setLoading(true);
     try {
-      // Load subcontractors
+      // Load subcontractors list
       const { data: subs } = await supabase.from("subcontractors").select("*").order("name");
       if (subs) setSubcontractors(subs);
 
@@ -164,10 +180,11 @@ export default function ProjectFinancialsModal({
           assigned.map(async (sub) => {
             const { data: payments } = await supabase
               .from("subcontractor_payments")
-              .select("amount")
-              .eq("estimate_subcontractor_id", sub.id);
+              .select("*")
+              .eq("estimate_subcontractor_id", sub.id)
+              .order("created_at", { ascending: false });
             const paidAmount = payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
-            return { ...sub, paid_amount: paidAmount };
+            return { ...sub, paid_amount: paidAmount, payments: payments || [] };
           })
         );
         setAssignedSubs(subsWithPayments);
@@ -181,43 +198,47 @@ export default function ProjectFinancialsModal({
         .order("expense_date", { ascending: false });
       if (expenseData) setExpenses(expenseData);
 
-      // Load agents
+      // Load agents list
       const { data: ags } = await supabase.from("agents").select("*").order("name");
       if (ags) setAgents(ags);
 
-      // Load assigned agents
+      // Load assigned agents with payments
       const { data: assignedAgentsData } = await supabase
         .from("estimate_agents")
         .select("*, agents(*)")
         .eq("estimate_id", estimateId);
+
       if (assignedAgentsData) {
         const agentsWithPayments = await Promise.all(
           assignedAgentsData.map(async (agent) => {
             const { data: payments } = await supabase
               .from("agent_payments")
-              .select("amount")
+              .select("*")
+              .eq("estimate_id", estimateId)
               .eq("agent_id", agent.agent_id)
-              .eq("estimate_id", estimateId);
+              .order("payment_date", { ascending: false });
             const paidAmount = payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
-            return { ...agent, paid_amount: paidAmount };
+            return { ...agent, paid_amount: paidAmount, payments: payments || [] };
           })
         );
         setAssignedAgents(agentsWithPayments);
       }
     } catch (err) {
       console.error(err);
+      alert("Failed to load data");
     } finally {
       setLoading(false);
     }
   }
 
-  // Subcontractor functions
+  // ==================== SUBCONTRACTOR CRUD ====================
   async function createSubcontractor() {
     if (!newSub.name.trim()) {
       alert("Name is required");
       return;
     }
-    const { data } = await supabase
+    setSaving(true);
+    const { data, error } = await supabase
       .from("subcontractors")
       .insert({
         name: newSub.name,
@@ -227,75 +248,18 @@ export default function ProjectFinancialsModal({
       })
       .select()
       .single();
-    if (data) {
+
+    if (error) {
+      alert("Error creating subcontractor");
+      console.error(error);
+    } else if (data) {
       setSubcontractors([data, ...subcontractors]);
       setSelectedSubId(data.id);
       setShowNewSubForm(false);
       setNewSub({ name: "", company_name: "", phone: "", email: "" });
       alert("Subcontractor created!");
     }
-  }
-
-  async function loadAgentPayments(agentId: string) {
-    const { data } = await supabase
-      .from("agent_payments")
-      .select("*")
-      .eq("estimate_id", estimateId)
-      .eq("agent_id", agentId)
-      .order("payment_date", { ascending: false });
-    
-    if (data) setAgentPayments(data);
-    return data?.reduce((sum, p) => sum + p.amount, 0) || 0;
-  }
-
-  async function deleteAgentPayment(paymentId: string, amount: number, agentId: string) {
-    if (!confirm("Delete this payment? This will increase the agent's owed amount.")) return;
-    
-    await supabase.from("agent_payments").delete().eq("id", paymentId);
-    
-    const newTotalPaid = await loadAgentPayments(agentId);
-    
-    setAssignedAgents(prev => prev.map(agent => 
-      agent.agent_id === agentId 
-        ? { ...agent, paid_amount: newTotalPaid }
-        : agent
-    ));
-    
-    if (selectedAgentForHistory) {
-      await loadAgentPayments(selectedAgentForHistory.agent_id);
-    }
-    
-    alert("Payment deleted. Agent's owed amount has been adjusted.");
-    onRefresh();
-  }
-
-  async function updateAgentPayment(paymentId: string, newAmount: number, agentId: string, oldAmount: number) {
-    if (newAmount < 0) {
-      alert("Amount cannot be negative");
-      return;
-    }
-    
-    await supabase
-      .from("agent_payments")
-      .update({ amount: newAmount })
-      .eq("id", paymentId);
-    
-    const newTotalPaid = await loadAgentPayments(agentId);
-    
-    setAssignedAgents(prev => prev.map(agent => 
-      agent.agent_id === agentId 
-        ? { ...agent, paid_amount: newTotalPaid }
-        : agent
-    ));
-    
-    setEditingAgentPayment(null);
-    
-    if (selectedAgentForHistory) {
-      await loadAgentPayments(selectedAgentForHistory.agent_id);
-    }
-    
-    alert(`Payment updated from ${formatCurrency(oldAmount)} to ${formatCurrency(newAmount)}`);
-    onRefresh();
+    setSaving(false);
   }
 
   async function assignSubcontractor() {
@@ -321,62 +285,113 @@ export default function ProjectFinancialsModal({
       .select()
       .single();
 
-    if (!error && newSub && amountToSave > 0) {
-      await supabase.from("subcontractor_payments").insert({
-        estimate_subcontractor_id: newSub.id,
-        amount: amountToSave,
-        payment_method: "cash",
-      });
+    if (error) {
+      alert("Error assigning subcontractor");
+      console.error(error);
+    } else if (newSub) {
+      if (amountToSave > 0) {
+        await supabase.from("subcontractor_payments").insert({
+          estimate_subcontractor_id: newSub.id,
+          amount: amountToSave,
+          payment_method: "cash",
+        });
+      }
+      await loadAllData();
+      onRefresh();
+      alert(amountToSave > 0 ? "Subcontractor assigned with payment!" : "Subcontractor assigned");
     }
 
     setSelectedSubId("");
     setSubAmount(null);
     setSubNotes("");
-    loadAllData();
-    onRefresh();
-    alert(amountToSave > 0 ? "Subcontractor assigned with payment!" : "Subcontractor assigned");
   }
 
   async function updateSubAmount(subId: string, newAmount: number) {
     if (newAmount < 0) return;
-    await supabase.from("estimate_subcontractors").update({ amount: newAmount }).eq("id", subId);
+    setSaving(true);
+    const { error } = await supabase
+      .from("estimate_subcontractors")
+      .update({ amount: newAmount })
+      .eq("id", subId);
+    if (error) {
+      alert("Error updating amount");
+    } else {
+      await loadAllData();
+      onRefresh();
+    }
     setEditingSub(null);
-    loadAllData();
-    onRefresh();
+    setSaving(false);
   }
 
   async function removeSubAssignment(subId: string) {
-    if (!confirm("Remove this subcontractor?")) return;
+    if (!confirm("Remove this subcontractor? All related payments will also be deleted.")) return;
+    setSaving(true);
+    // Delete all payments first
+    await supabase.from("subcontractor_payments").delete().eq("estimate_subcontractor_id", subId);
+    // Delete assignment
     await supabase.from("estimate_subcontractors").delete().eq("id", subId);
-    loadAllData();
+    await loadAllData();
     onRefresh();
+    setSaving(false);
+    alert("Subcontractor removed");
   }
 
   async function recordSubPayment() {
-    if (!selectedSub || subPaymentAmount <= 0) {
+    if (!selectedSubForPayment || subPaymentAmount <= 0) {
       alert("Enter a valid amount");
       return;
     }
-    setSaving(true);
+    const remainingOwed = (selectedSubForPayment.amount || 0) - (selectedSubForPayment.paid_amount || 0);
+    if (subPaymentAmount > remainingOwed) {
+      alert(`Cannot pay more than owed (${formatCurrency(remainingOwed)})`);
+      return;
+    }
 
-    await supabase.from("subcontractor_payments").insert({
-      estimate_subcontractor_id: selectedSub.id,
+    setSaving(true);
+    const { error } = await supabase.from("subcontractor_payments").insert({
+      estimate_subcontractor_id: selectedSubForPayment.id,
       amount: subPaymentAmount,
       payment_method: subPaymentMethod,
     });
 
-    const newPaidAmount = (selectedSub.paid_amount || 0) + subPaymentAmount;
-    await supabase.from("estimate_subcontractors").update({ amount: newPaidAmount }).eq("id", selectedSub.id);
-
+    if (error) {
+      alert("Error recording payment");
+      console.error(error);
+    } else {
+      await loadAllData();
+      onRefresh();
+      alert(`Payment of ${formatCurrency(subPaymentAmount)} recorded!`);
+    }
     setShowSubPaymentModal(false);
     setSubPaymentAmount(0);
-    loadAllData();
-    onRefresh();
     setSaving(false);
-    alert(`Payment of ${formatCurrency(subPaymentAmount)} recorded!`);
   }
 
-  // Expense functions
+  async function deleteSubPayment(paymentId: string, subAssignmentId: string) {
+    if (!confirm("Delete this payment? This will increase the subcontractor's owed amount.")) return;
+    setSaving(true);
+    await supabase.from("subcontractor_payments").delete().eq("id", paymentId);
+    await loadAllData();
+    onRefresh();
+    setSaving(false);
+    alert("Payment deleted");
+  }
+
+  async function updateSubPayment(paymentId: string, newAmount: number, subAssignmentId: string, oldAmount: number) {
+    if (newAmount < 0) {
+      alert("Amount cannot be negative");
+      return;
+    }
+    setSaving(true);
+    await supabase.from("subcontractor_payments").update({ amount: newAmount }).eq("id", paymentId);
+    await loadAllData();
+    onRefresh();
+    setEditingSubPayment(null);
+    setSaving(false);
+    alert(`Payment updated from ${formatCurrency(oldAmount)} to ${formatCurrency(newAmount)}`);
+  }
+
+  // ==================== EXPENSE CRUD ====================
   async function addExpense() {
     if (expenseForm.amount <= 0) {
       alert("Enter an amount");
@@ -397,7 +412,10 @@ export default function ProjectFinancialsModal({
       notes: expenseForm.notes || null,
     });
 
-    if (!error) {
+    if (error) {
+      alert("Error adding expense");
+      console.error(error);
+    } else {
       setExpenseForm({
         category: "materials",
         description: "",
@@ -406,38 +424,41 @@ export default function ProjectFinancialsModal({
         notes: "",
       });
       setShowExpenseForm(false);
-      loadAllData();
+      await loadAllData();
       onRefresh();
-    } else {
-      alert("Error adding expense");
     }
     setSaving(false);
   }
 
   async function updateExpense(expenseId: string, newAmount: number, newDescription: string) {
+    setSaving(true);
     await supabase
       .from("estimate_expenses")
       .update({ amount: newAmount, description: newDescription })
       .eq("id", expenseId);
-    setEditingExpense(null);
-    loadAllData();
+    await loadAllData();
     onRefresh();
+    setEditingExpense(null);
+    setSaving(false);
   }
 
   async function deleteExpense(expenseId: string) {
     if (!confirm("Delete this expense?")) return;
+    setSaving(true);
     await supabase.from("estimate_expenses").delete().eq("id", expenseId);
-    loadAllData();
+    await loadAllData();
     onRefresh();
+    setSaving(false);
   }
 
-  // Agent functions
+  // ==================== AGENT CRUD ====================
   async function createAgent() {
     if (!newAgent.name.trim()) {
       alert("Name is required");
       return;
     }
-    const { data } = await supabase
+    setSaving(true);
+    const { data, error } = await supabase
       .from("agents")
       .insert({
         name: newAgent.name,
@@ -446,13 +467,18 @@ export default function ProjectFinancialsModal({
       })
       .select()
       .single();
-    if (data) {
+
+    if (error) {
+      alert("Error creating agent");
+      console.error(error);
+    } else if (data) {
       setAgents([data, ...agents]);
       setSelectedAgentId(data.id);
       setShowNewAgentForm(false);
       setNewAgent({ name: "", email: "", phone: "" });
       alert("Agent created!");
     }
+    setSaving(false);
   }
 
   async function assignAgent() {
@@ -462,18 +488,25 @@ export default function ProjectFinancialsModal({
       return;
     }
 
-    await supabase.from("estimate_agents").insert({
+    setSaving(true);
+    const { error } = await supabase.from("estimate_agents").insert({
       estimate_id: estimateId,
       agent_id: selectedAgentId,
       amount: 0,
       notes: agentNotes || null,
     });
 
+    if (error) {
+      alert("Error assigning agent");
+      console.error(error);
+    } else {
+      await redistributeAgentEvenly();
+      await loadAllData();
+      onRefresh();
+    }
     setSelectedAgentId("");
     setAgentNotes("");
-    await redistributeAgentEvenly();
-    loadAllData();
-    onRefresh();
+    setSaving(false);
   }
 
   async function redistributeAgentEvenly() {
@@ -484,142 +517,111 @@ export default function ProjectFinancialsModal({
     for (const agent of assignedAgents) {
       await supabase.from("estimate_agents").update({ amount: equalShare }).eq("id", agent.id);
     }
-    loadAllData();
-    onRefresh();
   }
 
   async function redistributeByPercentage() {
-    const count = assignedAgents.length;
-    if (count === 0 || remainingForAgents <= 0) return;
-    
-    // Calculate based on percentage split (agents split the agent portion evenly)
-    const equalShare = remainingForAgents / count;
-
+    if (assignedAgents.length === 0 || remainingForAgents <= 0) return;
+    const equalShare = remainingForAgents / assignedAgents.length;
     for (const agent of assignedAgents) {
       await supabase.from("estimate_agents").update({ amount: equalShare }).eq("id", agent.id);
     }
-    
     await loadAllData();
     onRefresh();
-    alert(`Distributed ${formatCurrency(remainingForAgents)} evenly among ${count} agents (${formatCurrency(equalShare)} each)`);
+    alert(`Distributed ${formatCurrency(remainingForAgents)} evenly among ${assignedAgents.length} agents (${formatCurrency(equalShare)} each)`);
   }
 
   async function updateAgentAmount(agentId: string, newAmount: number) {
     if (newAmount < 0) return;
+    setSaving(true);
     await supabase.from("estimate_agents").update({ amount: newAmount }).eq("id", agentId);
-
-    const otherTotal = assignedAgents.filter((a) => a.id !== agentId).reduce((sum, a) => sum + (a.amount || 0), 0);
-    const remaining = remainingForAgents - (newAmount + otherTotal);
-    if (remaining > 0 && assignedAgents.length > 1) {
-      const lastAgent = assignedAgents.find((a) => a.id !== agentId);
-      if (lastAgent) {
-        await supabase
-          .from("estimate_agents")
-          .update({ amount: (lastAgent.amount || 0) + remaining })
-          .eq("id", lastAgent.id);
-      }
-    }
-    setEditingAgent(null);
-    loadAllData();
+    await loadAllData();
     onRefresh();
+    setEditingAgent(null);
+    setSaving(false);
   }
 
-  async function removeAgentAssignment(agentId: string) {
-    if (!confirm("Remove this agent?")) return;
-    await supabase.from("estimate_agents").delete().eq("id", agentId);
+  async function removeAgentAssignment(agentAssignId: string, agentId: string) {
+    if (!confirm("Remove this agent? All payments made to this agent for this estimate will be permanently deleted.")) return;
+    setSaving(true);
+    // Delete all agent payments for this estimate and agent
+    await supabase.from("agent_payments").delete().eq("estimate_id", estimateId).eq("agent_id", agentId);
+    // Delete the assignment
+    await supabase.from("estimate_agents").delete().eq("id", agentAssignId);
     await redistributeAgentEvenly();
-    loadAllData();
+    await loadAllData();
     onRefresh();
+    setSaving(false);
+    alert("Agent removed and associated payments deleted");
   }
 
   async function recordAgentPayment() {
-    if (!selectedAgentForPayment) {
-      alert("No agent selected");
+    if (!selectedAgentForPayment || agentPaymentAmount <= 0) {
+      alert("Enter valid amount");
       return;
     }
-
-    if (agentPaymentAmount <= 0) {
-      alert("Enter valid payment amount");
-      return;
-    }
-
-    const remainingOwed =
-      (selectedAgentForPayment.amount || 0) -
-      (selectedAgentForPayment.paid_amount || 0);
-
+    const remainingOwed = (selectedAgentForPayment.amount || 0) - (selectedAgentForPayment.paid_amount || 0);
     if (agentPaymentAmount > remainingOwed) {
       alert(`Cannot pay more than owed (${formatCurrency(remainingOwed)})`);
       return;
     }
 
-    try {
-      setSaving(true);
+    setSaving(true);
+    const { error } = await supabase.from("agent_payments").insert({
+      estimate_id: estimateId,
+      agent_id: selectedAgentForPayment.agent_id,
+      amount: agentPaymentAmount,
+      payment_method: agentPaymentMethod,
+      payment_date: new Date().toISOString(),
+    });
 
-      const { error } = await supabase
-        .from("agent_payments")
-        .insert({
-          estimate_id: estimateId,
-          agent_id: selectedAgentForPayment.agent_id,
-          amount: Number(agentPaymentAmount),
-          payment_method: agentPaymentMethod,
-        });
-
-      if (error) {
-        console.error(error);
-        alert(error.message);
-        return;
-      }
-
-      setAssignedAgents((prev) =>
-        prev.map((a) =>
-          a.id === selectedAgentForPayment.id
-            ? {
-                ...a,
-                paid_amount:
-                  (a.paid_amount || 0) + Number(agentPaymentAmount),
-              }
-            : a
-        )
-      );
-
-      setShowAgentPaymentModal(false);
-      setAgentPaymentAmount(0);
-
+    if (error) {
+      alert("Error recording payment");
+      console.error(error);
+    } else {
       await loadAllData();
       onRefresh();
-
-      alert(`Payment of ${formatCurrency(agentPaymentAmount)} recorded`);
-    } catch (err) {
-      console.error(err);
-      alert("Failed to record payment");
-    } finally {
-      setSaving(false);
+      alert(`Payment of ${formatCurrency(agentPaymentAmount)} recorded!`);
     }
+    setShowAgentPaymentModal(false);
+    setAgentPaymentAmount(0);
+    setSaving(false);
   }
 
-  // Update company percentage and recalculate
+  async function deleteAgentPayment(paymentId: string, agentId: string) {
+    if (!confirm("Delete this payment? This will increase the agent's owed amount.")) return;
+    setSaving(true);
+    await supabase.from("agent_payments").delete().eq("id", paymentId);
+    await loadAllData();
+    onRefresh();
+    setSaving(false);
+    alert("Payment deleted");
+  }
+
+  async function updateAgentPayment(paymentId: string, newAmount: number, agentId: string, oldAmount: number) {
+    if (newAmount < 0) {
+      alert("Amount cannot be negative");
+      return;
+    }
+    setSaving(true);
+    await supabase.from("agent_payments").update({ amount: newAmount }).eq("id", paymentId);
+    await loadAllData();
+    onRefresh();
+    setEditingAgentPayment(null);
+    setSaving(false);
+    alert(`Payment updated from ${formatCurrency(oldAmount)} to ${formatCurrency(newAmount)}`);
+  }
+
   async function updateCompanyPercentage(percentage: 30 | 60) {
     setCompanyPercentage(percentage);
-    // Recalculate agent amounts based on new split
-    if (assignedAgents.length > 0 && remainingForAgents > 0) {
-      const equalShare = remainingForAgents / assignedAgents.length;
-      for (const agent of assignedAgents) {
-        await supabase.from("estimate_agents").update({ amount: equalShare }).eq("id", agent.id);
-      }
-      await loadAllData();
-      onRefresh();
-    }
+    await redistributeAgentEvenly();
+    await loadAllData();
+    onRefresh();
   }
 
   if (!isOpen) return null;
 
-  const getCategoryLabel = (category: string) => {
-    return EXPENSE_CATEGORIES.find(c => c.value === category)?.label || category;
-  };
-
-  const getCategoryIcon = (category: string) => {
-    return EXPENSE_CATEGORIES.find(c => c.value === category)?.icon || "📦";
-  };
+  const getCategoryLabel = (category: string) => EXPENSE_CATEGORIES.find(c => c.value === category)?.label || category;
+  const getCategoryIcon = (category: string) => EXPENSE_CATEGORIES.find(c => c.value === category)?.icon || "📦";
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -640,16 +642,13 @@ export default function ProjectFinancialsModal({
               <span className="font-semibold">{formatCurrency(estimateTotal)}</span>
             </div>
 
-            {/* Split Percentage Options */}
             <div className="bg-amber-50 -mx-2 px-3 py-2 rounded-lg border border-amber-200">
               <div className="text-xs font-semibold text-amber-800 mb-2">Profit Split</div>
               <div className="flex gap-3">
                 <button
                   onClick={() => updateCompanyPercentage(30)}
                   className={`flex-1 py-2 rounded-lg text-sm font-medium transition ${
-                    companyPercentage === 30
-                      ? "bg-amber-600 text-white"
-                      : "bg-white border border-amber-300 text-amber-700"
+                    companyPercentage === 30 ? "bg-amber-600 text-white" : "bg-white border border-amber-300 text-amber-700"
                   }`}
                 >
                   Company 30% / Agent 70%
@@ -657,9 +656,7 @@ export default function ProjectFinancialsModal({
                 <button
                   onClick={() => updateCompanyPercentage(60)}
                   className={`flex-1 py-2 rounded-lg text-sm font-medium transition ${
-                    companyPercentage === 60
-                      ? "bg-amber-600 text-white"
-                      : "bg-white border border-amber-300 text-amber-700"
+                    companyPercentage === 60 ? "bg-amber-600 text-white" : "bg-white border border-amber-300 text-amber-700"
                   }`}
                 >
                   Company 60% / Agent 40%
@@ -683,7 +680,6 @@ export default function ProjectFinancialsModal({
                 <span className="text-sm font-medium text-red-800">Business Expenses:</span>
                 <span className="text-sm font-bold text-red-600">-{formatCurrency(totalExpenses)}</span>
               </div>
-              <div className="text-[10px] text-red-600 mt-1">Materials, equipment, permits, etc.</div>
             </div>
 
             <div className="border-t my-2"></div>
@@ -700,6 +696,13 @@ export default function ProjectFinancialsModal({
               <span>For Agents ({agentPercentage}%):</span>
               <span className="text-green-700">{formatCurrency(remainingForAgents)}</span>
             </div>
+            {assignedAgents.length > 0 && remainingForAgents > 0 && (
+              <div className="text-right">
+                <button onClick={redistributeByPercentage} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                  Split Evenly
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Tab Buttons */}
@@ -730,10 +733,9 @@ export default function ProjectFinancialsModal({
             </button>
           </div>
 
-          {/* SUBCONTRACTORS TAB */}
+          {/* ==================== SUBCONTRACTORS TAB ==================== */}
           {activeTab === "subcontractors" && (
             <div className="space-y-4">
-              {/* ... existing subcontractor code ... */}
               <div>
                 <div className="flex justify-between items-center mb-2">
                   <label className="text-sm font-medium text-gray-700">Assign Subcontractor</label>
@@ -744,88 +746,32 @@ export default function ProjectFinancialsModal({
 
                 {showNewSubForm && (
                   <div className="mb-3 p-3 bg-gray-50 rounded-lg space-y-2">
-                    <input
-                      type="text"
-                      placeholder="Name *"
-                      value={newSub.name}
-                      onChange={(e) => setNewSub({ ...newSub, name: e.target.value })}
-                      className="w-full border rounded-lg p-2 text-sm"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Company Name"
-                      value={newSub.company_name}
-                      onChange={(e) => setNewSub({ ...newSub, company_name: e.target.value })}
-                      className="w-full border rounded-lg p-2 text-sm"
-                    />
-                    <input
-                      type="tel"
-                      placeholder="Phone"
-                      value={newSub.phone}
-                      onChange={(e) => setNewSub({ ...newSub, phone: e.target.value })}
-                      className="w-full border rounded-lg p-2 text-sm"
-                    />
-                    <input
-                      type="email"
-                      placeholder="Email"
-                      value={newSub.email}
-                      onChange={(e) => setNewSub({ ...newSub, email: e.target.value })}
-                      className="w-full border rounded-lg p-2 text-sm"
-                    />
-                    <div className="flex gap-2 pt-1">
-                      <button onClick={() => setShowNewSubForm(false)} className="flex-1 py-2 border rounded-lg text-sm">
-                        Cancel
-                      </button>
-                      <button onClick={createSubcontractor} className="flex-1 py-2 bg-green-700 text-white rounded-lg text-sm">
-                        Create
-                      </button>
+                    <input type="text" placeholder="Name *" value={newSub.name} onChange={(e) => setNewSub({ ...newSub, name: e.target.value })} className="w-full border rounded-lg p-2 text-sm" />
+                    <input type="text" placeholder="Company Name" value={newSub.company_name} onChange={(e) => setNewSub({ ...newSub, company_name: e.target.value })} className="w-full border rounded-lg p-2 text-sm" />
+                    <input type="tel" placeholder="Phone" value={newSub.phone} onChange={(e) => setNewSub({ ...newSub, phone: e.target.value })} className="w-full border rounded-lg p-2 text-sm" />
+                    <input type="email" placeholder="Email" value={newSub.email} onChange={(e) => setNewSub({ ...newSub, email: e.target.value })} className="w-full border rounded-lg p-2 text-sm" />
+                    <div className="flex gap-2">
+                      <button onClick={() => setShowNewSubForm(false)} className="flex-1 py-2 border rounded-lg text-sm">Cancel</button>
+                      <button onClick={createSubcontractor} disabled={saving} className="flex-1 py-2 bg-green-700 text-white rounded-lg text-sm">Create</button>
                     </div>
                   </div>
                 )}
 
-                <select
-                  value={selectedSubId}
-                  onChange={(e) => setSelectedSubId(e.target.value)}
-                  className="w-full border rounded-lg p-2 text-sm mb-2"
-                >
+                <select value={selectedSubId} onChange={(e) => setSelectedSubId(e.target.value)} className="w-full border rounded-lg p-2 text-sm mb-2">
                   <option value="">Select subcontractor...</option>
-                  {subcontractors
-                    .filter((s) => !assignedSubs.some((a) => a.subcontractor_id === s.id))
-                    .map((sub) => (
-                      <option key={sub.id} value={sub.id}>
-                        {sub.name}
-                      </option>
-                    ))}
+                  {subcontractors.filter((s) => !assignedSubs.some((a) => a.subcontractor_id === s.id)).map((sub) => (
+                    <option key={sub.id} value={sub.id}>{sub.name}</option>
+                  ))}
                 </select>
 
                 <div className="flex gap-2 mb-2">
-                  <input
-                    type="number"
-                    placeholder="Amount (optional)"
-                    value={subAmount === null ? "" : subAmount}
-                    onChange={(e) => setSubAmount(e.target.value === "" ? null : Number(e.target.value))}
-                    className="flex-1 border rounded-lg p-2 text-sm"
-                    step="0.01"
-                  />
-                  <button onClick={assignSubcontractor} className="px-4 py-2 bg-green-700 text-white rounded-lg text-sm">
-                    Assign
-                  </button>
+                  <input type="number" placeholder="Amount (optional)" value={subAmount === null ? "" : subAmount} onChange={(e) => setSubAmount(e.target.value === "" ? null : Number(e.target.value))} className="flex-1 border rounded-lg p-2 text-sm" step="0.01" />
+                  <button onClick={assignSubcontractor} disabled={saving} className="px-4 py-2 bg-green-700 text-white rounded-lg text-sm">Assign</button>
                 </div>
-                <p className="text-[10px] text-gray-400">Leave amount blank to add later</p>
-                <textarea
-                  placeholder="Notes (optional)"
-                  value={subNotes}
-                  onChange={(e) => setSubNotes(e.target.value)}
-                  className="w-full mt-2 border rounded-lg p-2 text-sm"
-                  rows={1}
-                />
+                <textarea placeholder="Notes (optional)" value={subNotes} onChange={(e) => setSubNotes(e.target.value)} className="w-full border rounded-lg p-2 text-sm" rows={1} />
               </div>
 
-              {loading ? (
-                <div className="text-center py-8 text-gray-400">Loading...</div>
-              ) : assignedSubs.length === 0 ? (
-                <div className="text-center py-8 text-gray-400">No subcontractors assigned</div>
-              ) : (
+              {loading ? <div className="text-center py-8 text-gray-400">Loading...</div> : assignedSubs.length === 0 ? <div className="text-center py-8 text-gray-400">No subcontractors assigned</div> : (
                 <div className="space-y-3">
                   {assignedSubs.map((sub) => (
                     <div key={sub.id} className="border rounded-lg p-3">
@@ -835,51 +781,25 @@ export default function ProjectFinancialsModal({
                           {editingSub === sub.id ? (
                             <div className="flex items-center gap-2 mt-1">
                               <span className="text-sm text-gray-500">$</span>
-                              <input
-                                type="number"
-                                value={editSubAmount}
-                                onChange={(e) => setEditSubAmount(Number(e.target.value))}
-                                className="w-28 border rounded-lg p-1 text-sm"
-                                step="0.01"
-                                autoFocus
-                              />
-                              <button onClick={() => updateSubAmount(sub.id, editSubAmount)} className="text-green-600">
-                                <Check size={16} />
-                              </button>
-                              <button onClick={() => setEditingSub(null)} className="text-gray-400">
-                                <X size={16} />
-                              </button>
+                              <input type="number" value={editSubAmount} onChange={(e) => setEditSubAmount(Number(e.target.value))} className="w-28 border rounded-lg p-1 text-sm" step="0.01" autoFocus />
+                              <button onClick={() => updateSubAmount(sub.id, editSubAmount)} className="text-green-600"><Check size={16} /></button>
+                              <button onClick={() => setEditingSub(null)} className="text-gray-400"><X size={16} /></button>
                             </div>
                           ) : (
                             <div className="flex items-center gap-2 mt-1">
                               <span className="text-sm font-semibold text-green-700">{formatCurrency(sub.amount || 0)}</span>
-                              <button
-                                onClick={() => {
-                                  setEditingSub(sub.id);
-                                  setEditSubAmount(sub.amount || 0);
-                                }}
-                                className="text-gray-400 hover:text-blue-500"
-                              >
-                                <Edit2 size={12} />
-                              </button>
+                              <button onClick={() => { setEditingSub(sub.id); setEditSubAmount(sub.amount || 0); }} className="text-gray-400 hover:text-blue-500"><Edit2 size={12} /></button>
                             </div>
                           )}
                           <div className="text-xs text-gray-500 mt-1">Paid: {formatCurrency(sub.paid_amount || 0)}</div>
                           {sub.notes && <div className="text-xs text-gray-400 mt-1">{sub.notes}</div>}
                         </div>
-                        <button onClick={() => removeSubAssignment(sub.id)} className="text-red-500 text-sm px-2">
-                          ✕
-                        </button>
+                        <button onClick={() => removeSubAssignment(sub.id)} className="text-red-500 text-sm px-2">✕</button>
                       </div>
-                      <button
-                        onClick={() => {
-                          setSelectedSub(sub);
-                          setShowSubPaymentModal(true);
-                        }}
-                        className="w-full mt-2 py-1.5 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 transition"
-                      >
-                        Record Payment
-                      </button>
+                      <div className="flex gap-2 mt-2">
+                        <button onClick={() => { setSelectedSubForPayment(sub); setSubPaymentAmount(0); setShowSubPaymentModal(true); }} className="flex-1 py-1.5 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200">Record Payment</button>
+                        <button onClick={() => { setSelectedSubForHistory(sub); setShowSubPaymentHistory(true); }} className="flex-1 py-1.5 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">Payment History</button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -887,73 +807,28 @@ export default function ProjectFinancialsModal({
             </div>
           )}
 
-          {/* EXPENSES TAB */}
+          {/* ==================== EXPENSES TAB ==================== */}
           {activeTab === "expenses" && (
             <div className="space-y-4">
               {!showExpenseForm ? (
-                <button
-                  onClick={() => setShowExpenseForm(true)}
-                  className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-green-600 text-sm font-medium hover:bg-green-50 transition"
-                >
-                  + Add Expense
-                </button>
+                <button onClick={() => setShowExpenseForm(true)} className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-green-600 text-sm font-medium hover:bg-green-50">+ Add Expense</button>
               ) : (
                 <div className="border rounded-lg p-3 space-y-3">
-                  <select
-                    value={expenseForm.category}
-                    onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
-                    className="w-full border rounded-lg p-2 text-sm"
-                  >
-                    {EXPENSE_CATEGORIES.map((cat) => (
-                      <option key={cat.value} value={cat.value}>
-                        {cat.icon} {cat.label}
-                      </option>
-                    ))}
+                  <select value={expenseForm.category} onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })} className="w-full border rounded-lg p-2 text-sm">
+                    {EXPENSE_CATEGORIES.map((cat) => (<option key={cat.value} value={cat.value}>{cat.icon} {cat.label}</option>))}
                   </select>
-                  <input
-                    type="text"
-                    placeholder="Description *"
-                    value={expenseForm.description}
-                    onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })}
-                    className="w-full border rounded-lg p-2 text-sm"
-                  />
-                  <input
-                    type="number"
-                    placeholder="Amount *"
-                    value={expenseForm.amount}
-                    onChange={(e) => setExpenseForm({ ...expenseForm, amount: Number(e.target.value) })}
-                    className="w-full border rounded-lg p-2 text-sm"
-                    step="0.01"
-                  />
-                  <input
-                    type="date"
-                    value={expenseForm.expense_date}
-                    onChange={(e) => setExpenseForm({ ...expenseForm, expense_date: e.target.value })}
-                    className="w-full border rounded-lg p-2 text-sm"
-                  />
-                  <textarea
-                    placeholder="Notes (optional)"
-                    value={expenseForm.notes}
-                    onChange={(e) => setExpenseForm({ ...expenseForm, notes: e.target.value })}
-                    className="w-full border rounded-lg p-2 text-sm"
-                    rows={2}
-                  />
+                  <input type="text" placeholder="Description *" value={expenseForm.description} onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })} className="w-full border rounded-lg p-2 text-sm" />
+                  <input type="number" placeholder="Amount *" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: Number(e.target.value) })} className="w-full border rounded-lg p-2 text-sm" step="0.01" />
+                  <input type="date" value={expenseForm.expense_date} onChange={(e) => setExpenseForm({ ...expenseForm, expense_date: e.target.value })} className="w-full border rounded-lg p-2 text-sm" />
+                  <textarea placeholder="Notes (optional)" value={expenseForm.notes} onChange={(e) => setExpenseForm({ ...expenseForm, notes: e.target.value })} className="w-full border rounded-lg p-2 text-sm" rows={2} />
                   <div className="flex gap-2">
-                    <button onClick={() => setShowExpenseForm(false)} className="flex-1 py-2 border rounded-lg text-sm">
-                      Cancel
-                    </button>
-                    <button onClick={addExpense} disabled={saving} className="flex-1 py-2 bg-green-700 text-white rounded-lg text-sm">
-                      {saving ? "Adding..." : "Add Expense"}
-                    </button>
+                    <button onClick={() => setShowExpenseForm(false)} className="flex-1 py-2 border rounded-lg text-sm">Cancel</button>
+                    <button onClick={addExpense} disabled={saving} className="flex-1 py-2 bg-green-700 text-white rounded-lg text-sm">{saving ? "Adding..." : "Add Expense"}</button>
                   </div>
                 </div>
               )}
 
-              {loading ? (
-                <div className="text-center py-8 text-gray-400">Loading...</div>
-              ) : expenses.length === 0 ? (
-                <div className="text-center py-8 text-gray-400">No expenses recorded</div>
-              ) : (
+              {loading ? <div className="text-center py-8 text-gray-400">Loading...</div> : expenses.length === 0 ? <div className="text-center py-8 text-gray-400">No expenses recorded</div> : (
                 <div className="space-y-2 max-h-96 overflow-y-auto">
                   {expenses.map((exp) => (
                     <div key={exp.id} className="border rounded-lg p-3">
@@ -965,22 +840,9 @@ export default function ProjectFinancialsModal({
                           </div>
                           {editingExpense === exp.id ? (
                             <div className="flex items-center gap-2 mt-1">
-                              <input
-                                type="text"
-                                defaultValue={exp.description}
-                                onBlur={(e) => updateExpense(exp.id, exp.amount, e.target.value)}
-                                className="flex-1 border rounded-lg p-1 text-sm"
-                              />
-                              <input
-                                type="number"
-                                defaultValue={exp.amount}
-                                onBlur={(e) => updateExpense(exp.id, Number(e.target.value), exp.description)}
-                                className="w-24 border rounded-lg p-1 text-sm"
-                                step="0.01"
-                              />
-                              <button onClick={() => setEditingExpense(null)} className="text-green-600">
-                                <Check size={16} />
-                              </button>
+                              <input type="text" defaultValue={exp.description} onBlur={(e) => updateExpense(exp.id, exp.amount, e.target.value)} className="flex-1 border rounded-lg p-1 text-sm" />
+                              <input type="number" defaultValue={exp.amount} onBlur={(e) => updateExpense(exp.id, Number(e.target.value), exp.description)} className="w-24 border rounded-lg p-1 text-sm" step="0.01" />
+                              <button onClick={() => setEditingExpense(null)} className="text-green-600"><Check size={16} /></button>
                             </div>
                           ) : (
                             <>
@@ -991,127 +853,54 @@ export default function ProjectFinancialsModal({
                           {exp.notes && <div className="text-xs text-gray-500 mt-1">{exp.notes}</div>}
                         </div>
                         <div className="flex gap-1">
-                          <button onClick={() => setEditingExpense(exp.id)} className="text-gray-400 hover:text-blue-500">
-                            <Edit2 size={14} />
-                          </button>
-                          <button onClick={() => deleteExpense(exp.id)} className="text-gray-400 hover:text-red-500">
-                            <Trash2 size={14} />
-                          </button>
+                          <button onClick={() => setEditingExpense(exp.id)} className="text-gray-400 hover:text-blue-500"><Edit2 size={14} /></button>
+                          <button onClick={() => deleteExpense(exp.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={14} /></button>
                         </div>
                       </div>
                     </div>
                   ))}
-                  <div className="text-right text-sm font-semibold text-red-600 pt-2">
-                    Total Expenses: {formatCurrency(totalExpenses)}
-                  </div>
+                  <div className="text-right text-sm font-semibold text-red-600 pt-2">Total Expenses: {formatCurrency(totalExpenses)}</div>
                 </div>
               )}
             </div>
           )}
 
-          {/* AGENTS TAB */}
+          {/* ==================== AGENTS TAB ==================== */}
           {activeTab === "agents" && (
             <div className="space-y-4">
               <div>
                 <div className="flex justify-between items-center mb-2">
                   <label className="text-sm font-medium text-gray-700">Add Agent</label>
-                  <button onClick={() => setShowNewAgentForm(!showNewAgentForm)} className="text-xs text-blue-600">
-                    + New Agent
-                  </button>
+                  <button onClick={() => setShowNewAgentForm(!showNewAgentForm)} className="text-xs text-blue-600">+ New Agent</button>
                 </div>
 
                 {showNewAgentForm && (
                   <div className="mb-3 p-3 bg-gray-50 rounded-lg space-y-2">
-                    <input
-                      type="text"
-                      placeholder="Name *"
-                      value={newAgent.name}
-                      onChange={(e) => setNewAgent({ ...newAgent, name: e.target.value })}
-                      className="w-full border rounded-lg p-2 text-sm"
-                    />
-                    <input
-                      type="email"
-                      placeholder="Email"
-                      value={newAgent.email}
-                      onChange={(e) => setNewAgent({ ...newAgent, email: e.target.value })}
-                      className="w-full border rounded-lg p-2 text-sm"
-                    />
-                    <input
-                      type="tel"
-                      placeholder="Phone"
-                      value={newAgent.phone}
-                      onChange={(e) => setNewAgent({ ...newAgent, phone: e.target.value })}
-                      className="w-full border rounded-lg p-2 text-sm"
-                    />
-                    <div className="flex gap-2 pt-1">
-                      <button onClick={() => setShowNewAgentForm(false)} className="flex-1 py-2 border rounded-lg text-sm">
-                        Cancel
-                      </button>
-                      <button onClick={createAgent} className="flex-1 py-2 bg-green-700 text-white rounded-lg text-sm">
-                        Create
-                      </button>
+                    <input type="text" placeholder="Name *" value={newAgent.name} onChange={(e) => setNewAgent({ ...newAgent, name: e.target.value })} className="w-full border rounded-lg p-2 text-sm" />
+                    <input type="email" placeholder="Email" value={newAgent.email} onChange={(e) => setNewAgent({ ...newAgent, email: e.target.value })} className="w-full border rounded-lg p-2 text-sm" />
+                    <input type="tel" placeholder="Phone" value={newAgent.phone} onChange={(e) => setNewAgent({ ...newAgent, phone: e.target.value })} className="w-full border rounded-lg p-2 text-sm" />
+                    <div className="flex gap-2">
+                      <button onClick={() => setShowNewAgentForm(false)} className="flex-1 py-2 border rounded-lg text-sm">Cancel</button>
+                      <button onClick={createAgent} disabled={saving} className="flex-1 py-2 bg-green-700 text-white rounded-lg text-sm">Create</button>
                     </div>
                   </div>
                 )}
 
-                <select
-                  value={selectedAgentId}
-                  onChange={(e) => setSelectedAgentId(e.target.value)}
-                  className="w-full border rounded-lg p-2 text-sm mb-2"
-                >
+                <select value={selectedAgentId} onChange={(e) => setSelectedAgentId(e.target.value)} className="w-full border rounded-lg p-2 text-sm mb-2">
                   <option value="">Select agent...</option>
-                  {agents
-                    .filter((a) => !assignedAgents.some((assigned) => assigned.agent_id === a.id))
-                    .map((agent) => (
-                      <option key={agent.id} value={agent.id}>
-                        {agent.name}
-                      </option>
-                    ))}
+                  {agents.filter((a) => !assignedAgents.some((assigned) => assigned.agent_id === a.id)).map((agent) => (
+                    <option key={agent.id} value={agent.id}>{agent.name}</option>
+                  ))}
                 </select>
 
                 <div className="flex gap-2">
-                  <button onClick={assignAgent} className="flex-1 py-2 bg-green-700 text-white rounded-lg text-sm">
-                    Add Agent
-                  </button>
+                  <button onClick={assignAgent} disabled={saving} className="flex-1 py-2 bg-green-700 text-white rounded-lg text-sm">Add Agent</button>
                 </div>
-                <textarea
-                  placeholder="Notes (optional)"
-                  value={agentNotes}
-                  onChange={(e) => setAgentNotes(e.target.value)}
-                  className="w-full mt-2 border rounded-lg p-2 text-sm"
-                  rows={1}
-                />
+                <textarea placeholder="Notes (optional)" value={agentNotes} onChange={(e) => setAgentNotes(e.target.value)} className="w-full mt-2 border rounded-lg p-2 text-sm" rows={1} />
               </div>
 
-              {loading ? (
-                <div className="text-center py-8 text-gray-400">Loading...</div>
-              ) : assignedAgents.length === 0 ? (
-                <div className="text-center py-8 text-gray-400">No agents assigned</div>
-              ) : (
+              {loading ? <div className="text-center py-8 text-gray-400">Loading...</div> : assignedAgents.length === 0 ? <div className="text-center py-8 text-gray-400">No agents assigned</div> : (
                 <>
-                  {/* Split Evenly Button */}
-                  {assignedAgents.length > 0 && remainingForAgents > 0 && (
-                    <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <div className="text-sm font-semibold text-blue-800">Split Remaining Amount</div>
-                          <div className="text-xs text-blue-600">
-                            {formatCurrency(remainingForAgents)} to split among {assignedAgents.length} agents
-                          </div>
-                        </div>
-                        <button
-                          onClick={redistributeByPercentage}
-                          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition"
-                        >
-                          Split Evenly
-                        </button>
-                      </div>
-                      <div className="text-xs text-blue-500 mt-2">
-                        Each agent gets: {formatCurrency(remainingForAgents / assignedAgents.length)}
-                      </div>
-                    </div>
-                  )}
-
                   <div className="space-y-3">
                     {assignedAgents.map((agent) => (
                       <div key={agent.id} className="border rounded-lg p-3">
@@ -1121,91 +910,40 @@ export default function ProjectFinancialsModal({
                             {editingAgent === agent.id ? (
                               <div className="flex items-center gap-2 mt-1">
                                 <span className="text-sm text-gray-500">$</span>
-                                <input
-                                  type="number"
-                                  value={editAgentAmount}
-                                  onChange={(e) => setEditAgentAmount(Number(e.target.value))}
-                                  className="w-28 border rounded-lg p-1 text-sm"
-                                  step="0.01"
-                                  autoFocus
-                                />
-                                <button onClick={() => updateAgentAmount(agent.id, editAgentAmount)} className="text-green-600">
-                                  <Check size={16} />
-                                </button>
-                                <button onClick={() => setEditingAgent(null)} className="text-gray-400">
-                                  <X size={16} />
-                                </button>
+                                <input type="number" value={editAgentAmount} onChange={(e) => setEditAgentAmount(Number(e.target.value))} className="w-28 border rounded-lg p-1 text-sm" step="0.01" autoFocus />
+                                <button onClick={() => updateAgentAmount(agent.id, editAgentAmount)} className="text-green-600"><Check size={16} /></button>
+                                <button onClick={() => setEditingAgent(null)} className="text-gray-400"><X size={16} /></button>
                               </div>
                             ) : (
                               <div className="flex items-center gap-2 mt-1">
                                 <span className="text-sm font-semibold text-green-700">Earns: {formatCurrency(agent.amount || 0)}</span>
-                                <button
-                                  onClick={() => {
-                                    setEditingAgent(agent.id);
-                                    setEditAgentAmount(agent.amount || 0);
-                                  }}
-                                  className="text-gray-400 hover:text-blue-500"
-                                >
-                                  <Edit2 size={12} />
-                                </button>
+                                <button onClick={() => { setEditingAgent(agent.id); setEditAgentAmount(agent.amount || 0); }} className="text-gray-400 hover:text-blue-500"><Edit2 size={12} /></button>
                               </div>
                             )}
                             {agent.notes && <div className="text-xs text-gray-400 mt-1">{agent.notes}</div>}
-                            
                             <div className="flex items-center gap-2 mt-1">
                               <span className="text-xs text-gray-500">Paid: {formatCurrency(agent.paid_amount || 0)}</span>
-                              <button
-                                onClick={() => {
-                                  setSelectedAgentForHistory(agent);
-                                  loadAgentPayments(agent.agent_id);
-                                  setShowAgentPaymentHistory(true);
-                                }}
-                                className="text-xs text-blue-500 hover:text-blue-600"
-                              >
-                                View History
-                              </button>
+                              <button onClick={() => { setSelectedAgentForHistory(agent); setShowAgentPaymentHistory(true); }} className="text-xs text-blue-500 hover:text-blue-600"><Eye size={12} className="inline" /> History</button>
                             </div>
-                            
                             {(agent.amount || 0) > (agent.paid_amount || 0) && (
-                              <div className="text-xs text-amber-600 mt-1">
-                                Owed: {formatCurrency((agent.amount || 0) - (agent.paid_amount || 0))}
-                              </div>
+                              <div className="text-xs text-amber-600 mt-1">Owed: {formatCurrency((agent.amount || 0) - (agent.paid_amount || 0))}</div>
                             )}
                           </div>
                           <div className="flex gap-1">
-                            <button
-                              onClick={() => {
-                                setSelectedAgentForPayment(agent);
-                                setAgentPaymentAmount((agent.amount || 0) - (agent.paid_amount || 0));
-                                setShowAgentPaymentModal(true);
-                              }}
-                              className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200"
-                              disabled={(agent.amount || 0) - (agent.paid_amount || 0) <= 0}
-                            >
-                              Pay
-                            </button>
-                            <button onClick={() => removeAgentAssignment(agent.id)} className="text-red-500 text-sm px-2">
-                              ✕
-                            </button>
+                            <button onClick={() => { setSelectedAgentForPayment(agent); setAgentPaymentAmount((agent.amount || 0) - (agent.paid_amount || 0)); setShowAgentPaymentModal(true); }} className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200">Pay</button>
+                            <button onClick={() => removeAgentAssignment(agent.id, agent.agent_id)} className="text-red-500 text-sm px-2">✕</button>
                           </div>
                         </div>
                       </div>
                     ))}
                   </div>
-
-                  {assignedAgents.length > 0 && (
-                    <div className="border-t pt-3">
-                      <div className="flex justify-between text-sm font-semibold">
-                        <span>Total Commission:</span>
-                        <span className="text-green-700">
-                          {formatCurrency(totalAgentAssigned)} / {formatCurrency(remainingForAgents)}
-                        </span>
-                      </div>
-                      {remainingToDistribute !== 0 && (
-                        <div className="text-xs text-orange-600 mt-1">Remaining: {formatCurrency(remainingToDistribute)}</div>
-                      )}
+                  <div className="border-t pt-3">
+                    <div className="flex justify-between text-sm font-semibold">
+                      <span>Total Commission:</span>
+                      <span className="text-green-700">{formatCurrency(totalAgentAssigned)} / {formatCurrency(remainingForAgents)}</span>
                     </div>
-                  )}
+                    {remainingToDistribute !== 0 && <div className="text-xs text-orange-600 mt-1">Remaining: {formatCurrency(remainingToDistribute)}</div>}
+                  </div>
                 </>
               )}
             </div>
@@ -1214,135 +952,53 @@ export default function ProjectFinancialsModal({
       </div>
 
       {/* Subcontractor Payment Modal */}
-      {showSubPaymentModal && selectedSub && (
+      {showSubPaymentModal && selectedSubForPayment && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-xl w-full max-w-md">
             <div className="border-b px-5 py-4 flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Record Payment - {selectedSub.subcontractors?.name}</h3>
-              <button onClick={() => setShowSubPaymentModal(false)} className="p-1 text-gray-400">
-                <X size={20} />
-              </button>
+              <h3 className="text-lg font-semibold">Record Payment - {selectedSubForPayment.subcontractors?.name}</h3>
+              <button onClick={() => setShowSubPaymentModal(false)} className="p-1 text-gray-400"><X size={20} /></button>
             </div>
             <div className="p-5 space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Amount</label>
-                <input
-                  type="number"
-                  value={subPaymentAmount}
-                  onChange={(e) => setSubPaymentAmount(Number(e.target.value))}
-                  className="w-full border rounded-lg p-2"
-                  step="0.01"
-                  placeholder="0.00"
-                  autoFocus
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Payment Method</label>
-                <select
-                  value={subPaymentMethod}
-                  onChange={(e) => setSubPaymentMethod(e.target.value)}
-                  className="w-full border rounded-lg p-2"
-                >
-                  <option value="cash">Cash</option>
-                  <option value="check">Check</option>
-                  <option value="bank_transfer">Bank Transfer</option>
-                  <option value="credit_card">Credit Card</option>
-                </select>
-              </div>
-              <div className="flex gap-2 pt-2">
-                <button onClick={() => setShowSubPaymentModal(false)} className="flex-1 py-2 border rounded-lg">
-                  Cancel
-                </button>
-                <button onClick={recordSubPayment} disabled={saving} className="flex-1 py-2 bg-green-700 text-white rounded-lg disabled:opacity-50">
-                  {saving ? "Recording..." : "Record Payment"}
-                </button>
-              </div>
+              <div><label className="block text-sm font-medium mb-1">Amount</label><input type="number" value={subPaymentAmount} onChange={(e) => setSubPaymentAmount(Number(e.target.value))} className="w-full border rounded-lg p-2" step="0.01" autoFocus /></div>
+              <div><label className="block text-sm font-medium mb-1">Payment Method</label><select value={subPaymentMethod} onChange={(e) => setSubPaymentMethod(e.target.value)} className="w-full border rounded-lg p-2"><option value="cash">Cash</option><option value="check">Check</option><option value="bank_transfer">Bank Transfer</option></select></div>
+              <div className="flex gap-2 pt-2"><button onClick={() => setShowSubPaymentModal(false)} className="flex-1 py-2 border rounded-lg">Cancel</button><button onClick={recordSubPayment} disabled={saving} className="flex-1 py-2 bg-green-700 text-white rounded-lg">Record Payment</button></div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Agent Payment History Modal */}
-      {showAgentPaymentHistory && selectedAgentForHistory && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[65] p-4">
+      {/* Subcontractor Payment History Modal */}
+      {showSubPaymentHistory && selectedSubForHistory && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-xl w-full max-w-md max-h-[80vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b px-5 py-4 flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Payment History - {selectedAgentForHistory.agents?.name}</h3>
-              <button onClick={() => setShowAgentPaymentHistory(false)} className="p-1 text-gray-400">
-                <X size={20} />
-              </button>
+              <h3 className="text-lg font-semibold">Payments - {selectedSubForHistory.subcontractors?.name}</h3>
+              <button onClick={() => setShowSubPaymentHistory(false)} className="p-1 text-gray-400"><X size={20} /></button>
             </div>
-            
             <div className="p-5 space-y-4">
               <div className="bg-gray-50 rounded-lg p-3">
-                <div className="flex justify-between text-sm">
-                  <span>Total Earned:</span>
-                  <span className="font-semibold text-green-700">{formatCurrency(selectedAgentForHistory.amount || 0)}</span>
-                </div>
-                <div className="flex justify-between text-sm mt-1">
-                  <span>Total Paid:</span>
-                  <span className="font-semibold text-blue-600">{formatCurrency(selectedAgentForHistory.paid_amount || 0)}</span>
-                </div>
-                <div className="flex justify-between text-sm mt-1">
-                  <span>Remaining:</span>
-                  <span className="font-semibold text-amber-600">{formatCurrency((selectedAgentForHistory.amount || 0) - (selectedAgentForHistory.paid_amount || 0))}</span>
-                </div>
+                <div className="flex justify-between text-sm"><span>Total Assigned:</span><span className="font-semibold">{formatCurrency(selectedSubForHistory.amount || 0)}</span></div>
+                <div className="flex justify-between text-sm mt-1"><span>Total Paid:</span><span className="font-semibold text-blue-600">{formatCurrency(selectedSubForHistory.paid_amount || 0)}</span></div>
+                <div className="flex justify-between text-sm mt-1"><span>Remaining:</span><span className="font-semibold text-amber-600">{formatCurrency((selectedSubForHistory.amount || 0) - (selectedSubForHistory.paid_amount || 0))}</span></div>
               </div>
-              
-              {agentPayments.length === 0 ? (
-                <div className="text-center py-8 text-gray-400">No payments recorded</div>
-              ) : (
+              {selectedSubForHistory.payments?.length === 0 ? <div className="text-center py-8 text-gray-400">No payments</div> : (
                 <div className="space-y-2">
-                  {agentPayments.map((payment) => (
+                  {selectedSubForHistory.payments?.map((payment) => (
                     <div key={payment.id} className="border rounded-lg p-3">
                       <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          {editingAgentPayment === payment.id ? (
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm text-gray-500">$</span>
-                              <input
-                                type="number"
-                                value={editPaymentAmount}
-                                onChange={(e) => setEditPaymentAmount(Number(e.target.value))}
-                                className="w-28 border rounded-lg p-1 text-sm"
-                                step="0.01"
-                                autoFocus
-                              />
-                              <button
-                                onClick={() => updateAgentPayment(payment.id, editPaymentAmount, selectedAgentForHistory.agent_id, payment.amount)}
-                                className="text-green-600"
-                              >
-                                <Check size={16} />
-                              </button>
-                              <button onClick={() => setEditingAgentPayment(null)} className="text-gray-400">
-                                <X size={16} />
-                              </button>
-                            </div>
+                        <div>
+                          {editingSubPayment === payment.id ? (
+                            <div className="flex items-center gap-2"><span>$</span><input type="number" value={editSubPaymentAmount} onChange={(e) => setEditSubPaymentAmount(Number(e.target.value))} className="w-28 border rounded p-1 text-sm" step="0.01" autoFocus /><button onClick={() => updateSubPayment(payment.id, editSubPaymentAmount, selectedSubForHistory.id, payment.amount)} className="text-green-600"><Check size={16} /></button><button onClick={() => setEditingSubPayment(null)} className="text-gray-400"><X size={16} /></button></div>
                           ) : (
                             <div className="font-medium">{formatCurrency(payment.amount)}</div>
                           )}
-                          <div className="text-xs text-gray-500 mt-1">
-                            {payment.payment_method} • {new Date(payment.payment_date).toLocaleDateString()}
-                          </div>
-                          {payment.notes && <div className="text-xs text-gray-400 mt-1">{payment.notes}</div>}
+                          <div className="text-xs text-gray-500 mt-1">{payment.payment_method} • {new Date(payment.created_at).toLocaleDateString()}</div>
                         </div>
-                        {editingAgentPayment !== payment.id && (
+                        {editingSubPayment !== payment.id && (
                           <div className="flex gap-1">
-                            <button
-                              onClick={() => {
-                                setEditingAgentPayment(payment.id);
-                                setEditPaymentAmount(payment.amount);
-                              }}
-                              className="text-gray-400 hover:text-blue-500"
-                            >
-                              <Edit2 size={14} />
-                            </button>
-                            <button
-                              onClick={() => deleteAgentPayment(payment.id, payment.amount, selectedAgentForHistory.agent_id)}
-                              className="text-gray-400 hover:text-red-500"
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                            <button onClick={() => { setEditingSubPayment(payment.id); setEditSubPaymentAmount(payment.amount); }} className="text-gray-400 hover:text-blue-500"><Edit2 size={14} /></button>
+                            <button onClick={() => deleteSubPayment(payment.id, selectedSubForHistory.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={14} /></button>
                           </div>
                         )}
                       </div>
@@ -1359,48 +1015,35 @@ export default function ProjectFinancialsModal({
       {showAgentPaymentModal && selectedAgentForPayment && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-xl w-full max-w-md">
-            <div className="border-b px-5 py-4 flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Pay Agent - {selectedAgentForPayment.agents?.name}</h3>
-              <button onClick={() => setShowAgentPaymentModal(false)} className="p-1 text-gray-400">
-                <X size={20} />
-              </button>
-            </div>
+            <div className="border-b px-5 py-4 flex justify-between items-center"><h3 className="text-lg font-semibold">Pay Agent - {selectedAgentForPayment.agents?.name}</h3><button onClick={() => setShowAgentPaymentModal(false)} className="p-1 text-gray-400"><X size={20} /></button></div>
             <div className="p-5 space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Amount</label>
-                <input
-                  type="number"
-                  value={agentPaymentAmount}
-                  onChange={(e) => setAgentPaymentAmount(Number(e.target.value))}
-                  className="w-full border rounded-lg p-2"
-                  step="0.01"
-                  placeholder="0.00"
-                  autoFocus
-                />
-                <div className="text-xs text-gray-400 mt-1">Earns: {formatCurrency(selectedAgentForPayment.amount || 0)}</div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Payment Method</label>
-                <select
-                  value={agentPaymentMethod}
-                  onChange={(e) => setAgentPaymentMethod(e.target.value)}
-                  className="w-full border rounded-lg p-2"
-                >
-                  <option value="bank_transfer">Bank Transfer</option>
-                  <option value="cash">Cash</option>
-                  <option value="check">Check</option>
-                  <option value="venmo">Venmo</option>
-                  <option value="zelle">Zelle</option>
-                </select>
-              </div>
-              <div className="flex gap-2 pt-2">
-                <button onClick={() => setShowAgentPaymentModal(false)} className="flex-1 py-2 border rounded-lg">
-                  Cancel
-                </button>
-                <button onClick={recordAgentPayment} disabled={saving} className="flex-1 py-2 bg-green-700 text-white rounded-lg disabled:opacity-50">
-                  {saving ? "Processing..." : "Record Payment"}
-                </button>
-              </div>
+              <div><label className="block text-sm font-medium mb-1">Amount</label><input type="number" value={agentPaymentAmount} onChange={(e) => setAgentPaymentAmount(Number(e.target.value))} className="w-full border rounded-lg p-2" step="0.01" autoFocus /></div>
+              <div><label className="block text-sm font-medium mb-1">Payment Method</label><select value={agentPaymentMethod} onChange={(e) => setAgentPaymentMethod(e.target.value)} className="w-full border rounded-lg p-2"><option value="bank_transfer">Bank Transfer</option><option value="cash">Cash</option><option value="check">Check</option><option value="venmo">Venmo</option></select></div>
+              <div className="flex gap-2 pt-2"><button onClick={() => setShowAgentPaymentModal(false)} className="flex-1 py-2 border rounded-lg">Cancel</button><button onClick={recordAgentPayment} disabled={saving} className="flex-1 py-2 bg-green-700 text-white rounded-lg">Record Payment</button></div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Agent Payment History Modal */}
+      {showAgentPaymentHistory && selectedAgentForHistory && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl w-full max-w-md max-h-[80vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b px-5 py-4 flex justify-between items-center"><h3 className="text-lg font-semibold">Payment History - {selectedAgentForHistory.agents?.name}</h3><button onClick={() => setShowAgentPaymentHistory(false)} className="p-1 text-gray-400"><X size={20} /></button></div>
+            <div className="p-5 space-y-4">
+              <div className="bg-gray-50 rounded-lg p-3"><div className="flex justify-between text-sm"><span>Total Earned:</span><span className="font-semibold text-green-700">{formatCurrency(selectedAgentForHistory.amount || 0)}</span></div><div className="flex justify-between text-sm mt-1"><span>Total Paid:</span><span className="font-semibold text-blue-600">{formatCurrency(selectedAgentForHistory.paid_amount || 0)}</span></div><div className="flex justify-between text-sm mt-1"><span>Remaining:</span><span className="font-semibold text-amber-600">{formatCurrency((selectedAgentForHistory.amount || 0) - (selectedAgentForHistory.paid_amount || 0))}</span></div></div>
+              {selectedAgentForHistory.payments?.length === 0 ? <div className="text-center py-8 text-gray-400">No payments</div> : (
+                <div className="space-y-2">
+                  {selectedAgentForHistory.payments?.map((payment) => (
+                    <div key={payment.id} className="border rounded-lg p-3">
+                      <div className="flex justify-between items-start">
+                        <div>{editingAgentPayment === payment.id ? (<div className="flex items-center gap-2"><span>$</span><input type="number" value={editAgentPaymentAmount} onChange={(e) => setEditAgentPaymentAmount(Number(e.target.value))} className="w-28 border rounded p-1 text-sm" step="0.01" autoFocus /><button onClick={() => updateAgentPayment(payment.id, editAgentPaymentAmount, selectedAgentForHistory.agent_id, payment.amount)} className="text-green-600"><Check size={16} /></button><button onClick={() => setEditingAgentPayment(null)} className="text-gray-400"><X size={16} /></button></div>) : (<div className="font-medium">{formatCurrency(payment.amount)}</div>)}<div className="text-xs text-gray-500 mt-1">{payment.payment_method} • {new Date(payment.payment_date).toLocaleDateString()}</div></div>
+                        {editingAgentPayment !== payment.id && (<div className="flex gap-1"><button onClick={() => { setEditingAgentPayment(payment.id); setEditAgentPaymentAmount(payment.amount); }} className="text-gray-400 hover:text-blue-500"><Edit2 size={14} /></button><button onClick={() => deleteAgentPayment(payment.id, selectedAgentForHistory.agent_id)} className="text-gray-400 hover:text-red-500"><Trash2 size={14} /></button></div>)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

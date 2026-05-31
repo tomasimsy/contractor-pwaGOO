@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils/formatting";
 import { 
@@ -98,7 +98,6 @@ export default function FinancialDashboard() {
       }
       const startDateStr = startDate.toISOString();
 
-      // Check authentication state first
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         setError("Please log in to view financial data.");
@@ -106,8 +105,6 @@ export default function FinancialDashboard() {
         return;
       }
 
-      // OPTIMIZATION: Fire all core tables concurrently in 1 single Promise batch 
-      // OPTIMIZATION: Using PostgREST resource embedding (Inner Joins) to pull relational strings instantly
       const [
         estimatesRes,
         subPaymentsRes,
@@ -124,34 +121,28 @@ export default function FinancialDashboard() {
         supabase.from("estimate_expenses").select("amount, category, description, expense_date").gte("expense_date", startDateStr)
       ]);
 
-      // Guard clauses for potential table failures
       if (estimatesRes.error) throw new Error(`Estimates error: ${estimatesRes.error.message}`);
 
-      // 1. Math Aggregations (Estimates)
       const estimates = estimatesRes.data || [];
       const totalRevenue = estimates.reduce((sum, e) => sum + (e.total || 0), 0);
       const completedProjects = estimates.length;
       const pendingInvoices = estimates.filter(e => e.status === "converted").length;
 
-      // 2. Subcontractor processing
       const subPayments = subPaymentsRes.data || [];
       const subcontractorPaid = subPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
       
       const estSubs = estSubsRes.data || [];
       const outstandingSubcontractor = estSubs.reduce((sum, s) => sum + ((s.amount || 0) - (s.paid_amount || 0)), 0);
 
-      // 3. Agent processing
       const agentPayments = agentPaymentsRes.data || [];
       const agentPaid = agentPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
 
       const estAgents = estAgentsRes.data || [];
       const outstandingAgent = estAgents.reduce((sum, a) => sum + ((a.amount || 0) - (a.paid_amount || 0)), 0);
 
-      // 4. Expense processing
       const expenses = expensesRes.data || [];
       const totalExpenses = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
 
-      // Calculate final Summary metrics
       const netProfit = totalRevenue - totalExpenses - subcontractorPaid - agentPaid;
       const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
 
@@ -168,7 +159,7 @@ export default function FinancialDashboard() {
         completedProjects,
       });
 
-      // 5. Process Expense Categories (Optimized single map pass)
+      // Expense categories
       const categoryMap = new Map<string, { total: number; count: number; icon: string }>();
       expenses.forEach(exp => {
         const existing = categoryMap.get(exp.category);
@@ -195,13 +186,14 @@ export default function FinancialDashboard() {
           .sort((a, b) => b.total - a.total)
       );
 
-      // 6. Build Recent Transactions (Zero relational sub-queries required)
+      // ==================== FIX: Show ALL recent transactions (no arbitrary per‑type limits) ====================
       const transactions: RecentTransaction[] = [];
 
-      subPayments.slice(0, 5).forEach((p, index) => {
+      // Add all subcontractor payments
+      subPayments.forEach((p, idx) => {
         const subName = (p.estimate_subcontractors as any)?.subcontractors?.name || "Subcontractor";
         transactions.push({
-          id: `sub-${p.created_at}-${index}`,
+          id: `sub-${p.created_at}-${idx}`,
           type: "subcontractor",
           amount: p.amount,
           description: `Payment to ${subName}`,
@@ -209,11 +201,12 @@ export default function FinancialDashboard() {
         });
       });
 
-      agentPayments.slice(0, 5).forEach((p, index) => {
+      // Add all agent payments
+      agentPayments.forEach((p, idx) => {
         const agentName = (p.agents as any)?.name || "Agent";
         const estNum = (p.estimates as any)?.estimate_number;
         transactions.push({
-          id: `agent-${p.payment_date}-${index}`,
+          id: `agent-${p.payment_date}-${idx}`,
           type: "agent",
           amount: p.amount,
           description: `Commission to ${agentName}`,
@@ -222,9 +215,10 @@ export default function FinancialDashboard() {
         });
       });
 
-      expenses.slice(0, 5).forEach((e, index) => {
+      // Add all expenses
+      expenses.forEach((e, idx) => {
         transactions.push({
-          id: `exp-${e.expense_date}-${index}`,
+          id: `exp-${e.expense_date}-${idx}`,
           type: "expense",
           amount: e.amount,
           description: e.description,
@@ -232,10 +226,11 @@ export default function FinancialDashboard() {
         });
       });
 
+      // Sort by date (newest first) and limit to the latest 30 for performance
       transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      setRecentTransactions(transactions.slice(0, 10));
+      setRecentTransactions(transactions.slice(0, 30));
 
-      // 7. Calculate Monthly Trends
+      // Monthly trends (unchanged)
       const monthlyData = new Map<string, { revenue: number; expenses: number }>();
       const formatOptions: Intl.DateTimeFormatOptions = { month: 'short', year: 'numeric' };
       
@@ -284,7 +279,6 @@ export default function FinancialDashboard() {
     loadDashboardData();
   }, [loadDashboardData]);
 
-  // Static lookups optimization
   function getCategoryIcon(category: string): string {
     const icons: Record<string, string> = {
       materials: "🔨", equipment: "🔧", permits: "📋", travel: "🚗", labor: "👷", rental: "🏗️", other: "📦",
@@ -292,7 +286,7 @@ export default function FinancialDashboard() {
     return icons[category] || "📦";
   }
 
-    function getTransactionIcon(type: string) {
+  function getTransactionIcon(type: string) {
     switch (type) {
       case "subcontractor": return "👷";
       case "agent": return "🤝";
@@ -310,7 +304,6 @@ export default function FinancialDashboard() {
     }
   }
 
-  // Pure mapping functions removed from component scope block to eliminate redeclaration cost
   const toggleSection = (section: keyof typeof expandedSections) => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
@@ -343,7 +336,6 @@ export default function FinancialDashboard() {
       </div>
     );
   }
- 
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
