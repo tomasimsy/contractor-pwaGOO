@@ -6,25 +6,52 @@ import { supabase } from "@/lib/supabase/client";
 import { Estimate, Client, Project, LineItem, Signature } from "@/types";
 import { formatCurrency } from "@/lib/utils/formatting";
 import { calculateSubtotal, calculateTax, calculateTotal } from "@/lib/utils/calculations";
-import Header from "@/components/ui/Header";
 import SignaturePad from "@/components/signature/SignaturePad";
 import ProjectFinancialsModal from "@/components/ProjectFinancialsModal";
 import ExpenseModal from "@/components/ExpenseModal";
 import Link from "next/link";
-import { SquarePen, Send, FileText, Users, Receipt, DollarSign , Plus} from "lucide-react";
+import { SquarePen, Send, FileText, Users, Receipt, DollarSign, Plus, FileEdit, X, Trash2, ArrowLeft, Target, Sparkles } from "lucide-react";
 
 type ProjectWithItems = {
   id: string;
   name: string;
   description: string;
   items: LineItem[];
-  
+};
+
+type ChangeOrder = {
+  id: string;
+  change_order_number: string;
+  title: string;
+  description: string;
+  status: string;
+  total_amount: number;
+  original_estimate_total: number;
+  created_at: string;
+  approved_at?: string;
+  signed_signature?: string;
+};
+
+type ChangeOrderLineItem = {
+  id: string;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  total: number;
+  type: "addition" | "deduction";
+};
+
+type EstimatePayment = {
+  id: string;
+  amount: number;
+  method: string;
+  created_at: string;
 };
 
 export default function EstimatePage() {
   const router = useRouter();
   const { id } = useParams();
-  
+
   // Core state
   const [estimate, setEstimate] = useState<Estimate | null>(null);
   const [client, setClient] = useState<Client | null>(null);
@@ -33,18 +60,25 @@ export default function EstimatePage() {
   const [converting, setConverting] = useState(false);
   const [existingInvoiceId, setExistingInvoiceId] = useState<string | null>(null);
   const fabRef = useRef<HTMLDivElement>(null);
-  
+
   // Modal states
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showFinancialsModal, setShowFinancialsModal] = useState(false);
-  
+  const [showChangeOrderModal, setShowChangeOrderModal] = useState(false);
+  const [editingChangeOrder, setEditingChangeOrder] = useState<ChangeOrder | null>(null);
+
+  // Change orders
+  const [changeOrders, setChangeOrders] = useState<ChangeOrder[]>([]);
+  const [changeOrdersTotal, setChangeOrdersTotal] = useState(0);
+
   // Financial tracking
   const [subcontractorPaid, setSubcontractorPaid] = useState(0);
-  
-  // Target total state
+  const [payments, setPayments] = useState<EstimatePayment[]>([]);
+
+  // Target total state (for estimate editing)
   const [showTargetModal, setShowTargetModal] = useState(false);
   const [targetTotal, setTargetTotal] = useState<number | null>(null);
-  
+
   // Edit mode state
   const [isEditMode, setIsEditMode] = useState(false);
   const [editDescription, setEditDescription] = useState("");
@@ -58,13 +92,21 @@ export default function EstimatePage() {
   const [lastAddedItemId, setLastAddedItemId] = useState<string | null>(null);
   const newItemRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
+  // ---------- New financial summary data ----------
+  const [originalSubtotal, setOriginalSubtotal] = useState(0);
+  const [revisedTotal, setRevisedTotal] = useState(0);
+  const [depositAmount, setDepositAmount] = useState(0);
+  const [totalPaid, setTotalPaid] = useState(0);
+  const [remainingBalance, setRemainingBalance] = useState(0);
+
   // Load all data
   useEffect(() => {
     loadEstimate();
     loadSubcontractorPaid();
+    loadChangeOrders();
+    loadPayments(); // load payments if any
   }, [id]);
 
-  // Check for existing invoice
   useEffect(() => {
     const checkExistingInvoice = async () => {
       if (estimate?.id) {
@@ -73,58 +115,72 @@ export default function EstimatePage() {
           .select("id")
           .eq("estimate_id", estimate.id)
           .maybeSingle();
-        if (data) {
-          setExistingInvoiceId(data.id);
-        }
+        if (data) setExistingInvoiceId(data.id);
       }
     };
     checkExistingInvoice();
   }, [estimate?.id]);
 
-  // Auto-scroll to newly added item
   useEffect(() => {
     if (lastAddedItemId && newItemRefs.current[lastAddedItemId]) {
-      newItemRefs.current[lastAddedItemId]?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
+      newItemRefs.current[lastAddedItemId]?.scrollIntoView({ behavior: "smooth", block: "center" });
       const element = newItemRefs.current[lastAddedItemId];
       element?.classList.add("bg-green-50", "transition-all", "duration-500");
-      setTimeout(() => {
-        element?.classList.remove("bg-green-50");
-      }, 1000);
+      setTimeout(() => element?.classList.remove("bg-green-50"), 1000);
       setLastAddedItemId(null);
     }
   }, [lastAddedItemId]);
 
-  // Click outside handler for FAB
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (fabRef.current && !fabRef.current.contains(event.target as Node)) {
-        setFabOpen(false);
-      }
+      if (fabRef.current && !fabRef.current.contains(event.target as Node)) setFabOpen(false);
     };
-    if (fabOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
+    if (fabOpen) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [fabOpen]);
 
-  // Load subcontractor paid amount
   async function loadSubcontractorPaid() {
     const { data } = await supabase
       .from("subcontractor_payments")
       .select("amount")
       .eq("estimate_id", id);
-    
+    if (data) setSubcontractorPaid(data.reduce((sum, p) => sum + (p.amount || 0), 0));
+  }
+
+  async function loadPayments() {
+    // Optional: if you have an estimate_payments table, otherwise skip
+    const { data } = await supabase
+      .from("estimate_payments")
+      .select("*")
+      .eq("estimate_id", id)
+      .order("created_at", { ascending: false });
     if (data) {
-      const total = data.reduce((sum, p) => sum + (p.amount || 0), 0);
-      setSubcontractorPaid(total);
-      console.log("🔵 loadSubcontractorPaid - Total paid to subcontractors:", total);
+      setPayments(data);
+      const paidSum = data.reduce((sum, p) => sum + (p.amount || 0), 0);
+      setTotalPaid(paidSum);
+    } else {
+      setPayments([]);
+      setTotalPaid(0);
     }
   }
 
-  // Load estimate data
+  async function loadChangeOrders() {
+    const { data, error } = await supabase
+      .from("change_orders")
+      .select("*")
+      .eq("estimate_id", id)
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.error("Error loading change orders:", error);
+      return;
+    }
+    setChangeOrders(data || []);
+    const approvedTotal = (data || [])
+      .filter(co => co.status === "approved")
+      .reduce((sum, co) => sum + (co.total_amount || 0), 0);
+    setChangeOrdersTotal(approvedTotal);
+  }
+
   async function loadEstimate() {
     try {
       const { data: est } = await supabase
@@ -134,7 +190,6 @@ export default function EstimatePage() {
         .eq("id", id)
         .single();
       setEstimate(est);
-
       setEditDescription(est?.description || "");
       setEditNotes(est?.notes || "");
       setEditMarkup(est?.markup || 0);
@@ -171,6 +226,26 @@ export default function EstimatePage() {
       const projectsArray = Object.values(projectMap);
       setProjects(projectsArray);
       setEditProjects(JSON.parse(JSON.stringify(projectsArray)));
+
+      // Calculate original subtotal from estimate items
+      const originalSum = items?.reduce((sum, i) => sum + (i.total || 0), 0) || 0;
+      setOriginalSubtotal(originalSum);
+
+      // Get approved change orders total
+      const { data: approvedCOs } = await supabase
+        .from("change_orders")
+        .select("total_amount")
+        .eq("estimate_id", id)
+        .eq("status", "approved");
+      const approvedTotal = (approvedCOs || []).reduce((sum, co) => sum + (co.total_amount || 0), 0);
+      setChangeOrdersTotal(approvedTotal);
+
+      const revTotal = originalSum + approvedTotal;
+      setRevisedTotal(revTotal);
+      setDepositAmount(revTotal * 0.5);
+      // Recalculate remaining balance after payments (if any)
+      const paidTotal = payments.reduce((sum, p) => sum + p.amount, 0);
+      setRemainingBalance(revTotal - paidTotal);
     } catch (err) {
       console.error(err);
     } finally {
@@ -178,7 +253,62 @@ export default function EstimatePage() {
     }
   }
 
-  // Signature functions
+  // Change Order CRUD (unchanged)
+  async function deleteChangeOrder(coId: string, status: string) {
+    if (status !== "draft") {
+      alert("Only draft change orders can be deleted.");
+      return;
+    }
+    if (!confirm("Delete this change order permanently?")) return;
+    const { error } = await supabase.from("change_orders").delete().eq("id", coId);
+    if (error) {
+      alert("Error deleting change order");
+    } else {
+      await loadChangeOrders();
+      await loadEstimate();
+    }
+  }
+
+  async function submitForApproval(coId: string) {
+    const { error } = await supabase
+      .from("change_orders")
+      .update({ status: "pending" })
+      .eq("id", coId);
+    if (error) {
+      alert("Error submitting for approval");
+    } else {
+      await loadChangeOrders();
+      alert("Change order submitted for client approval.");
+    }
+  }
+
+  async function approveChangeOrder(coId: string) {
+    const { error } = await supabase
+      .from("change_orders")
+      .update({ status: "approved", approved_at: new Date().toISOString() })
+      .eq("id", coId);
+    if (error) {
+      alert("Error approving change order");
+    } else {
+      await loadChangeOrders();
+      await loadEstimate();
+      alert("Change order approved! Estimate total updated.");
+    }
+  }
+
+  async function rejectChangeOrder(coId: string) {
+    const { error } = await supabase
+      .from("change_orders")
+      .update({ status: "rejected" })
+      .eq("id", coId);
+    if (error) {
+      alert("Error rejecting change order");
+    } else {
+      await loadChangeOrders();
+      alert("Change order rejected.");
+    }
+  }
+
   const saveSignature = async (signature: Signature) => {
     const { error } = await supabase
       .from("estimates")
@@ -192,34 +322,25 @@ export default function EstimatePage() {
 
   const removeSignature = async () => {
     if (!confirm("Remove the signature? The estimate will need to be resigned.")) return;
-    
     const { error } = await supabase
       .from("estimates")
       .update({ signature: null, status: "pending" })
       .eq("id", id);
-    
     if (!error) {
       setEstimate((prev) => (prev ? { ...prev, signature: null, status: "pending" } : prev));
-      alert("Signature removed. Customer will need to sign again.");
+      alert("Signature removed.");
       loadEstimate();
     } else {
       alert("Error removing signature");
     }
   };
 
-  // Mark as completed
   const markAsCompleted = async () => {
     if (!confirm("Mark this estimate as completed? It will be moved to completed list and won't be editable.")) return;
-    
     const { error } = await supabase
       .from("estimates")
-      .update({ 
-        completed_at: new Date().toISOString(),
-        is_completed: true,
-        status: "completed"
-      })
+      .update({ completed_at: new Date().toISOString(), is_completed: true, status: "completed" })
       .eq("id", id);
-    
     if (!error) {
       alert("Estimate marked as completed!");
       loadEstimate();
@@ -229,36 +350,31 @@ export default function EstimatePage() {
     }
   };
 
-  // Convert to invoice
   const convertToInvoice = async () => {
     if (!estimate) return;
-    
-    // Check if invoice already exists by querying the invoices table
+
     const { data: existingInvoice } = await supabase
       .from("invoices")
       .select("id")
       .eq("estimate_id", id)
       .maybeSingle();
-
     if (existingInvoice) {
-      alert(`Invoice already exists for this estimate.`);
+      alert(`Invoice already exists.`);
       router.push(`/invoices/${existingInvoice.id}`);
       return;
     }
-    
+
     if (!confirm("Convert this estimate to an invoice? This will lock the estimate.")) return;
     setConverting(true);
 
     try {
       const invoiceNumber = estimate.estimate_number;
 
-      // Prevent duplicate invoice numbers
       const { data: duplicateInvoice } = await supabase
         .from("invoices")
         .select("id")
         .eq("invoice_number", invoiceNumber)
         .maybeSingle();
-
       if (duplicateInvoice) {
         alert(`Invoice #${invoiceNumber} already exists`);
         setConverting(false);
@@ -270,12 +386,24 @@ export default function EstimatePage() {
         .from("estimate_items")
         .select("*")
         .eq("estimate_id", id);
-
       if (itemsFetchError || !items || items.length === 0) {
         alert("No items found on this estimate");
         setConverting(false);
         return;
       }
+
+      // Get approved change orders
+      const { data: approvedCOs } = await supabase
+        .from("change_orders")
+        .select("*")
+        .eq("estimate_id", id)
+        .eq("status", "approved");
+      const changeOrdersTotalAmount = (approvedCOs || []).reduce((sum, co) => sum + (co.total_amount || 0), 0) || 0;
+
+      const originalSubtotal = calculateSubtotal(items);
+      const originalTax = calculateTax(originalSubtotal, estimate.tax_rate || 0);
+      const originalTotal = calculateTotal(originalSubtotal, estimate.markup || 0, estimate.discount || 0, originalTax);
+      const finalTotal = originalTotal + changeOrdersTotalAmount;
 
       const { data: invoice, error: invoiceError } = await supabase
         .from("invoices")
@@ -284,12 +412,12 @@ export default function EstimatePage() {
           client_id: estimate.client_id,
           invoice_number: invoiceNumber,
           description: estimate.description,
-          subtotal: viewSubtotal,
+          subtotal: originalSubtotal + changeOrdersTotalAmount,
           markup: estimate.markup || 0,
           discount: estimate.discount || 0,
-          tax: viewTax,
-          total: viewTotal,
-          remaining_balance: viewTotal,
+          tax: originalTax,
+          total: finalTotal,
+          remaining_balance: finalTotal,
           amount_paid: 0,
           notes: estimate.notes,
           signature: estimate.signature,
@@ -298,7 +426,6 @@ export default function EstimatePage() {
         })
         .select()
         .single();
-
       if (invoiceError) throw invoiceError;
 
       const itemsToCopy = items.map((item) => ({
@@ -312,12 +439,24 @@ export default function EstimatePage() {
         taxable: item.taxable,
         total: item.total,
       }));
-
       await supabase.from("invoice_items").insert(itemsToCopy);
-      await supabase.from("estimates").update({ 
-        status: "converted"
-      }).eq("id", id);
 
+      if (approvedCOs && approvedCOs.length) {
+        const coItems = approvedCOs.map((co) => ({
+          invoice_id: invoice.id,
+          project_name: "Change Orders",
+          category: "Change Order",
+          name: co.title,
+          description: co.description || `Change order ${co.change_order_number}`,
+          quantity: 1,
+          unit_price: co.total_amount,
+          taxable: false,
+          total: co.total_amount,
+        }));
+        await supabase.from("invoice_items").insert(coItems);
+      }
+
+      await supabase.from("estimates").update({ status: "converted" }).eq("id", id);
       alert("Invoice created successfully!");
       router.push(`/invoices/${invoice.id}`);
     } catch (err) {
@@ -328,11 +467,11 @@ export default function EstimatePage() {
     }
   };
 
-  // Edit mode functions
+  // Edit mode functions (unchanged, kept from original)
   const addEditItem = (projectId: string) => {
-    const newItem = {
+    const newItem: LineItem = {
       id: crypto.randomUUID(),
-      category: "Material" as "Material",
+      category: "Material",
       name: "",
       description: "",
       quantity: 1,
@@ -341,25 +480,21 @@ export default function EstimatePage() {
       total: 0,
     };
     setEditProjects((prev) =>
-      prev.map((project) =>
-        project.id === projectId ? { ...project, items: [...project.items, newItem] } : project
-      )
+      prev.map((p) => (p.id === projectId ? { ...p, items: [...p.items, newItem] } : p))
     );
     setLastAddedItemId(newItem.id);
   };
 
   const updateEditItem = (projectId: string, itemId: string, field: string, value: any) => {
     setEditProjects((prev) =>
-      prev.map((project) => {
-        if (project.id !== projectId) return project;
+      prev.map((p) => {
+        if (p.id !== projectId) return p;
         return {
-          ...project,
-          items: project.items.map((item) => {
+          ...p,
+          items: p.items.map((item) => {
             if (item.id !== itemId) return item;
             const updated = { ...item, [field]: value };
-            if (field === "quantity" || field === "unit_price") {
-              updated.total = updated.quantity * updated.unit_price;
-            }
+            if (field === "quantity" || field === "unit_price") updated.total = updated.quantity * updated.unit_price;
             return updated;
           }),
         };
@@ -369,10 +504,10 @@ export default function EstimatePage() {
 
   const removeEditItem = (projectId: string, itemId: string) => {
     setEditProjects((prev) =>
-      prev.map((project) => {
-        if (project.id !== projectId) return project;
-        const newItems = project.items.filter((item) => item.id !== itemId);
-        return { ...project, items: newItems.length ? newItems : [{ ...createEmptyItem() }] };
+      prev.map((p) => {
+        if (p.id !== projectId) return p;
+        const newItems = p.items.filter((i) => i.id !== itemId);
+        return { ...p, items: newItems.length ? newItems : [{ ...createEmptyItem() }] };
       })
     );
   };
@@ -393,35 +528,25 @@ export default function EstimatePage() {
       alert("Please enter a valid target total");
       return;
     }
-
     const currentTotal = editSubtotal;
     const difference = targetTotal - currentTotal;
-
     if (difference === 0) {
       alert("Target total is already equal to current total");
       return;
     }
-
     const allLineItems = editProjects.flatMap((p) => p.items);
     if (allLineItems.length === 0) {
       alert("No items to distribute to");
       return;
     }
-
     const distributionPerItem = difference / allLineItems.length;
-
-    const updatedProjects = editProjects.map((project) => ({
-      ...project,
-      items: project.items.map((item) => {
+    const updatedProjects = editProjects.map((p) => ({
+      ...p,
+      items: p.items.map((item) => {
         const newUnitPrice = Math.max(0, item.unit_price + distributionPerItem);
-        return {
-          ...item,
-          unit_price: newUnitPrice,
-          total: item.quantity * newUnitPrice,
-        };
+        return { ...item, unit_price: newUnitPrice, total: item.quantity * newUnitPrice };
       }),
     }));
-
     setEditProjects(updatedProjects);
     setTargetTotal(null);
     setShowTargetModal(false);
@@ -429,26 +554,16 @@ export default function EstimatePage() {
   };
 
   const addProject = () => {
-    setEditProjects((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        name: "",
-        description: "",
-        items: [createEmptyItem()],
-      },
-    ]);
+    setEditProjects((prev) => [...prev, { id: crypto.randomUUID(), name: "", description: "", items: [createEmptyItem()] }]);
   };
 
   const removeProject = (projectId: string) => {
     if (editProjects.length === 1) return;
-    setEditProjects((prev) => prev.filter((project) => project.id !== projectId));
+    setEditProjects((prev) => prev.filter((p) => p.id !== projectId));
   };
 
   const updateProject = (projectId: string, field: string, value: any) => {
-    setEditProjects((prev) =>
-      prev.map((project) => (project.id === projectId ? { ...project, [field]: value } : project))
-    );
+    setEditProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, [field]: value } : p)));
   };
 
   const saveEdit = async () => {
@@ -467,19 +582,17 @@ export default function EstimatePage() {
           markup: editMarkup,
           discount: editDiscount,
           tax_rate: editTaxRate,
-          subtotal: subtotal,
-          total: total,
+          subtotal,
+          total,
         })
         .eq("id", id);
-
       if (updateError) throw updateError;
 
       await supabase.from("estimate_items").delete().eq("estimate_id", id);
-
-      const itemsToInsert = editProjects.flatMap((project) =>
-        project.items.map((item) => ({
+      const itemsToInsert = editProjects.flatMap((p) =>
+        p.items.map((item) => ({
           estimate_id: id,
-          project_name: project.name,
+          project_name: p.name,
           category: item.category,
           name: item.name,
           description: item.description || null,
@@ -489,12 +602,10 @@ export default function EstimatePage() {
           total: item.quantity * item.unit_price,
         }))
       );
-
-      if (itemsToInsert.length > 0) {
+      if (itemsToInsert.length) {
         const { error: itemsError } = await supabase.from("estimate_items").insert(itemsToInsert);
         if (itemsError) throw itemsError;
       }
-
       alert("Estimate updated successfully!");
       setIsEditMode(false);
       loadEstimate();
@@ -516,7 +627,6 @@ export default function EstimatePage() {
   const editTax = calculateTax(editSubtotal, editTaxRate);
   const editTotal = calculateTotal(editSubtotal, editMarkup, editDiscount, editTax);
 
-  // Send SMS
   const sendSMSLink = async () => {
     let currentClient = client;
     if (!currentClient?.phone && estimate?.client_id) {
@@ -525,10 +635,7 @@ export default function EstimatePage() {
         .select("*")
         .eq("id", estimate.client_id)
         .single();
-      if (freshClient) {
-        currentClient = freshClient;
-        setClient(freshClient);
-      }
+      if (freshClient) currentClient = freshClient;
     }
     const phoneNumber = currentClient?.phone;
     if (!phoneNumber) {
@@ -537,10 +644,7 @@ export default function EstimatePage() {
     }
     const baseUrl = window.location.origin;
     const documentUrl = `${baseUrl}/public/estimates/${id}`;
-    const totalAmount = projects.reduce(
-      (sum, p) => sum + p.items.reduce((s, i) => s + (i.total || 0), 0),
-      0
-    );
+    const totalAmount = projects.reduce((sum, p) => sum + p.items.reduce((s, i) => s + (i.total || 0), 0), 0);
     const message = encodeURIComponent(
       `Hello ${currentClient?.name || "Customer"}! Please review and sign your estimate: ${documentUrl}\n\n` +
         `Estimate #${estimate?.estimate_number}\n` +
@@ -552,194 +656,282 @@ export default function EstimatePage() {
 
   if (loading) return <div className="p-8 text-center">Loading...</div>;
 
+  const getStatusBadge = (status: string) => {
+    const styles: Record<string, string> = {
+      draft: "bg-gray-100 text-gray-700",
+      pending: "bg-yellow-100 text-yellow-800",
+      approved: "bg-green-100 text-green-800",
+      rejected: "bg-red-100 text-red-800",
+      invoiced: "bg-blue-100 text-blue-800",
+    };
+    return styles[status] || "bg-gray-100";
+  };
+
   return (
-    <div className="min-h-screen bg-gray-100 pb-20">
+    <div className="min-h-screen bg-slate-50/70 pb-20 text-slate-800 antialiased text-xs">
       {/* Target Total Modal */}
       {showTargetModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-md w-full p-5">
-            <h3 className="text-base font-semibold text-gray-800 mb-2">Set Target Total</h3>
-            <p className="text-xs text-gray-500 mb-3">Current: {formatCurrency(editTotal)}</p>
-            <input
-              type="number"
-              value={targetTotal || ""}
-              onChange={(e) => setTargetTotal(Number(e.target.value))}
-              className="w-full border border-gray-200 rounded-lg p-2 text-base mb-3 focus:outline-none focus:ring-2 focus:ring-green-600"
-              placeholder="Enter desired total"
-              step="0.01"
-              autoFocus
-            />
-            <div className="text-[11px] text-gray-400 mb-4">
-              Difference will be split across {editProjects.flatMap((p) => p.items).length} items
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl shadow-slate-900/10 border border-slate-100 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-1.5 bg-emerald-50 rounded-lg text-emerald-600">
+                <Target size={16} />
+              </div>
+              <h3 className="text-sm font-bold text-slate-900">Set Target Total</h3>
             </div>
-            <div className="flex gap-2">
-              <button onClick={() => setShowTargetModal(false)} className="flex-1 py-2 border rounded-lg">Cancel</button>
-              <button onClick={distributeToTargetTotal} className="flex-1 py-2 bg-green-700 text-white rounded-lg">Apply</button>
+            <p className="text-xs text-slate-400 mb-4">Current Structure: <span className="font-mono font-semibold text-slate-700">{formatCurrency(editTotal)}</span></p>
+            <div className="relative mb-3">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono font-bold text-slate-400 text-sm">$</span>
+              <input
+                type="number"
+                value={targetTotal || ""}
+                onChange={(e) => setTargetTotal(Number(e.target.value))}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-7 pr-4 py-2.5 font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:bg-white text-sm transition-all"
+                placeholder="0.00"
+                step="0.01"
+                autoFocus
+              />
+            </div>
+            <div className="text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-lg p-2.5 mb-5 flex items-center gap-2 font-medium">
+              <Sparkles size={14} className="text-emerald-500 shrink-0" />
+              <span>Difference will be distributed across {editProjects.flatMap((p) => p.items).length} items</span>
+            </div>
+            <div className="flex gap-2.5">
+              <button onClick={() => setShowTargetModal(false)} className="flex-1 py-2 border border-slate-200 hover:bg-slate-50 text-slate-600 font-semibold rounded-xl transition-colors">Cancel</button>
+              <button onClick={distributeToTargetTotal} className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm shadow-emerald-600/10 transition-colors">Apply Matrix</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Header */}
-      <div className="sticky top-0 z-50 bg-white border-b border-gray-200">
-        <div className="flex items-center justify-between px-4 py-3">
-          <button onClick={() => router.back()} className="text-gray-600 text-xl">←</button>
-          <h1 className="text-base font-semibold text-gray-800">
-            Estimate #{estimate?.estimate_number || id?.slice(0, 8)}
-          </h1>
-          {!isEditMode && !estimate?.signature && estimate?.status !== "converted" && (
-            <button onClick={() => setIsEditMode(true)} className="text-green-700 text-lg">✏️</button>
+      {/* Change Order Modal */}
+      {showChangeOrderModal && (
+        <ChangeOrderModal
+          estimateId={id as string}
+          estimateTotal={estimate?.total || 0}
+          existingOrder={editingChangeOrder}
+          onClose={() => {
+            setShowChangeOrderModal(false);
+            setEditingChangeOrder(null);
+          }}
+          onSaved={async () => {
+            await loadChangeOrders();
+            await loadEstimate();
+            setShowChangeOrderModal(false);
+            setEditingChangeOrder(null);
+          }}
+        />
+      )}
+
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-50 max-w-3xl mx-auto w-full px-4 pt-3 pb-2 bg-slate-50/95 backdrop-blur-md">
+        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-3 flex flex-col gap-2.5 relative overflow-hidden transition-all">
+          <div className="grid grid-cols-2 gap-4 items-center">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <button onClick={() => router.back()} className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-50 border border-slate-100 bg-white shadow-3xs transition-all active:scale-95 shrink-0">
+                <ArrowLeft size={14} />
+              </button>
+              <div className="min-w-0">
+                <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Customer</span>
+                <h3 className="text-xs font-black text-slate-800 tracking-tight truncate">
+                  {client?.name || "Unassigned Account"}
+                </h3>
+                {client?.email && (
+                  <p className="text-[10px] text-slate-400 font-medium truncate hidden sm:block mt-0.5">{client.email}</p>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3 min-w-0 justify-self-end w-full max-w-[180px] sm:max-w-none">
+              <div className="min-w-0 text-left sm:text-right sm:ml-auto">
+                <div className="flex items-center sm:justify-end gap-1.5 flex-wrap">
+                  <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Estimate</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border tracking-wide uppercase scale-90 origin-left sm:origin-right ${
+                    estimate?.signature ? "bg-emerald-50 text-emerald-700 border-emerald-100" :
+                    estimate?.status === "converted" ? "bg-indigo-50 text-indigo-700 border-indigo-100" : "bg-amber-50 text-amber-700 border-amber-100"
+                  }`}>
+                    {estimate?.signature ? "✓ Signed" : estimate?.status === "converted" ? "Converted" : "● Pending"}
+                  </span>
+                </div>
+                <p className="text-xs font-bold font-mono text-slate-600 block tracking-tight truncate mt-0.5">
+                  #{estimate?.estimate_number || id?.slice(0, 8)}
+                </p>
+              </div>
+              <div className="shrink-0">
+                {!isEditMode && !estimate?.signature && estimate?.status !== "converted" && (
+                  <button onClick={() => setIsEditMode(true)} className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50/60 rounded-xl border border-slate-200/60 bg-white shadow-3xs transition-all active:scale-95 flex items-center gap-1 text-xs font-bold">
+                    <SquarePen size={13} />
+                    <span className="hidden sm:inline pr-0.5">Modify</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+          {isEditMode && (
+            <div className="mt-0.5 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-1.5 flex items-center justify-between gap-4 animate-in slide-in-from-top-1 duration-150 relative overflow-hidden">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
+                <p className="text-[11px] font-bold text-amber-900 truncate">Workspace Locked <span className="font-medium text-amber-700/90 hidden xs:inline">(Modifying Matrix)</span></p>
+              </div>
+              <div className="flex gap-1.5 shrink-0 scale-95 origin-right">
+                <button onClick={() => setIsEditMode(false)} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:bg-slate-50 transition-colors shadow-3xs">Cancel</button>
+                <button onClick={saveEdit} disabled={saving} className="rounded-lg bg-slate-950 px-3 py-1 text-[11px] font-black text-white hover:bg-slate-800 disabled:opacity-50 transition-colors shadow-sm">{saving ? "Saving..." : "Apply"}</button>
+              </div>
+            </div>
           )}
         </div>
       </div>
 
-      {/* Edit Mode Banner */}
-      {isEditMode && (
-        <div className="sticky top-14 z-20 mx-auto mt-3 max-w-4xl px-4">
-          <div className="flex items-center justify-between rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 shadow-sm">
-            <div className="text-xs font-medium text-amber-700">Editing Estimate</div>
-            <div className="flex gap-2">
-              <button onClick={() => setIsEditMode(false)} className="rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">Cancel</button>
-              <button onClick={saveEdit} disabled={saving} className="rounded-xl bg-green-700 px-3 py-1.5 text-xs text-white hover:bg-green-800">{saving ? "Saving..." : "Save"}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="p-3 space-y-3">
-        {/* Status */}
-        <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 flex justify-between items-center">
-          <span className="text-xs text-gray-500">Status</span>
-          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-            estimate?.signature ? "bg-green-100 text-green-700" :
-            estimate?.status === "converted" ? "bg-purple-100 text-purple-700" : "bg-yellow-100 text-yellow-700"
-          }`}>
-            {estimate?.signature ? "Signed" : estimate?.status === "converted" ? "Converted" : "Pending"}
-          </span>
-        </div>
-
-        {/* Client */}
-        <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
-          <div className="text-[11px] text-gray-500 mb-2">Client</div>
-          <div className="text-sm font-semibold text-gray-800">{client?.name || "No Client"}</div>
-          {client?.phone && <div className="text-xs text-gray-500">{client.phone}</div>}
-          {client?.email && <div className="text-xs text-gray-500">{client.email}</div>}
-        </div>
-
-        {/* Description */}
+      <div className="max-w-3xl mx-auto p-4 space-y-4">
+        {/* Project Description Scope */}
         {isEditMode ? (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 transition-all focus-within:border-green-500 focus-within:ring-4 focus-within:ring-green-500/10">
-            
-            <div className="text-[11px] font-medium text-gray-500 mb-2">
-              Description
-            </div>
-
+          <div className="bg-white rounded-xl shadow-xs border border-slate-200/70 p-3.5 space-y-2">
+            <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+              <FileText size={12} /> Project Scope Objective
+            </label>
             <textarea
               value={editDescription}
               onChange={(e) => setEditDescription(e.target.value)}
-              className="w-full min-h-[140px] text-xs leading-relaxed text-gray-700 placeholder:text-gray-400 focus:outline-none resize-none"
-              rows={6}
-              placeholder="Enter project description..."
+              className="w-full min-h-[100px] text-xs leading-relaxed text-slate-800 focus:outline-none bg-slate-50/50 border border-slate-200 rounded-xl p-3 placeholder:text-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-500/5 transition-all resize-none"
+              rows={4}
+              placeholder="Enter primary target objectives and scope detail..."
             />
           </div>
         ) : (
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            
-            <div className="text-[11px] font-medium uppercase tracking-wide text-gray-500 mb-2">
-              Description
-            </div>
-
-            <p className="text-[12px] leading-relaxed text-gray-700 whitespace-pre-wrap capitalize">
-              {estimate?.description || "No description provided"}
+          <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200/70 relative overflow-hidden">
+            <div className="absolute top-0 left-0 bottom-0 w-1 bg-slate-300" />
+            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1.5">Project Scope Objective</span>
+            <p className="text-xs leading-relaxed font-medium text-slate-600 whitespace-pre-wrap capitalize">
+              {estimate?.description || "No specific scope definition provided."}
             </p>
           </div>
         )}
 
         {/* Projects */}
-        <div className="space-y-3">
+        <div className="space-y-3.5">
           {(isEditMode ? editProjects : projects).map((project, projectIdx) => (
-            <div key={project.id} className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
-              <div className="bg-green-700 px-3 py-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 flex-1">
-                    <span className="text-[10px] font-semibold text-green-100 bg-green-800/50 px-2 py-0.5 rounded">Project {projectIdx + 1}</span>
-                    <input type="text" value={project.name} onChange={(e) => updateProject(project.id, "name", e.target.value)} placeholder="Project name" className="flex-1 bg-white/20 text-white placeholder:text-green-200 rounded-lg px-3 py-1.5 text-[10px] font-medium focus:outline-none focus:ring-2 focus:ring-white/50" disabled={!isEditMode} />
-                  </div>
-                  {isEditMode && editProjects.length > 1 && (
-                    <button onClick={() => removeProject(project.id)} className="text-green-200 hover:text-white text-lg px-2">✕</button>
-                  )}
+            <div key={project.id} className="bg-white rounded-xl shadow-xs border border-slate-200/70 overflow-hidden group">
+              <div className="bg-slate-900 text-white px-3.5 py-2 flex items-center justify-between gap-3 shadow-inner">
+                <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                  <span className="text-[10px] font-extrabold text-emerald-400 bg-emerald-950/60 border border-emerald-900/50 px-2 py-0.5 rounded font-mono tracking-tight shrink-0">
+                    STAGE {String(projectIdx + 1).padStart(2, '0')}
+                  </span>
+                  <input
+                    type="text"
+                    value={project.name}
+                    onChange={(e) => updateProject(project.id, "name", e.target.value)}
+                    placeholder="Name this project stage..."
+                    className="flex-1 bg-transparent text-white placeholder:text-slate-600 text-xs font-black focus:outline-none truncate py-0.5 disabled:opacity-100"
+                    disabled={!isEditMode}
+                  />
                 </div>
+                {isEditMode && editProjects.length > 1 && (
+                  <button onClick={() => removeProject(project.id)} className="text-slate-500 hover:text-rose-400 p-1 transition-colors rounded-lg hover:bg-white/5">
+                    <X size={14} />
+                  </button>
+                )}
               </div>
 
-              {/* Project Description */}
               {isEditMode ? (
-                <div className="px-3 pt-2">
-                  <textarea value={project.description} onChange={(e) => updateProject(project.id, "description", e.target.value)} rows={1} placeholder="Project description (optional)" className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-700 placeholder:text-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 resize-none transition-all" />
+                <div className="px-3 pt-3">
+                  <textarea
+                    value={project.description || ""}
+                    onChange={(e) => updateProject(project.id, "description", e.target.value)}
+                    rows={1}
+                    placeholder="Stage operational notes or conditions (optional)"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 focus:bg-white transition-all resize-none"
+                  />
                 </div>
               ) : (
-                project.description && <div className="px-3 pt-2 text-xs text-gray-500">{project.description}</div>
+                project.description && (
+                  <div className="px-4 pt-2.5 text-[11px] text-slate-400 font-medium italic flex items-center gap-1.5 border-b border-slate-50 pb-1">
+                    <span className="text-slate-300 shrink-0">↳</span>
+                    <span>{project.description}</span>
+                  </div>
+                )
               )}
 
-              {/* Items */}
-              <div className="px-3 pb-2 space-y-2">
+              <div className="px-3.5 py-2 divide-y divide-slate-100">
                 {project.items.map((item, itemIdx) => (
-                  <div key={item.id} ref={(el) => { newItemRefs.current[item.id] = el; }} className="bg-gray-50 rounded-lg p-2 border border-gray-200">
-                    <div className="flex gap-2 mb-2">
-                      <div className="flex-1 flex items-center gap-1">
-                        <span className="text-[10px] text-gray-400 w-5">{itemIdx + 1}.</span>
-                        {isEditMode ? (
-                          <div className="flex-1">
-                            <input type="text" value={item.name} onChange={(e) => updateEditItem(project.id, item.id, "name", e.target.value)} placeholder="Item name" className="w-full bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-[10px] text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 placeholder:text-gray-400 transition-all" />
-                          </div>
-                        ) : (
-                          <span className="text-[10px] font-medium text-gray-700">{item.name}</span>
-                        )}
+                  <div key={item.id} ref={(el) => { newItemRefs.current[item.id] = el; }} className="py-2.5 first:pt-1 last:pb-1 flex flex-col gap-1.5 animate-in fade-in duration-100">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <span className="text-[10px] font-mono font-bold text-slate-300 w-4 text-right shrink-0">{String(itemIdx + 1).padStart(2, '0')}</span>
+                        <div className="flex-1 min-w-0">
+                          {isEditMode ? (
+                            <input
+                              type="text"
+                              value={item.name}
+                              onChange={(e) => updateEditItem(project.id, item.id, "name", e.target.value)}
+                              placeholder="Item allocation title"
+                              className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-300 transition-colors placeholder:text-slate-400"
+                            />
+                          ) : (
+                            <div className="truncate font-bold text-slate-800 tracking-tight text-xs capitalize">{item.name}</div>
+                          )}
+                        </div>
                       </div>
-                      {isEditMode && (
-                        <button onClick={() => removeEditItem(project.id, item.id)} className="text-red-400 text-xs px-1">✕</button>
-                      )}
-                    </div>
 
-                    {item.description && !isEditMode && <div className="text-xs text-gray-500 mb-2">{item.description}</div>}
-
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1 bg-white px-2 py-1 rounded border border-gray-200">
-                        <span className="text-[10px] text-gray-400">Qty</span>
-                        {isEditMode ? (
-                          <input type="number" value={item.quantity === 0 ? "" : item.quantity} onChange={(e) => { const val = e.target.value === "" ? 0 : Number(e.target.value); updateEditItem(project.id, item.id, "quantity", val); }} className="w-12 text-sm text-gray-700 text-center focus:outline-none bg-transparent" placeholder="0" />
-                        ) : (
-                          <span className="text-sm text-gray-700">{item.quantity}</span>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <div className="flex items-center gap-1 text-slate-500 font-medium text-[11px]">
+                          {isEditMode ? (
+                            <div className="flex items-center gap-1 border border-slate-200 bg-slate-50/50 rounded-lg px-2 py-0.5 focus-within:bg-white focus-within:border-slate-300 transition-all">
+                              <span className="text-[8px] text-slate-400 font-extrabold uppercase">Qty</span>
+                              <input
+                                type="number"
+                                value={item.quantity === 0 ? "" : item.quantity}
+                                onChange={(e) => updateEditItem(project.id, item.id, "quantity", Number(e.target.value) || 0)}
+                                className="w-9 text-center bg-transparent focus:outline-none font-bold text-slate-800 text-xs"
+                                placeholder="0"
+                              />
+                            </div>
+                          ) : (
+                            <span className="bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-bold tracking-tight">{item.quantity} <span className="text-[9px] text-slate-400 font-medium uppercase">units</span></span>
+                          )}
+                          <span className="text-slate-300 font-light mx-0.5">×</span>
+                          {isEditMode ? (
+                            <div className="flex items-center gap-1 border border-slate-200 bg-slate-50/50 rounded-lg px-2 py-0.5 focus-within:bg-white focus-within:border-slate-300 transition-all">
+                              <span className="text-[8px] text-slate-400 font-extrabold">$</span>
+                              <input
+                                type="number"
+                                value={item.unit_price === 0 ? "" : item.unit_price}
+                                onChange={(e) => updateEditItem(project.id, item.id, "unit_price", Number(e.target.value) || 0)}
+                                className="w-16 text-right bg-transparent focus:outline-none font-mono font-bold text-slate-800 text-xs"
+                                placeholder="0.00"
+                                step="0.01"
+                              />
+                            </div>
+                          ) : (
+                            <span className="font-mono text-slate-600 font-semibold">{formatCurrency(item.unit_price)}</span>
+                          )}
+                        </div>
+                        <div className="w-20 text-right font-black font-mono text-slate-800 text-xs tracking-tight">
+                          {formatCurrency(isEditMode ? (item.quantity * item.unit_price) : (item.total || 0))}
+                        </div>
+                        {isEditMode && (
+                          <button onClick={() => removeEditItem(project.id, item.id)} className="p-1 text-slate-300 hover:text-rose-500 rounded-md transition-colors hover:bg-slate-50">
+                            <X size={12} />
+                          </button>
                         )}
-                      </div>
-                      <div className="flex items-center gap-1 bg-white px-2 py-1 rounded border border-gray-200">
-                        <span className="text-[10px] text-gray-400">$</span>
-                        {isEditMode ? (
-                          <input type="number" value={item.unit_price === 0 ? "" : item.unit_price} onChange={(e) => { const val = e.target.value === "" ? 0 : Number(e.target.value); updateEditItem(project.id, item.id, "unit_price", val); }} className="w-20 text-sm text-gray-700 text-right focus:outline-none bg-transparent" placeholder="0.00" step="0.01" />
-                        ) : (
-                          <span className="text-sm text-gray-700">{formatCurrency(item.unit_price)}</span>
-                        )}
-                      </div>
-                      <div className="flex-1 text-right text-sm font-medium text-gray-700">
-                        {formatCurrency(item.quantity * item.unit_price)}
                       </div>
                     </div>
+                    {item.description && !isEditMode && (
+                      <div className="text-[11px] text-slate-400 pl-6 font-medium italic leading-relaxed">— {item.description}</div>
+                    )}
                   </div>
                 ))}
               </div>
 
-              {/* Add Item Button */}
               {isEditMode && (
-                <div className="flex justify-center my-1">
-                  <button onClick={() => addEditItem(project.id)} className="inline-flex items-center gap-1 px-2 py-1 rounded-full border border-green-300 text-green-600 text-xs font-medium hover:bg-green-50 transition-all duration-200">
-                    <span className="text-base">+</span> Add Item
+                <div className="flex justify-start px-3.5 pb-3 pt-1">
+                  <button type="button" onClick={() => addEditItem(project.id)} className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 bg-emerald-50 hover:bg-emerald-100 border border-emerald-100/60 px-3 py-1 rounded-lg flex items-center gap-1 shadow-2xs transition-all active:scale-95">
+                    <Plus size={10} strokeWidth={3} /> Add Line Allocation
                   </button>
                 </div>
               )}
 
-              {/* Project Total */}
-              <div className="bg-green-50 px-3 py-2 border-t border-green-100 flex justify-between items-center">
-                <span className="text-xs text-green-700 font-medium">Project Total</span>
-                <span className="text-sm font-bold text-green-800">
+              <div className="bg-slate-50/70 px-4 py-2 border-t border-slate-100 flex justify-between items-center text-xs">
+                <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Stage Composite Subtotal</span>
+                <span className="font-black font-mono text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200/60 shadow-3xs">
                   {formatCurrency(isEditMode ? calculateSubtotal(project.items) : project.items.reduce((sum, i) => sum + (i.total || 0), 0))}
                 </span>
               </div>
@@ -747,191 +939,266 @@ export default function EstimatePage() {
           ))}
         </div>
 
-        {/* Add Project Button */}
         {isEditMode && (
-          <button onClick={addProject} className="w-full py-3 rounded-xl border border-green-300 bg-green-50 text-green-700 text-sm font-medium hover:bg-green-100 transition-all duration-200">
-            + Add Project
+          <button onClick={addProject} className="w-full py-2.5 border-2 border-dashed border-slate-200 hover:border-emerald-300 bg-white text-slate-600 hover:text-emerald-700 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-2xs group active:scale-99">
+            <Plus size={14} className="text-slate-400 group-hover:text-emerald-500 transition-colors" />
+            <span>Append Project Structural Stage</span>
           </button>
         )}
 
-        {/* Summary */}
-        {isEditMode ? (
-          <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-xs font-medium text-gray-500">Summary</span>
-              <button onClick={() => setShowTargetModal(true)} className="text-xs text-green-600 font-medium bg-green-100 px-2 py-1 rounded hover:bg-green-200 transition">🎯 Set Target Total</button>
+        {/* Change Orders List */}
+        {!isEditMode && changeOrders.length > 0 && (
+          <div className="bg-white rounded-xl border-2 border-blue-100 shadow-sm shadow-blue-50/50 p-4 space-y-3 relative overflow-hidden">
+            <div className="absolute top-0 right-0 h-24 w-24 bg-gradient-to-bl from-blue-500/5 to-transparent rounded-bl-full pointer-events-none" />
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2 relative z-10">
+              <div className="flex items-center gap-1.5">
+                <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                <h3 className="text-[10px] font-extrabold text-blue-600 uppercase tracking-wider">Project Change Order</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setEditingChangeOrder(null);
+                  setShowChangeOrderModal(true);
+                }}
+                className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-md hover:bg-blue-100 transition-colors"
+              >
+                + New Change Order
+              </button>
             </div>
-            <div className="space-y-1">
-              <div className="flex justify-between text-sm"><span className="text-gray-500">Subtotal</span><span className="font-medium text-gray-700">{formatCurrency(editSubtotal)}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-gray-500">Tax ({editTaxRate}%)</span><span>{formatCurrency(editTax)}</span></div>
-              <div className="flex justify-between text-base font-semibold mt-2 pt-2 border-t border-gray-100"><span>Total</span><span className="text-green-700">{formatCurrency(editTotal)}</span></div>
+            <div className="space-y-2 relative z-10">
+              {changeOrders.map((co) => (
+                <div key={co.id} className={`p-3 rounded-xl flex justify-between items-center gap-3 border transition-all ${
+                  co.status === "pending" ? "border-amber-200 bg-amber-50/40 shadow-3xs" :
+                  co.status === "approved" ? "border-emerald-100 bg-emerald-50/20" : "border-slate-100 bg-slate-50/40"
+                }`}>
+                  <div className="space-y-1 min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="font-bold text-slate-800 text-xs truncate max-w-[180px] flex items-center gap-1.5">
+                        <span className="text-[9px] font-mono font-medium text-slate-400 bg-slate-100 px-1 py-0.5 rounded border border-slate-200/50">{co.change_order_number}</span>
+                        <span className="truncate">{co.title}</span>
+                      </div>
+                      <span className={`text-[8px] px-1.5 py-0.5 rounded font-extrabold uppercase tracking-wider ${
+                        co.status === "pending" ? "bg-amber-100 text-amber-800 border border-amber-200" :
+                        co.status === "approved" ? "bg-emerald-100 text-emerald-800 border border-emerald-200" :
+                        co.status === "rejected" ? "bg-rose-100 text-rose-800 border border-rose-200" :
+                        "bg-slate-100 text-slate-600 border border-slate-200"
+                      }`}>
+                        {co.status}
+                      </span>
+                    </div>
+                    {co.description && <p className="text-[11px] text-slate-400 line-clamp-1 font-medium italic pl-1">— {co.description}</p>}
+                  </div>
+                  <div className="text-right whitespace-nowrap shrink-0 flex flex-col items-end gap-1.5">
+                    <span className={`text-xs font-black font-mono tracking-tight ${co.total_amount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                      {co.total_amount >= 0 ? "+" : "-"}{formatCurrency(Math.abs(co.total_amount))}
+                    </span>
+                    <div className="flex justify-end gap-1.5 text-[10px]">
+                      {co.status === "draft" && (
+                        <>
+                          <button onClick={() => { setEditingChangeOrder(co); setShowChangeOrderModal(true); }} className="text-blue-600 hover:underline font-bold">Edit</button>
+                          <button onClick={() => submitForApproval(co.id)} className="text-emerald-600 hover:underline font-bold">Submit</button>
+                          <button onClick={() => deleteChangeOrder(co.id, co.status)} className="text-rose-500 hover:underline font-bold">Delete</button>
+                        </>
+                      )}
+                      {co.status === "pending" && (
+                        <>
+                          <button onClick={() => approveChangeOrder(co.id)} className="px-1.5 py-0.5 bg-emerald-600 text-white font-bold rounded-md hover:bg-emerald-700 transition-colors shadow-2xs">Approve</button>
+                          <button onClick={() => rejectChangeOrder(co.id)} className="text-rose-500 hover:underline font-bold">Reject</button>
+                        </>
+                      )}
+                      {co.status === "rejected" && (
+                        <button onClick={() => { setEditingChangeOrder(co); setShowChangeOrderModal(true); }} className="text-blue-600 hover:underline font-bold">Edit & Resubmit</button>
+                      )}
+                      {co.status === "approved" && (
+                        <span className="text-emerald-600 font-bold text-[10px] flex items-center gap-0.5">✓ Applied</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
-        ) : (
-          <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
-            <div className="text-[11px] text-gray-500 mb-2">Summary</div>
-            <div className="flex justify-between text-base font-semibold mt-2 pt-2 border-t border-gray-100"><span>Total</span><span className="text-green-700">{formatCurrency(viewTotal)}</span></div>
           </div>
         )}
 
-        {/* Signature */}
+        {/* ========== NEW FINANCIAL SUMMARY CARD (with deposit & payment history) ========== */}
+        <div className="bg-slate-900 text-white rounded-xl p-4 shadow-md border border-slate-950 flex flex-col gap-3 relative overflow-hidden">
+          <div className="absolute top-0 right-0 h-36 w-36 bg-gradient-to-bl from-emerald-500/10 to-transparent rounded-bl-full pointer-events-none" />
+          <div className="flex-1 text-xs space-y-1.5">
+            <div className="text-[9px] font-extrabold text-slate-500 uppercase tracking-wider border-b border-slate-800 pb-1.5 mb-1.5 flex justify-between items-center">
+              <span>Financial Summary</span>
+              {isEditMode && (
+                <button onClick={() => setShowTargetModal(true)} className="text-[9px] font-extrabold text-emerald-400 underline hover:text-emerald-300 flex items-center gap-0.5">
+                  🎯 Set Target Total
+                </button>
+              )}
+            </div>
+            <div className="space-y-1 font-mono text-slate-400 text-[11px]">
+              <div className="flex justify-between">
+                <span>Original Estimate Subtotal</span>
+                <span className="text-slate-200">{formatCurrency(originalSubtotal)}</span>
+              </div>
+              {changeOrdersTotal !== 0 && (
+                <div className="flex justify-between text-blue-400">
+                  <span>Approved Change Orders</span>
+                  <span>+{formatCurrency(changeOrdersTotal)}</span>
+                </div>
+              )}
+              <div className="flex justify-between border-t border-slate-700 pt-1 mt-1">
+                <span><strong>Revised Total</strong></span>
+                <span className="text-slate-200 font-semibold">{formatCurrency(revisedTotal)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Deposit (50% of Revised Total)</span>
+                <span className="text-emerald-300">{formatCurrency(depositAmount)}</span>
+              </div>
+              {totalPaid > 0 && (
+                <div className="flex justify-between text-emerald-400">
+                  <span>Payments Received</span>
+                  <span>-{formatCurrency(totalPaid)}</span>
+                </div>
+              )}
+              <div className="flex justify-between border-t border-slate-800 pt-1 mt-1 text-sm font-bold">
+                <span>Current Balance Due</span>
+                <span className="text-white">{formatCurrency(remainingBalance)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Payment History Section (if any payments exist) */}
+        {payments.length > 0 && (
+          <div className="bg-white rounded-xl border border-slate-200/80 overflow-hidden shadow-xs">
+            <div className="bg-slate-50 px-3.5 py-2 border-b border-slate-200/60 flex justify-between items-center">
+              <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Payment History</span>
+              <span className="text-[10px] font-mono font-bold text-slate-500 bg-white border border-slate-200/60 px-1.5 py-0.5 rounded shadow-3xs">{payments.length} Payment(s)</span>
+            </div>
+            <div className="divide-y divide-slate-100 px-3.5">
+              {payments.map((p) => (
+                <div key={p.id} className="py-2.5 flex justify-between items-center gap-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="p-1.5 bg-emerald-50 rounded-lg text-emerald-600 border border-emerald-100/40 shrink-0"><Receipt size={12} /></div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-black text-slate-800 font-mono">{formatCurrency(p.amount)}</div>
+                      <div className="text-[10px] font-medium text-slate-400 mt-0.5 capitalize flex items-center gap-1.5">
+                        <span>● {p.method}</span>
+                        <span className="text-slate-200">|</span>
+                        <span>{new Date(p.created_at).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Signature Block */}
         {!isEditMode && (
-          <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
-            <div className="text-[11px] text-gray-500 mb-2">Customer Signature</div>
-            <SignaturePad
-              onSave={saveSignature}
-              onRemove={removeSignature}
-              isCompleted={estimate?.is_completed}
-              existingSignature={estimate?.signature}
-              buttonText="Need Customer Signature"
-              showRemoveButton={true}
-            />
+          <div className="bg-white rounded-xl p-3.5 shadow-xs border border-slate-200/70">
+            <div className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <FileText size={12} className="text-slate-300" /> Authorized Customer Endorsement
+            </div>
+            <div className="bg-slate-50 border border-slate-200/60 rounded-xl p-1 shadow-inner">
+              <SignaturePad
+                onSave={saveSignature}
+                onRemove={removeSignature}
+                isCompleted={estimate?.is_completed}
+                existingSignature={estimate?.signature}
+                buttonText="Need Customer Signature"
+                showRemoveButton={true}
+              />
+            </div>
           </div>
         )}
 
         {/* Notes */}
         {isEditMode ? (
-          <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 focus-within:border-green-500 focus-within:shadow-md">
-            <textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} className="w-full text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none resize-none" rows={2} placeholder="Notes for client..." />
+          <div className="bg-white rounded-xl p-3 shadow-xs border border-slate-200/70 focus-within:border-slate-300 transition-all">
+            <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">Memos & Terms for Client</label>
+            <textarea
+              value={editNotes}
+              onChange={(e) => setEditNotes(e.target.value)}
+              className="w-full text-xs text-slate-700 focus:outline-none bg-slate-50/50 rounded-lg p-2 resize-none"
+              rows={2}
+              placeholder="Enter terms, valid days, or schedule notes for the client..."
+            />
           </div>
         ) : (
           estimate?.notes && (
-            <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
-              <div className="text-[11px] text-gray-500 mb-1">Notes</div>
-              <p className="text-xs text-gray-600">{estimate.notes}</p>
+            <div className="bg-white rounded-xl p-3.5 shadow-xs border border-slate-200/70 text-xs text-slate-500 relative overflow-hidden">
+              <span className="font-extrabold text-slate-400 uppercase tracking-wider text-[10px] block mb-1">Terms & Conditions Note</span>
+              <p className="text-slate-600 font-medium leading-relaxed italic">{estimate.notes}</p>
             </div>
           )
         )}
 
-        {/* Convert Button - Updated to check existing invoice */}
+        {/* Convert / Complete Buttons */}
         {!isEditMode && estimate?.signature && (
-          <>
+          <div className="space-y-2.5 pt-2 border-t border-slate-200/60">
             {existingInvoiceId ? (
-              <button
-                onClick={() => router.push(`/invoices/${existingInvoiceId}`)}
-                className="w-full py-3 rounded-xl bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200 transition"
-              >
-                View Invoice (Already Created)
+              <button onClick={() => router.push(`/invoices/${existingInvoiceId}`)} className="w-full py-2.5 rounded-xl bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors shadow-2xs flex items-center justify-center gap-1.5">
+                <span>View Related Live Invoice (Already Generated)</span>
               </button>
             ) : (
-              <button
-                onClick={convertToInvoice}
-                disabled={converting}
-                className="w-full py-3 rounded-xl bg-green-700 text-white text-sm font-medium hover:bg-green-800 disabled:opacity-50 transition"
-              >
-                {converting ? "Converting..." : "Convert to Invoice"}
+              <button onClick={convertToInvoice} disabled={converting} className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs tracking-wide transition-all shadow-md shadow-emerald-600/10 disabled:opacity-50 flex items-center justify-center gap-1.5">
+                <span>{converting ? "Processing Ledger..." : "Convert Scope to Invoice Asset"}</span>
               </button>
             )}
-          </>
-        )}
-
-        {/* Mark as Completed Button */}
-        {!isEditMode && estimate?.signature && estimate?.status !== "converted" && estimate?.status !== "completed" && (
-          <button
-            onClick={markAsCompleted}
-            className="w-full py-3 rounded-xl bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 transition"
-          >
-            ✅ Mark as Completed
-          </button>
+            {!isEditMode && estimate?.signature && estimate?.status !== "converted" && estimate?.status !== "completed" && (
+              <button onClick={markAsCompleted} className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition-colors shadow-2xs flex items-center justify-center gap-1.5">
+                <span>Mark Project Cycle as Completed</span>
+              </button>
+            )}
+          </div>
         )}
       </div>
 
       {/* FAB */}
-{!isEditMode && (
-  <div 
-    className="fixed bottom-8 right-6 z-50"
-    onMouseEnter={() => setFabOpen(true)}
-    onMouseLeave={() => setFabOpen(false)}
- >
-    <div
-      className={`absolute bottom-full right-0 pb-3 flex flex-col items-end gap-2 transition-all duration-300 transform origin-bottom ${
-        fabOpen
-          ? "scale-100 opacity-100 translate-y-0"
-          : "scale-75 opacity-0 translate-y-4 pointer-events-none"
-      }`}
-    >
-      {/* Edit */}
-      {!estimate?.signature && (
-        <button
-          onClick={() => {
-            setIsEditMode(true);
-            setFabOpen(false);
-          }}
-          className="flex items-center gap-2 rounded-xl bg-white text-gray-700 font-medium px-3 py-2 text-sm shadow-lg border border-gray-100 hover:bg-gray-50 hover:text-green-600 transition-all active:scale-95"
-        >
-          <SquarePen size={16} />
-          <span>Edit</span>
-        </button>
+      {!isEditMode && (
+        <div className="fixed bottom-6 right-6 z-50" onMouseEnter={() => setFabOpen(true)} onMouseLeave={() => setFabOpen(false)}>
+          <div className={`absolute bottom-full right-0 pb-3 flex flex-col items-end gap-1.5 transition-all duration-200 transform origin-bottom ${
+            fabOpen ? "scale-100 opacity-100 translate-y-0" : "scale-75 opacity-0 translate-y-4 pointer-events-none"
+          }`}>
+            {!estimate?.signature && (
+              <button onClick={() => { setIsEditMode(true); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-white text-slate-700 font-bold px-3 py-1.5 text-xs shadow-md border border-slate-100 hover:bg-slate-50 transition-colors">
+                <SquarePen size={12} className="text-slate-400" /> <span>Edit</span>
+              </button>
+            )}
+            <button
+              onClick={() => {
+                setEditingChangeOrder(null);
+                setShowChangeOrderModal(true);
+                setFabOpen(false);
+              }}
+              className="flex items-center gap-2 rounded-xl bg-white text-slate-700 font-bold px-3 py-1.5 text-xs shadow-md border border-slate-100 hover:bg-slate-50 transition-colors"
+            >
+              <FileEdit size={12} className="text-slate-400" /> <span>New Variation Order</span>
+            </button>
+            <button onClick={() => { setShowFinancialsModal(true); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-white text-slate-700 font-bold px-3 py-1.5 text-xs shadow-md border border-slate-100 hover:bg-slate-50 transition-colors">
+              <DollarSign size={12} className="text-slate-400" /> <span>Financial Ledger</span>
+            </button>
+            <button onClick={() => { setShowExpenseModal(true); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-white text-slate-700 font-bold px-3 py-1.5 text-xs shadow-md border border-slate-100 hover:bg-slate-50 transition-colors">
+              <Receipt size={12} className="text-slate-400" /> <span>Track Expense</span>
+            </button>
+            <button onClick={() => { sendSMSLink(); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-white text-slate-700 font-bold px-3 py-1.5 text-xs shadow-md border border-slate-100 hover:bg-slate-50 transition-colors">
+              <Send size={12} className="text-slate-400" /> <span>Send Client SMS</span>
+            </button>
+            <Link href={`/api/estimates/${id}/pdf`} target="_blank" onClick={() => setFabOpen(false)} className="flex items-center gap-2 rounded-xl bg-white text-slate-700 font-bold px-3 py-1.5 text-xs shadow-md border border-slate-100 hover:bg-slate-50 transition-colors">
+              <FileText size={12} className="text-slate-400" /> <span>Export PDF Document</span>
+            </Link>
+          </div>
+          <button onClick={() => setFabOpen(!fabOpen)} className="h-12 w-12 rounded-full bg-slate-950 text-white shadow-xl hover:bg-slate-800 transition-all duration-150 flex items-center justify-center active:scale-95">
+            <Plus size={20} className={`transition-transform duration-200 ${fabOpen ? "rotate-45" : "rotate-0"}`} />
+          </button>
+        </div>
       )}
 
-      {/* Financials */}
-      <button
-        onClick={() => {
-          setShowFinancialsModal(true);
-          setFabOpen(false);
-        }}
-        className="flex items-center gap-2 rounded-xl bg-white text-gray-700 font-medium px-3 py-2 text-sm shadow-lg border border-gray-100 hover:bg-gray-50 hover:text-green-600 transition-all active:scale-95"
-      >
-        <DollarSign size={16} />
-        <span>Financials</span>
-      </button>
-
-      {/* Expenses */}
-      <button
-        onClick={() => {
-          setShowExpenseModal(true);
-          setFabOpen(false);
-        }}
-        className="flex items-center gap-2 rounded-xl bg-white text-gray-700 font-medium px-3 py-2 text-sm shadow-lg border border-gray-100 hover:bg-gray-50 hover:text-green-600 transition-all active:scale-95"
-      >
-        <Receipt size={16} />
-        <span>Expenses</span>
-      </button>
-
-      {/* SMS */}
-      <button
-        onClick={() => {
-          sendSMSLink();
-          setFabOpen(false);
-        }}
-        className="flex items-center gap-2 rounded-xl bg-white text-gray-700 font-medium px-3 py-2 text-sm shadow-lg border border-gray-100 hover:bg-gray-50 hover:text-green-600 transition-all active:scale-95"
-      >
-        <Send size={16} />
-        <span>Send SMS</span>
-      </button>
-
-      {/* PDF */}
-      <Link
-        href={`/api/estimates/${id}/pdf`}
-        target="_blank"
-        onClick={() => setFabOpen(false)}
-        className="flex items-center gap-2 rounded-xl bg-white text-gray-700 font-medium px-3 py-2 text-sm shadow-lg border border-gray-100 hover:bg-gray-50 hover:text-green-600 transition-all active:scale-95"
-      >
-        <FileText size={16} />
-        <span>View PDF</span>
-      </Link>
-    </div>
-
-    {/* Main FAB Trigger */}
-    <button
-      onClick={() => setFabOpen(!fabOpen)}
-      className="h-14 w-14 rounded-full bg-green-600 text-white shadow-xl hover:bg-green-700 transition-all duration-300 flex items-center justify-center active:scale-95"
-    >
-      <Plus
-        size={24}
-        className={`transition-transform duration-300 ${
-          fabOpen ? "rotate-45" : "rotate-0"
-        }`}
-      />
-    </button>
-  </div>
-)}
-
+      {/* Secondary Modals */}
       <ProjectFinancialsModal
         isOpen={showFinancialsModal}
         onClose={() => setShowFinancialsModal(false)}
         estimateId={id as string}
-        estimateTotal={viewTotal}
+        estimateTotal={revisedTotal} // pass revised total (original + change orders)
         onRefresh={() => {
           loadSubcontractorPaid();
           loadEstimate();
@@ -942,10 +1209,294 @@ export default function EstimatePage() {
         isOpen={showExpenseModal}
         onClose={() => setShowExpenseModal(false)}
         estimateId={id as string}
-        onRefresh={() => {
-          loadEstimate();
-        }}
+        onRefresh={() => loadEstimate()}
       />
+    </div>
+  );
+}
+
+// =============== Change Order Modal Component (unchanged) ===============
+function ChangeOrderModal({
+  estimateId,
+  estimateTotal,
+  existingOrder,
+  onClose,
+  onSaved,
+}: {
+  estimateId: string;
+  estimateTotal: number;
+  existingOrder: ChangeOrder | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [lineItems, setLineItems] = useState<ChangeOrderLineItem[]>([
+    { id: crypto.randomUUID(), description: "", quantity: 1, unit_price: 0, total: 0, type: "addition" },
+  ]);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (existingOrder) {
+      setTitle(existingOrder.title);
+      setDescription(existingOrder.description || "");
+      loadLineItems(existingOrder.id);
+    }
+  }, [existingOrder]);
+
+  async function loadLineItems(coId: string) {
+    const { data } = await supabase
+      .from("change_order_line_items")
+      .select("*")
+      .eq("change_order_id", coId);
+    if (data && data.length) {
+      const items = data.map((item) => ({
+        id: item.id,
+        description: item.description,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        total: item.total,
+        type: item.type,
+      }));
+      setLineItems(items);
+    }
+  }
+
+  const addLineItem = () => {
+    setLineItems([
+      ...lineItems,
+      { id: crypto.randomUUID(), description: "", quantity: 1, unit_price: 0, total: 0, type: "addition" },
+    ]);
+  };
+
+  const updateLineItem = (id: string, field: string, value: any) => {
+    setLineItems((items) =>
+      items.map((item) => {
+        if (item.id !== id) return item;
+        const updated = { ...item, [field]: value };
+        if (field === "quantity" || field === "unit_price") updated.total = updated.quantity * updated.unit_price;
+        return updated;
+      })
+    );
+  };
+
+  const removeLineItem = (id: string) => {
+    setLineItems((items) => items.filter((item) => item.id !== id));
+  };
+
+  const calculateTotalChange = () => {
+    return lineItems.reduce((sum, item) => sum + (item.type === "addition" ? item.total : -item.total), 0);
+  };
+
+  const revisedTotal = estimateTotal + calculateTotalChange();
+
+  const handleSave = async () => {
+    if (!title.trim()) {
+      alert("Please enter a title");
+      return;
+    }
+    if (lineItems.length === 0 || lineItems.every((i) => i.total === 0)) {
+      alert("Add at least one line item with a value");
+      return;
+    }
+
+    setSaving(true);
+    const totalChange = calculateTotalChange();
+
+    try {
+      if (existingOrder) {
+        // Update existing
+        const { error: updateError } = await supabase
+          .from("change_orders")
+          .update({ title, description, total_amount: totalChange, updated_at: new Date().toISOString() })
+          .eq("id", existingOrder.id);
+        if (updateError) throw updateError;
+
+        await supabase.from("change_order_line_items").delete().eq("change_order_id", existingOrder.id);
+        const itemsToInsert = lineItems.map((item) => ({
+          change_order_id: existingOrder.id,
+          description: item.description,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          total: item.quantity * item.unit_price,
+          type: item.type,
+        }));
+        if (itemsToInsert.length) {
+          const { error: itemsError } = await supabase.from("change_order_line_items").insert(itemsToInsert);
+          if (itemsError) throw itemsError;
+        }
+      } else {
+        // Create new – with null check
+        const { data: estimateData, error: estError } = await supabase
+          .from("estimates")
+          .select("total")
+          .eq("id", estimateId)
+          .single();
+
+        if (estError || !estimateData) {
+          alert("Could not fetch estimate data. Please try again.");
+          setSaving(false);
+          return;
+        }
+
+        const { count } = await supabase
+          .from("change_orders")
+          .select("id", { count: "exact", head: true })
+          .eq("estimate_id", estimateId);
+
+        const coNumber = `CO-${(count || 0) + 1}`;
+
+        const { data: newCo, error: createError } = await supabase
+          .from("change_orders")
+          .insert({
+            estimate_id: estimateId,
+            change_order_number: coNumber,
+            title,
+            description,
+            original_estimate_total: estimateData.total,
+            total_amount: totalChange,
+            status: "draft",
+          })
+          .select()
+          .single();
+        if (createError) throw createError;
+
+        const itemsToInsert = lineItems.map((item) => ({
+          change_order_id: newCo.id,
+          description: item.description,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          total: item.quantity * item.unit_price,
+          type: item.type,
+        }));
+        if (itemsToInsert.length) {
+          const { error: itemsError } = await supabase.from("change_order_line_items").insert(itemsToInsert);
+          if (itemsError) throw itemsError;
+        }
+      }
+      onSaved();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || "Error saving change order");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b px-5 py-4 flex justify-between items-center">
+          <h3 className="text-lg font-semibold">{existingOrder ? "Edit Change Order" : "New Change Order"}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Title *</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="mt-1 w-full border rounded-lg p-2 text-sm"
+              placeholder="e.g., Additional framing work"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Description</label>
+            <textarea
+              rows={2}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="mt-1 w-full border rounded-lg p-2 text-sm"
+              placeholder="Optional details..."
+            />
+          </div>
+
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <label className="text-sm font-medium text-gray-700">Line Items</label>
+              <button onClick={addLineItem} className="text-xs text-green-600 flex items-center gap-1"><Plus size={12} /> Add</button>
+            </div>
+            <div className="space-y-2">
+              {lineItems.map((item) => (
+                <div key={item.id} className="border rounded-lg p-3 bg-gray-50">
+                  <div className="flex justify-between mb-2">
+                    <select
+                      value={item.type}
+                      onChange={(e) => updateLineItem(item.id, "type", e.target.value)}
+                      className="text-xs border rounded px-2 py-1"
+                    >
+                      <option value="addition">➕ Addition</option>
+                      <option value="deduction">➖ Deduction</option>
+                    </select>
+                    <button onClick={() => removeLineItem(item.id)} className="text-red-500"><Trash2 size={14} /></button>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Description"
+                    value={item.description}
+                    onChange={(e) => updateLineItem(item.id, "description", e.target.value)}
+                    className="w-full border rounded p-2 text-sm mb-2"
+                  />
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <label className="text-[10px] text-gray-500">Quantity</label>
+                      <input
+                        type="number"
+                        value={item.quantity === 0 ? "" : item.quantity}
+                        onChange={(e) => updateLineItem(item.id, "quantity", Number(e.target.value) || 0)}
+                        className="w-full border rounded p-2 text-sm"
+                        step="1"
+                        min="0"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-[10px] text-gray-500">Unit Price ($)</label>
+                      <input
+                        type="number"
+                        value={item.unit_price === 0 ? "" : item.unit_price}
+                        onChange={(e) => updateLineItem(item.id, "unit_price", Number(e.target.value) || 0)}
+                        className="w-full border rounded p-2 text-sm"
+                        step="0.01"
+                        min="0"
+                      />
+                    </div>
+                    <div className="flex-1 text-right">
+                      <label className="text-[10px] text-gray-500">Total</label>
+                      <div className="text-sm font-semibold mt-1">{formatCurrency(item.total)}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-gray-50 rounded-lg p-3">
+            <div className="flex justify-between text-sm">
+              <span>Original Estimate Total:</span>
+              <span>{formatCurrency(estimateTotal)}</span>
+            </div>
+            <div className="flex justify-between text-sm mt-1">
+              <span>Total Change:</span>
+              <span className={calculateTotalChange() >= 0 ? "text-green-600" : "text-red-600"}>
+                {calculateTotalChange() >= 0 ? "+" : "-"}
+                {formatCurrency(Math.abs(calculateTotalChange()))}
+              </span>
+            </div>
+            <div className="border-t mt-2 pt-2 flex justify-between font-semibold">
+              <span>Revised Total:</span>
+              <span>{formatCurrency(revisedTotal)}</span>
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-3">
+            <button onClick={onClose} className="flex-1 py-2 border rounded-lg text-sm">Cancel</button>
+            <button onClick={handleSave} disabled={saving} className="flex-1 py-2 bg-green-700 text-white rounded-lg text-sm">
+              {saving ? "Saving..." : existingOrder ? "Update" : "Create"}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

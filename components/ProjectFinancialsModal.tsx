@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils/formatting";
 import { X, Trash2, Edit2, Check, DollarSign, Users, Plus, Receipt, Eye } from "lucide-react";
+import ChangeOrderTab from "@/components/changeOrder/ChangeOrderTab";
+
 
 type Subcontractor = {
   id: string;
@@ -89,7 +91,9 @@ export default function ProjectFinancialsModal({
   estimateTotal,
   onRefresh,
 }: ProjectFinancialsModalProps) {
-  const [activeTab, setActiveTab] = useState<"subcontractors" | "expenses" | "agents">("subcontractors");
+   // Inside the component, where you render tabs:
+const [activeTab, setActiveTab] = useState<"subcontractors" | "expenses" | "agents" | "changeorders">("subcontractors");
+
   const [companyPercentage, setCompanyPercentage] = useState<30 | 60>(30);
   const agentPercentage = companyPercentage === 30 ? 70 : 40;
   // ✅ ADD THESE TWO LINES:

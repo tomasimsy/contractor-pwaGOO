@@ -10,7 +10,7 @@ import PaymentModal from "@/components/payments/PaymentModal";
 import Link from "next/link";
 import { useCompanySettings } from "@/lib/hooks/useCompanySettings";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
-import { Trash2, Lock, Unlock, AlertCircle } from "lucide-react";
+import { Trash2, Lock, Unlock, AlertCircle, ArrowLeft, FileText, Receipt } from "lucide-react";
 
 export default function InvoicePage() {
   const router = useRouter();
@@ -19,536 +19,499 @@ export default function InvoicePage() {
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [client, setClient] = useState<Client | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [estimateItems, setEstimateItems] = useState<any[]>([]);
+  const [invoiceLineItems, setInvoiceLineItems] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
+  const [changeOrders, setChangeOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [savingPayment, setSavingPayment] = useState(false);
   const [locking, setLocking] = useState(false);
   const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null);
-
   const { settings } = useCompanySettings();
+
+  // ----- Core data -----
+  const [originalSubtotal, setOriginalSubtotal] = useState(0);
+  const [approvedChangeTotal, setApprovedChangeTotal] = useState(0);
+  const [revisedTotal, setRevisedTotal] = useState(0);
+  const [totalPaid, setTotalPaid] = useState(0);
+  const [remainingBalance, setRemainingBalance] = useState(0);
+  const [depositAmount, setDepositAmount] = useState(0);
+  const [isFullyPaid, setIsFullyPaid] = useState(false);
+  const [isLocked, setIsLocked] = useState(false);
+  const [canLock, setCanLock] = useState(false);
+  const [canUnlock, setCanUnlock] = useState(false);
+  const [isOverdue, setIsOverdue] = useState(false);
 
   useEffect(() => {
     loadInvoice();
   }, [id]);
 
   async function loadInvoice() {
-  try {
-    setLoading(true);
-    
-    // Load invoice
-    const { data: inv, error: invError } = await supabase
-      .from("invoices")
-      .select("*")
-      .eq("id", id)
-      .single();
+    try {
+      setLoading(true);
+      const { data: inv, error: invError } = await supabase
+        .from("invoices")
+        .select("*")
+        .eq("id", id)
+        .single();
+      if (invError) throw invError;
+      setInvoice(inv);
+      setIsLocked(inv?.is_locked === true);
 
-    if (invError) {
-      console.error("Invoice fetch error:", invError);
-      throw invError;
+      if (inv.client_id) {
+        const { data: cl } = await supabase
+          .from("clients")
+          .select("*")
+          .eq("id", inv.client_id)
+          .single();
+        if (cl) setClient(cl);
+      }
+
+      // Load projects (phases)
+      const { data: projs } = await supabase
+        .from("projects")
+        .select("*, line_items(*)")
+        .eq("invoice_id", id);
+      if (projs) setProjects(projs);
+
+      // Invoice line items (flat)
+      const { data: invLines } = await supabase
+        .from("invoice_line_items")
+        .select("*")
+        .eq("invoice_id", id);
+      if (invLines) setInvoiceLineItems(invLines);
+
+      // Original estimate items
+      let estimateItemsData: any[] = [];
+      if (inv.estimate_id) {
+        const { data: estLines } = await supabase
+          .from("estimate_items")
+          .select("*")
+          .eq("estimate_id", inv.estimate_id);
+        estimateItemsData = estLines || [];
+        setEstimateItems(estimateItemsData);
+      }
+
+      // Approved change orders
+      let changeOrdersData: any[] = [];
+      let approvedTotal = 0;
+      if (inv.estimate_id) {
+        const { data: cos } = await supabase
+          .from("change_orders")
+          .select("*")
+          .eq("estimate_id", inv.estimate_id)
+          .eq("status", "approved");
+        changeOrdersData = cos || [];
+        setChangeOrders(changeOrdersData);
+        approvedTotal = changeOrdersData.reduce((sum, co) => sum + (co.total_amount || 0), 0);
+      }
+
+      // Payments
+      const { data: pays } = await supabase
+        .from("invoice_payments")
+        .select("*")
+        .eq("invoice_id", id)
+        .order("created_at", { ascending: false });
+      const paymentsData = pays || [];
+      setPayments(paymentsData);
+      const totalPaidSum = paymentsData.reduce((sum, p) => sum + (p.amount || 0), 0);
+
+      // ---------- Core calculations (same as PDF) ----------
+      const originalSum = estimateItemsData.reduce((sum, i) => sum + (i.total || 0), 0);
+      const revTotal = originalSum + approvedTotal;
+      const remaining = revTotal - totalPaidSum;
+      const deposit = revTotal * 0.5;
+      const fullyPaid = remaining <= 0;
+      const overdue = inv.due_date && !fullyPaid && remaining > 0 && new Date(inv.due_date) < new Date();
+
+      setOriginalSubtotal(originalSum);
+      setApprovedChangeTotal(approvedTotal);
+      setRevisedTotal(revTotal);
+      setTotalPaid(totalPaidSum);
+      setRemainingBalance(remaining);
+      setDepositAmount(deposit);
+      setIsFullyPaid(fullyPaid);
+      setIsOverdue(overdue);
+      setCanLock(fullyPaid && !inv.is_locked);
+      setCanUnlock(inv.is_locked === true);
+    } catch (err) {
+      console.error(err);
+      alert("Error loading invoice data");
+    } finally {
+      setLoading(false);
     }
-    setInvoice(inv);
-
-    // Load payments
-    const { data: pays, error: paysError } = await supabase
-      .from("invoice_payments")
-      .select("*")
-      .eq("invoice_id", id)
-      .order("created_at", { ascending: false });
-
-    if (paysError) {
-      console.error("Payments fetch error:", paysError);
-      throw paysError;
-    }
-    setPayments(pays || []);
-    
-  } catch (err) {
-    console.error("Error loading invoice:", err);
-    alert("Error loading invoice data");
-  } finally {
-    setLoading(false);
   }
-}
 
-  const totalPaid = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
-  const remainingBalance = (invoice?.total || 0) - totalPaid;
-  const isFullyPaid = remainingBalance === 0;
-  
-  // Manual lock status - based on database field
-  const isLocked = invoice?.is_locked === true;
-  const canLock = isFullyPaid && !isLocked;
-  const canUnlock = isLocked;
-
-  const isOverdue = invoice?.due_date &&
-    !isFullyPaid &&
-    remainingBalance > 0 &&
-    new Date(invoice.due_date) < new Date();
-
-  // Toggle manual lock
+  // ----- Lock / Unlock -----
   const toggleLock = async () => {
     if (locking) return;
-    
     setLocking(true);
     try {
       const newLockStatus = !isLocked;
-      
-      // Get current user
       const { data: { user } } = await supabase.auth.getUser();
-      
-      const updateData: any = { 
-        is_locked: newLockStatus
-      };
-      
+      const updateData: any = { is_locked: newLockStatus };
       if (newLockStatus) {
         updateData.locked_at = new Date().toISOString();
-        updateData.locked_by = user?.email || user?.id || 'unknown';
+        updateData.locked_by = user?.email || user?.id || "unknown";
       } else {
         updateData.locked_at = null;
         updateData.locked_by = null;
       }
-      
-      const { error } = await supabase
-        .from("invoices")
-        .update(updateData)
-        .eq("id", id);
-      
+      const { error } = await supabase.from("invoices").update(updateData).eq("id", id);
       if (error) throw error;
-      
       await loadInvoice();
-      alert(newLockStatus ? "✅ Invoice locked successfully" : "✅ Invoice unlocked successfully");
+      alert(newLockStatus ? "✅ Invoice locked" : "✅ Invoice unlocked");
     } catch (err) {
-      console.error("Error toggling lock:", err);
-      alert("❌ Error updating lock status");
+      console.error(err);
+      alert("Error updating lock status");
     } finally {
       setLocking(false);
     }
   };
 
-const recordPayment = async (amount: number, method: string) => {
-  console.log("=== RECORD PAYMENT START ===");
-  console.log("Amount:", amount);
-  console.log("Method:", method);
-  console.log("Is locked:", isLocked);
-  console.log("Invoice ID:", id);
-  
-  if (isLocked) {
-    alert("❌ This invoice is locked. Cannot record payments.");
-    return;
-  }
-  
-  setSavingPayment(true);
-  
-  try {
-    // Step 1: Insert payment
-    console.log("Step 1: Inserting payment record...");
-    const paymentData = {
-      invoice_id: id,
-      amount: amount,
-      method: method,
-      created_at: new Date().toISOString()
-    };
-    console.log("Payment data:", paymentData);
-    
-    const { data: paymentResult, error: paymentError } = await supabase
-      .from("invoice_payments")
-      .insert(paymentData)
-      .select();
-    
-    if (paymentError) {
-      console.error("Payment insert error:", paymentError);
-      throw new Error(`Payment insert failed: ${paymentError.message}`);
+  // ----- Record payment -----
+  const recordPayment = async (amount: number, method: string) => {
+    if (isLocked) {
+      alert("❌ Invoice is locked. Cannot record payments.");
+      return;
     }
-    
-    console.log("Payment inserted successfully:", paymentResult);
-    
-    // Step 2: Calculate new totals
-    console.log("Step 2: Calculating new totals...");
-    const newAmountPaid = totalPaid + amount;
-    const newRemaining = (invoice?.total || 0) - newAmountPaid;
-    const isNowFullyPaid = newRemaining === 0;
-    
-    console.log("New calculations:", {
-      totalPaid,
-      amount,
-      newAmountPaid,
-      invoiceTotal: invoice?.total,
-      newRemaining,
-      isNowFullyPaid
-    });
-    
-    // Step 3: Update invoice
-    console.log("Step 3: Updating invoice...");
-    const updateData: any = {
-      amount_paid: newAmountPaid,
-      remaining_balance: newRemaining,
-      status: isNowFullyPaid ? "paid" : "partial"
-    };
-    
-    if (isNowFullyPaid) {
-      updateData.paid_at = new Date().toISOString();
-      console.log("Setting paid_at:", updateData.paid_at);
-    }
-    
-    console.log("Update data:", updateData);
-    
-    const { data: updateResult, error: updateError } = await supabase
-      .from("invoices")
-      .update(updateData)
-      .eq("id", id)
-      .select();
-    
-    if (updateError) {
-      console.error("Invoice update error:", updateError);
-      throw new Error(`Invoice update failed: ${updateError.message}`);
-    }
-    
-    console.log("Invoice updated successfully:", updateResult);
-    
-    // Step 4: Refresh data
-    console.log("Step 4: Refreshing invoice data...");
-    await loadInvoice();
-    
-    alert(`✅ Payment of ${formatCurrency(amount)} recorded!`);
-    setShowPaymentModal(false);
-    
-  } catch (err) {
-    console.error("=== ERROR RECORDING PAYMENT ===");
-    console.error("Error object:", err);
-    if (err instanceof Error) {
-      console.error("Error message:", err.message);
-      console.error("Error stack:", err.stack);
-    }
-    alert(`❌ Error recording payment: ${err instanceof Error ? err.message : "Unknown error"}`);
-  } finally {
-    setSavingPayment(false);
-    console.log("=== RECORD PAYMENT END ===");
-  }
-};
+    setSavingPayment(true);
+    try {
+      const { error: paymentError } = await supabase.from("invoice_payments").insert({
+        invoice_id: id,
+        amount,
+        method,
+        created_at: new Date().toISOString(),
+      });
+      if (paymentError) throw paymentError;
 
+      const newPaid = totalPaid + amount;
+      const newRemaining = revisedTotal - newPaid;
+      const nowFullyPaid = newRemaining <= 0;
+      const updateData: any = {
+        amount_paid: newPaid,
+        remaining_balance: newRemaining,
+        status: nowFullyPaid ? "paid" : "partial",
+      };
+      if (nowFullyPaid) updateData.paid_at = new Date().toISOString();
+      const { error: updateError } = await supabase
+        .from("invoices")
+        .update(updateData)
+        .eq("id", id);
+      if (updateError) throw updateError;
 
-const deletePayment = async (paymentId: string) => {
-  // Check lock status first
-  if (isLocked) {
-    alert("❌ This invoice is locked. Cannot delete payments.");
-    return;
-  }
-  
-  // Find the payment to delete
-  const paymentToDelete = payments.find(p => p.id === paymentId);
-  if (!paymentToDelete) {
-    alert("Payment not found");
-    return;
-  }
-  
-  // Confirm deletion
-  const confirmed = confirm(
-    `Are you sure you want to delete the payment of ${formatCurrency(paymentToDelete.amount)}?\n\nThis action cannot be undone.`
-  );
-  
-  if (!confirmed) return;
-  
-  setDeletingPaymentId(paymentId);
-  
-  try {
-    // Delete the payment
-    const { error: deleteError } = await supabase
-      .from("invoice_payments")
-      .delete()
-      .eq("id", paymentId);
-    
-    if (deleteError) throw deleteError;
-    
-    // Get remaining payments
-    const { data: remainingPayments, error: fetchError } = await supabase
-      .from("invoice_payments")
-      .select("*")
-      .eq("invoice_id", id);
-    
-    if (fetchError) throw fetchError;
-    
-    // Calculate new totals
-    const newTotalPaid = remainingPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
-    const newRemainingBalance = (invoice?.total || 0) - newTotalPaid;
-    const newStatus = newRemainingBalance === 0 ? "paid" : newRemainingBalance === (invoice?.total || 0) ? "pending" : "partial";
-    
-    // Update invoice - REMOVED updated_at
-    const { error: updateError } = await supabase
-      .from("invoices")
-      .update({
+      await loadInvoice();
+      alert(`✅ Payment of ${formatCurrency(amount)} recorded!`);
+      setShowPaymentModal(false);
+    } catch (err) {
+      console.error(err);
+      alert(`❌ Error recording payment: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setSavingPayment(false);
+    }
+  };
+
+  // ----- Delete payment -----
+  const deletePayment = async (paymentId: string) => {
+    if (isLocked) {
+      alert("❌ Invoice is locked. Cannot delete payments.");
+      return;
+    }
+    const paymentToDelete = payments.find(p => p.id === paymentId);
+    if (!paymentToDelete) return;
+    if (!confirm(`Delete payment of ${formatCurrency(paymentToDelete.amount)}?`)) return;
+    setDeletingPaymentId(paymentId);
+    try {
+      const { error: deleteError } = await supabase.from("invoice_payments").delete().eq("id", paymentId);
+      if (deleteError) throw deleteError;
+      const remainingPayments = payments.filter(p => p.id !== paymentId);
+      const newTotalPaid = remainingPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+      const newRemaining = revisedTotal - newTotalPaid;
+      const newStatus = newRemaining <= 0 ? "paid" : newRemaining === revisedTotal ? "pending" : "partial";
+      await supabase.from("invoices").update({
         amount_paid: newTotalPaid,
-        remaining_balance: newRemainingBalance,
+        remaining_balance: newRemaining,
         status: newStatus,
-        paid_at: newRemainingBalance === 0 ? new Date().toISOString() : null
-        // removed: updated_at: new Date().toISOString()
-      })
-      .eq("id", id);
-    
-    if (updateError) throw updateError;
-    
-    // Update local state
-    setPayments(remainingPayments);
-    setInvoice({
-      ...invoice!,
-      amount_paid: newTotalPaid,
-      remaining_balance: newRemainingBalance,
-      status: newStatus,
-      paid_at: newRemainingBalance === 0 ? new Date().toISOString() : null
-    });
-    
-    alert("✅ Payment deleted successfully!");
-    
-  } catch (err) {
-    console.error("Error deleting payment:", err);
-    alert("❌ Error deleting payment");
-  } finally {
-    setDeletingPaymentId(null);
-  }
-};
+        paid_at: newRemaining <= 0 ? new Date().toISOString() : null,
+      }).eq("id", id);
+      await loadInvoice();
+      alert("✅ Payment deleted");
+    } catch (err) {
+      console.error(err);
+      alert("❌ Error deleting payment");
+    } finally {
+      setDeletingPaymentId(null);
+    }
+  };
+
+  // Helper for status badge
+  const getStatusBadge = () => {
+    if (isLocked) return { text: "Locked", color: "bg-slate-100 text-slate-600 border-slate-200" };
+    if (isFullyPaid) return { text: "Paid", color: "bg-emerald-50 text-emerald-700 border-emerald-100" };
+    if (isOverdue) return { text: "Overdue", color: "bg-rose-50 text-rose-700 border-rose-100" };
+    return { text: "Pending", color: "bg-amber-50 text-amber-700 border-amber-100" };
+  };
+
   if (loading) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen bg-[#f6f7f9] flex items-center justify-center">
-          <div className="text-sm text-gray-500">Loading invoice...</div>
+        <div className="min-h-screen bg-slate-50/70 flex items-center justify-center">
+          <div className="text-xs font-semibold text-slate-400 font-mono tracking-wider animate-pulse">LOADING INVOICE LEDGER...</div>
         </div>
       </ProtectedRoute>
     );
   }
 
+  const status = getStatusBadge();
+  // For display: original subtotal may be zero if no estimate items; fallback to invoice line items sum
+  const displaySubtotal = originalSubtotal > 0 ? originalSubtotal : invoiceLineItems.reduce((s, i) => s + (i.total || 0), 0);
+
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-[#f6f7f9] pb-16">
-        {/* Compact Header */}
-        <div className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-gray-100 px-4 py-2">
-          <div className="mx-auto max-w-4xl flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => router.back()}
-                className="p-1.5 rounded-lg hover:bg-gray-100"
-              >
-                ←
-              </button>
-              <h1 className="text-sm font-semibold text-gray-900">
-                Invoice #{invoice?.invoice_number || id?.slice(0, 8)}
-              </h1>
-            </div>
-            <div className="flex items-center gap-2">
-              <Link href={`/api/invoices/${id}/pdf`} target="_blank">
-                <button className="px-2.5 py-1 text-xs rounded-lg border border-gray-200 bg-white hover:bg-gray-50">
-                  📄 PDF
+      <div className="min-h-screen bg-slate-50/70 pb-20 text-slate-800 antialiased text-xs">
+        {/* Sticky Header (same as before – unchanged) */}
+        <div className="sticky top-0 z-50 max-w-3xl mx-auto w-full px-4 pt-3 pb-2 bg-slate-50/95 backdrop-blur-md">
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-3 flex flex-col gap-2.5 relative overflow-hidden transition-all">
+            <div className="grid grid-cols-2 gap-4 items-center">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <button onClick={() => router.back()} className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-50 border border-slate-100 bg-white shadow-3xs transition-all active:scale-95 shrink-0">
+                  <ArrowLeft size={14} />
                 </button>
-              </Link>
+                <div className="min-w-0">
+                  <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Customer</span>
+                  <h3 className="text-xs font-black text-slate-800 tracking-tight truncate">{client?.name || "Unassigned Account"}</h3>
+                  {client?.email && <p className="text-[10px] text-slate-400 font-medium truncate hidden sm:block mt-0.5">{client.email}</p>}
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-3 min-w-0 justify-self-end w-full max-w-[180px] sm:max-w-none">
+                <div className="min-w-0 text-left sm:text-right sm:ml-auto">
+                  <div className="flex items-center sm:justify-end gap-1.5 flex-wrap">
+                    <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Invoice</span>
+                    <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border tracking-wide uppercase scale-90 origin-left sm:origin-right ${status.color}`}>
+                      {status.text}
+                    </span>
+                  </div>
+                  <p className="text-xs font-bold font-mono text-slate-600 block tracking-tight truncate mt-0.5">
+                    #{invoice?.invoice_number || id?.slice(0, 8)}
+                  </p>
+                </div>
+                <div className="shrink-0">
+                  <Link href={`/api/invoices/${id}/pdf`} target="_blank">
+                    <button className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-xl border border-slate-200/60 bg-white shadow-3xs transition-all text-[11px] font-bold flex items-center gap-1">
+                      <FileText size={13} /><span className="hidden sm:inline">PDF</span>
+                    </button>
+                  </Link>
+                </div>
+              </div>
             </div>
+            {isLocked ? (
+              <div className="mt-0.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2 min-w-0"><Lock size={12} className="text-slate-400 shrink-0" /><p className="text-[11px] font-medium text-slate-500 truncate">Invoice locked {invoice?.locked_by && <span className="text-slate-400">by {invoice.locked_by}</span>}</p></div>
+                {canUnlock && <button onClick={toggleLock} disabled={locking} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold text-slate-600 hover:bg-slate-50 shadow-3xs">{locking ? "..." : "Unlock"}</button>}
+              </div>
+            ) : isFullyPaid ? (
+              <div className="mt-0.5 rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-1.5 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2 min-w-0"><AlertCircle size={12} className="text-amber-500 shrink-0" /><p className="text-[11px] font-medium text-amber-800 truncate">Fully paid. Lock to prevent changes.</p></div>
+                <button onClick={toggleLock} disabled={locking} className="rounded-lg bg-amber-600 text-white px-2.5 py-1 text-[10px] font-black hover:bg-amber-700">{locking ? "..." : "Lock"}</button>
+              </div>
+            ) : null}
           </div>
         </div>
 
-        <div className="mx-auto max-w-4xl space-y-3 p-3">
-          {/* LOCK STATUS BANNER */}
-          {isLocked && (
-            <div className="bg-gray-100 rounded-lg p-2 flex items-center justify-between text-xs">
-              <div className="flex items-center gap-1.5">
-                <Lock size={12} className="text-gray-600" />
-                <span className="text-gray-600">🔒 Locked - No changes allowed</span>
-                {invoice?.locked_by && (
-                  <span className="text-gray-400 text-[10px]">
-                    by {invoice.locked_by}
-                  </span>
-                )}
-              </div>
-              {canUnlock && (
-                <button
-                  onClick={toggleLock}
-                  disabled={locking}
-                  className="flex items-center gap-1 px-2 py-0.5 text-xs bg-white border rounded-md hover:bg-gray-50 disabled:opacity-50"
-                >
-                  <Unlock size={10} />
-                  {locking ? "Processing..." : "Unlock"}
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* CAN LOCK BANNER - Show when fully paid but not locked */}
-          {!isLocked && isFullyPaid && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 flex items-center justify-between text-xs">
-              <div className="flex items-center gap-1.5">
-                <AlertCircle size={12} className="text-amber-600" />
-                <span className="text-amber-700">
-                  💰 This invoice is fully paid. You can lock it to prevent changes.
-                </span>
-              </div>
-              <button
-                onClick={toggleLock}
-                disabled={locking}
-                className="flex items-center gap-1 px-2 py-0.5 text-xs bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50"
-              >
-                <Lock size={10} />
-                {locking ? "Processing..." : "Lock Invoice"}
-              </button>
-            </div>
-          )}
-
-          {/* Status Bar */}
-          <div className="bg-white rounded-lg border border-gray-100 shadow-sm">
-            <div className="flex items-center justify-between px-3 py-2">
-              <div className="flex items-center gap-2">
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                  isLocked ? "bg-gray-100 text-gray-600" :
-                  isFullyPaid ? "bg-green-50 text-green-700" :
-                  isOverdue ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"
-                }`}>
-                  {isLocked ? "Locked" : isFullyPaid ? "Paid" : isOverdue ? "Overdue" : "Pending"}
-                </span>
-                <div className="h-3 w-px bg-gray-200" />
-                <div className="flex gap-2 text-[11px] text-gray-500">
-                  <span>Due: {formatDate(invoice?.due_date)}</span>
-                  {invoice?.paid_at && <span>Paid: {formatDate(invoice.paid_at)}</span>}
+        <div className="max-w-3xl mx-auto px-4 space-y-4">
+          {/* Projects (Phase) – unchanged */}
+          <div className="space-y-3.5">
+            {projects.map((project, index) => (
+              <div key={project.id} className="bg-white rounded-2xl shadow-xs border border-slate-200/80 overflow-hidden group">
+                <div className="bg-slate-900 text-white px-3.5 py-2 flex items-center justify-between gap-3 shadow-inner">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="text-[9px] font-extrabold text-emerald-400 bg-emerald-950/60 border border-emerald-900/50 px-2 py-0.5 rounded font-mono tracking-tight shrink-0">
+                      PHASE {String(index + 1).padStart(2, '0')}
+                    </span>
+                    <h3 className="text-xs font-black truncate text-slate-100">{project.name}</h3>
+                  </div>
                 </div>
-              </div>
-              <div className="text-xs font-semibold">
-                Balance: {formatCurrency(remainingBalance)}
-              </div>
-            </div>
-          </div>
-
-          {/* Company + Client */}
-          <div className="bg-white rounded-lg border border-gray-100 p-3">
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div>
-                <div className="text-[10px] uppercase text-gray-400 mb-1">From</div>
-                <div className="font-medium text-gray-900">{settings?.company_name || "N/A"}</div>
-                <div className="text-gray-500 truncate">{settings?.company_address || "N/A"}</div>
-              </div>
-              <div className="text-right">
-                <div className="text-[10px] uppercase text-gray-400 mb-1">Bill To</div>
-                <div className="font-medium text-gray-900">{client?.name || "N/A"}</div>
-                <div className="text-gray-500 truncate">{client?.email || "N/A"}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Items */}
-          {projects.map((project) => (
-            <div key={project.id} className="bg-white rounded-lg border border-gray-100 overflow-hidden">
-              <div className="bg-gray-50 px-3 py-1.5 border-b border-gray-100">
-                <h3 className="text-xs font-medium text-gray-700">{project.name}</h3>
-              </div>
-              <div className="divide-y divide-gray-50">
-                {project.line_items.map((item) => (
-                  <div key={item.id} className="px-3 py-2 flex justify-between items-center">
-                    <div>
-                      <div className="text-xs font-medium">{item.name}</div>
-                      <div className="text-[10px] text-gray-400">
-                        {item.quantity} × {formatCurrency(item.unit_price)}
+                <div className="px-3.5 py-1 divide-y divide-slate-100">
+                  {project.line_items?.map((item, itemIdx) => (
+                    <div key={item.id} className="py-2 flex justify-between items-center gap-3 transition-all">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <span className="text-[9px] font-mono font-bold text-slate-300 shrink-0">{String(itemIdx + 1).padStart(2, '0')}</span>
+                        <div className="min-w-0 flex flex-col sm:flex-row sm:items-center sm:gap-2 flex-1">
+                          <h4 className="text-[11px] font-bold text-slate-800 capitalize tracking-tight truncate max-w-[120px] sm:max-w-[160px] shrink-0">{item.name}</h4>
+                          <div className="text-[10px] font-medium text-slate-500 flex items-center gap-1 shrink-0 mt-0.5 sm:mt-0">
+                            <span className="bg-slate-50 border border-slate-100 px-1 rounded text-slate-600 font-bold text-[9px]">{item.quantity} Qty</span>
+                            <span className="text-slate-300 font-light">×</span>
+                            <span className="font-mono text-slate-400">{formatCurrency(item.unit_price)}</span>
+                          </div>
+                          {item.description && <span className="text-[10px] text-slate-400 font-medium truncate italic hidden xs:inline-block sm:ml-1">— {item.description}</span>}
+                        </div>
+                      </div>
+                      <div className="text-right text-[11px] font-black font-mono text-slate-900 tracking-tight whitespace-nowrap bg-slate-50 border border-slate-100 px-2 py-0.5 rounded-md min-w-[65px] shrink-0">
+                        {formatCurrency(item.total)}
                       </div>
                     </div>
-                    <div className="text-xs font-medium">
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Original Estimate Items (if any) – styled same as before */}
+          {estimateItems.length > 0 && (
+            <div className="bg-white rounded-2xl border-2 border-emerald-200/60 shadow-md overflow-hidden">
+              <div className="relative bg-gradient-to-r from-emerald-50 to-slate-50 border-b border-emerald-100 px-3.5 py-1.5 flex justify-between items-center">
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500 rounded-l" />
+                <h3 className="text-[10px] font-extrabold text-emerald-800 uppercase tracking-wider flex items-center gap-1"><span className="text-emerald-600">📋</span> Original Scope Baseline Items</h3>
+                <span className="text-[9px] text-emerald-700 font-bold bg-white border border-emerald-200/60 px-2 py-0.5 rounded shadow-sm">{estimateItems.length} Item{estimateItems.length !== 1 && 's'}</span>
+              </div>
+              <div className="px-3.5 py-1 divide-y divide-slate-100">
+                {estimateItems.map((item, idx) => (
+                  <div key={item.id || idx} className="py-2 flex justify-between items-center gap-3 hover:bg-emerald-50/20 rounded-lg">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <span className="text-[9px] font-mono font-bold text-slate-400 shrink-0">{String(idx + 1).padStart(2, '0')}</span>
+                      <div className="min-w-0 flex flex-col sm:flex-row sm:items-center sm:gap-2 flex-1">
+                        <h4 className="text-[11px] font-bold text-slate-800 capitalize tracking-tight truncate max-w-[120px] sm:max-w-[160px] shrink-0">{item.name}</h4>
+                        <div className="text-[10px] font-medium text-slate-500 flex items-center gap-1 shrink-0 mt-0.5 sm:mt-0">
+                          <span className="bg-slate-50 border border-slate-200/50 px-1 rounded text-slate-600 font-bold text-[9px]">{item.quantity || 1} Qty</span>
+                          <span className="text-slate-300 font-light">×</span>
+                          <span className="font-mono text-slate-500">{formatCurrency(item.unit_price || 0)}</span>
+                        </div>
+                        {item.description && <span className="text-[10px] text-slate-400 font-medium truncate italic hidden xs:inline-block sm:ml-1">— {item.description}</span>}
+                      </div>
+                    </div>
+                    <div className="text-right text-[11px] font-bold font-mono text-slate-800 tracking-tight whitespace-nowrap bg-slate-100/70 border border-slate-200/60 px-2 py-0.5 rounded-md min-w-[65px] shrink-0">
+                      {formatCurrency(item.total || 0)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="border-t border-emerald-100 bg-gradient-to-r from-emerald-50/60 to-slate-50/60 px-3.5 py-1.5 flex justify-between items-center text-[10px] font-medium">
+                <span className="text-emerald-700 font-bold">📊 Subtotal (Original Scope)</span>
+                <span className="font-mono font-bold text-slate-800 bg-white/60 px-2 py-0.5 rounded shadow-sm">{formatCurrency(originalSubtotal)}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Invoice Line Items (fallback, if any) */}
+          {invoiceLineItems.length > 0 && estimateItems.length === 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+              <div className="bg-slate-50 border-b border-slate-200/60 px-3.5 py-1.5 flex justify-between items-center">
+                <h3 className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Invoice Line Items</h3>
+                <span className="text-[9px] text-slate-500 font-bold bg-white border border-slate-200/60 px-2 py-0.5 rounded">{invoiceLineItems.length} Core Items</span>
+              </div>
+              <div className="px-3.5 py-1 divide-y divide-slate-100">
+                {invoiceLineItems.map((item, idx) => (
+                  <div key={item.id || idx} className="py-2 flex justify-between items-center gap-3">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <span className="text-[9px] font-mono font-bold text-slate-300 shrink-0">{String(idx + 1).padStart(2, '0')}</span>
+                      <div className="min-w-0 flex flex-col sm:flex-row sm:items-center sm:gap-2 flex-1">
+                        <h4 className="text-[11px] font-bold text-slate-800 capitalize tracking-tight truncate max-w-[120px] sm:max-w-[160px] shrink-0">{item.name}</h4>
+                        <div className="text-[10px] font-medium text-slate-500 flex items-center gap-1 shrink-0 mt-0.5 sm:mt-0">
+                          <span className="bg-slate-50 border border-slate-100 px-1 rounded text-slate-600 font-bold text-[9px]">{item.quantity} Qty</span>
+                          <span className="text-slate-300 font-light">×</span>
+                          <span className="font-mono text-slate-400">{formatCurrency(item.unit_price)}</span>
+                        </div>
+                        {item.description && <span className="text-[10px] text-slate-400 font-medium truncate italic hidden xs:inline-block sm:ml-1">— {item.description}</span>}
+                      </div>
+                    </div>
+                    <div className="text-right text-[11px] font-black font-mono text-slate-900 tracking-tight whitespace-nowrap bg-slate-50 border border-slate-100 px-2 py-0.5 rounded-md min-w-[65px] shrink-0">
                       {formatCurrency(item.total)}
                     </div>
                   </div>
                 ))}
               </div>
             </div>
-          ))}
+          )}
 
-          {/* Summary */}
-          <div className="bg-white rounded-lg border border-gray-100 p-3">
-            <div className="space-y-1.5 text-xs">
-              <div className="flex justify-between">
-                <span className="text-gray-500">Subtotal</span>
-                <span>{formatCurrency(invoice?.subtotal || 0)}</span>
+          {/* Change Orders */}
+          {changeOrders.length > 0 && (
+            <div className="bg-white rounded-2xl border-2 border-blue-100 shadow-sm shadow-blue-50/40 p-4 space-y-3 relative overflow-hidden">
+              <div className="absolute top-0 right-0 h-24 w-24 bg-gradient-to-bl from-blue-500/5 to-transparent rounded-bl-full pointer-events-none" />
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2 relative z-10">
+                <div className="flex items-center gap-1.5"><div className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" /><h3 className="text-[10px] font-extrabold text-blue-600 uppercase tracking-wider">Project Scope Variations (Change Orders)</h3></div>
+                <span className="text-[9px] text-blue-600 font-bold bg-blue-50 border border-blue-100/60 px-2 py-0.5 rounded">{changeOrders.filter(co => co.status === "approved").length} Applied</span>
               </div>
-              {totalPaid > 0 && (
-                <>
-                  <div className="flex justify-between text-green-600">
-                    <span>Paid</span>
-                    <span>-{formatCurrency(totalPaid)}</span>
-                  </div>
-                  <div className="border-t pt-1.5 flex justify-between font-semibold">
-                    <span>Balance Due</span>
-                    <span>{formatCurrency(remainingBalance)}</span>
-                  </div>
-                </>
-              )}
-              {totalPaid === 0 && (
-                <div className="border-t pt-1.5 flex justify-between font-semibold">
-                  <span>Total</span>
-                  <span>{formatCurrency(invoice?.total || 0)}</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Payment History */}
-          {payments.length > 0 && (
-            <div className="bg-white rounded-lg border border-gray-100 overflow-hidden">
-              <div className="bg-gray-50 px-3 py-1.5 border-b border-gray-100 flex justify-between items-center">
-                <span className="text-xs font-medium text-gray-700">Payments</span>
-                <span className="text-[10px] text-gray-400">{payments.length} payment(s)</span>
-              </div>
-              <div className="divide-y divide-gray-50">
-                {payments.map((payment) => (
-                  <div key={payment.id} className="px-3 py-2 flex justify-between items-center">
-                    <div>
-                      <div className="text-xs font-medium">{formatCurrency(payment.amount)}</div>
-                      <div className="text-[10px] text-gray-400 capitalize">{payment.method}</div>
-                      <div className="text-[10px] text-gray-400">
-                        {new Date(payment.created_at).toLocaleDateString()}
-                      </div>
+              <div className="space-y-1 relative z-10">
+                {changeOrders.map(co => (
+                  <div key={co.id} className={`px-2.5 py-1.5 rounded-xl border flex justify-between items-center gap-3 ${co.status === "approved" ? "border-emerald-100 bg-emerald-50/20" : "border-slate-100 bg-slate-50/40 opacity-60"}`}>
+                    <div className="min-w-0 flex-1 flex items-center gap-2">
+                      <span className="text-[9px] font-mono font-medium text-slate-400 bg-slate-100 px-1 py-0.5 rounded border border-slate-200/50 shrink-0">{co.change_order_number || "CO"}</span>
+                      <div className="min-w-0 flex flex-col sm:flex-row sm:items-center sm:gap-2"><h4 className="text-[11px] font-bold text-slate-800 truncate max-w-[140px] sm:max-w-xs">{co.title}</h4>{co.description && <span className="text-[10px] text-slate-400 truncate italic hidden xs:inline-block">— {co.description}</span>}</div>
                     </div>
-                    {!isLocked && (
-                      <button
-                        onClick={() => deletePayment(payment.id)}
-                        disabled={deletingPaymentId === payment.id}
-                        className="p-1 text-gray-400 hover:text-red-500 transition disabled:opacity-50"
-                        title="Delete payment"
-                      >
-                        {deletingPaymentId === payment.id ? (
-                          <span className="text-[10px]">...</span>
-                        ) : (
-                          <Trash2 size={12} />
-                        )}
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className={`text-[8px] px-1.5 py-0.2 rounded font-extrabold uppercase scale-90 ${co.status === 'approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'}`}>{co.status}</span>
+                      <span className={`text-[11px] font-black font-mono tracking-tight min-w-[65px] text-right ${co.total_amount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                        {co.total_amount >= 0 ? "+" : ""}{formatCurrency(co.total_amount)}
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Pay Button - Only if not locked and not fully paid */}
+          {/* Financial Summary Card – now using correct revisedTotal from estimate items */}
+          <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-md border border-slate-950 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 relative overflow-hidden">
+            <div className="absolute top-0 right-0 h-36 w-36 bg-gradient-to-bl from-emerald-500/10 to-transparent rounded-bl-full pointer-events-none" />
+            <div className="flex-1 text-xs space-y-1.5">
+              <div className="text-[9px] font-extrabold text-slate-500 uppercase tracking-wider border-b border-slate-800 pb-1.5 mb-1.5">Summary</div>
+              <div className="space-y-1 pr-0 sm:pr-6 font-mono text-slate-400 text-[11px]">
+                <div className="flex justify-between"><span>Original Estimate Subtotal:</span><span className="text-slate-200">{formatCurrency(originalSubtotal > 0 ? originalSubtotal : displaySubtotal)}</span></div>
+                {approvedChangeTotal !== 0 && <div className="flex justify-between text-blue-400"><span>Approved Change Orders:</span><span>+{formatCurrency(approvedChangeTotal)}</span></div>}
+                <div className="flex justify-between border-t border-slate-700 pt-1 mt-1"><span><strong>Revised Total:</strong></span><span className="text-slate-200 font-semibold">{formatCurrency(revisedTotal)}</span></div>
+                <div className="flex justify-between"><span>Deposit (50% of Revised Total):</span><span className="text-emerald-300">{formatCurrency(depositAmount)}</span></div>
+                {totalPaid > 0 && <div className="flex justify-between text-emerald-400"><span>Payments Received:</span><span>-{formatCurrency(totalPaid)}</span></div>}
+              </div>
+            </div>
+            <div className="text-left sm:text-right border-t sm:border-t-0 sm:border-l border-slate-800 pt-3 sm:pt-0 sm:pl-5 shrink-0 flex flex-col justify-center min-w-[140px]">
+              <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Current Balance Due</span>
+              <span className="text-2xl font-black font-mono text-white tracking-tight leading-none block mt-1.5">{formatCurrency(remainingBalance)}</span>
+              <span className="text-[8px] text-slate-400 mt-0.5">After deposit + payments</span>
+            </div>
+          </div>
+
+          {/* Payment History */}
+          {payments.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs">
+              <div className="bg-slate-50 px-3.5 py-2 border-b border-slate-200/60 flex justify-between items-center">
+                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Transaction Ledger</span>
+                <span className="text-[10px] font-mono font-bold text-slate-500 bg-white border border-slate-200/60 px-1.5 py-0.5 rounded">{payments.length} Payment{payments.length !== 1 && 's'}</span>
+              </div>
+              <div className="divide-y divide-slate-100 px-3.5">
+                {payments.map(p => (
+                  <div key={p.id} className="py-2.5 flex justify-between items-center gap-4">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="p-1.5 bg-emerald-50 rounded-lg text-emerald-600 border border-emerald-100/40 shrink-0"><Receipt size={12} /></div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-black text-slate-800 font-mono">{formatCurrency(p.amount)}</div>
+                        <div className="text-[10px] font-medium text-slate-400 mt-0.5 capitalize flex items-center gap-1.5"><span>● {p.method}</span><span className="text-slate-200">|</span><span>{new Date(p.created_at).toLocaleDateString()}</span></div>
+                      </div>
+                    </div>
+                    {!isLocked && <button onClick={() => deletePayment(p.id)} disabled={deletingPaymentId === p.id} className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-slate-50 rounded-lg disabled:opacity-50">{deletingPaymentId === p.id ? <span className="text-[9px] font-mono">...</span> : <Trash2 size={13} />}</button>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Pay Button */}
           {!isLocked && remainingBalance > 0 && (
-            <button
-              onClick={() => setShowPaymentModal(true)}
-              className="w-full rounded-lg bg-green-600 py-2 text-sm font-medium text-white hover:bg-green-700 transition"
-            >
-              Pay {formatCurrency(remainingBalance)}
+            <button onClick={() => setShowPaymentModal(true)} className="w-full rounded-2xl bg-emerald-600 py-3 text-xs font-black uppercase tracking-wider text-white hover:bg-emerald-700 transition shadow-md shadow-emerald-600/10">
+              Record Settlement Payment ({formatCurrency(remainingBalance)})
             </button>
           )}
 
-          {/* Signature - Only if not locked */}
+          {/* Signature */}
           {!isLocked && (
-            <div className="bg-white rounded-lg border border-gray-100 overflow-hidden">
-              <div className="bg-gray-50 px-3 py-1.5 border-b border-gray-100">
-                <span className="text-xs font-medium text-gray-700">Signature</span>
-              </div>
-              <div className="p-2">
-                <SignaturePad
-                  onSave={() => {}}
-                  existingSignature={invoice?.signature}
-                  buttonText="Sign"
-                />
-              </div>
+            <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs">
+              <div className="bg-slate-50 px-3.5 py-1.5 border-b border-slate-200/60"><span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Authorized Endorsement</span></div>
+              <div className="p-2.5 bg-slate-50/50"><SignaturePad onSave={() => {}} existingSignature={invoice?.signature} buttonText="Apply Binding Signature" /></div>
             </div>
           )}
         </div>
 
-        <PaymentModal
-          isOpen={showPaymentModal}
-          onClose={() => setShowPaymentModal(false)}
-          onSave={recordPayment}
-          remainingBalance={remainingBalance}
-          saving={savingPayment}
-        />
+        <PaymentModal isOpen={showPaymentModal} onClose={() => setShowPaymentModal(false)} onSave={recordPayment} remainingBalance={remainingBalance} saving={savingPayment} />
       </div>
     </ProtectedRoute>
   );
