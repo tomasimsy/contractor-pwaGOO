@@ -1154,44 +1154,44 @@ export default function EstimatePage() {
       </div>
 
       {/* FAB */}
-      {!isEditMode && (
-        <div className="fixed bottom-6 right-6 z-50" onMouseEnter={() => setFabOpen(true)} onMouseLeave={() => setFabOpen(false)}>
-          <div className={`absolute bottom-full right-0 pb-3 flex flex-col items-end gap-1.5 transition-all duration-200 transform origin-bottom ${
-            fabOpen ? "scale-100 opacity-100 translate-y-0" : "scale-75 opacity-0 translate-y-4 pointer-events-none"
-          }`}>
-            {!estimate?.signature && (
-              <button onClick={() => { setIsEditMode(true); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-white text-slate-700 font-bold px-3 py-1.5 text-xs shadow-md border border-slate-100 hover:bg-slate-50 transition-colors">
-                <SquarePen size={12} className="text-slate-400" /> <span>Edit</span>
-              </button>
-            )}
-            <button
-              onClick={() => {
-                setEditingChangeOrder(null);
-                setShowChangeOrderModal(true);
-                setFabOpen(false);
-              }}
-              className="flex items-center gap-2 rounded-xl bg-white text-slate-700 font-bold px-3 py-1.5 text-xs shadow-md border border-slate-100 hover:bg-slate-50 transition-colors"
-            >
-              <FileEdit size={12} className="text-slate-400" /> <span>New Variation Order</span>
-            </button>
-            <button onClick={() => { setShowFinancialsModal(true); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-white text-slate-700 font-bold px-3 py-1.5 text-xs shadow-md border border-slate-100 hover:bg-slate-50 transition-colors">
-              <DollarSign size={12} className="text-slate-400" /> <span>Financial Ledger</span>
-            </button>
-            <button onClick={() => { setShowExpenseModal(true); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-white text-slate-700 font-bold px-3 py-1.5 text-xs shadow-md border border-slate-100 hover:bg-slate-50 transition-colors">
-              <Receipt size={12} className="text-slate-400" /> <span>Track Expense</span>
-            </button>
-            <button onClick={() => { sendSMSLink(); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-white text-slate-700 font-bold px-3 py-1.5 text-xs shadow-md border border-slate-100 hover:bg-slate-50 transition-colors">
-              <Send size={12} className="text-slate-400" /> <span>Send Client SMS</span>
-            </button>
-            <Link href={`/api/estimates/${id}/pdf`} target="_blank" onClick={() => setFabOpen(false)} className="flex items-center gap-2 rounded-xl bg-white text-slate-700 font-bold px-3 py-1.5 text-xs shadow-md border border-slate-100 hover:bg-slate-50 transition-colors">
-              <FileText size={12} className="text-slate-400" /> <span>Export PDF Document</span>
-            </Link>
-          </div>
-          <button onClick={() => setFabOpen(!fabOpen)} className="h-12 w-12 rounded-full bg-slate-950 text-white shadow-xl hover:bg-slate-800 transition-all duration-150 flex items-center justify-center active:scale-95">
-            <Plus size={20} className={`transition-transform duration-200 ${fabOpen ? "rotate-45" : "rotate-0"}`} />
-          </button>
-        </div>
+{!isEditMode && (
+  <div className="fixed bottom-6 right-6 z-50" onMouseEnter={() => setFabOpen(true)} onMouseLeave={() => setFabOpen(false)}>
+    <div className={`absolute bottom-full right-0 pb-3 flex flex-col items-end gap-1.5 transition-all duration-200 transform origin-bottom ${
+      fabOpen ? "scale-100 opacity-100 translate-y-0" : "scale-75 opacity-0 translate-y-4 pointer-events-none"
+    }`}>
+      {!estimate?.signature && (
+        <button onClick={() => { setIsEditMode(true); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors">
+          <SquarePen size={12} /> <span>Edit</span>
+        </button>
       )}
+<button
+  onClick={() => {
+    setEditingChangeOrder(null);
+    setShowChangeOrderModal(true);
+    setFabOpen(false);
+  }}
+  className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors whitespace-nowrap"
+>
+  <FileEdit size={12} /> <span>Change Order Edit</span>
+</button>
+      <button onClick={() => { setShowFinancialsModal(true); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors">
+        <DollarSign size={12} /> <span>Finance</span>
+      </button>
+      <button onClick={() => { setShowExpenseModal(true); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors">
+        <Receipt size={12} /> <span> Expense</span>
+      </button>
+      <button onClick={() => { sendSMSLink(); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors">
+        <Send size={12} /> <span>SMS</span>
+      </button>
+      <Link href={`/api/estimates/${id}/pdf`} target="_blank" onClick={() => setFabOpen(false)} className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors">
+        <FileText size={12} /> <span>PDF</span>
+      </Link>
+    </div>
+    <button onClick={() => setFabOpen(!fabOpen)} className="h-12 w-12 rounded-full bg-emerald-600 text-white shadow-xl hover:bg-emerald-500 transition-all duration-150 flex items-center justify-center active:scale-95">
+      <Plus size={20} className={`transition-transform duration-200 ${fabOpen ? "rotate-45" : "rotate-0"}`} />
+    </button>
+  </div>
+)}
 
       {/* Secondary Modals */}
       <ProjectFinancialsModal

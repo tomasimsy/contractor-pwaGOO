@@ -109,9 +109,9 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50/60 flex items-center justify-center font-sans antialiased">
-        <div className="text-xs font-medium text-slate-400 bg-white px-4 py-2 rounded-xl shadow-sm border border-slate-200/50 tracking-wide">
-          Loading system overview...
+      <div className="min-h-screen bg-slate-50/70 flex items-center justify-center">
+        <div className="text-xs font-medium text-slate-500 bg-white px-4 py-2 rounded-xl shadow-sm border border-slate-200/60">
+          Loading dashboard...
         </div>
       </div>
     );
@@ -119,10 +119,9 @@ export default function Dashboard() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-slate-50/40 pb-32 font-sans antialiased text-slate-800 relative">
-        
-        {/* PREMIUM LIGHT MINIMAL STICKY HEADER */}
-        <div className="sticky top-0 z-40 border-b border-slate-200/60 bg-white/80 backdrop-blur-md">
+      <div className="min-h-screen bg-slate-50/60 pb-28 font-sans antialiased">
+        {/* Sticky header */}
+        <div className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 backdrop-blur-md">
           <div className="mx-auto max-w-xl flex items-center justify-between px-4 py-3">
             <Link href="/" className="flex items-center">
               <Image
@@ -136,40 +135,38 @@ export default function Dashboard() {
             </Link>
             <button
               onClick={handleLogout}
-              className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-md transition"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition"
             >
-              <LogOut size={12} />
+              <LogOut size={13} />
               <span>Logout</span>
             </button>
           </div>
         </div>
 
-        {/* CONTAINER FRAME CONTAINER */}
         <div className="mx-auto max-w-xl space-y-5 p-4">
-
-          {/* FINANCIAL DASHBOARD METRICS VIEW */}
-          <div className="rounded-xl border border-slate-200/70 bg-white p-1.5 shadow-xs">
+          {/* Financial dashboard widget */}
+          <div className="rounded-2xl border border-slate-200/70 bg-white shadow-sm overflow-hidden">
             <FinancialDashboard />
           </div>
 
-          {/* OVERDUE INVOICES COMPONENT ALERT STRIP */}
+          {/* Overdue invoices */}
           {overdueInvoices.length > 0 && (
             <div className="space-y-2">
-              <div className="flex items-center gap-1 px-1 text-[10px] font-bold uppercase tracking-wider text-rose-600">
-                <AlertCircle size={11} />
-                <span>Overdue Action Items ({overdueInvoices.length})</span>
+              <div className="flex items-center gap-1.5 px-1 text-[11px] font-bold uppercase tracking-wider text-rose-600">
+                <AlertCircle size={12} />
+                <span>Overdue · {overdueInvoices.length}</span>
               </div>
               {overdueInvoices.map((inv) => (
                 <Link key={inv.id} href={`/invoices/${inv.id}`}>
-                  <div className="rounded-xl border border-rose-100 bg-rose-50/40 p-3.5 transition-colors hover:bg-rose-50/80">
-                    <div className="flex items-center justify-between gap-2">
+                  <div className="rounded-xl border border-rose-200 bg-rose-50/40 p-3.5 transition hover:bg-rose-50/80">
+                    <div className="flex items-center justify-between gap-3">
                       <div>
-                        <div className="text-xs font-bold text-rose-950 capitalize">{inv.clients?.name}</div>
-                        <div className="text-[10px] font-medium text-rose-500 mt-0.5">Invoice #{inv.invoice_number}</div>
+                        <div className="text-xs font-bold text-rose-900 capitalize">{inv.clients?.name || "Client"}</div>
+                        <div className="text-[10px] font-medium text-rose-600 mt-0.5">Inv. {inv.invoice_number}</div>
                       </div>
-                      <div className="text-right shrink-0">
-                        <div className="text-xs font-bold text-rose-700">{formatCurrency(inv.remaining_balance || inv.total)}</div>
-                        <div className="text-[9px] font-medium text-rose-400 mt-0.5">Due {formatShortDate(inv.due_date)}</div>
+                      <div className="text-right">
+                        <div className="text-sm font-black text-rose-700">{formatCurrency(inv.remaining_balance || inv.total)}</div>
+                        <div className="text-[9px] text-rose-500 mt-0.5">Due {formatShortDate(inv.due_date)}</div>
                       </div>
                     </div>
                   </div>
@@ -178,44 +175,42 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* RECENT ESTIMATES SECTION PANEL */}
+          {/* Recent Estimates */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between px-1">
-              <div className="text-xs font-bold text-[#05291e] uppercase tracking-wide">Recent Estimates</div>
-              <Link href="/estimates" className="text-[11px] font-medium text-slate-400 hover:text-[#05291e] transition-colors">
-                View all pipeline →
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Recent Estimates</span>
+              <Link href="/estimates" className="text-[10px] font-medium text-slate-400 hover:text-emerald-700 transition">
+                View all →
               </Link>
             </div>
             <div className="space-y-2">
               {recentEstimates.length === 0 ? (
-                <div className="rounded-xl border border-slate-100 bg-white py-6 text-center text-xs text-slate-400">
-                  No estimates recorded
+                <div className="rounded-xl border border-slate-200/70 bg-white py-6 text-center text-xs text-slate-400">
+                  No estimates yet
                 </div>
               ) : (
                 recentEstimates.map((est) => (
                   <Link key={est.id} href={`/estimates/${est.id}`}>
-                    <div className="group rounded-xl border border-slate-200/70 bg-white p-3.5 shadow-xs transition duration-150 hover:border-slate-300 capitalize">
+                    <div className="group rounded-xl border border-slate-200/70 bg-white p-3.5 shadow-sm transition hover:border-slate-300 hover:shadow-md">
                       <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
-                          <div className="truncate text-xs font-bold text-slate-800 group-hover:text-slate-900 tracking-tight">
-                            {est.clients?.name || "Untitled Client"}
+                          <div className="truncate text-xs font-bold text-slate-800">
+                            {est.clients?.name || "No client"}
                           </div>
-                          <div className="flex items-center gap-1.5 mt-0.5 text-[10px] font-medium text-slate-400">
-                            <span className="font-semibold text-slate-500 bg-slate-50 px-1 py-0.2 rounded border border-slate-100">
-                              #{est.estimate_number || est.id.slice(0, 8)}
-                            </span>
+                          <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-400">
+                            <span className="font-mono">#{est.estimate_number || est.id.slice(0, 8)}</span>
                             <span>•</span>
                             <span>{formatShortDate(est.created_at)}</span>
                           </div>
                         </div>
-                        <div className="text-right shrink-0 flex flex-col items-end">
+                        <div className="text-right">
                           <div className="text-xs font-bold text-slate-900">{formatCurrency(est.total)}</div>
-                          <span className={`mt-1 inline-block text-[9px] font-bold uppercase px-1.5 py-0.5 rounded tracking-wider border ${
+                          <span className={`mt-1 inline-block text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border ${
                             est.signature 
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-100" 
-                              : "bg-amber-50 text-amber-700 border-amber-100/70"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                              : "bg-amber-50 text-amber-700 border-amber-200"
                           }`}>
-                            {est.signature ? "Signed" : "Pending"}
+                            {est.signature ? "Signed" : "Draft"}
                           </span>
                         </div>
                       </div>
@@ -226,44 +221,42 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* RECENT INVOICES SECTION PANEL */}
+          {/* Recent Invoices */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between px-1">
-              <div className="text-xs font-bold text-slate-900 uppercase tracking-wide">Recent Invoices</div>
-              <Link href="/invoices" className="text-[11px] font-medium text-slate-400 hover:text-[#05291e] transition-colors">
-                View all tracking →
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Recent Invoices</span>
+              <Link href="/invoices" className="text-[10px] font-medium text-slate-400 hover:text-emerald-700 transition">
+                View all →
               </Link>
             </div>
             <div className="space-y-2">
               {recentInvoices.length === 0 ? (
-                <div className="rounded-xl border border-slate-100 bg-white py-6 text-center text-xs text-slate-400">
-                  No invoices emitted
+                <div className="rounded-xl border border-slate-200/70 bg-white py-6 text-center text-xs text-slate-400">
+                  No invoices yet
                 </div>
               ) : (
                 recentInvoices.map((inv) => (
                   <Link key={inv.id} href={`/invoices/${inv.id}`}>
-                    <div className="group rounded-xl border border-slate-200/70 bg-white p-3.5 shadow-xs transition duration-150 hover:border-slate-300 capitalize">
+                    <div className="group rounded-xl border border-slate-200/70 bg-white p-3.5 shadow-sm transition hover:border-slate-300 hover:shadow-md">
                       <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
-                          <div className="truncate text-xs font-bold text-slate-800 group-hover:text-slate-900 tracking-tight">
-                            {inv.clients?.name || "Untitled Client"}
+                          <div className="truncate text-xs font-bold text-slate-800">
+                            {inv.clients?.name || "No client"}
                           </div>
-                          <div className="flex items-center gap-1.5 mt-0.5 text-[10px] font-medium text-slate-400">
-                            <span className="font-semibold text-slate-500 bg-slate-50 px-1 py-0.2 rounded border border-slate-100">
-                              #{inv.invoice_number}
-                            </span>
+                          <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-400">
+                            <span className="font-mono">#{inv.invoice_number}</span>
                             <span>•</span>
                             <span>{formatShortDate(inv.created_at)}</span>
                           </div>
                         </div>
-                        <div className="text-right shrink-0 flex flex-col items-end">
+                        <div className="text-right">
                           <div className="text-xs font-bold text-slate-900">{formatCurrency(inv.total)}</div>
-                          <span className={`mt-1 inline-block text-[9px] font-bold uppercase px-1.5 py-0.5 rounded tracking-wider border ${
+                          <span className={`mt-1 inline-block text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border ${
                             inv.status === "paid" 
-                              ? "bg-teal-50 text-teal-700 border-teal-100" 
-                              : "bg-amber-50 text-amber-700 border-amber-100/70"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                              : "bg-amber-50 text-amber-700 border-amber-200"
                           }`}>
-                            {inv.status === "paid" ? "Paid" : "Pending"}
+                            {inv.status === "paid" ? "Paid" : "Open"}
                           </span>
                         </div>
                       </div>
@@ -275,58 +268,54 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* REFINED STATE TRACKED SPEED DIAL SYSTEM */}
-{/* REFINED STATE TRACKED SPEED DIAL SYSTEM */}
-        <div className="fixed bottom-22 right-6 z-50 flex flex-col items-end">
-          
-          {/* Popout Options Container Panel */}
-          <div 
-            className={`flex flex-col items-end gap-2 pb-2.5 transition-all duration-200 transform origin-bottom ${
-              isFabOpen ? "scale-100 opacity-100 translate-y-0 pointer-events-auto" : "scale-90 opacity-0 translate-y-3 pointer-events-none"
+        {/* Refined Speed Dial (FAB) */}
+<div className="fixed bottom-21 right-6 z-50">
+          {/* Pop‑out menu */}
+          <div
+            className={`absolute bottom-16 right-0 flex flex-col items-end gap-2 transition-all duration-200 origin-bottom ${
+              isFabOpen
+                ? "scale-100 opacity-100 pointer-events-auto translate-y-0"
+                : "scale-90 opacity-0 pointer-events-none translate-y-4"
             }`}
             onMouseEnter={() => setIsFabOpen(true)}
             onMouseLeave={() => setIsFabOpen(false)}
           >
-            {/* Speed Dial Item: Invoices Overview */}
             <div className="flex items-center gap-2">
-              <span className="bg-slate-900/90 backdrop-blur-xs text-white text-[10px] font-bold tracking-wide uppercase px-2 py-1 rounded-md shadow-sm">
+              <span className="bg-emerald-700 backdrop-blur-sm text-white text-[10px] font-bold tracking-wide px-2.5 py-1 rounded-md shadow-sm hover:bg-emerald-600 hover:text-white  transition">
                 Invoices
               </span>
               <button
                 onClick={() => router.push("/invoices")}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-slate-500 shadow-md border border-slate-200 hover:bg-slate-50 hover:text-[#05291e] transition"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-700 text-white shadow-md border border-slate-200 hover:bg-emerald-600 hover:text-white transition"
               >
                 <FileText size={15} />
               </button>
             </div>
-
-            {/* Speed Dial Item: New Estimate Form */}
             <div className="flex items-center gap-2">
-              <span className="bg-slate-900/90 backdrop-blur-xs text-white text-[10px] font-bold tracking-wide uppercase px-2 py-1 rounded-md shadow-sm">
+              <span className="bg-emerald-700 backdrop-blur-sm text-white text-[10px] font-bold tracking-wide px-2.5 py-1 rounded-md shadow-sm">
                 New Estimate
               </span>
               <button
                 onClick={() => router.push("/estimates/create")}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-[#05291e] text-white shadow-md hover:bg-[#0b3c2d] transition"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-700 text-white shadow-md hover:bg-emerald-600 transition"
               >
                 <FilePlus size={15} />
               </button>
             </div>
           </div>
 
-          {/* Main Button Trigger Element */}
+          {/* Main FAB button */}
           <button
             onClick={() => setIsFabOpen(!isFabOpen)}
             onMouseEnter={() => setIsFabOpen(true)}
-            onMouseLeave={() => setIsFabOpen(false)}
-            className={`flex h-12 w-12 items-center justify-center rounded-full bg-[#05291e] text-white shadow-lg hover:bg-[#0b3c2d] transition-all duration-300 ${
+            onMouseLeave={() => setIsFabOpen(true)}
+            className={`flex h-12 w-12 items-center justify-center rounded-full bg-emerald-700 text-white shadow-lg hover:bg-emerald-800 transition-all duration-300 ${
               isFabOpen ? "rotate-45" : "rotate-0"
             }`}
           >
             <Plus size={20} />
           </button>
         </div>
-
       </div>
     </ProtectedRoute>
   );

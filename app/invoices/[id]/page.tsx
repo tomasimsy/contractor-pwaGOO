@@ -58,8 +58,7 @@ export default function InvoicePage() {
 
         if (invError || !inv) {
       console.error("Invoice not found");
-      router.push("/invoices");  // redirect to a safe page
-      return;
+       return;
     }
       if (invError) throw invError;
       setInvoice(inv);

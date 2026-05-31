@@ -346,52 +346,51 @@ export default function EstimatesPage() {
         </div>
 
         {/* FLOATING ACTION BUTTON SPEED DIAL SYSTEM */}
-        <div 
-          className="fixed bottom-22 right-6 z-50 flex flex-col items-end gap-2.5"
-        >
-          {/* Popout Speed Dial List Container */}
-          <div className={`flex flex-col items-end gap-2 transition-all duration-200 transform origin-bottom ${
-            isFabOpen ? "scale-100 opacity-100 translate-y-0" : "scale-90 opacity-0 translate-y-3 pointer-events-none"
-          }`
-          }>
-            
-            {/* Speed Dial Item: Trash Action */}
-            <div className="flex items-center gap-2 group" onMouseEnter={() => setIsFabOpen(true)} onMouseLeave={() => setIsFabOpen(false)}>
-              <span className="bg-slate-900/90 backdrop-blur-xs text-white text-[10px] font-semibold tracking-wide uppercase px-2 py-1 rounded-md shadow-sm">
-                Trash Bin
-              </span>
-              <button
-                onClick={() => router.push("/deleted")}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-slate-500 shadow-md border border-slate-200 hover:bg-slate-50 hover:text-red-500 transition"
-              >
-                <Trash2 size={15} />
-              </button>
-            </div>
+   <div 
+  className="fixed bottom-22 right-6 z-50 flex flex-col items-end gap-2.5"
+>
+  {/* Popout Speed Dial List Container */}
+  <div className={`flex flex-col items-end gap-2 transition-all duration-200 transform origin-bottom ${
+    isFabOpen ? "scale-100 opacity-100 translate-y-0" : "scale-90 opacity-0 translate-y-3 pointer-events-none"
+  }`}>
+    
+    {/* Speed Dial Item: Trash Action */}
+    <div className="flex items-center gap-2 group" onMouseEnter={() => setIsFabOpen(true)} onMouseLeave={() => setIsFabOpen(false)}>
+      <span className="bg-emerald-700 backdrop-blur-xs text-white text-[10px] font-semibold tracking-wide uppercase px-2 py-1 rounded-md shadow-sm">
+        Trash Bin
+      </span>
+      <button
+        onClick={() => router.push("/deleted")}
+        className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-white shadow-md border border-slate-200 hover:bg-emerald-500 hover:text-white transition"
+      >
+        <Trash2 size={15} />
+      </button>
+    </div>
 
-            {/* Speed Dial Item: Create Estimate Action */}
-            <div className="flex items-center gap-2 group">
-              <span className="bg-slate-900/90 backdrop-blur-xs text-white text-[10px] font-semibold tracking-wide uppercase px-2 py-1 rounded-md shadow-sm">
-                New Estimate
-              </span>
-              <button
-                onClick={() => router.push("/estimates/create")}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-[#05291e] text-white shadow-md hover:bg-[#0b3c2d] transition"
-              >
-                <FilePlus size={15} />
-              </button>
-            </div>
-          </div>
+    {/* Speed Dial Item: Create Estimate Action */}
+    <div className="flex items-center gap-2 group">
+      <span className="bg-emerald-700 backdrop-blur-xs text-white text-[10px] font-semibold tracking-wide uppercase px-2 py-1 rounded-md shadow-sm">
+        New Estimate
+      </span>
+      <button
+        onClick={() => router.push("/estimates/create")}
+        className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-white shadow-md hover:bg-emerald-500 transition"
+      >
+        <FilePlus size={15} />
+      </button>
+    </div>
+  </div>
 
-          {/* Main Fab Trigger Button Accent */}
-          <button
-            onClick={() => setIsFabOpen(!isFabOpen)}
-            className={`flex h-12 w-12 items-center justify-center rounded-full bg-[#05291e] text-white shadow-lg hover:bg-[#0b3c2d] transition-all duration-300 ${
-              isFabOpen ? "rotate-45" : "rotate-0"
-            }`}
-          >
-            <Plus size={20} />
-          </button>
-        </div>
+  {/* Main Fab Trigger Button Accent */}
+  <button
+    onClick={() => setIsFabOpen(!isFabOpen)}
+    className={`flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg hover:bg-emerald-500 transition-all duration-300 ${
+      isFabOpen ? "rotate-45" : "rotate-0"
+    }`}
+  >
+    <Plus size={20} />
+  </button>
+</div>
 
         {/* DELETE MODAL UTILITY POPUP */}
         <DeleteModal
