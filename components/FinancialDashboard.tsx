@@ -165,7 +165,7 @@ export default function FinancialDashboard() {
         
         {/* Revenue Card — Soft Minimal Mint/Forest Green Accent */}
         <div className="rounded-xl bg-emerald-50/40 p-3 border border-emerald-100/70">
-          <div className="flex items-center justify-between text-emerald-700/70">
+          <div className="flex items-center justify-between text-emerald-700">
             <span className="text-[10px] font-semibold uppercase tracking-wider">Revenue</span>
             <DollarSign size={13} className="text-emerald-700" />
           </div>
@@ -179,7 +179,7 @@ export default function FinancialDashboard() {
 
         {/* Net Profit Card — Complementary Soft Sage Teal Accent */}
         <div className="rounded-xl bg-teal-50/30 p-3 border border-teal-100/60">
-          <div className="flex items-center justify-between text-teal-700/70">
+          <div className="flex items-center justify-between text-emerald-700">
             <span className="text-[10px] font-semibold uppercase tracking-wider">Net Profit</span>
             <TrendingUp size={13} className="text-teal-600" />
           </div>
@@ -245,13 +245,13 @@ export default function FinancialDashboard() {
 
         {/* SLIM MINIMAL PROGRESS LINE */}
         <div className="mt-3.5 pt-2.5 border-t border-slate-200/40">
-          <div className="mb-1.5 flex justify-between text-[9px] text-slate-400">
+          <div className="mb-1.5 flex justify-between text-[9px] text-emerald-700">
             <span>Net Growth Tracking</span>
             <span className="font-medium text-emerald-800">Month: {formatCurrency(stats.monthlyProfit)}</span>
           </div>
           <div className="h-1 w-full rounded-full bg-slate-100">
             <div
-              className="h-full rounded-full bg-[#05291e]/60 transition-all duration-300"
+              className="h-full rounded-full bg-emerald-700 transition-all duration-300"
               style={{
                 width: `${Math.min(
                   100,

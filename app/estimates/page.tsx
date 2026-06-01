@@ -196,8 +196,8 @@ export default function EstimatesPage() {
           {/* CONTROL META COMPONENT HEADLINE */}
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <div className="text-[16px] uppercase font-bold text-slate-900 tracking-tight">Active Estimates</div>
-              <div className="text-xs text-slate-400">Draft, send, track pipeline conversions</div>
+              <div className="text-[16px] uppercase font-bold text-emerald-700 tracking-tight">Active Estimates</div>
+              <div className="text-xs text-slate-500">Draft, send, track pipeline conversions</div>
             </div>
 
             {!loading && filteredEstimates.length > 0 && (
@@ -236,12 +236,12 @@ export default function EstimatesPage() {
               return (
 <div
   key={estimate.id}
-  className={`group rounded-xl border border-slate-200/70 px-3.5 py-2.5 shadow-2xs transition-all duration-150 capitalize flex items-start gap-3 ${
+  className={`group rounded-xl border-l-4 border-b-1  border-emerald-500  px-3.5 py-2.5 shadow-2xs transition-all duration-150 capitalize flex items-start gap-3 ${
     index % 2 === 0 ? "bg-white" : "bg-slate-50/60"
   } hover:bg-emerald-50 hover:border-emerald-200`}
 >
   {/* Arrow – will also change color on hover */}
-  <div className="flex h-full items-center text-slate-400 group-hover:text-emerald-700 transition-colors">
+  <div className="flex h-full items-center text-emerald-700 group-hover:text-emerald-700 transition-colors">
     <ArrowRight size={14} className="shrink-0" />
   </div>
 

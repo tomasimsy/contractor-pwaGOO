@@ -424,38 +424,49 @@ export default function PublicEstimatePage() {
         )}
 
         {/* Financial Summary */}
-<div className="bg-slate-900 text-white rounded-xl p-4 shadow-sm space-y-2.5">
-  <div className="flex justify-between items-center text-[11px] text-slate-400 font-medium">
-    <span>Original Estimate Subtotal</span>
-    <span>{formatCurrency(originalSubtotal)}</span>
+<div className="bg-white text-gray-800 rounded-xl p-4 shadow-sm space-y-2.5 border border-gray-200">
+  {/* Only show full breakdown if change orders exist */}
+  {approvedTotal !== 0 ? (
+    <>
+      <div className="flex justify-between items-center text-[11px] text-gray-500 font-medium">
+        <span>Original Estimate Subtotal</span>
+        <span>{formatCurrency(originalSubtotal)}</span>
+      </div>
+      
+      <div className="flex justify-between items-center text-[11px] border-t border-gray-200 pt-2 font-medium">
+        <span>Approved Change Orders</span>
+        <span className="text-gray-600">+{formatCurrency(approvedTotal)}</span>
+      </div>
+      
+      <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+        <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Revised Total</span>
+        <span className="text-base font-black text-gray-900 tracking-tight">{formatCurrency(revisedTotal)}</span>
+      </div>
+      
+      {totalPaid > 0 && (
+        <div className="flex justify-between items-center text-[11px] border-t border-gray-200 pt-2 font-medium text-gray-600">
+          <span>Payments Received</span>
+          <span>-{formatCurrency(totalPaid)}</span>
+        </div>
+      )}
+    </>
+  ) : null}
+
+  {/* REMAINING BALANCE Estimate - always shown */}
+  <div className={`${approvedTotal !== 0 ? "mt-3 pt-1 border-t border-gray-200" : ""}`}>
+    <div className="flex justify-between items-center bg-gray-100 rounded-lg p-3">
+      <span className="text-sm font-black uppercase tracking-wider text-gray-600">Estimate</span>
+      <span className="text-xl font-black text-gray-900 tracking-tight">{formatCurrency(remainingBalance)}</span>
+    </div>
   </div>
+
+  {/* Only show deposit if change orders exist */}
   {approvedTotal !== 0 && (
-    <div className="flex justify-between items-center text-[11px] border-t border-slate-800/80 pt-2 font-medium">
-      <span>Approved Change Orders</span>
-      <span className="text-emerald-400">+{formatCurrency(approvedTotal)}</span>
+    <div className="flex justify-between items-center pt-2 border-t border-gray-200 text-[11px] font-medium text-gray-500">
+      <span>Proposed Deposit (50% of Revised Total)</span>
+      <span className="text-gray-700 font-bold">{formatCurrency(depositAmount)}</span>
     </div>
   )}
-  <div className="flex justify-between items-center pt-2 border-t border-slate-800">
-    <span className="text-xs font-bold uppercase tracking-wider text-slate-300">Revised Total</span>
-    <span className="text-base font-black text-white tracking-tight">{formatCurrency(revisedTotal)}</span>
-  </div>
-  {totalPaid > 0 && (
-    <div className="flex justify-between items-center text-[11px] border-t border-slate-800/80 pt-2 font-medium text-emerald-400">
-      <span>Payments Received</span>
-      <span>-{formatCurrency(totalPaid)}</span>
-    </div>
-  )}
-  {/* HIGHLIGHTED REMAINING BALANCE */}
-  <div className="mt-3 pt-1 border-t border-slate-700">
-    <div className="flex justify-between items-center bg-amber-500/10 rounded-lg p-2 shadow-inner">
-      <span className="text-sm font-black uppercase tracking-wider text-amber-300">Remaining Balance</span>
-      <span className="text-xl font-black text-amber-300 tracking-tight drop-shadow-sm">{formatCurrency(remainingBalance)}</span>
-    </div>
-  </div>
-  <div className="flex justify-between items-center pt-2 border-t border-slate-800 text-[11px] font-medium text-slate-400">
-    <span>Proposed Deposit (50% of Revised Total)</span>
-    <span className="text-emerald-400 font-bold">{formatCurrency(depositAmount)}</span>
-  </div>
 </div>
 
         {/* Payment History (only if invoice exists and has payments) */}

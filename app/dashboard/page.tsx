@@ -143,7 +143,7 @@ export default function Dashboard() {
 
         <div className="mx-auto max-w-xl space-y-5 p-4">
           {/* Financial dashboard widget */}
-          <div className="rounded-2xl border border-slate-200/70 bg-white shadow-sm overflow-hidden">
+          <div className="rounded-2xl border border-emerald-700/70 bg-white shadow-sm overflow-hidden">
             <FinancialDashboard />
           </div>
 
@@ -176,7 +176,7 @@ export default function Dashboard() {
           {/* Recent Estimates */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between px-1">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Recent Estimates</span>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Recent Estimates</span>
               <Link href="/estimates" className="text-[10px] font-medium text-slate-400 hover:text-emerald-700 transition">
                 View all →
               </Link>
@@ -195,14 +195,14 @@ export default function Dashboard() {
                           <div className="truncate text-xs font-bold text-slate-800">
                             {est.clients?.name || "No client"}
                           </div>
-                          <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-400">
+                          <div className="flex items-center gap-1.5 mt-0.5 text-[9px] text-emerald-600">
                             <span className="font-mono">#{est.estimate_number || est.id.slice(0, 8)}</span>
                             <span>•</span>
                             <span>{formatShortDate(est.created_at)}</span>
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="text-xs font-bold text-slate-900">{formatCurrency(est.total)}</div>
+                          <div className="text-xs font-bold text-emerald-700">{formatCurrency(est.total)}</div>
                           <span className={`mt-1 inline-block text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border ${
                             est.signature 
                               ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
@@ -222,7 +222,7 @@ export default function Dashboard() {
           {/* Recent Invoices */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between px-1">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Recent Invoices</span>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Recent Invoices</span>
               <Link href="/invoices" className="text-[10px] font-medium text-slate-400 hover:text-emerald-700 transition">
                 View all →
               </Link>
@@ -241,7 +241,7 @@ export default function Dashboard() {
                           <div className="truncate text-xs font-bold text-slate-800">
                             {inv.clients?.name || "No client"}
                           </div>
-                          <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-400">
+                          <div className="flex items-center gap-1.5 mt-0.5 text-[9px] text-emerald-600">
                             <span className="font-mono">#{inv.invoice_number}</span>
                             <span>•</span>
                             <span>{formatShortDate(inv.created_at)}</span>

@@ -100,7 +100,7 @@ export default function InvoicesPage() {
       {/* RENDER LISTING */}
 <div className="mx-auto max-w-xl p-4 space-y-2">
 <div className="flex items-center justify-between mb-3">
-  <div className="text-[16px] font-bold uppercase tracking-wider text-black">
+  <div className="text-[16px] font-bold uppercase tracking-wider text-emerald-700">
     All Invoices 
   </div>
 
@@ -132,12 +132,12 @@ export default function InvoicesPage() {
           }`}
         >
           {/* RIGHT‑POINTING ARROW (fixed left) */}
-          <div className="flex h-full items-center text-slate-400 group-hover:text-emerald-700 transition-colors">
+          <div className="flex h-full items-center text-emerald-500 group-hover:text-emerald-700 transition-colors">
             <ArrowRight size={14} className="shrink-0" />
           </div>
 
           {/* LEFT COLUMN (clickable) */}
-          <Link href={`/invoices/${inv.id}`} className="min-w-0 flex-1 block">
+          <Link href={`/invoices/${inv.id}`} className="min-w-0 flex-1 block ">
             <div className="flex items-center gap-1.5">
               {itemOverdue && <AlertCircle size={12} className="text-rose-500 shrink-0" />}
               <div className={`truncate text-xs font-bold tracking-tight transition-colors ${
