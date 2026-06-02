@@ -395,17 +395,21 @@ const copyLink = (estimate: Estimate) => {
           </div>
         </div>
 
-        {/* FLOATING ACTION BUTTON SPEED DIAL SYSTEM */}
-   <div 
-  className="fixed bottom-22 right-6 z-50 flex flex-col items-end gap-2.5"
->
+{/* FLOATING ACTION BUTTON SPEED DIAL SYSTEM */}
+<div className="fixed bottom-22 right-6 z-50 pointer-events-none">
   {/* Popout Speed Dial List Container */}
-  <div className={`flex flex-col items-end gap-2 transition-all duration-200 transform origin-bottom ${
-    isFabOpen ? "scale-100 opacity-100 translate-y-0" : "scale-90 opacity-0 translate-y-3 pointer-events-none"
+  <div className={`absolute bottom-16 right-0 flex flex-col items-end gap-2 transition-all duration-200 origin-bottom ${
+    isFabOpen
+      ? "scale-100 opacity-100 pointer-events-auto translate-y-0"
+      : "scale-90 opacity-0 pointer-events-none translate-y-4"
   }`}>
     
     {/* Speed Dial Item: Trash Action */}
-    <div className="flex items-center gap-2 group" onMouseEnter={() => setIsFabOpen(true)} onMouseLeave={() => setIsFabOpen(false)}>
+    <div
+      className="flex items-center gap-2 group pointer-events-auto"
+      onMouseEnter={() => setIsFabOpen(true)}
+      onMouseLeave={() => setIsFabOpen(false)}
+    >
       <span className="bg-emerald-700 backdrop-blur-xs text-white text-[10px] font-semibold tracking-wide uppercase px-2 py-1 rounded-md shadow-sm">
         Trash Bin
       </span>
@@ -418,7 +422,11 @@ const copyLink = (estimate: Estimate) => {
     </div>
 
     {/* Speed Dial Item: Create Estimate Action */}
-    <div className="flex items-center gap-2 group">
+    <div
+      className="flex items-center gap-2 group pointer-events-auto"
+      onMouseEnter={() => setIsFabOpen(true)}
+      onMouseLeave={() => setIsFabOpen(false)}
+    >
       <span className="bg-emerald-700 backdrop-blur-xs text-white text-[10px] font-semibold tracking-wide uppercase px-2 py-1 rounded-md shadow-sm">
         New Estimate
       </span>
@@ -434,7 +442,9 @@ const copyLink = (estimate: Estimate) => {
   {/* Main Fab Trigger Button Accent */}
   <button
     onClick={() => setIsFabOpen(!isFabOpen)}
-    className={`flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg hover:bg-emerald-500 transition-all duration-300 ${
+    onMouseEnter={() => setIsFabOpen(true)}
+    onMouseLeave={() => setIsFabOpen(false)}
+    className={`flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg hover:bg-emerald-500 transition-all duration-300 pointer-events-auto ${
       isFabOpen ? "rotate-45" : "rotate-0"
     }`}
   >

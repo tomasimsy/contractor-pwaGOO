@@ -293,54 +293,60 @@ const loadDashboard = useCallback(async () => {
           </div>
         </div>
 
-        {/* Refined Speed Dial (FAB) */}
-        <div className="fixed bottom-21 right-6 z-50">
-          {/* Pop‑out menu */}
-          <div
-            className={`absolute bottom-16 right-0 flex flex-col items-end gap-2 transition-all duration-200 origin-bottom ${
-              isFabOpen
-                ? "scale-100 opacity-100 pointer-events-auto translate-y-0"
-                : "scale-90 opacity-0 pointer-events-none translate-y-4"
-            }`}
-            onMouseEnter={() => setIsFabOpen(true)}
-            onMouseLeave={() => setIsFabOpen(false)}
-          >
-            <div className="flex items-center gap-2">
-              <span className="bg-emerald-700 backdrop-blur-sm text-white text-[10px] font-bold tracking-wide px-2.5 py-1 rounded-md shadow-sm hover:bg-emerald-600 hover:text-white transition">
-                Invoices
-              </span>
-              <button
-                onClick={() => router.push("/invoices")}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-700 text-white shadow-md border border-slate-200 hover:bg-emerald-600 hover:text-white transition"
-              >
-                <FileText size={15} />
-              </button>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="bg-emerald-700 backdrop-blur-sm text-white text-[10px] font-bold tracking-wide px-2.5 py-1 rounded-md shadow-sm">
-                New Estimate
-              </span>
-              <button
-                onClick={() => router.push("/estimates/create")}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-700 text-white shadow-md hover:bg-emerald-600 transition"
-              >
-                <FilePlus size={15} />
-              </button>
-            </div>
-          </div>
+{/* Refined Speed Dial (FAB) */}
+<div className="fixed bottom-21 right-6 z-50 pointer-events-none">
+  {/* Pop‑out menu */}
+  <div
+    className={`absolute bottom-16 right-0 flex flex-col items-end gap-2 transition-all duration-200 origin-bottom ${
+      isFabOpen
+        ? "scale-100 opacity-100 pointer-events-auto translate-y-0"
+        : "scale-90 opacity-0 pointer-events-none translate-y-4"
+    }`}
+  >
+    <div
+      className="flex items-center gap-2 pointer-events-auto"
+      onMouseEnter={() => setIsFabOpen(true)}
+      onMouseLeave={() => setIsFabOpen(false)}
+    >
+      <span className="bg-emerald-700 backdrop-blur-sm text-white text-[10px] font-bold tracking-wide px-2.5 py-1 rounded-md shadow-sm hover:bg-emerald-600 hover:text-white transition">
+        Invoices
+      </span>
+      <button
+        onClick={() => router.push("/invoices")}
+        className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-700 text-white shadow-md border border-slate-200 hover:bg-emerald-600 hover:text-white transition"
+      >
+        <FileText size={15} />
+      </button>
+    </div>
+    <div
+      className="flex items-center gap-2 pointer-events-auto"
+      onMouseEnter={() => setIsFabOpen(true)}
+      onMouseLeave={() => setIsFabOpen(false)}
+    >
+      <span className="bg-emerald-700 backdrop-blur-sm text-white text-[10px] font-bold tracking-wide px-2.5 py-1 rounded-md shadow-sm">
+        New Estimate
+      </span>
+      <button
+        onClick={() => router.push("/estimates/create")}
+        className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-700 text-white shadow-md hover:bg-emerald-600 transition"
+      >
+        <FilePlus size={15} />
+      </button>
+    </div>
+  </div>
 
-          {/* Main FAB button */}
-          <button
-            onClick={() => setIsFabOpen(!isFabOpen)}
-            onMouseEnter={() => setIsFabOpen(true)}
-            onMouseLeave={() => setIsFabOpen(true)}
-            className={`flex h-12 w-12 items-center justify-center rounded-full bg-emerald-700 text-white shadow-lg hover:bg-emerald-800 transition-all duration-300 ${
-              isFabOpen ? "rotate-45" : "rotate-0"
-            }`}
-          >
-            <Plus size={20} />
-          </button>
-        </div>
+  {/* Main FAB button */}
+  <button
+    onClick={() => setIsFabOpen(!isFabOpen)}
+    onMouseEnter={() => setIsFabOpen(true)}
+    onMouseLeave={() => setIsFabOpen(false)}
+    className={`flex h-12 w-12 items-center justify-center rounded-full bg-emerald-700 text-white shadow-lg hover:bg-emerald-800 transition-all duration-300 pointer-events-auto ${
+      isFabOpen ? "rotate-45" : "rotate-0"
+    }`}
+  >
+    <Plus size={20} />
+  </button>
+</div>
       </div>
     </ProtectedRoute>
   );
