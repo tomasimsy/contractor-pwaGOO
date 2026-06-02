@@ -152,9 +152,9 @@ const loadDashboard = useCallback(async () => {
               </div>
             </Link>
             <div className="flex items-center gap-3">
-               <button onClick={() => addNotification("Test", "This is a manual notification")}>
+               {/* <button onClick={() => addNotification("Test", "This is a manual notification")}>
       Test Notification
-    </button>
+    </button> */}
               <NotificationBell />
     
               <button
