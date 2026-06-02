@@ -121,40 +121,44 @@ const [invoices, setInvoices] = useState<any[]>([]);
             </div>
 
           </div>
-          {/* Invoice Filters */}
-          <div className="mb-4 flex flex-wrap gap-2">
-            <button onClick={()=> setFilter("all")}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-              filter === "all"
-              ? "bg-emerald-600 text-white"
-              : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
-              }`}
-              >
-              All ({invoices.length})
-            </button>
+          {/* Invoice Filters category */}
+<div className="fixed bottom-24 right-1 z-40 flex flex-col gap-2 items-end">
+  <button
+    onClick={() => setFilter("all")}
+    className={`px-2 py-3 rounded-lg text-[12px] font-semibold shadow-md transition ${
+      filter === "all"
+        ? "bg-emerald-600 text-white"
+        : "bg-white border border-slate-200 text-slate-600"
+    }`}
+    style={{ writingMode: "vertical-rl", textOrientation: "mixed" }}
+  >
+    All
+  </button>
 
-            <button onClick={()=> setFilter("pending")}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-              filter === "pending"
-              ? "bg-emerald-600 text-white"
-              : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
-              }`}
-              >
-              Pending ({invoices.filter((i) => i.status !== "paid").length})
-            </button>
-            
-            <button onClick={()=> setFilter("paid")}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-              filter === "paid"
-              ? "bg-emerald-600 text-white"
-              : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
-              }`}
-              >
-              Paid ({invoices.filter((i) => i.status === "paid").length})
-            </button>
+  <button
+    onClick={() => setFilter("pending")}
+    className={`px-2 py-3 rounded-lg text-[12px] font-semibold shadow-md transition ${
+      filter === "pending"
+        ? "bg-emerald-600 text-white"
+        : "bg-white border border-slate-200 text-slate-600"
+    }`}
+    style={{ writingMode: "vertical-rl", textOrientation: "mixed" }}
+  >
+    Pending
+  </button>
 
-
-          </div>
+  <button
+    onClick={() => setFilter("paid")}
+    className={`px-2 py-3 rounded-lg text-[12px] font-semibold shadow-md transition ${
+      filter === "paid"
+        ? "bg-emerald-600 text-white"
+        : "bg-white border border-slate-200 text-slate-600"
+    }`}
+    style={{ writingMode: "vertical-rl", textOrientation: "mixed" }}
+  >
+    Paid
+  </button>
+</div>
           {filteredInvoices.length === 0 ? (
           <div className="rounded-xl border border-slate-100 bg-white py-8 text-center text-xs text-slate-400">
             No invoices found
