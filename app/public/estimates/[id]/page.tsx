@@ -425,42 +425,43 @@ export default function PublicEstimatePage() {
 
         {/* Financial Summary */}
 <div className="bg-white text-gray-800 rounded-xl p-4 shadow-sm space-y-2.5 border border-gray-200">
-  {/* Only show full breakdown if change orders exist */}
-  {approvedTotal !== 0 ? (
+  {/* Original Balance – always shown */}
+  <div className="flex justify-between items-center text-[11px] text-gray-500 font-medium">
+    <span>Original Balance</span>
+    <span>{formatCurrency(originalSubtotal)}</span>
+  </div>
+
+  {/* Only show change order breakdown if any exist */}
+  {approvedTotal !== 0 && (
     <>
-      <div className="flex justify-between items-center text-[11px] text-gray-500 font-medium">
-        <span>Original Estimate Subtotal</span>
-        <span>{formatCurrency(originalSubtotal)}</span>
-      </div>
-      
       <div className="flex justify-between items-center text-[11px] border-t border-gray-200 pt-2 font-medium">
         <span>Approved Change Orders</span>
         <span className="text-gray-600">+{formatCurrency(approvedTotal)}</span>
       </div>
-      
-      <div className="flex justify-between items-center pt-2 border-t border-gray-200">
-        <span className="text-[11px]  tracking-wider text-gray-500">Revised Total</span>
+      <div className="flex justify-between items-center pt-1">
+        <span className="text-[11px] tracking-wider text-gray-500">Revised Total</span>
         <span className="text-[11px] font-black text-gray-900 tracking-tight">{formatCurrency(revisedTotal)}</span>
       </div>
-      
-      {totalPaid > 0 && (
-        <div className="flex justify-between items-center text-[11px] border-t border-gray-200 pt-2 font-medium text-gray-600">
-          <span>Payments Received</span>
-          <span>-{formatCurrency(totalPaid)}</span>
-        </div>
-      )}
     </>
-  ) : null}
+  )}
 
-  {/* REMAINING BALANCE Estimate - always shown */}
-  <div className={`${approvedTotal !== 0 ? "mt-3 pt-1 border-t border-gray-200" : ""}`}>
-    <div className="flex justify-between items-center   rounded-lg ">
-      <span className="text-sm font-black uppercase tracking-wider text-gray-600">Estimate</span>
+  {/* Payments Received (if any) */}
+  {totalPaid > 0 && (
+    <div className="flex justify-between items-center text-[11px] border-t border-gray-200 pt-2 font-medium text-gray-600">
+      <span>Payments Received</span>
+      <span>-{formatCurrency(totalPaid)}</span>
+    </div>
+  )}
+
+  {/* New Balance – always shown */}
+  <div className={`${approvedTotal !== 0 || totalPaid > 0 ? "mt-2 pt-2 border-t border-gray-200" : ""}`}>
+    <div className="flex justify-between items-center">
+      <span className="text-sm font-black uppercase tracking-wider text-gray-600">New Balance</span>
       <span className="text-md font-black text-gray-900 tracking-tight">{formatCurrency(remainingBalance)}</span>
     </div>
   </div>
 
-  {/* Only show deposit if change orders exist */}
+  {/* Proposed Deposit (only if change orders exist) */}
   {approvedTotal !== 0 && (
     <div className="flex justify-between items-center pt-2 border-t border-gray-200 text-[11px] font-medium text-gray-500">
       <span>Proposed Deposit (50% of Revised Total)</span>
@@ -471,17 +472,17 @@ export default function PublicEstimatePage() {
 
         {/* Payment History (only if invoice exists and has payments) */}
         {payments.length > 0 && (
-          <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden">
-            <div className="px-4 py-2 border-b border-slate-100 bg-slate-50">
-              <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Payment History</span>
+          <div className="bg-white rounded-xl border border-slate-200/60 bg-amber-50/40shadow-sm overflow-hidden">
+            <div className="px-4 py-2 border-b border-slate-100 bg-amber-50/40">
+              <span className="text-[10px] font-extrabold text-amber-900 uppercase tracking-wider">Payment History</span>
             </div>
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-slate-100 bg-amber-50/40">
               {payments.map((p) => (
                 <div key={p.id} className="px-4 py-2.5 flex items-center gap-2">
                   <Receipt size={14} className="text-emerald-500" />
                   <div>
-                    <div className="text-xs font-bold text-slate-800">{formatCurrency(p.amount)}</div>
-                    <div className="text-[10px] text-slate-400 capitalize">{p.method} • {new Date(p.created_at).toLocaleDateString()}</div>
+                    <div className="text-xs font-bold text-amber-900">{formatCurrency(p.amount)}</div>
+                    <div className="text-[10px] text-amber-900 capitalize">{p.method} • {new Date(p.created_at).toLocaleDateString()}</div>
                   </div>
                 </div>
               ))}
