@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency, formatShortDate } from "@/lib/utils/formatting";
 import { ArrowLeft, Search, AlertCircle, Link2, Send, ArrowRight } from "lucide-react";
+import toast from "react-hot-toast";
 
 export default function InvoicesPage() {
 const [invoices, setInvoices] = useState<any[]>([]);
@@ -53,11 +54,24 @@ const [invoices, setInvoices] = useState<any[]>([]);
     return dueDate < todayString; }; const getInvoiceUrl=(id: string)=>
       `${window.location.origin}/public/invoices/${id}`;
 
-      const copyLink = (inv: any) => {
-      const documentUrl = getInvoiceUrl(inv.id);
-      navigator.clipboard.writeText(documentUrl);
-      alert(`Link copied to clipboard!`);
-      };
+const copyLink = (inv: any) => {
+  const documentUrl = getInvoiceUrl(inv.id);
+  navigator.clipboard.writeText(documentUrl);
+  toast.success("Link copied to clipboard!", {
+    duration: 2000,
+    position: "top-right",
+    icon: "🔗",
+    style: {
+      background: "#009966ee", // amber-50 (light amber background)
+      color: "#ffffffff",       // amber-800 (dark amber text)
+      // border: "1px solid #fbbf24", // amber-400 border
+      fontWeight: "400",
+          padding: "6px 12px",      // smaller padding
+    fontSize: "12px",          // smaller text
+    minWidth: "180px",  
+    },
+  });
+};
 
       const sendSMSLink = (inv: any) => {
       const phoneNumber = inv.clients?.phone;

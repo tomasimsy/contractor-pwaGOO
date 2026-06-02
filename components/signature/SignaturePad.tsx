@@ -27,7 +27,7 @@ export default function SignaturePad({
   const [typedName, setTypedName] = useState("");
   const [isDrawing, setIsDrawing] = useState(false);
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
-  
+  const [errorMsg, setErrorMsg] = useState("");
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
@@ -129,30 +129,25 @@ export default function SignaturePad({
     setTypedName("");
   };
 
-  const handleSave = () => {
-    let value = "";
+ const handleSave = () => {
+  let value = "";
 
-    if (signatureType === "draw" && canvasRef.current) {
-      value = canvasRef.current.toDataURL();
-    } else if (signatureType === "type" && typedName.trim()) {
-      value = typedName.trim();
-    } else {
-      alert("Please provide a signature");
-      return;
-    }
+  if (signatureType === "draw" && canvasRef.current) {
+    value = canvasRef.current.toDataURL();
+  } else if (signatureType === "type" && typedName.trim()) {
+    value = typedName.trim();
+  } else {
+    setErrorMsg("Please provide a signature before saving.");
+    return;
+  }
 
-    onSave({
-      type: signatureType,
-      value,
-      date: new Date().toISOString(),
-    });
+  setErrorMsg("");
+  onSave({ type: signatureType, value, date: new Date().toISOString() });
+  setShowModal(false);
+  setTypedName("");
+  if (canvasRef.current && ctxRef.current) clearCanvas();
+};
 
-    setShowModal(false);
-    setTypedName("");
-    if (canvasRef.current && ctxRef.current) {
-      clearCanvas();
-    }
-  };
 
 const handleRemoveClick = () => {
   console.log("Remove button clicked, opening confirm modal");
@@ -177,7 +172,7 @@ const handleRemoveClick = () => {
   <button
     type="button"
     onClick={handleRemoveClick}
-    className="absolute top-2 right-2 w-2 h-2 rounded-full bg-red-500 text-white text-[8px] font-bold shadow-sm"
+    className="absolute top-2 right-2 w-2 h-2 rounded-full bg-gray-500 text-white text-[8px] font-bold shadow-sm"
     title="Remove Signature"
   >
     X
@@ -256,7 +251,14 @@ const handleRemoveClick = () => {
       {/* Signature Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          
           <div className="bg-white rounded-xl w-full max-w-md p-5 shadow-lg border border-green-100">
+            {/* // Inside the modal JSX, right above the action buttons: */}
+{errorMsg && (
+  <div className="mb-3 rounded-lg bg-amber-50 border-l-4 border-amber-500 p-2 text-xs text-amber-700">
+    ⚠️ {errorMsg}
+  </div>
+)}
             <h3 className="text-base font-semibold text-gray-900 mb-3">
               Customer Signature
             </h3>
@@ -330,6 +332,7 @@ const handleRemoveClick = () => {
             )}
 
             <div className="flex gap-2 mt-4">
+              
               <button
                 onClick={() => setShowModal(false)}
                 className="flex-1 py-2 text-sm rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"

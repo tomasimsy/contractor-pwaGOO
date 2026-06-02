@@ -9,6 +9,7 @@ import Header from "@/components/ui/Header";
 import DeleteModal from "@/components/ui/DeleteModal";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { Send, Trash2, MessageCircle, Link2, Plus, FilePlus, Eye, Search, ArrowRight } from "lucide-react";
+import toast from "react-hot-toast";
 
 export default function EstimatesPage() {
   const router = useRouter();
@@ -132,11 +133,24 @@ const filteredEstimates = estimates.filter((est) => {
     window.location.href = `sms:${phoneNumber}?body=${message}`;
   };
 
-  const copyLink = (estimate: Estimate) => {
-    const documentUrl = getEstimateUrl(estimate.id);
-    navigator.clipboard.writeText(documentUrl);
-    alert(`Link copied to clipboard!`);
-  };
+const copyLink = (estimate: Estimate) => {
+  const documentUrl = getEstimateUrl(estimate.id);
+  navigator.clipboard.writeText(documentUrl);
+  toast.success("Link copied to clipboard!", {
+    duration: 2000,
+    position: "top-right",
+    icon: "🔗",
+    style: {
+      background: "#009966ee", // amber-50 (light amber background)
+      color: "#ffffffff",       // amber-800 (dark amber text)
+      // border: "1px solid #fbbf24", // amber-400 border
+      fontWeight: "400",
+          padding: "6px 12px",      // smaller padding
+    fontSize: "12px",          // smaller text
+    minWidth: "180px",  
+    },
+  });
+};
 
   // 3. Branded luxury lookup maps to mirror the financial stats grid
   const getStatus = (est: Estimate) => {
