@@ -488,10 +488,20 @@ const confirmApprove = async () => {
 <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
   {/* Financial Summary Section (neutral / slate) */}
   <div className="p-4 space-y-2.5 bg-white">
-    <div className="flex justify-between items-center text-[11px] text-gray-500 font-medium">
-      <span>Original Balance</span>
-      <span>{formatCurrency(originalSubtotal)}</span>
-    </div>
+<div className="flex justify-between items-center">
+  <span
+    className={
+      totalPaid === 0 && approvedTotal === 0
+        ? "text-sm font-black uppercase tracking-wider text-gray-600"
+        : "text-[11px] text-gray-500 font-medium"
+    }
+  >
+    {totalPaid === 0 && approvedTotal === 0 ? "Current Balance" : "Original Balance"}
+  </span>
+  <span className="text-xs font-black text-gray-900 tracking-tight">
+    {formatCurrency(originalSubtotal)}
+  </span>
+</div>
 
     {approvedTotal !== 0 && (
       <>
@@ -501,7 +511,7 @@ const confirmApprove = async () => {
         </div>
         <div className="flex justify-between items-center pt-1">
           <span className="text-[11px] tracking-wider text-gray-500">Revised Total</span>
-          <span className="text-[11px] font-black text-gray-900 tracking-tight">{formatCurrency(revisedTotal)}</span>
+          <span className="text-[16px] font-black text-gray-900 tracking-tight">{formatCurrency(revisedTotal)}</span>
         </div>
       </>
     )}
@@ -513,12 +523,15 @@ const confirmApprove = async () => {
       </div>
     )}
 
-    <div className={`${approvedTotal !== 0 || totalPaid > 0 ? "mt-2 pt-2 border-t border-gray-200" : ""}`}>
-      <div className="flex justify-between items-center">
-        <span className="text-sm font-black uppercase tracking-wider text-gray-600">New Balance</span>
-        <span className="text-md font-black text-gray-900 tracking-tight">{formatCurrency(remainingBalance)}</span>
-      </div>
+{/* New Balance – only shown after a payment has been received */}
+{totalPaid > 0 && (
+  <div className="mt-2 pt-2 border-t border-gray-200">
+    <div className="flex justify-between items-center">
+      <span className="text-sm font-black uppercase tracking-wider text-gray-600">New Balance</span>
+      <span className="text-md font-black text-gray-900 tracking-tight">{formatCurrency(remainingBalance)}</span>
     </div>
+  </div>
+)}
 
     {approvedTotal !== 0 && (
       <div className="flex justify-between items-center pt-2 border-t border-gray-200 text-[11px] font-medium text-gray-500">
