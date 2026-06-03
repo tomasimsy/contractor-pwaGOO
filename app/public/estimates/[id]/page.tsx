@@ -336,7 +336,7 @@ const confirmApprove = async () => {
               <span className="text-xs font-bold text-slate-950 tracking-tight">Pros</span>
             </div>
             <div className="text-[10px] text-slate-500 leading-tight">
-              <p className="text-slate-900 font-semibold">One Square Roofing</p>
+              <p className="text-slate-900 font-semibold">One Square Roofing LLC</p>
               {/* <p>Charlotte, NC</p> */}
               {/* <p className="text-slate-400 font-normal">(704) 303-4112</p> */}
             </div>
