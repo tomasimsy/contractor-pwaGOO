@@ -352,7 +352,7 @@ const confirmApprove = async () => {
             </div>
             <div className="text-[10px] text-slate-400 space-y-0.5">
               {/* {client?.phone && <p>📞 {client.phone}</p>} */}
-              {/* {client?.email && <p className="lowercase truncate">✉ {client.email}</p>} */}
+              {client?.email && <p className="lowercase truncate">✉ {client.email}</p>}
                #{estimate?.estimate_number || id?.slice(0, 6)}
             </div>
           </div>
@@ -445,71 +445,78 @@ const confirmApprove = async () => {
           </div>
         )}
 
-        {/* Financial Summary */}
-        <div className="bg-white text-gray-800 rounded-xl p-4 shadow-sm space-y-2.5 border border-gray-200">
-          <div className="flex justify-between items-center text-[11px] text-gray-500 font-medium">
-            <span>Original Balance</span>
-            <span>{formatCurrency(originalSubtotal)}</span>
-          </div>
-
-          {approvedTotal !== 0 && (
-            <>
-              <div className="flex justify-between items-center text-[11px] border-t border-gray-200 pt-2 font-medium">
-                <span>Approved Change Orders</span>
-                <span className="text-gray-600">+{formatCurrency(approvedTotal)}</span>
-              </div>
-              <div className="flex justify-between items-center pt-1">
-                <span className="text-[11px] tracking-wider text-gray-500">Revised Total</span>
-                <span className="text-[11px] font-black text-gray-900 tracking-tight">{formatCurrency(revisedTotal)}</span>
-              </div>
-            </>
-          )}
-
-          {totalPaid > 0 && (
-            <div className="flex justify-between items-center text-[11px] border-t border-gray-200 pt-2 font-medium text-gray-600">
-              <span>Payments Received</span>
-              <span>-{formatCurrency(totalPaid)}</span>
-            </div>
-          )}
-
-          <div className={`${approvedTotal !== 0 || totalPaid > 0 ? "mt-2 pt-2 border-t border-gray-200" : ""}`}>
-            <div className="flex justify-between items-center">
-              <span className="text-sm font-black uppercase tracking-wider text-gray-600">New Balance</span>
-              <span className="text-md font-black text-gray-900 tracking-tight">{formatCurrency(remainingBalance)}</span>
-            </div>
-          </div>
-
-          {approvedTotal !== 0 && (
-            <div className="flex justify-between items-center pt-2 border-t border-gray-200 text-[11px] font-medium text-gray-500">
-              <span>Proposed Deposit (50% of Revised Total)</span>
-              <span className="text-gray-700 font-bold">{formatCurrency(depositAmount)}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Payment History */}
-{payments.length > 0 && (
-  <div className="bg-white rounded-xl border border-slate-200/60 bg-amber-50/40 shadow-sm overflow-hidden">
-    <div className="px-4 py-2 border-b border-slate-100 bg-amber-50/40 text-right">
-      <span className="text-[10px] font-extrabold text-amber-900 uppercase tracking-wider">
-        Payment History
-      </span>
+{/* Combined Financial Summary + Payment History Card */}
+<div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+  {/* Financial Summary Section (neutral / slate) */}
+  <div className="p-4 space-y-2.5 bg-white">
+    <div className="flex justify-between items-center text-[11px] text-gray-500 font-medium">
+      <span>Original Balance</span>
+      <span>{formatCurrency(originalSubtotal)}</span>
     </div>
-    <div className="divide-y divide-slate-100 bg-amber-50/40">
-      {payments.map((p) => (
-        <div key={p.id} className="px-4 py-2.5 flex justify-end items-right gap-2">
-          {/* <Receipt size={14} className="text-emerald-500 shrink-0" /> */}
-          <div className="text-right">
-            <div className="text-xs font-bold text-amber-900">{formatCurrency(p.amount)}</div>
-            <div className="text-[10px] text-amber-900 capitalize">
-              {p.method} • {new Date(p.created_at).toLocaleDateString()}
-            </div>
-          </div>
+
+    {approvedTotal !== 0 && (
+      <>
+        <div className="flex justify-between items-center text-[11px] border-t border-gray-200 pt-2 font-medium">
+          <span>Approved Change Orders</span>
+          <span className="text-gray-600">+{formatCurrency(approvedTotal)}</span>
         </div>
-      ))}
+        <div className="flex justify-between items-center pt-1">
+          <span className="text-[11px] tracking-wider text-gray-500">Revised Total</span>
+          <span className="text-[11px] font-black text-gray-900 tracking-tight">{formatCurrency(revisedTotal)}</span>
+        </div>
+      </>
+    )}
+
+    {totalPaid > 0 && (
+      <div className="flex justify-between items-center text-[11px] border-t border-gray-200 pt-2 font-medium text-gray-600">
+        <span>Payments Received</span>
+        <span>-{formatCurrency(totalPaid)}</span>
+      </div>
+    )}
+
+    <div className={`${approvedTotal !== 0 || totalPaid > 0 ? "mt-2 pt-2 border-t border-gray-200" : ""}`}>
+      <div className="flex justify-between items-center">
+        <span className="text-sm font-black uppercase tracking-wider text-gray-600">New Balance</span>
+        <span className="text-md font-black text-gray-900 tracking-tight">{formatCurrency(remainingBalance)}</span>
+      </div>
     </div>
+
+    {approvedTotal !== 0 && (
+      <div className="flex justify-between items-center pt-2 border-t border-gray-200 text-[11px] font-medium text-gray-500">
+        <span>Proposed Deposit (50% of Revised Total)</span>
+        <span className="text-gray-700 font-bold">{formatCurrency(depositAmount)}</span>
+      </div>
+    )}
   </div>
-)}
+
+  {/* Divider between summary and payment history */}
+  {payments.length > 0 && (
+    <div className="border-t-2 border-amber-200/60 bg-amber-50/20"></div>
+  )}
+
+  {/* Payment History Section (amber background) */}
+  {payments.length > 0 && (
+    <div className="bg-amber-50/40 px-4 py-3 space-y-2">
+      <div className="text-right">
+        <span className="text-[10px] font-extrabold text-amber-900 uppercase tracking-wider">
+          Payment History
+        </span>
+      </div>
+      <div className="divide-y divide-amber-200/50">
+        {payments.map((p) => (
+          <div key={p.id} className="py-2 flex justify-end">
+            <div className="text-right">
+              <div className="text-xs font-bold text-amber-900">{formatCurrency(p.amount)}</div>
+              <div className="text-[10px] text-amber-800 capitalize">
+                {p.method} • {new Date(p.created_at).toLocaleDateString()}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )}
+</div>
 
         {/* Signature Block */}
         <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm p-4">
