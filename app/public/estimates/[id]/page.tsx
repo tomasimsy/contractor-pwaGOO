@@ -400,9 +400,46 @@ const confirmApprove = async () => {
   </div>
 </div>
 
+         {/* Line item  */}
+        <div className="bg-white text-gray-800 rounded-xl p-4 shadow-sm space-y-2.5 border border-gray-200">
+        {items.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-1">
+                  <span className="text-[9px] font-extrabold text-slate-600 uppercase tracking-wider">Work Items</span>
+                  <span className="text-[9px] text-slate-500 font-bold bg-slate-100 px-1.5 py-0.5 rounded">
+                    {items.length} Item{items.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  {items.map((item, idx) => (
+                    <div key={item.id} className="bg-white border border-slate-200/80 rounded-lg px-2.5 py-1.5 flex justify-between items-center gap-3">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <span className="text-[9px] font-mono font-bold text-slate-300 shrink-0">{String(idx + 1).padStart(2, '0')}</span>
+                        <div className="min-w-0 flex flex-col sm:flex-row sm:items-center sm:gap-2 flex-1">
+                          <h4 className="text-[11px] font-bold text-slate-800 capitalize truncate">{item.name}</h4>
+                          <div className="text-[10px] font-medium text-slate-500 flex items-center gap-1">
+                            <span className="bg-slate-50 border border-slate-100 px-1 rounded text-slate-600 font-bold text-[9px]">{item.quantity} Qty</span>
+                            <span className="text-slate-300 font-light">×</span>
+                            <span className="font-mono text-slate-400">{formatCurrency(item.unit_price)}</span>
+                          </div>
+                          {item.description && <span className="text-[10px] text-slate-400 truncate italic hidden sm:inline">— {item.description}</span>}
+                        </div>
+                      </div>
+                      <div className="text-right text-[11px] font-black font-mono text-slate-900 bg-slate-50 border border-slate-100 px-2 py-0.5 rounded-md">
+                        {formatCurrency(item.total)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+        </div>
+
         {/* Change Orders Section */}
         {changeOrders.length > 0 && (
           <div className="bg-white rounded-xl border-2 border-blue-100 shadow-sm p-4 space-y-3">
+            
+            
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <div className="flex items-center gap-1.5">
                 <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
