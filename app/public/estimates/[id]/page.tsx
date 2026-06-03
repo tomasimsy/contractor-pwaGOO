@@ -463,53 +463,56 @@ const [estimate, setEstimate] = useState<any>(null);
 
                     {/* Change Orders Section */}
                     {changeOrders.length > 0 && (
-                    <div className="bg-white rounded-xl border-2 border-blue-100 shadow-sm p-4 space-y-3">
-
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                        <div className="flex items-center gap-1.5">
-                          <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-                          <h3 className="text-[10px] font-extrabold text-blue-600 uppercase tracking-wider">Change Order
-                          </h3>
-                        </div>
-                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
-                          {changeOrders.length} {changeOrders.length === 1 ? 'Order' : 'Orders'}
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        {changeOrders.map((co) => (
-                        <div key={co.id} className={`p-3 rounded-lg flex justify-between items-center gap-3 border ${
-                          co.status==="pending" ? "border-amber-200 bg-amber-50/40" : co.status==="approved"
-                          ? "border-emerald-100 bg-emerald-50/20" : "border-slate-100 bg-slate-50/50" }`}>
-                          <div className="space-y-1 min-w-0 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="text-xs font-bold text-slate-900 truncate max-w-[180px]">{co.title}</p>
-                              <span className={`text-[8px] px-1.5 py-0.5 rounded font-bold uppercase ${
-                                co.status==="pending" ? "bg-amber-100 text-amber-800" : co.status==="approved"
-                                ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"
-                                }`}>{co.status}</span>
-                            </div>
-                            {co.description && <p className="text-[11px] text-slate-500 line-clamp-1 italic">—
-                              {co.description}</p>}
-                          </div>
-                          <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
-                            <p className={`text-xs font-black font-mono tracking-tight ${co.total_amount>= 0 ?
-                              "text-emerald-600" : "text-rose-600"}`}>
-                              {co.total_amount >= 0 ? "+" : "-"}{formatCurrency(Math.abs(co.total_amount))}
-                            </p>
-                            {co.status === "pending" && (
-
-                            <button
-                              className="px-2.5 py-1 bg-amber-600 text-white text-[9px] font-bold rounded-md hover:bg-amber-700 disabled:opacity-50"
-                              onClick={()=> approveChangeOrder(co.id, co.total_amount)}>
-                              Approve Change Order
-                            </button>
-                            )}
-                          </div>
-                        </div>
-                        ))}
-                      </div>
-                    </div>
-                    )}
+  <div className="bg-white rounded-xl border-2 border-blue-100 shadow-sm p-4 space-y-3">
+    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+      <div className="flex items-center gap-1.5">
+        <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+        <h3 className="text-[10px] font-extrabold text-blue-600 uppercase tracking-wider">Change Order</h3>
+      </div>
+      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+        {changeOrders.length} {changeOrders.length === 1 ? 'Order' : 'Orders'}
+      </span>
+    </div>
+    <div className="space-y-2">
+      {changeOrders.map((co) => (
+        <div key={co.id} className={`p-3 rounded-lg flex justify-between items-center gap-3 border ${
+          co.status === "pending" ? "border-amber-200 bg-amber-50/40" :
+          co.status === "approved" ? "border-emerald-100 bg-emerald-50/20" : "border-slate-100 bg-slate-50/50"
+        }`}>
+          <div className="space-y-1 min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Change order number */}
+              <span className="text-[9px] font-mono font-medium text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200/50">
+                {co.change_order_number}
+              </span>
+              <p className="text-xs capitalize font-bold text-slate-900 truncate max-w-[180px]">{co.title}</p>
+              <span className={`text-[8px] px-1.5 py-0.5 rounded font-bold uppercase ${
+                co.status === "pending" ? "bg-amber-100 text-amber-800" :
+                co.status === "approved" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"
+              }`}>
+                {co.status}
+              </span>
+            </div>
+            {co.description && <p className="text-[11px] text-slate-500 line-clamp-1 italic">— {co.description}</p>}
+          </div>
+          <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
+            <p className={`text-xs font-black font-mono tracking-tight ${co.total_amount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+              {co.total_amount >= 0 ? "+" : "-"}{formatCurrency(Math.abs(co.total_amount))}
+            </p>
+            {co.status === "pending" && (
+              <button
+                className="px-2.5 py-1 bg-amber-600 text-white text-[9px] font-bold rounded-md hover:bg-amber-700 disabled:opacity-50"
+                onClick={() => approveChangeOrder(co.id, co.total_amount)}
+              >
+                Approve Change Order
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
 
                     {/* Combined Financial Summary + Payment History Card */}
                     <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
