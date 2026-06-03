@@ -337,8 +337,8 @@ const confirmApprove = async () => {
             </div>
             <div className="text-[10px] text-slate-500 leading-tight">
               <p className="text-slate-900 font-semibold">One Square Roofing</p>
-              <p>Charlotte, NC</p>
-              <p className="text-slate-400 font-normal">(704) 303-4112</p>
+              {/* <p>Charlotte, NC</p> */}
+              {/* <p className="text-slate-400 font-normal">(704) 303-4112</p> */}
             </div>
             <p className="text-[9px] text-slate-400 pt-1 border-t border-slate-50 font-mono">
               Issued: {formatDate(estimate?.created_at)}
@@ -351,8 +351,8 @@ const confirmApprove = async () => {
               {client?.address && <p className="text-[10px] text-slate-500 leading-tight capitalize">{client.address}</p>}
             </div>
             <div className="text-[10px] text-slate-400 space-y-0.5">
-              {client?.phone && <p>📞 {client.phone}</p>}
-              {client?.email && <p className="lowercase truncate">✉ {client.email}</p>}
+              {/* {client?.phone && <p>📞 {client.phone}</p>} */}
+              {/* {client?.email && <p className="lowercase truncate">✉ {client.email}</p>} */}
                #{estimate?.estimate_number || id?.slice(0, 6)}
             </div>
           </div>
