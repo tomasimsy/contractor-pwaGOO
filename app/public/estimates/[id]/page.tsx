@@ -422,7 +422,9 @@ const confirmApprove = async () => {
                             <span className="text-slate-300 font-light">×</span>
                             <span className="font-mono text-slate-400">{formatCurrency(item.unit_price)}</span>
                           </div>
-                          {item.description && <span className="text-[10px] text-slate-400 truncate italic hidden sm:inline">— {item.description}</span>}
+                           {item.description &&   (
+                              <div className="text-[11px] text-slate-400 pl-6 font-medium italic leading-relaxed">— {item.description}</div>
+                            )}
                         </div>
                       </div>
                       <div className="text-right text-[11px] font-black font-mono text-slate-900 bg-slate-50 border border-slate-100 px-2 py-0.5 rounded-md">
