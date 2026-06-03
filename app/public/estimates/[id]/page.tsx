@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase/client";
 import SignaturePadInvoice from "@/components/signature/SignaturePadInvoice";
 import { formatCurrency, formatDate } from "@/lib/utils/formatting";
 import { Receipt } from "lucide-react";
+import toast from "react-hot-toast";
 
 type Signature = { type: "draw" | "type"; value: string; date: string };
 type ChangeOrder = {
@@ -47,6 +48,10 @@ export default function PublicEstimatePage() {
   const [totalPaid, setTotalPaid] = useState(0);
   const [remainingBalance, setRemainingBalance] = useState(0);
   const [depositAmount, setDepositAmount] = useState(0);
+  const [showApproveConfirm, setShowApproveConfirm] = useState(false);
+  const [pendingCoId, setPendingCoId] = useState<string | null>(null);
+  const [pendingCoAmount, setPendingCoAmount] = useState<number | null>(null);
+
 
   useEffect(() => {
     if (id) loadEstimate();
@@ -192,10 +197,24 @@ export default function PublicEstimatePage() {
     if (!error) {
       setSigned(true);
       setSignature(newSignature);
-      alert("Thank you! Your signature has been saved.");
+      toast.success("Thank you! Your signature has been saved.", {
+        duration: 3000,
+        position: "top-center",
+        icon: "✍️",
+        style: {
+          background: "#fef3c7",
+          color: "#92400e",
+          border: "1px solid #fbbf24",
+          padding: "6px 12px",
+          fontSize: "12px",
+        },
+      });
       await loadEstimate();
     } else {
-      alert("Error saving signature. Please try again.");
+      toast.error("Error saving signature. Please try again.", {
+        duration: 3000,
+        position: "top-center",
+      });
     }
   };
 
@@ -206,50 +225,77 @@ export default function PublicEstimatePage() {
         .update({ signature: null, status: "pending" })
         .eq("id", id);
       if (error) throw error;
-      alert("Signature removed");
+      toast.success("Signature removed", {
+        duration: 3000,
+        position: "top-center",
+        icon: "🗑️",
+        style: {
+          background: "#fef3c7",
+          color: "#92400e",
+          border: "1px solid #fbbf24",
+          padding: "6px 12px",
+          fontSize: "12px",
+        },
+      });
       await loadEstimate();
     } catch (err) {
       console.error(err);
-      alert("Failed to remove signature");
+      toast.error("Failed to remove signature", {
+        duration: 3000,
+        position: "top-center",
+      });
     }
   };
 
-  const approveChangeOrder = async (coId: string, coAmount: number) => {
-    if (!confirm("Approve this change order? The estimate total will be updated.")) return;
-    setApproving(true);
-    try {
-      // Update change order status
-      const { error: coError } = await supabase
-        .from("change_orders")
-        .update({ status: "approved", approved_at: new Date().toISOString() })
-        .eq("id", coId);
-      if (coError) throw coError;
+const approveChangeOrder = (coId: string, coAmount: number) => {
+  // Show custom modal instead of browser confirm
+  setPendingCoId(coId);
+  setPendingCoAmount(coAmount);
+  setShowApproveConfirm(true);
+};
 
-      // Recalculate approved total
-      const { data: approvedCos } = await supabase
-        .from("change_orders")
-        .select("total_amount")
-        .eq("estimate_id", id)
-        .eq("status", "approved");
-      const newApprovedTotal = (approvedCos || []).reduce((sum, co) => sum + (co.total_amount || 0), 0);
-      const newRevisedTotal = originalSubtotal + newApprovedTotal;
+const confirmApprove = async () => {
+  if (!pendingCoId || pendingCoAmount === null) return;
+  setShowApproveConfirm(false);
+  setApproving(true);
+  try {
+    const { error: coError } = await supabase
+      .from("change_orders")
+      .update({ status: "approved", approved_at: new Date().toISOString() })
+      .eq("id", pendingCoId);
+    if (coError) throw coError;
 
-      // Update estimate total in database (optional, but keeps consistency)
-      await supabase
-        .from("estimates")
-        .update({ total: newRevisedTotal })
-        .eq("id", id);
+    const { data: approvedCos } = await supabase
+      .from("change_orders")
+      .select("total_amount")
+      .eq("estimate_id", id)
+      .eq("status", "approved");
+    const newApprovedTotal = (approvedCos || []).reduce((sum, co) => sum + (co.total_amount || 0), 0);
+    const newRevisedTotal = originalSubtotal + newApprovedTotal;
 
-      // Refresh all data
-      await loadEstimate();
-      alert("Change order approved! The total has been updated.");
-    } catch (err) {
-      console.error(err);
-      alert("Error approving change order. Please try again.");
-    } finally {
-      setApproving(false);
-    }
-  };
+    await supabase
+      .from("estimates")
+      .update({ total: newRevisedTotal })
+      .eq("id", id);
+
+    await loadEstimate();
+    toast.success("Change order approved! The total has been updated.", {
+      duration: 4000,
+      position: "top-center",
+      icon: "✅",
+    });
+  } catch (err) {
+    console.error(err);
+    toast.error("Error approving change order. Please try again.", {
+      duration: 4000,
+      position: "top-center",
+    });
+  } finally {
+    setApproving(false);
+    setPendingCoId(null);
+    setPendingCoAmount(null);
+  }
+};
 
   if (loading) {
     return (
@@ -408,11 +454,8 @@ export default function PublicEstimatePage() {
                       {co.total_amount >= 0 ? "+" : "-"}{formatCurrency(Math.abs(co.total_amount))}
                     </p>
                     {co.status === "pending" && (
-                      <button
-                        onClick={() => approveChangeOrder(co.id, co.total_amount)}
-                        disabled={approving}
-                        className="px-2.5 py-1 bg-amber-600 text-white text-[9px] font-bold rounded-md hover:bg-amber-700 disabled:opacity-50"
-                      >
+                       
+                        <button className="px-2.5 py-1 bg-amber-600 text-white text-[9px] font-bold rounded-md hover:bg-amber-700 disabled:opacity-50" onClick={() => approveChangeOrder(co.id, co.total_amount)}> 
                         Approve Change Order
                       </button>
                     )}
@@ -424,55 +467,50 @@ export default function PublicEstimatePage() {
         )}
 
         {/* Financial Summary */}
-<div className="bg-white text-gray-800 rounded-xl p-4 shadow-sm space-y-2.5 border border-gray-200">
-  {/* Original Balance – always shown */}
-  <div className="flex justify-between items-center text-[11px] text-gray-500 font-medium">
-    <span>Original Balance</span>
-    <span>{formatCurrency(originalSubtotal)}</span>
-  </div>
+        <div className="bg-white text-gray-800 rounded-xl p-4 shadow-sm space-y-2.5 border border-gray-200">
+          <div className="flex justify-between items-center text-[11px] text-gray-500 font-medium">
+            <span>Original Balance</span>
+            <span>{formatCurrency(originalSubtotal)}</span>
+          </div>
 
-  {/* Only show change order breakdown if any exist */}
-  {approvedTotal !== 0 && (
-    <>
-      <div className="flex justify-between items-center text-[11px] border-t border-gray-200 pt-2 font-medium">
-        <span>Approved Change Orders</span>
-        <span className="text-gray-600">+{formatCurrency(approvedTotal)}</span>
-      </div>
-      <div className="flex justify-between items-center pt-1">
-        <span className="text-[11px] tracking-wider text-gray-500">Revised Total</span>
-        <span className="text-[11px] font-black text-gray-900 tracking-tight">{formatCurrency(revisedTotal)}</span>
-      </div>
-    </>
-  )}
+          {approvedTotal !== 0 && (
+            <>
+              <div className="flex justify-between items-center text-[11px] border-t border-gray-200 pt-2 font-medium">
+                <span>Approved Change Orders</span>
+                <span className="text-gray-600">+{formatCurrency(approvedTotal)}</span>
+              </div>
+              <div className="flex justify-between items-center pt-1">
+                <span className="text-[11px] tracking-wider text-gray-500">Revised Total</span>
+                <span className="text-[11px] font-black text-gray-900 tracking-tight">{formatCurrency(revisedTotal)}</span>
+              </div>
+            </>
+          )}
 
-  {/* Payments Received (if any) */}
-  {totalPaid > 0 && (
-    <div className="flex justify-between items-center text-[11px] border-t border-gray-200 pt-2 font-medium text-gray-600">
-      <span>Payments Received</span>
-      <span>-{formatCurrency(totalPaid)}</span>
-    </div>
-  )}
+          {totalPaid > 0 && (
+            <div className="flex justify-between items-center text-[11px] border-t border-gray-200 pt-2 font-medium text-gray-600">
+              <span>Payments Received</span>
+              <span>-{formatCurrency(totalPaid)}</span>
+            </div>
+          )}
 
-  {/* New Balance – always shown */}
-  <div className={`${approvedTotal !== 0 || totalPaid > 0 ? "mt-2 pt-2 border-t border-gray-200" : ""}`}>
-    <div className="flex justify-between items-center">
-      <span className="text-sm font-black uppercase tracking-wider text-gray-600">New Balance</span>
-      <span className="text-md font-black text-gray-900 tracking-tight">{formatCurrency(remainingBalance)}</span>
-    </div>
-  </div>
+          <div className={`${approvedTotal !== 0 || totalPaid > 0 ? "mt-2 pt-2 border-t border-gray-200" : ""}`}>
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-black uppercase tracking-wider text-gray-600">New Balance</span>
+              <span className="text-md font-black text-gray-900 tracking-tight">{formatCurrency(remainingBalance)}</span>
+            </div>
+          </div>
 
-  {/* Proposed Deposit (only if change orders exist) */}
-  {approvedTotal !== 0 && (
-    <div className="flex justify-between items-center pt-2 border-t border-gray-200 text-[11px] font-medium text-gray-500">
-      <span>Proposed Deposit (50% of Revised Total)</span>
-      <span className="text-gray-700 font-bold">{formatCurrency(depositAmount)}</span>
-    </div>
-  )}
-</div>
+          {approvedTotal !== 0 && (
+            <div className="flex justify-between items-center pt-2 border-t border-gray-200 text-[11px] font-medium text-gray-500">
+              <span>Proposed Deposit (50% of Revised Total)</span>
+              <span className="text-gray-700 font-bold">{formatCurrency(depositAmount)}</span>
+            </div>
+          )}
+        </div>
 
-        {/* Payment History (only if invoice exists and has payments) */}
+        {/* Payment History */}
         {payments.length > 0 && (
-          <div className="bg-white rounded-xl border border-slate-200/60 bg-amber-50/40shadow-sm overflow-hidden">
+          <div className="bg-white rounded-xl border border-slate-200/60 bg-amber-50/40 shadow-sm overflow-hidden">
             <div className="px-4 py-2 border-b border-slate-100 bg-amber-50/40">
               <span className="text-[10px] font-extrabold text-amber-900 uppercase tracking-wider">Payment History</span>
             </div>
@@ -517,6 +555,35 @@ export default function PublicEstimatePage() {
       >
         <span>💬 Question?</span>
       </a>
+
+
+
+      {showApproveConfirm && (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="bg-white rounded-xl max-w-sm w-full p-5">
+      <h3 className="text-lg font-semibold text-gray-800 mb-2">Approve Change Order?</h3>
+      <p className="text-sm text-gray-500 mb-4">
+        Approving this change order will update the estimate total. This action cannot be undone.
+      </p>
+      <div className="flex gap-3">
+        <button
+          onClick={() => setShowApproveConfirm(false)}
+          className="flex-1 py-2 border border-gray-200 rounded-lg text-gray-600 text-sm hover:bg-gray-50"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={confirmApprove}
+          className="flex-1 py-2 bg-amber-600 text-white rounded-lg text-sm hover:bg-amber-700"
+        >
+          Approve
+        </button>
+      </div>
     </div>
+  </div>
+)}
+    </div>
+
+    
   );
 }

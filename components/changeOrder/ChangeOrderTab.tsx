@@ -6,6 +6,8 @@ import { formatCurrency } from "@/lib/utils/formatting";
 import { Plus, Eye, Edit2, Trash2, Send, CheckCircle, XCircle, FileText } from "lucide-react";
 import ChangeOrderForm from "@/components/changeOrder/ChangeOrderForm";
 import SignaturePad from "../signature/SignaturePad";
+import toast from "react-hot-toast";
+
 
 interface ChangeOrder {
   id: string;
@@ -61,16 +63,31 @@ export default function ChangeOrderTab({ estimateId, estimateTotal, onRefresh }:
     }
   }
 
-  async function submitForApproval(id: string) {
-    const { error } = await supabase.from("change_orders").update({ status: "pending" }).eq("id", id);
-    if (!error) {
-      await loadChangeOrders();
-      onRefresh();
-      alert("Change order submitted for client approval.");
-    } else {
-      alert("Error submitting");
-    }
+
+async function submitForApproval(id: string) {
+  const { error } = await supabase.from("change_orders").update({ status: "pending" }).eq("id", id);
+  if (!error) {
+    await loadChangeOrders();
+    onRefresh();
+    toast.success("Change order submitted for client approval.", {
+      duration: 3000,
+      position: "top-right",
+      icon: "📨",
+      style: {
+        background: "#fef3c7",
+        color: "#92400e",
+        border: "1px solid #fbbf24",
+        padding: "6px 12px",
+        fontSize: "12px",
+      },
+    });
+  } else {
+    toast.error("Error submitting change order.", {
+      duration: 3000,
+      position: "top-center",
+    });
   }
+}
 
   async function convertToInvoice(id: string) {
     const res = await fetch(`/api/change-orders/${id}/convert-to-invoice`, { method: "POST" });

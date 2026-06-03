@@ -258,16 +258,17 @@ export default function EstimatePage() {
   // Change Order CRUD (unchanged)
   async function deleteChangeOrder(coId: string, status: string) {
     if (status !== "draft") {
-      alert("Only draft change orders can be deleted.");
+      toast.error("Only draft change orders can be deleted.");
       return;
     }
     if (!confirm("Delete this change order permanently?")) return;
     const { error } = await supabase.from("change_orders").delete().eq("id", coId);
     if (error) {
-      alert("Error deleting change order");
+      toast.error("Error deleting change order");
     } else {
       await loadChangeOrders();
       await loadEstimate();
+      toast.success("Change order deleted successfully");
     }
   }
 
@@ -277,10 +278,21 @@ export default function EstimatePage() {
       .update({ status: "pending" })
       .eq("id", coId);
     if (error) {
-      alert("Error submitting for approval");
+      toast.error("Error submitting for approval");
     } else {
       await loadChangeOrders();
-      alert("Change order submitted for client approval.");
+      toast.success("Change order submitted for client approval.", {
+        duration: 3000,
+        position: "top-center",
+        icon: "📨",
+        style: {
+          background: "#fef3c7",
+          color: "#92400e",
+          border: "1px solid #fbbf24",
+          padding: "6px 12px",
+          fontSize: "12px",
+        },
+      });
     }
   }
 
@@ -290,11 +302,11 @@ export default function EstimatePage() {
       .update({ status: "approved", approved_at: new Date().toISOString() })
       .eq("id", coId);
     if (error) {
-      alert("Error approving change order");
+      toast.error("Error approving change order");
     } else {
       await loadChangeOrders();
       await loadEstimate();
-      alert("Change order approved! Estimate total updated.");
+      toast.success("Change order approved! Estimate total updated.");
     }
   }
 
@@ -304,49 +316,49 @@ export default function EstimatePage() {
       .update({ status: "rejected" })
       .eq("id", coId);
     if (error) {
-      alert("Error rejecting change order");
+      toast.error("Error rejecting change order");
     } else {
       await loadChangeOrders();
-      alert("Change order rejected.");
+      toast.success("Change order rejected.");
     }
   }
 
-const saveSignature = async (signature: Signature) => {
-  const { error } = await supabase
-    .from("estimates")
-    .update({ signature, status: "approved" })
-    .eq("id", id);
-  if (!error) {
-    setEstimate({ ...estimate, signature } as Estimate);
-    toast.success("Signature saved successfully!", {
-      duration: 3000,
-      position: "top-center",
-      icon: "✍️",
-      style: {
-        background: "#fef3c7",
-        color: "#92400e",
-        border: "1px solid #fbbf24",
-        padding: "6px 12px",
-        fontSize: "12px",
-      },
-    });
-  } else {
-    toast.error("Error saving signature. Please try again.", {
-      duration: 3000,
-      position: "top-center",
-    });
-  }
-};
+  const saveSignature = async (signature: Signature) => {
+    const { error } = await supabase
+      .from("estimates")
+      .update({ signature, status: "approved" })
+      .eq("id", id);
+    if (!error) {
+      setEstimate({ ...estimate, signature } as Estimate);
+      toast.success("Signature saved successfully!", {
+        duration: 3000,
+        position: "top-center",
+        icon: "✍️",
+        style: {
+          background: "#fef3c7",
+          color: "#92400e",
+          border: "1px solid #fbbf24",
+          padding: "6px 12px",
+          fontSize: "12px",
+        },
+      });
+    } else {
+      toast.error("Error saving signature. Please try again.", {
+        duration: 3000,
+        position: "top-center",
+      });
+    }
+  };
 
-const removeSignature = async (estimateId: string) => {
-  // No confirm – the modal in SignaturePad already asked for confirmation.
-  const { error } = await supabase
-    .from("estimates")
-    .update({ signature: null, status: "pending" })
-    .eq("id", estimateId);
-  if (error) throw error;
-  // No alert – the SignaturePad will show a toast on success or error.
-};
+  const removeSignature = async (estimateId: string) => {
+    // No confirm – the modal in SignaturePad already asked for confirmation.
+    const { error } = await supabase
+      .from("estimates")
+      .update({ signature: null, status: "pending" })
+      .eq("id", estimateId);
+    if (error) throw error;
+    // No alert – the SignaturePad will show a toast on success or error.
+  };
 
   const markAsCompleted = async () => {
     if (!confirm("Mark this estimate as completed? It will be moved to completed list and won't be editable.")) return;
@@ -355,11 +367,11 @@ const removeSignature = async (estimateId: string) => {
       .update({ completed_at: new Date().toISOString(), is_completed: true, status: "completed" })
       .eq("id", id);
     if (!error) {
-      alert("Estimate marked as completed!");
+      toast.success("Estimate marked as completed!");
       loadEstimate();
       router.push("/estimates/completed");
     } else {
-      alert("Error marking as completed");
+      toast.error("Error marking as completed");
     }
   };
 
@@ -372,7 +384,16 @@ const removeSignature = async (estimateId: string) => {
       .eq("estimate_id", id)
       .maybeSingle();
     if (existingInvoice) {
-      alert(`Invoice already exists.`);
+      toast(`Invoice already exists.`, {
+        icon: "ℹ️",
+        style: {
+          background: "#e0f2fe",
+          color: "#0369a1",
+          border: "1px solid #7dd3fc",
+          padding: "6px 12px",
+          fontSize: "12px",
+        },
+      });
       router.push(`/invoices/${existingInvoice.id}`);
       return;
     }
@@ -389,7 +410,7 @@ const removeSignature = async (estimateId: string) => {
         .eq("invoice_number", invoiceNumber)
         .maybeSingle();
       if (duplicateInvoice) {
-        alert(`Invoice #${invoiceNumber} already exists`);
+        toast.error(`Invoice #${invoiceNumber} already exists`);
         setConverting(false);
         router.push(`/invoices/${duplicateInvoice.id}`);
         return;
@@ -400,7 +421,7 @@ const removeSignature = async (estimateId: string) => {
         .select("*")
         .eq("estimate_id", id);
       if (itemsFetchError || !items || items.length === 0) {
-        alert("No items found on this estimate");
+        toast.error("No items found on this estimate");
         setConverting(false);
         return;
       }
@@ -470,11 +491,11 @@ const removeSignature = async (estimateId: string) => {
       }
 
       await supabase.from("estimates").update({ status: "converted" }).eq("id", id);
-      alert("Invoice created successfully!");
+      toast.success("Invoice created successfully!");
       router.push(`/invoices/${invoice.id}`);
     } catch (err) {
       console.error(err);
-      alert("Error creating invoice");
+      toast.error("Error creating invoice");
     } finally {
       setConverting(false);
     }
@@ -538,18 +559,27 @@ const removeSignature = async (estimateId: string) => {
 
   const distributeToTargetTotal = () => {
     if (!targetTotal || targetTotal <= 0) {
-      alert("Please enter a valid target total");
+      toast.error("Please enter a valid target total");
       return;
     }
     const currentTotal = editSubtotal;
     const difference = targetTotal - currentTotal;
     if (difference === 0) {
-      alert("Target total is already equal to current total");
+       toast(`Target total is already equal to current total`, {
+        icon: "ℹ️",
+        style: {
+          background: "#e0f2fe",
+          color: "#0369a1",
+          border: "1px solid #7dd3fc",
+          padding: "6px 12px",
+          fontSize: "12px",
+        },
+      });
       return;
     }
     const allLineItems = editProjects.flatMap((p) => p.items);
     if (allLineItems.length === 0) {
-      alert("No items to distribute to");
+      toast.error("No items to distribute to");
       return;
     }
     const distributionPerItem = difference / allLineItems.length;
@@ -563,7 +593,7 @@ const removeSignature = async (estimateId: string) => {
     setEditProjects(updatedProjects);
     setTargetTotal(null);
     setShowTargetModal(false);
-    alert(`Total updated to ${formatCurrency(targetTotal)}`);
+    toast.success(`Total updated to ${formatCurrency(targetTotal)}`);
   };
 
   const addProject = () => {
@@ -619,12 +649,12 @@ const removeSignature = async (estimateId: string) => {
         const { error: itemsError } = await supabase.from("estimate_items").insert(itemsToInsert);
         if (itemsError) throw itemsError;
       }
-      alert("Estimate updated successfully!");
+      toast.success("Estimate updated successfully!");
       setIsEditMode(false);
       loadEstimate();
     } catch (err) {
       console.error(err);
-      alert("Error saving changes");
+      toast.error("Error saving changes");
     } finally {
       setSaving(false);
     }
@@ -652,7 +682,7 @@ const removeSignature = async (estimateId: string) => {
     }
     const phoneNumber = currentClient?.phone;
     if (!phoneNumber) {
-      alert("No phone number on file. Please add a phone number to this client first.");
+      toast.error("No phone number on file. Please add a phone number to this client first.");
       return;
     }
     const baseUrl = window.location.origin;
@@ -679,6 +709,8 @@ const removeSignature = async (estimateId: string) => {
     };
     return styles[status] || "bg-gray-100";
   };
+
+ 
 
   return (
     <div className="min-h-screen bg-slate-50/70 pb-20 text-slate-800 antialiased text-xs">
