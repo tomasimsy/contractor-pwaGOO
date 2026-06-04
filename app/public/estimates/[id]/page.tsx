@@ -281,12 +281,12 @@ const [estimate, setEstimate] = useState<any>(null);
                 await loadEstimate();
                 toast.success("Change order approved! The total has been updated.", {
                   duration: 4000,
-                  position: "top-center",
-                  icon: "✅",
+                  position: "top-right",
+                  // icon: "✅",
                   style: {
-                    background: "#fef3c7",      // amber-50 (light amber background)
-                    color: "#92400e",           // amber-800 (dark amber text)
-                    border: "1px solid #fbbf24", // amber-400 border
+                    background: "#009966",      // amber-50 (light amber background)
+                    color: "#f2f2f2ff",           // amber-800 (dark amber text)
+                    border: "1px solid #026343ff", // amber-400 border
                     padding: "8px 12px",
                     fontSize: "12px",
                     fontWeight: "500",
