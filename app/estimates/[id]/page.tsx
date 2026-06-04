@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import { useRouter, useParams } from "next/navigation";
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { Estimate, Client, Project, LineItem, Signature } from "@/types";
 import { formatCurrency } from "@/lib/utils/formatting";
@@ -10,8 +9,10 @@ import SignaturePad from "@/components/signature/SignaturePad";
 import ProjectFinancialsModal from "@/components/ProjectFinancialsModal";
 import ExpenseModal from "@/components/ExpenseModal";
 import Link from "next/link";
-import { SquarePen, Send, FileText, Users, Receipt, DollarSign, Plus, FileEdit, X, Trash2, ArrowLeft, Target, Sparkles } from "lucide-react";
+import { SquarePen, Send, FileText, Users, Receipt, DollarSign, Plus, FileEdit, X, Trash2, ArrowLeft, Target, Sparkles, Flag,TrendingUp } from "lucide-react";
 import toast from "react-hot-toast";
+import ProgressModal from "@/components/progress/ProgressModal";
+import ProgressDisplay from "@/components/progress/ProgressDisplay";
 
 
 type ProjectWithItems = {
@@ -54,6 +55,10 @@ export default function EstimatePage() {
   const router = useRouter();
   const { id } = useParams();
 
+  // Project progress modal state
+  const [showProgressModal, setShowProgressModal] = useState(false);
+
+const [progressRefresh, setProgressRefresh] = useState(0);
   // Core state
   const [estimate, setEstimate] = useState<Estimate | null>(null);
   const [client, setClient] = useState<Client | null>(null);
@@ -63,6 +68,9 @@ export default function EstimatePage() {
   const [existingInvoiceId, setExistingInvoiceId] = useState<string | null>(null);
   const fabRef = useRef<HTMLDivElement>(null);
 
+  // Progress display state
+  const [setProjectsList] = useState<{ name: string }[]>([]);
+ 
   // Modal states
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showFinancialsModal, setShowFinancialsModal] = useState(false);
@@ -100,6 +108,11 @@ export default function EstimatePage() {
   const [depositAmount, setDepositAmount] = useState(0);
   const [totalPaid, setTotalPaid] = useState(0);
   const [remainingBalance, setRemainingBalance] = useState(0);
+
+  const projectsList = useMemo(() => {
+  return projects.map(p => ({ name: p.name }));
+}, [projects]);
+
 
   // Load all data
   useEffect(() => {
@@ -225,6 +238,7 @@ export default function EstimatePage() {
         }
         projectMap[projectName].items.push(item);
       });
+      
       const projectsArray = Object.values(projectMap);
       setProjects(projectsArray);
       setEditProjects(JSON.parse(JSON.stringify(projectsArray)));
@@ -500,6 +514,19 @@ export default function EstimatePage() {
       setConverting(false);
     }
   };
+
+// project totals for progress display
+  const projectsWithTotals = useMemo(() => {
+  return projects.map(project => ({
+    name: project.name,
+    total: project.items.reduce((sum, item) => sum + (item.total || 0), 0)
+  }));
+}, [projects]);
+
+const overallTotal = useMemo(() => {
+  return projectsWithTotals.reduce((sum, p) => sum + p.total, 0);
+}, [projectsWithTotals]);
+
 
   // Edit mode functions (unchanged, kept from original)
   const addEditItem = (projectId: string) => {
@@ -851,6 +878,16 @@ export default function EstimatePage() {
           </div>
         )}
 
+        {/* // Progress Display */}
+          <ProgressDisplay
+  estimateId={id as string}
+  projects={projectsWithTotals}
+  hasPayment={totalPaid > 0}
+  paymentNote={formatCurrency(totalPaid)}
+  totalPaid={totalPaid}
+  overallTotal={overallTotal}
+  refreshKey={progressRefresh}
+/>
         {/* Projects */}
         <div className="space-y-3.5">
           {(isEditMode ? editProjects : projects).map((project, projectIdx) => (
@@ -1234,12 +1271,31 @@ export default function EstimatePage() {
       <Link href={`/api/estimates/${id}/pdf`} target="_blank" onClick={() => setFabOpen(false)} className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors">
         <FileText size={12} /> <span>PDF</span>
       </Link>
+      <button
+  onClick={() => setShowProgressModal(true)}
+  className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md border border-slate-100 hover:bg-emerald-500 transition-colors"
+>
+  <TrendingUp size={12} className="text-white" />
+  <span> Project Progress</span>
+</button> 
     </div>
     <button onClick={() => setFabOpen(!fabOpen)} className="h-12 w-12 rounded-full bg-emerald-600 text-white shadow-xl hover:bg-emerald-500 transition-all duration-150 flex items-center justify-center active:scale-95">
       <Plus size={20} className={`transition-transform duration-200 ${fabOpen ? "rotate-45" : "rotate-0"}`} />
     </button>
+
   </div>
 )}
+
+<ProgressModal
+  isOpen={showProgressModal}
+  onClose={() => setShowProgressModal(false)}
+  estimateId={id as string}
+  projects={projects.map(p => ({ name: p.name }))}
+  onSaved={() => {
+    loadEstimate();               // optional, if needed
+    setProgressRefresh(prev => prev + 1); // force progress display refresh
+  }}
+/>
 
       {/* Secondary Modals */}
       <ProjectFinancialsModal
