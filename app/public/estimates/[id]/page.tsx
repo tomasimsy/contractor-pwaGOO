@@ -88,14 +88,15 @@ const [estimate, setEstimate] = useState<any>(null);
 
                 // Change orders (all, for display)
                 const { data: cos } = await supabase
-                .from("change_orders")
-                .select("*")
-                .eq("estimate_id", id)
-                .order("created_at", { ascending: false });
+                  .from("change_orders")
+                  .select("*")
+                  .eq("estimate_id", id)
+                  .neq("status", "draft")
+                  .order("created_at", { ascending: false });
                 setChangeOrders(cos || []);
                 const approvedSum = (cos || [])
-                .filter(co => co.status === "approved")
-                .reduce((sum, co) => sum + (co.total_amount || 0), 0);
+                  .filter(co => co.status === "approved")
+                  .reduce((sum, co) => sum + (co.total_amount || 0), 0);
                 setApprovedTotal(approvedSum);
 
                 const revTotal = origSum + approvedSum;
@@ -468,7 +469,7 @@ const [estimate, setEstimate] = useState<any>(null);
                       <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                         <div className="flex items-center gap-1.5">
                           <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-                          <h3 className="text-[10px] font-extrabold text-blue-600 uppercase tracking-wider">Change Order
+                          <h3 className="text-[10px] font-extrabold text-blue-600 uppercase tracking-wider">Change Orderx
                           </h3>
                         </div>
                         <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
