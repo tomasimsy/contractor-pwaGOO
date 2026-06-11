@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Menu, X } from "lucide-react";
+import { EstimateCtaButton } from "@/components/LandingPage/EstimateCta";
 
 export default function HeroSection() {
 const [menuOpen, setMenuOpen] = useState(false);
@@ -52,12 +53,11 @@ return (
         <a href="#portfolio" className="text-[11px] font-medium uppercase tracking-[0.2em] text-white/60 transition-colors hover:text-white">
           Portfolio
         </a>
-        <a
-          href="sms:7043034112?&body=Hi%20OSR%20Pros,%20I%20am%20ready%20to%20start%20a%20project%20and%20would%20like%20a%20quote."
+        <EstimateCtaButton
           className="border border-white/20 px-5 py-2.5 text-[11px] font-medium uppercase tracking-[0.2em] text-white transition-all hover:border-amber-400/50 hover:bg-white/5"
         >
           Inquire
-        </a>
+        </EstimateCtaButton>
       </div>
 
       {/* Hamburger */}
@@ -115,13 +115,12 @@ return (
 
         {/* CTA MOBILE */}
         <div className="flex flex-col gap-3">
-          <a
-            href="sms:7043034112?&body=Hi%20OSR%20Pros,%20I%20am%20ready%20to%20start%20a%20project%20and%20would%20like%20a%20quote."
+          <EstimateCtaButton
             className="group relative overflow-hidden bg-gradient-to-r from-amber-600 to-amber-700 px-8 py-4 text-center text-xs font-medium uppercase tracking-[0.2em] text-white shadow-[0_8px_32px_rgba(180,83,9,0.25)] transition-all hover:shadow-[0_8px_40px_rgba(180,83,9,0.35)]"
           >
             <span className="relative z-10">Get Free Estimate</span>
             <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/10 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-          </a>
+          </EstimateCtaButton>
           <a
             href="#portfolio"
             className="px-8 py-4 text-center text-xs font-medium uppercase tracking-[0.2em] text-white/60 transition-colors hover:text-white"
@@ -181,13 +180,12 @@ return (
 
             {/* CTA DESKTOP */}
             <div className="flex items-center gap-5 pt-4">
-              <a
-                href="sms:7043034112?&body=Hi%20OSR%20Pros,%20I%20am%20ready%20to%20start%20a%20project%20and%20would%20like%20a%20quote."
+              <EstimateCtaButton
                 className="group relative overflow-hidden bg-gradient-to-r from-amber-600 to-amber-700 px-8 py-4 text-xs font-medium uppercase tracking-[0.2em] text-white shadow-[0_8px_32px_rgba(180,83,9,0.2)] transition-all hover:shadow-[0_8px_40px_rgba(180,83,9,0.35)]"
               >
                 <span className="relative z-10">Get Free Estimate</span>
                 <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/10 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-              </a>
+              </EstimateCtaButton>
               <a
                 href="#portfolio"
                 className="text-xs font-medium uppercase tracking-[0.2em] text-white/50 transition-colors hover:text-white"

@@ -1,5 +1,6 @@
 "use client";
 
+import { EstimateCtaButton } from "@/components/LandingPage/EstimateCta";
 export default function ServicesSection() {
 const services = [
   {
@@ -73,13 +74,12 @@ return (
       spaces into modern, functional, and high-value environments.
     </p>
 
-    <a
-      href="sms:7043034112?&body=Hi%20OSR%20Pros,%20I%20am%20ready%20to%20start%20a%20project%20and%20would%20like%20a%20quote."
+    <EstimateCtaButton
       className="group relative mt-10 inline-block overflow-hidden bg-[#1a1a1a] px-10 py-4 text-[11px] font-medium uppercase tracking-[0.2em] text-white transition-all hover:bg-[#2a2a2a]"
     >
       <span className="relative z-10">Start Your Project</span>
       <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/10 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-    </a>
+    </EstimateCtaButton>
   </div>
 
   {/* Services Grid */}
@@ -133,12 +133,11 @@ return (
     <p className="text-sm uppercase tracking-[0.2em] text-[#1a1a1a]/40">
       Ready to transform your space?
     </p>
-    <a
-      href="sms:7043034112?&body=Hi%20OSR%20Pros,%20I%20am%20ready%20to%20start%20a%20project%20and%20would%20like%20a%20quote."
+    <EstimateCtaButton
       className="mt-6 inline-block text-xs font-medium uppercase tracking-[0.2em] text-amber-700 transition-colors hover:text-amber-800"
     >
       Get a Free Estimate →
-    </a>
+    </EstimateCtaButton>
   </div>
 </section>
 );

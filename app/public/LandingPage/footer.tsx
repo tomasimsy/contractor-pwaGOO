@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { EstimateCtaButton } from "@/components/LandingPage/EstimateCta";
 
 export default function Footer() {
   return (
@@ -68,13 +69,12 @@ export default function Footer() {
           We respond quickly for residential and business remodeling jobs.
         </p>
 
-        <a
-          href="sms:7043034112?&body=Hi%20OSR%20Pros,%20I%20am%20ready%20to%20start%20a%20project%20and%20would%20like%20a%20quote."
+        <EstimateCtaButton
           className="group relative mt-8 inline-block overflow-hidden bg-gradient-to-r from-amber-600 to-amber-700 px-8 py-4 text-[11px] font-medium uppercase tracking-[0.2em] text-white shadow-[0_8px_32px_rgba(180,83,9,0.15)] transition-all hover:shadow-[0_8px_40px_rgba(180,83,9,0.25)]"
         >
           <span className="relative z-10">Text for Estimate</span>
           <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/10 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-        </a>
+        </EstimateCtaButton>
 
         <p className="mt-6 text-[10px] uppercase tracking-[0.15em] text-white/25">
           Fast response · Charlotte & surrounding areas

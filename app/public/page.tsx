@@ -7,6 +7,8 @@ import Services from "@/app/public/LandingPage/services";
 import Testimonials from "@/app/public/LandingPage/testimonials";
 import Footer from "@/app/public/LandingPage/footer";
 import BehindTheScene from "@/app/public/LandingPage/behindTheScene";
+import { EstimateCtaProvider } from "@/components/LandingPage/EstimateCta";
+
 
 import {
   Phone,
@@ -131,12 +133,14 @@ export default function LandingPage() {
   };
 
   return (
-    <main className="min-h-screen bg-white">
-      <Hero />
-      <Services />
-      <BehindTheScene />
-      <Testimonials />
-      <Footer />
-    </main>
+    <EstimateCtaProvider>
+      <main className="min-h-screen bg-white">
+        <Hero />
+        <Services />
+        <BehindTheScene />
+        <Testimonials />
+        <Footer />
+      </main>
+    </EstimateCtaProvider>
   );
 }
