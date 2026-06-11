@@ -120,100 +120,131 @@ export default function WorkProcessSection() {
   }, []);
 
   return (
-    <section className="w-full bg-white py-12 md:py-24">
-      {/* HEADER */}
-      <div className="mx-auto max-w-5xl px-4 md:px-6 text-center">
-        <h2 className="text-3xl md:text-4xl lg:text-6xl font-semibold tracking-tight text-gray-900">
-          From Skeleton to Masterpiece
-        </h2>
+<section className="w-full bg-[#080808] py-24 md:py-32">
+  {/* HEADER */}
+  <div className="mx-auto max-w-5xl px-6 text-center md:px-10 lg:px-16">
+    {/* Eyebrow */}
+    <div className="mb-6 flex items-center justify-center gap-4">
+      <span className="h-px w-10 bg-gradient-to-r from-transparent to-amber-500/50" />
+      <p className="text-[10px] font-medium uppercase tracking-[0.35em] text-amber-400/70">
+        The Process
+      </p>
+      <span className="h-px w-10 bg-gradient-to-l from-transparent to-amber-500/50" />
+    </div>
 
-        <p className="mt-4 md:mt-5 text-gray-600 text-base md:text-lg">
-          Every project starts raw — exposed walls, unfinished floors, and open frames.
-          We transform structure into precision-built spaces.
-        </p>
-      </div>
+    <h2 className="font-light tracking-tight text-white">
+      <span className="block text-3xl md:text-5xl lg:text-6xl">
+        From Skeleton
+      </span>
+      <span className="mt-2 block text-3xl text-white/35 md:text-5xl lg:text-6xl">
+        to Masterpiece
+      </span>
+    </h2>
 
-      {/* GRID */}
-      <div className="mx-auto mt-12 md:mt-16 grid max-w-7xl grid-cols-1 gap-6 md:gap-10 px-4 md:px-6 lg:grid-cols-2">
-        {steps.map((step, i) => {
-          const sliderPosition = sliderPositions[i] ?? 50;
-          
-          return (
+    <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-white/45 md:text-lg">
+      Every project starts raw — exposed walls, unfinished floors, and open frames.
+      We transform structure into precision-built spaces.
+    </p>
+  </div>
+
+  {/* GRID */}
+  <div className="mx-auto mt-16 grid max-w-7xl grid-cols-1 gap-8 px-6 md:mt-20 md:gap-10 lg:grid-cols-2 lg:px-16">
+    {steps.map((step, i) => {
+      const sliderPosition = sliderPositions[i] ?? 50;
+
+      return (
+        <div
+          key={i}
+          className="group relative overflow-hidden border border-white/5 bg-[#111111]"
+        >
+          <div
+            ref={(el) => { containerRefs.current[i] = el; }}
+            className="relative h-[280px] w-full touch-none select-none sm:h-[320px] md:h-[400px]"
+            onMouseDown={(e) => handleMouseDown(i, e)}
+            onTouchStart={(e) => handleTouchStart(i, e)}
+          >
+            {/* Before Image */}
             <div
-              key={i}
-              className="relative overflow-hidden rounded-xl md:rounded-2xl shadow-lg bg-gray-900"
+              className="absolute inset-0 bg-cover bg-center"
+              style={{ backgroundImage: `url('${step.beforeImage}')` }}
+            />
+
+            {/* After Image */}
+            <div
+              className="absolute inset-0 bg-cover bg-center"
+              style={{
+                backgroundImage: `url('${step.afterImage}')`,
+                clipPath: `inset(0 0 0 ${sliderPosition}%)`,
+              }}
+            />
+
+            {/* Slider Handle */}
+            <div
+              className="absolute bottom-0 top-0 w-px cursor-ew-resize touch-none bg-white/80 shadow-[0_0_12px_rgba(255,255,255,0.3)]"
+              style={{ left: `${sliderPosition}%` }}
             >
-              <div 
-                ref={(el) => { containerRefs.current[i] = el; }}
-                className="relative h-[280px] sm:h-[320px] md:h-[380px] w-full select-none touch-none"
-                onMouseDown={(e) => handleMouseDown(i, e)}
-                onTouchStart={(e) => handleTouchStart(i, e)}
-              >
-                {/* Before Image (full image) */}
-                <div
-                  className="absolute inset-0 bg-cover bg-center"
-                  style={{ backgroundImage: `url('${step.beforeImage}')` }}
-                />
-                
-                {/* After Image (clipped based on slider position) */}
-                <div
-                  className="absolute inset-0 bg-cover bg-center"
-                  style={{
-                    backgroundImage: `url('${step.afterImage}')`,
-                    clipPath: `inset(0 0 0 ${sliderPosition}%)`,
-                  }}
-                />
-                
-                {/* Slider Handle */}
-                <div
-                  className="absolute top-0 bottom-0 w-0.5 md:w-1 bg-white shadow-lg cursor-ew-resize touch-none"
-                  style={{ left: `${sliderPosition}%` }}
+              <div className="absolute left-1/2 top-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center border border-white/20 bg-[#1a1a1a]/90 backdrop-blur-sm transition-transform active:cursor-grabbing group-hover:scale-105 md:h-11 md:w-11">
+                <svg
+                  className="h-4 w-4 text-white/70 md:h-5 md:w-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
                 >
-                  {/* Drag handle - larger for mobile */}
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 md:w-10 md:h-10 bg-white rounded-full shadow-lg flex items-center justify-center cursor-grab active:cursor-grabbing hover:scale-110 transition-transform">
-                    <svg className="w-4 h-4 md:w-5 md:h-5 text-gray-800" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
-                    </svg>
-                  </div>
-                </div>
-
-                {/* Labels on image */}
-                <div className="absolute top-4 left-4 flex gap-2">
-                  <span className="text-[10px] md:text-xs font-semibold text-white bg-gradient-to-r from-orange-500 to-orange-600   px-2 py-1 rounded-full backdrop-blur-sm">
-                    BEFORE
-                  </span>
-                </div>
-                <div className="absolute top-4 right-4 flex gap-2">
-                  <span className="text-[10px] md:text-xs font-semibold text-white bg-gradient-to-r from-orange-500 to-orange-600  px-2 py-1 rounded-full backdrop-blur-sm">
-                    AFTER
-                  </span>
-                </div>
-
-                {/* Instruction overlay - shows briefly on first load */}
-                {sliderPositions[i] === 50 && (
-                  <div className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-black/70 text-white text-[10px] md:text-xs px-2 py-1 md:px-3 md:py-1.5 rounded-full whitespace-nowrap pointer-events-none animate-pulse">
-                    👆 Drag the slider to see transformation
-                  </div>
-                )}
-              </div>
-
-              {/* Text Overlay */}
-              <div className="absolute bottom-0 left-0 right-0 p-4 md:p-6 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
-                <h3 className="text-lg md:text-2xl font-semibold text-white">
-                  {step.title}
-                </h3>
-                <p className="mt-1 md:mt-2 text-white/80 text-xs md:text-sm">
-                  {step.desc}
-                </p>
-                <div className="mt-2 md:mt-3 flex items-center gap-1 text-[10px] md:text-xs text-white/50">
-                  <span>💡</span>
-                  <span>Drag the slider — works on touch screens</span>
-                </div>
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    d="M9 5l-7 7 7 7M15 5l7 7-7 7"
+                  />
+                </svg>
               </div>
             </div>
-          );
-        })}
-      </div>
-    </section>
+
+            {/* Labels */}
+            <div className="absolute left-5 top-5">
+              <span className="border border-white/10 bg-black/40 px-3 py-1.5 text-[9px] font-medium uppercase tracking-[0.2em] text-white/70 backdrop-blur-sm">
+                Before
+              </span>
+            </div>
+            <div className="absolute right-5 top-5">
+              <span className="border border-amber-500/30 bg-amber-950/40 px-3 py-1.5 text-[9px] font-medium uppercase tracking-[0.2em] text-amber-400/90 backdrop-blur-sm">
+                After
+              </span>
+            </div>
+
+            {/* Instruction overlay */}
+            {sliderPositions[i] === 50 && (
+              <div className="pointer-events-none absolute bottom-24 left-1/2 -translate-x-1/2 whitespace-nowrap border border-white/10 bg-black/60 px-4 py-2 text-[10px] uppercase tracking-[0.15em] text-white/50 backdrop-blur-sm md:text-[11px]">
+                Drag to compare
+              </div>
+            )}
+          </div>
+
+          {/* Text block — below image, not overlaid */}
+          <div className="border-t border-white/5 p-6 md:p-8">
+            <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-amber-400/50">
+              {String(i + 1).padStart(2, "0")}
+            </span>
+
+            <h3 className="mt-2 text-xl font-light tracking-wide text-white md:text-2xl">
+              {step.title}
+            </h3>
+
+            <p className="mt-3 text-sm leading-relaxed text-white/45 md:text-base">
+              {step.desc}
+            </p>
+
+            <p className="mt-4 flex items-center gap-2 text-[10px] uppercase tracking-[0.15em] text-white/25">
+              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+              </svg>
+              Drag slider · Touch enabled
+            </p>
+          </div>
+        </div>
+      );
+    })}
+  </div>
+</section>
   );
 }
