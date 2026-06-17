@@ -453,86 +453,97 @@ const [estimate, setEstimate] = useState<any>(null);
                         </div>
 
                         {/* Line item */}
-                       <div className="bg-white text-gray-800 rounded-xl p-4 shadow-sm space-y-2.5 border border-gray-200">
-  {items.length > 0 && (
-    <div className="space-y-4">
-      {/* Overall header */}
-      <div className="flex justify-between items-center border-b border-slate-100 pb-1">
-        <span className="text-[9px] font-extrabold text-slate-600 uppercase tracking-wider">Work Items</span>
-        <span className="text-[9px] text-slate-500 font-bold bg-slate-100 px-1.5 py-0.5 rounded">
-          {items.length} Item{items.length === 1 ? '' : 's'}
-        </span>
-      </div>
+                        <div
+                          className="bg-white text-gray-800 rounded-xl p-4 shadow-sm space-y-2.5 border border-gray-200">
+                          {items.length > 0 && (
+                          <div className="space-y-4">
+                            {/* Overall header */}
+                            <div className="flex justify-between items-center border-b border-slate-100 pb-1">
+                              <span className="text-[9px] font-extrabold text-slate-600 uppercase tracking-wider">Work
+                                Items</span>
+                              <span className="text-[9px] text-slate-500 font-bold bg-slate-100 px-1.5 py-0.5 rounded">
+                                {items.length} Item{items.length === 1 ? '' : 's'}
+                              </span>
+                            </div>
 
-      {/* Group items by project_name */}
-      {(() => {
-        const groups = items.reduce((acc, item) => {
-          const key = item.project_name || 'Uncategorized';
-          if (!acc[key]) acc[key] = [];
-          acc[key].push(item);
-          return acc;
-        }, {} as Record<string, typeof items>);
+                            {/* Group items by project_name */}
+                            {(() => {
+                            const groups = items.reduce((acc, item) => {
+                            const key = item.project_name || 'Uncategorized';
+                            if (!acc[key]) acc[key] = [];
+                            acc[key].push(item);
+                            return acc;
+                            }, {} as Record<string, typeof items>);
 
-        return Object.entries(groups).map(([projectName, projectItems]) => {
-          const itemsList = projectItems as typeof items;
-          return (
-            <div key={projectName} className="space-y-1.5">
-              {/* Dark project header */}
-              <div className="flex items-center justify-between bg-[#1A434E] px-3 py-1.5 rounded-lg border border-[#E29A49]/20 shadow-sm">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-extrabold text-[#FFF0E2] uppercase tracking-wider">
-                    {projectName}
-                  </span>
-                  <span className="text-[9px] font-mono text-[#1A434E] bg-white/90 px-1.5 py-0.5 rounded border border-white/20">
-                    {itemsList.length} item{itemsList.length === 1 ? '' : 's'}
-                  </span>
-                </div>
-                <span className="text-[9px] font-mono font-bold text-[#1A434E] bg-white/90 px-1.5 py-0.5 rounded border border-white/20">
-                  {formatCurrency(itemsList.reduce((sum, i) => sum + i.total, 0))}
-                </span>
-              </div>
+                              return Object.entries(groups).map(([projectName, projectItems]) => {
+                              const itemsList = projectItems as typeof items;
+                              return (
+                              <div key={projectName} className="space-y-1.5">
+                                {/* Dark project header */}
+                                <div
+                                  className="flex items-center justify-between bg-[#1A434E] px-3 py-1.5 rounded-lg border border-[#E29A49]/20 shadow-sm">
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className="text-[10px] font-extrabold text-[#FFF0E2] uppercase tracking-wider">
+                                      {projectName}
+                                    </span>
+                                    <span
+                                      className="text-[9px] font-mono text-[#1A434E] bg-white/90 px-1.5 py-0.5 rounded border border-white/20">
+                                      {itemsList.length} item{itemsList.length === 1 ? '' : 's'}
+                                    </span>
+                                  </div>
+                                  <span
+                                    className="text-[9px] font-mono font-bold text-[#1A434E] bg-white/90 px-1.5 py-0.5 rounded border border-white/20">
+                                    {formatCurrency(itemsList.reduce((sum, i) => sum + i.total, 0))}
+                                  </span>
+                                </div>
 
-              {/* Items inside this project */}
-              <div className="space-y-1 pl-1">
-                {itemsList.map((item, idx) => (
-                  <div key={item.id} className="bg-white border border-slate-200/80 rounded-lg px-2.5 py-1.5 flex justify-between items-center gap-3">
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <span className="text-[9px] font-mono font-bold text-slate-300 shrink-0">
-                        {String(idx + 1).padStart(2, '0')}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="text-[11px] font-bold text-slate-800 capitalize truncate">
-                            {item.name}
-                          </h4>
-                          <div className="text-[10px] font-medium text-slate-500 flex items-center gap-1">
-                            <span className="bg-slate-50 border border-slate-100 px-1 rounded text-slate-600 font-bold text-[9px]">
-                              {item.quantity} Qty
-                            </span>
-                            <span className="text-slate-300 font-light">×</span>
-                            <span className="font-mono text-slate-400">{formatCurrency(item.unit_price)}</span>
+                                {/* Items inside this project */}
+                                <div className="space-y-1 pl-1">
+                                  {itemsList.map((item, idx) => (
+                                  <div key={item.id}
+                                    className="bg-white border border-slate-200/80 rounded-lg px-2.5 py-1.5 flex justify-between items-center gap-3">
+                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                      <span className="text-[9px] font-mono font-bold text-slate-300 shrink-0">
+                                        {String(idx + 1).padStart(2, '0')}
+                                      </span>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <h4 className="text-[11px] font-bold text-slate-800 capitalize truncate">
+                                            {item.name}
+                                          </h4>
+                                          <div
+                                            className="text-[10px] font-medium text-slate-500 flex items-center gap-1">
+                                            <span
+                                              className="bg-slate-50 border border-slate-100 px-1 rounded text-slate-600 font-bold text-[9px]">
+                                              {item.quantity} Qty
+                                            </span>
+                                            <span className="text-slate-300 font-light">×</span>
+                                            <span
+                                              className="font-mono text-slate-400">{formatCurrency(item.unit_price)}</span>
+                                          </div>
+                                        </div>
+                                        {item.description && (
+                                        <div className="text-[11px] text-slate-400 mt-1 italic leading-relaxed">
+                                          — {item.description}
+                                        </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div
+                                      className="text-right text-[11px] font-black font-mono text-slate-900 bg-slate-50 border border-slate-100 px-2 py-0.5 rounded-md">
+                                      {formatCurrency(item.total)}
+                                    </div>
+                                  </div>
+                                  ))}
+                                </div>
+                              </div>
+                              );
+                              });
+                              })()}
                           </div>
+                          )}
                         </div>
-                        {item.description && (
-                          <div className="text-[11px] text-slate-400 mt-1 italic leading-relaxed">
-                            — {item.description}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right text-[11px] font-black font-mono text-slate-900 bg-slate-50 border border-slate-100 px-2 py-0.5 rounded-md">
-                      {formatCurrency(item.total)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        });
-      })()}
-    </div>
-  )}
-</div>
 
                         {/* Change Orders Section */}
                         {changeOrders.length > 0 && (
