@@ -1,8 +1,8 @@
 // app/layout.tsx
 "use client";
 
-import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { usePathname,useRouter } from "next/navigation";
+import { useEffect,useState } from "react";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import BottomNav from "@/components/ui/BottomNav";
@@ -10,6 +10,9 @@ import SEO from "@/components/SEO";
 import { NotificationProvider } from "@/context/NotificationContext";
 import RealtimeNotificationListener from "@/components/RealtimeNotificationListener";
 import { Toaster } from "react-hot-toast";
+
+import { supabase } from "@/lib/supabase/client";
+
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -19,23 +22,71 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+const router = useRouter();
+const [checkingAuth, setCheckingAuth] = useState(true);
+
+const PUBLIC_ROUTES = [
+  "/",
+  "/login",
+  "/signup",
+  "/public",
+  "/text",
+];
 
   // Hide BottomNav on public pages
   const isPublicPage = pathname?.startsWith('/public');
   const isAuthPage = pathname === '/login' || pathname === '/signup';
   const showBottomNav = !isPublicPage && !isAuthPage;
 
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js')
-        .then((registration) => {
-          console.log('Service Worker registered:', registration);
-        })
-        .catch((error) => {
-          console.error('Service Worker registration failed:', error);
-        });
+useEffect(() => {
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker
+      .register("/sw.js")
+      .then((registration) => {
+        console.log("Service Worker registered:", registration);
+      })
+      .catch((error) => {
+        console.error("Service Worker registration failed:", error);
+      });
+  }
+
+  let active = true;
+
+  async function checkAuth() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const isPublicRoute = PUBLIC_ROUTES.some(
+      (route) =>
+        pathname === route ||
+        pathname.startsWith(`${route}/`)
+    );
+
+    // Everything else is protected
+    if (!isPublicRoute && !user) {
+      router.replace("/login");
+      return;
     }
-  }, []);
+
+    // Prevent logged-in users from seeing login/signup
+    if (
+      user &&
+      (pathname === "/login" || pathname === "/signup")
+    ) {
+      router.replace("/dashboard");
+      return;
+    }
+
+    if (active) setCheckingAuth(false);
+  }
+
+  checkAuth();
+
+  return () => {
+    active = false;
+  };
+}, [pathname, router]);
 
   return (
     <html lang="en">

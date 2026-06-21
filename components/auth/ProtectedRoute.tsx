@@ -29,8 +29,11 @@ export default function ProtectedRoute({
 
       // Check if current route is public
       const isPublicRoute = PUBLIC_ROUTES.some(route => pathname === route || pathname?.startsWith('/public/'));
-      const isProtectedRoute = PROTECTED_ROUTES.some(route => pathname?.startsWith(route));
-
+      const isProtectedRoute = PROTECTED_ROUTES.some(
+  route =>
+    pathname === route ||
+    pathname.startsWith(`${route}/`)
+);
       console.log("Route check:", { pathname, isPublicRoute, isProtectedRoute, hasUser: !!user });
 
       // Allow public routes without authentication
