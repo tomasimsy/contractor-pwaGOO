@@ -1,6 +1,5 @@
-// app/page.tsx
-import { redirect } from 'next/navigation';
+import { redirect } from "next/navigation";
 
-export default function RootPage() {
-  redirect('/public');
+export default function Home() {
+  redirect("/public");
 }

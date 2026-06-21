@@ -5,7 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
 const PUBLIC_ROUTES = [
-  "/public",
+  "/",
   "/login",
   "/signup",
   "/public",
