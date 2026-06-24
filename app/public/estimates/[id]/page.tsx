@@ -652,20 +652,20 @@ export default function PublicEstimatePage() {
       <div className="space-y-1">
         {payments.map((p) => (
           <div key={p.id} className="flex justify-between items-center text-sm border-b border-slate-700/50 py-1.5 last:border-0">
-            <div>
-              <div className="font-medium text-white">Payment</div>
+            <div className="text-[10px]">
+              <div className="font-medium text-white text-[10px]">Payment</div>
               <div className="text-[10px] text-slate-400 capitalize">
                 {p.method} • {new Date(p.created_at).toLocaleDateString()}
               </div>
             </div>
-            <div className="font-mono font-bold text-emerald-400">
+            <div className="font-mono font-bold text-slate-400 text-[10px]">
               {formatCurrency(p.amount)}
             </div>
           </div>
         ))}
         <div className="flex justify-between pt-2 border-t border-slate-700 font-bold text-sm">
-          <span className="text-slate-300">Total Payments</span>
-          <span className="text-emerald-400">{formatCurrency(totalPaid)}</span>
+          <span className="text-slate-300 text-[10px]">Total Payments</span>
+          <span className="text-emerald-400 text-[10px]">{formatCurrency(totalPaid)}</span>
         </div>
       </div>
     </div>
