@@ -566,98 +566,105 @@ export default function PublicEstimatePage() {
         )}
 
         {/* Combined Financial Summary + Payment History Card */}
-        <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
-          {/* Financial Summary Section */}
-          <div className="p-4 space-y-2.5 bg-white">
-            <div className="flex justify-between items-center">
-              <span className={totalPaid === 0 && approvedTotal === 0
-                ? "text-sm font-black uppercase tracking-wider text-gray-600"
-                : "text-[11px] text-gray-600 font-medium"}
-              >
-                {totalPaid === 0 && approvedTotal === 0 ? "Current Balance" : "Original Balance"}
-              </span>
-              <span className="text-xs font-black text-gray-900 tracking-tight">
-                {formatCurrency(originalSubtotal)}
-              </span>
-            </div>
+<div className="bg-slate-900 text-white rounded-xl p-4 shadow-md border border-slate-950 flex flex-col gap-3 relative overflow-hidden">
+  {/* Gradient accent */}
+  <div className="absolute top-0 right-0 h-36 w-36 bg-gradient-to-bl from-emerald-500/10 to-transparent rounded-bl-full pointer-events-none" />
 
-            {approvedTotal !== 0 && (
-              <>
-                <div className="flex justify-between items-center text-[11px] border-t border-gray-200 pt-2 font-medium">
-                  <span>Approved Change Orders</span>
-                  <span className="text-gray-600">+{formatCurrency(approvedTotal)}</span>
-                </div>
-                <div className="flex justify-between items-center pt-1">
-                  <span className="text-[11px] tracking-wider text-gray-800">New Total</span>
-                  <span className="text-[16px] font-black text-gray-900 tracking-tight">{formatCurrency(revisedTotal)}</span>
-                </div>
-              </>
-            )}
+  <div className="flex-1 text-xs space-y-1.5">
+    <div className="text-[9px] font-extrabold text-slate-500 uppercase tracking-wider border-b border-slate-800 pb-1.5 mb-1.5 flex justify-between items-center">
+      <span>Financial Summary</span>
+    </div>
 
-            {totalPaid > 0 && (
-              <div className="flex justify-between items-center text-[11px] border-t border-gray-200 pt-2 font-medium text-gray-600">
-                <span>Payments Received</span>
-                <span>-{formatCurrency(totalPaid)}</span>
-              </div>
-            )}
+    <div className="space-y-1 font-mono text-slate-400 text-[11px]">
+      {/* Original Subtotal */}
+      <div className="flex justify-between">
+        <span>Original Estimate Subtotal</span>
+        <span className="text-slate-200">{formatCurrency(originalSubtotal)}</span>
+      </div>
 
-            {totalPaid > 0 && (
-              <div className="mt-2 pt-2 border-t border-gray-200">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-black uppercase tracking-wider text-gray-600">New Balance</span>
-                  <span className="text-md font-black text-gray-900 tracking-tight">{formatCurrency(remainingBalance)}</span>
-                </div>
-              </div>
-            )}
-
-            {approvedTotal !== 0 && (
-              <div className="flex justify-between items-center pt-2 border-t border-gray-200 text-[11px] font-medium text-gray-500">
-                <span>Proposed Deposit (50% of Revised Total)</span>
-                <span className="text-gray-700 font-bold">{formatCurrency(depositAmount)}</span>
-              </div>
-            )}
-
-            {/* ===== NEW: Pending Change Orders ===== */}
-            {pendingTotal > 0 && (
-              <>
-                <div className="flex justify-between items-center pt-2 border-t border-yellow-300 text-yellow-700 bg-yellow-50/50 px-3 py-1.5 rounded-md -mx-1">
-                  <span className="font-bold text-[11px]">Pending Change Orders</span>
-                  <span className="font-black text-[11px]">+{formatCurrency(pendingTotal)}</span>
-                </div>
-                <div className="flex justify-between items-center pt-1 pb-1 bg-yellow-100/70 border border-yellow-300/60 px-3 py-2 rounded-md -mx-1">
-                  <span className="font-bold text-[11px] text-yellow-800">Potential Balance Due</span>
-                  <span className="text-sm font-black text-yellow-900 tracking-tight">{formatCurrency(remainingBalance + pendingTotal)}</span>
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Divider between summary and payment history */}
-          {payments.length > 0 && (
-            <div className="border-t-2 border-amber-200/60 bg-amber-50/20"></div>
-          )}
-
-          {/* Payment History Section */}
-          {payments.length > 0 && (
-            <div className="bg-amber-50/40 px-4 py-3 space-y-2">
-              <div className="text-right">
-                <span className="text-[10px] font-extrabold text-amber-900 uppercase tracking-wider">Payment History</span>
-              </div>
-              <div className="divide-y divide-amber-200/50">
-                {payments.map((p) => (
-                  <div key={p.id} className="py-2 flex justify-end">
-                    <div className="text-right">
-                      <div className="text-xs font-bold text-amber-900">{formatCurrency(p.amount)}</div>
-                      <div className="text-[10px] text-amber-800 capitalize">
-                        {p.method} • {new Date(p.created_at).toLocaleDateString()}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+      {/* Approved Change Orders */}
+      {approvedTotal !== 0 && (
+        <div className="flex justify-between text-blue-400">
+          <span>Approved Change Orders</span>
+          <span>+{formatCurrency(approvedTotal)}</span>
         </div>
+      )}
+
+      {/* Revised Total (always shown) */}
+      <div className="flex justify-between border-t border-slate-700 pt-1 mt-1">
+        <span><strong>Revised Total</strong></span>
+        <span className="text-slate-200 font-semibold">{formatCurrency(revisedTotal)}</span>
+      </div>
+
+      {/* Deposit (always shown) */}
+      <div className="flex justify-between">
+        <span>Deposit (50% of Revised Total)</span>
+        <span className="text-emerald-300">{formatCurrency(depositAmount)}</span>
+      </div>
+
+      {/* Payments Received (only if > 0) */}
+      {totalPaid > 0 && (
+        <div className="flex justify-between text-emerald-400">
+          <span>Payments Received</span>
+          <span>-{formatCurrency(totalPaid)}</span>
+        </div>
+      )}
+
+      {/* Current Balance Due (always shown) */}
+      <div className="flex justify-between border-t border-slate-800 pt-1 mt-1 text-sm font-bold">
+        <span>Current Balance Due</span>
+        <span className="text-white">{formatCurrency(remainingBalance)}</span>
+      </div>
+
+      {/* Pending Change Orders (yellow, if any) */}
+      {pendingTotal > 0 && (
+        <>
+          <div className="flex justify-between text-yellow-400 bg-yellow-900/20 px-2 py-1 rounded -mx-2">
+            <span>Pending Change Orders</span>
+            <span>+{formatCurrency(pendingTotal)}</span>
+          </div>
+          <div className="flex justify-between border-t border-yellow-700 pt-1 mt-1 text-sm font-bold text-yellow-300 bg-yellow-900/20 px-2 py-1 rounded -mx-2">
+            <span>Potential Balance Due</span>
+            <span>{formatCurrency(remainingBalance + pendingTotal)}</span>
+          </div>
+        </>
+      )}
+    </div>
+  </div>
+
+  {/* Divider before payment history (only if payments exist) */}
+  {payments.length > 0 && (
+    <div className="border-t border-slate-700/50 my-2"></div>
+  )}
+
+  {/* Payment History (inside same card, dark theme) */}
+  {payments.length > 0 && (
+    <div className="space-y-1.5">
+      <div className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider text-right">
+        Payment History
+      </div>
+      <div className="space-y-1">
+        {payments.map((p) => (
+          <div key={p.id} className="flex justify-between items-center text-sm border-b border-slate-700/50 py-1.5 last:border-0">
+            <div>
+              <div className="font-medium text-white">Payment</div>
+              <div className="text-[10px] text-slate-400 capitalize">
+                {p.method} • {new Date(p.created_at).toLocaleDateString()}
+              </div>
+            </div>
+            <div className="font-mono font-bold text-emerald-400">
+              {formatCurrency(p.amount)}
+            </div>
+          </div>
+        ))}
+        <div className="flex justify-between pt-2 border-t border-slate-700 font-bold text-sm">
+          <span className="text-slate-300">Total Payments</span>
+          <span className="text-emerald-400">{formatCurrency(totalPaid)}</span>
+        </div>
+      </div>
+    </div>
+  )}
+</div>
 
         {/* Signature Block */}
         <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm p-4">
