@@ -557,7 +557,7 @@ export default function PublicEstimatePage() {
       <div className="space-y-2 pt-3 border-t border-slate-100">
 
         <div className="text-[10px] font-black uppercase tracking-widest text-slate-600">
-          Change Orders
+          Approved Change Orders
         </div>
 
         {changeOrders.map((co) => (
