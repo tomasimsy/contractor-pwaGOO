@@ -434,21 +434,21 @@ export default function PublicEstimatePage() {
         </div>
 
 {/* Scope Summary */}
-<div className="bg-white border border-slate-200 rounded-xl shadow-sm p-2 space-y-2">
+<div className="bg-white border border-slate-200 rounded-xl shadow-sm p-2.5 space-y-3">
 
   {/* Header */}
-  <div className="flex items-center justify-between border-b border-slate-100 pb-1">
-    <h3 className="text-[10px] font-extrabold uppercase tracking-wider text-slate-700">
+  <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+    <h3 className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-700">
       Scope Summary
     </h3>
 
     <div className="flex items-center gap-1">
-      <span className="text-[9px] bg-slate-100 px-1.5 py-0.5 rounded font-bold text-slate-600">
+      <span className="text-[8px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full font-bold">
         {items.length} Items
       </span>
 
       {changeOrders.length > 0 && (
-        <span className="text-[9px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-bold">
+        <span className="text-[8px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded-full font-bold">
           {changeOrders.length} CO
         </span>
       )}
@@ -466,35 +466,38 @@ export default function PublicEstimatePage() {
 
     return Object.entries(groups).map(([projectName, projectItems]) => {
       const list = projectItems as typeof items;
-
       const subtotal = list.reduce((sum, i) => sum + i.total, 0);
 
       return (
         <div key={projectName} className="space-y-1">
 
           {/* Project Header */}
-          <div className="flex justify-between items-center bg-[#1A434E] rounded-md px-2 py-1">
-            <span className="text-[10px] font-bold text-[#FFF0E2] truncate">
+          <div className="flex items-center justify-between border-b border-slate-200 pb-0.5">
+            <span className="text-[10px] font-bold uppercase tracking-wide text-[#1A434E] truncate">
               {projectName}
             </span>
 
-            <span className="text-[10px] font-bold font-mono text-white">
+            <span className="text-[10px] font-mono font-black text-slate-500 shrink-0">
               {formatCurrency(subtotal)}
             </span>
           </div>
 
-          {/* Item rows */}
+          {/* Item Rows */}
           <div className="space-y-0.5">
             {list.map((item) => (
               <div
                 key={item.id}
-                className="flex items-center justify-between px-2 py-1 rounded-md border border-slate-100"
+                className="flex items-center justify-between gap-2 py-0.5"
               >
-                <span className="text-[10px] text-slate-700 font-medium truncate pr-2">
-                  {item.name}
-                </span>
+                <div className="flex items-center gap-1 min-w-0 flex-1">
+                  <div className="w-1 h-1 rounded-full bg-slate-300 shrink-0" />
 
-                <span className="text-[10px] font-bold font-mono text-slate-900 shrink-0">
+                  <span className="text-[10px] text-slate-700 truncate">
+                    {item.name}
+                  </span>
+                </div>
+
+                <span className="text-[10px] font-semibold font-mono text-slate-800 shrink-0">
                   {formatCurrency(item.total)}
                 </span>
               </div>
@@ -509,42 +512,41 @@ export default function PublicEstimatePage() {
   {changeOrders.length > 0 && (
     <div className="border-t border-slate-100 pt-2 space-y-1">
 
+      <div className="text-[9px] font-black uppercase tracking-wide text-slate-500 mb-1">
+        Change Orders
+      </div>
+
       {changeOrders.map((co) => (
         <div
           key={co.id}
-          className={`flex items-center justify-between gap-2 rounded-md px-2 py-1 border
-            ${
-              co.status === "pending"
-                ? "bg-amber-50 border-amber-200"
-                : "bg-emerald-50 border-emerald-100"
-            }
-          `}
+          className={`flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 border transition-colors ${
+            co.status === "pending"
+              ? "bg-amber-50 border-amber-200"
+              : "bg-emerald-50 border-emerald-100"
+          }`}
         >
+          {/* Left */}
+          <div className="flex items-center gap-2 min-w-0 flex-1">
 
-          {/* Title */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
+            <div
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                co.status === "pending"
+                  ? "bg-amber-500"
+                  : "bg-emerald-500"
+              }`}
+            />
 
-              {/* Color dot instead of status text */}
-              <div
-                className={`w-2 h-2 rounded-full shrink-0 ${
-                  co.status === "pending"
-                    ? "bg-amber-500"
-                    : "bg-emerald-500"
-                }`}
-              />
+            <span className="text-[10px] font-medium text-slate-800 truncate">
+              {co.title}
+            </span>
 
-              <span className="text-[10px] font-medium text-slate-800 truncate">
-                {co.title}
-              </span>
-            </div>
           </div>
 
-          {/* Amount + Action */}
+          {/* Right */}
           <div className="flex items-center gap-2 shrink-0">
 
             <span
-              className={`text-[10px] font-bold font-mono ${
+              className={`text-[10px] font-black font-mono tracking-tight ${
                 co.total_amount >= 0
                   ? "text-emerald-600"
                   : "text-rose-600"
@@ -559,7 +561,17 @@ export default function PublicEstimatePage() {
                 onClick={() =>
                   approveChangeOrder(co.id, co.total_amount)
                 }
-                className="px-2 py-0.5 rounded bg-amber-600 text-white text-[8px] font-bold hover:bg-amber-700"
+                className="
+                  px-1.5
+                  py-0.5
+                  rounded-md
+                  bg-amber-600
+                  text-white
+                  text-[8px]
+                  font-bold
+                  hover:bg-amber-700
+                  transition-colors
+                "
               >
                 Approve
               </button>
