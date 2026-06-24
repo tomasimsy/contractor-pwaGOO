@@ -433,137 +433,143 @@ export default function PublicEstimatePage() {
           </div>
         </div>
 
-        {/* Line items */}
-        <div className="bg-white text-gray-800 rounded-xl p-4 shadow-sm space-y-2.5 border border-gray-200">
-          {items.length > 0 && (
-            <div className="space-y-4">
-              <div className="flex justify-between items-center border-b border-slate-100 pb-1">
-                <span className="text-[9px] font-extrabold text-slate-600 uppercase tracking-wider">Work Items</span>
-                <span className="text-[9px] text-slate-500 font-bold bg-slate-100 px-1.5 py-0.5 rounded">
-                  {items.length} Item{items.length === 1 ? '' : 's'}
+{/* Scope Summary */}
+<div className="bg-white border border-slate-200 rounded-xl shadow-sm p-2 space-y-2">
+
+  {/* Header */}
+  <div className="flex items-center justify-between border-b border-slate-100 pb-1">
+    <h3 className="text-[10px] font-extrabold uppercase tracking-wider text-slate-700">
+      Scope Summary
+    </h3>
+
+    <div className="flex items-center gap-1">
+      <span className="text-[9px] bg-slate-100 px-1.5 py-0.5 rounded font-bold text-slate-600">
+        {items.length} Items
+      </span>
+
+      {changeOrders.length > 0 && (
+        <span className="text-[9px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-bold">
+          {changeOrders.length} CO
+        </span>
+      )}
+    </div>
+  </div>
+
+  {/* Projects */}
+  {(() => {
+    const groups = items.reduce((acc, item) => {
+      const key = item.project_name || "Uncategorized";
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(item);
+      return acc;
+    }, {} as Record<string, typeof items>);
+
+    return Object.entries(groups).map(([projectName, projectItems]) => {
+      const list = projectItems as typeof items;
+
+      const subtotal = list.reduce((sum, i) => sum + i.total, 0);
+
+      return (
+        <div key={projectName} className="space-y-1">
+
+          {/* Project Header */}
+          <div className="flex justify-between items-center bg-[#1A434E] rounded-md px-2 py-1">
+            <span className="text-[10px] font-bold text-[#FFF0E2] truncate">
+              {projectName}
+            </span>
+
+            <span className="text-[10px] font-bold font-mono text-white">
+              {formatCurrency(subtotal)}
+            </span>
+          </div>
+
+          {/* Item rows */}
+          <div className="space-y-0.5">
+            {list.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center justify-between px-2 py-1 rounded-md border border-slate-100"
+              >
+                <span className="text-[10px] text-slate-700 font-medium truncate pr-2">
+                  {item.name}
+                </span>
+
+                <span className="text-[10px] font-bold font-mono text-slate-900 shrink-0">
+                  {formatCurrency(item.total)}
                 </span>
               </div>
-
-              {(() => {
-                const groups = items.reduce((acc, item) => {
-                  const key = item.project_name || 'Uncategorized';
-                  if (!acc[key]) acc[key] = [];
-                  acc[key].push(item);
-                  return acc;
-                }, {} as Record<string, typeof items>);
-
-                return Object.entries(groups).map(([projectName, projectItems]) => {
-                  const itemsList = projectItems as typeof items;
-                  return (
-                    <div key={projectName} className="space-y-1.5">
-                      <div className="flex items-center justify-between bg-[#1A434E] px-3 py-1.5 rounded-lg border border-[#E29A49]/20 shadow-sm">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-extrabold text-[#FFF0E2] uppercase tracking-wider">
-                            {projectName}
-                          </span>
-                          <span className="text-[9px] font-mono text-[#1A434E] bg-white/90 px-1.5 py-0.5 rounded border border-white/20">
-                            {itemsList.length} item{itemsList.length === 1 ? '' : 's'}
-                          </span>
-                        </div>
-                        <span className="text-[9px] font-mono font-bold text-[#1A434E] bg-white/90 px-1.5 py-0.5 rounded border border-white/20">
-                          {formatCurrency(itemsList.reduce((sum, i) => sum + i.total, 0))}
-                        </span>
-                      </div>
-
-                      <div className="space-y-1 pl-1">
-                        {itemsList.map((item, idx) => (
-                          <div key={item.id} className="bg-white border border-slate-200/80 rounded-lg px-2.5 py-1.5 flex justify-between items-center gap-3">
-                            <div className="flex items-center gap-2 min-w-0 flex-1">
-                              <span className="text-[9px] font-mono font-bold text-slate-300 shrink-0">
-                                {String(idx + 1).padStart(2, '0')}
-                              </span>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <h4 className="text-[11px] font-bold text-slate-800 capitalize truncate">
-                                    {item.name}
-                                  </h4>
-                                  <div className="text-[10px] font-medium text-slate-500 flex items-center gap-1">
-                                    <span className="bg-slate-50 border border-slate-100 px-1 rounded text-slate-600 font-bold text-[9px]">
-                                      {item.quantity} Qty
-                                    </span>
-                                    <span className="text-slate-300 font-light">×</span>
-                                    <span className="font-mono text-slate-400">{formatCurrency(item.unit_price)}</span>
-                                  </div>
-                                </div>
-                                {item.description && (
-                                  <div className="text-[11px] text-slate-400 mt-1 italic leading-relaxed">
-                                    — {item.description}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            <div className="text-right text-[11px] font-black font-mono text-slate-900 bg-slate-50 border border-slate-100 px-2 py-0.5 rounded-md">
-                              {formatCurrency(item.total)}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-          )}
+            ))}
+          </div>
         </div>
+      );
+    });
+  })()}
 
-        {/* Change Orders Section */}
-        {changeOrders.length > 0 && (
-          <div className="bg-white rounded-xl border-2 border-blue-100 shadow-sm p-4 space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <div className="flex items-center gap-1.5">
-                <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-                <h3 className="text-[10px] font-extrabold text-blue-600 uppercase tracking-wider">Change Order</h3>
-              </div>
-              <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
-                {changeOrders.length} {changeOrders.length === 1 ? 'Order' : 'Orders'}
+  {/* Change Orders */}
+  {changeOrders.length > 0 && (
+    <div className="border-t border-slate-100 pt-2 space-y-1">
+
+      {changeOrders.map((co) => (
+        <div
+          key={co.id}
+          className={`flex items-center justify-between gap-2 rounded-md px-2 py-1 border
+            ${
+              co.status === "pending"
+                ? "bg-amber-50 border-amber-200"
+                : "bg-emerald-50 border-emerald-100"
+            }
+          `}
+        >
+
+          {/* Title */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+
+              {/* Color dot instead of status text */}
+              <div
+                className={`w-2 h-2 rounded-full shrink-0 ${
+                  co.status === "pending"
+                    ? "bg-amber-500"
+                    : "bg-emerald-500"
+                }`}
+              />
+
+              <span className="text-[10px] font-medium text-slate-800 truncate">
+                {co.title}
               </span>
             </div>
-            <div className="space-y-2">
-              {changeOrders.map((co) => (
-                <div key={co.id} className={`p-3 rounded-lg flex justify-between items-center gap-3 border ${
-                  co.status === "pending" ? "border-amber-200 bg-amber-50/40" :
-                  co.status === "approved" ? "border-emerald-100 bg-emerald-50/20" :
-                  "border-slate-100 bg-slate-50/50"
-                }`}>
-                  <div className="space-y-1 min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[9px] font-mono font-medium text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200/50">
-                        {co.change_order_number}
-                      </span>
-                      <p className="text-xs capitalize font-bold text-slate-900 truncate max-w-[180px]">{co.title}</p>
-                      <span className={`text-[8px] px-1.5 py-0.5 rounded font-bold uppercase ${
-                        co.status === "pending" ? "bg-amber-100 text-amber-800" :
-                        co.status === "approved" ? "bg-emerald-100 text-emerald-800" :
-                        "bg-slate-100 text-slate-600"
-                      }`}>
-                        {co.status}
-                      </span>
-                    </div>
-                    {co.description && <p className="text-[11px] text-slate-500 line-clamp-1 italic">— {co.description}</p>}
-                  </div>
-                  <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
-                    <p className={`text-xs font-black font-mono tracking-tight ${co.total_amount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                      {co.total_amount >= 0 ? "+" : "-"}{formatCurrency(Math.abs(co.total_amount))}
-                    </p>
-                    {co.status === "pending" && (
-                      <button
-                        className="px-2.5 py-1 bg-amber-600 text-white text-[9px] font-bold rounded-md hover:bg-amber-700 disabled:opacity-50"
-                        onClick={() => approveChangeOrder(co.id, co.total_amount)}
-                      >
-                        Approve Change Order
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
           </div>
-        )}
+
+          {/* Amount + Action */}
+          <div className="flex items-center gap-2 shrink-0">
+
+            <span
+              className={`text-[10px] font-bold font-mono ${
+                co.total_amount >= 0
+                  ? "text-emerald-600"
+                  : "text-rose-600"
+              }`}
+            >
+              {co.total_amount >= 0 ? "+" : "-"}
+              {formatCurrency(Math.abs(co.total_amount))}
+            </span>
+
+            {co.status === "pending" && (
+              <button
+                onClick={() =>
+                  approveChangeOrder(co.id, co.total_amount)
+                }
+                className="px-2 py-0.5 rounded bg-amber-600 text-white text-[8px] font-bold hover:bg-amber-700"
+              >
+                Approve
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
 
         {/* Combined Financial Summary + Payment History Card */}
 <div className="bg-slate-900 text-white rounded-xl p-4 shadow-md border border-slate-950 flex flex-col gap-3 relative overflow-hidden">
