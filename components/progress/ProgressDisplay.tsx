@@ -99,50 +99,45 @@ export default function ProgressDisplay({
         const activeNote = lastCompleted?.note || null;
 
         return (
-          <div key={project.name} className="bg-gradient-to-br from-amber-50 via-white to-amber-50/60 rounded-xl border border-amber-200/80 shadow-sm hover:shadow-md transition-shadow p-2.5">
-            <div className="flex items-center gap-1.5 mb-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_3px_#10b981]" />
-              <span className="text-[11px] font-bold text-emerald-800 truncate tracking-tight">Track Project Progress: {project.name}</span>
-            </div>
+<div key={project.name} className="border-b border-slate-100 last:border-0 py-1.5">
+  {/* Header: name + percent */}
+  <div className="flex items-center justify-between text-[10px]">
+    <span className="font-medium text-slate-700 truncate pr-2">{project.name}</span>
+    <span className="font-bold text-emerald-600 shrink-0">{progressPercent}%</span>
+  </div>
 
-            {/* Timeline dots */}
-            <div className="relative mb-1.5">
-              <div className="absolute top-1/2 left-0 w-full h-px border-t border-dotted border-amber-300/70 -translate-y-1/2" />
-              <div
-                className="absolute top-1/2 left-0 h-px bg-gradient-to-r from-emerald-500 to-emerald-400 -translate-y-1/2 transition-all duration-300 rounded-full"
-                style={{ width: `${progressPercent}%` }}
-              />
-              <div className="relative flex justify-between items-center">
-                {allMilestones.map((m, idx) => (
-                  <div key={m.milestone_order || idx} className="flex flex-col items-center">
-                    <div
-                      className={`w-2.5 h-2.5 rounded-full z-10 transition-all ${
-                        m.completed_at
-                          ? 'bg-emerald-500 shadow-[0_0_6px_#10b981] ring-1 ring-emerald-300'
-                          : 'bg-slate-300'
-                      }`}
-                    />
-                    <span className={`text-[8px] mt-0.5 ${m.completed_at ? 'text-emerald-700 font-semibold' : 'text-slate-400'}`}>
-                      {m.title}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
+  {/* Progress bar with dots */}
+  <div className="relative mt-0.5">
+    <div className="absolute top-1/2 left-0 w-full h-px bg-slate-200 -translate-y-1/2" />
+    <div
+      className="absolute top-1/2 left-0 h-px bg-emerald-500 -translate-y-1/2 transition-all"
+      style={{ width: `${progressPercent}%` }}
+    />
+    <div className="relative flex justify-between">
+      {allMilestones.map((m, idx) => (
+        <div key={m.milestone_order || idx} className="flex flex-col items-center" style={{ width: `${100 / allMilestones.length}%` }}>
+          <div
+            className={`w-2 h-2 rounded-full z-10 transition-colors ${
+              m.completed_at ? 'bg-emerald-500' : 'bg-slate-300'
+            }`}
+          />
+          <span className={`text-[7px] mt-0.5 truncate w-full text-center ${
+            m.completed_at ? 'text-emerald-700 font-medium' : 'text-slate-400'
+          }`}>
+            {m.title}
+          </span>
+        </div>
+      ))}
+    </div>
+  </div>
 
-            {/* Active note (can be JSX, like the payment milestone) */}
-            {activeNote && (
-              <div className="mt-1">
-                {typeof activeNote === 'string' ? (
-                  <div className="text-[9px] text-amber-800 bg-amber-100/80 rounded-md px-1.5 py-0.5 italic shadow-inner">
-                    {activeNote}
-                  </div>
-                ) : (
-                  activeNote
-                )}
-              </div>
-            )}
-          </div>
+  {/* Active note */}
+  {activeNote && (
+    <div className="mt-0.5 text-[8px] text-amber-700 bg-amber-50/80 rounded px-1.5 py-0.5 italic truncate">
+      {typeof activeNote === 'string' ? activeNote : activeNote}
+    </div>
+  )}
+</div>
         );
       })
       .filter(Boolean);

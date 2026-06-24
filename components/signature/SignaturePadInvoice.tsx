@@ -36,6 +36,7 @@ export default function SignaturePadInvoice({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
 
+  const [showTerms, setShowTerms] = useState(false);
   // Update signed state when existingSignature changes
   useEffect(() => {
     if (existingSignature) {
@@ -206,227 +207,203 @@ export default function SignaturePadInvoice({
 
   // Main Card Component
   return (
-    <div className="bg-white rounded-xl p-5 shadow-md border border-gray-200 mt-4 transition-all duration-200 hover:shadow-lg hover:-translate-y-[1px]">
-      
-            
-      {/* ALWAYS SHOW TERMS */}
-      <TermsAndConditions />
-      
-      <h3 className="text-sm font-semibold text-gray-700 mb-3">
-        {/* Customer Signature */}
-      </h3>
+<div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3 space-y-3">
 
-
-
-      {signed ? (
-        <div className="text-center py-6 bg-green-50 rounded-xl border-2 border-green-600 transition-all duration-200 hover:shadow-md hover:bg-green-100/60">
-          <div className="text-4xl mb-2">✅</div>
-          <div className="text-lg font-bold text-green-700">
-            Signed & Approved!
-          </div>
-          <div className="text-sm text-green-600 mt-1">
-            Thank you for your business
-          </div>
-
-          {signature && (
-            <div className="mt-4">
-              {signature.type === "draw" ? (
-                <div className="flex justify-center mb-2">
-                  <img 
-                    src={signature.value} 
-                    alt="Signature" 
-                    className="max-h-16 object-contain border border-gray-200 rounded p-1 bg-white"
-                  />
-                </div>
-              ) : (
-                <div className="text-md font-semibold text-gray-700">
-                  {signature.value}
-                </div>
-              )}
-              <div className="text-sm text-gray-600 mt-1">
-                {signature.type === "type" ? `Signed by: ${signature.value}` : "Electronic signature on file"}
-              </div>
-              <div className="text-xs text-gray-400 mt-1">
-                {new Date(signature.date).toLocaleDateString()}
-              </div>
-            </div>
-          )}
-
-          {/* {showRemoveButton && onRemove && (
-            <button
-              onClick={() => setShowRemoveConfirm(true)}
-              className="mt-3 text-xs text-red-500 hover:text-red-700 transition"
-            >
-              Remove Signature
-            </button>
-          )} */}
-        </div>
-      ) : (
-        <>
-          {/* <TermsAndConditions /> */}
-          
-          <p className="text-xs text-gray-500 mb-4">
-            By signing below, you agree to the terms and conditions above.
-          </p>
-
-          <div className="transition-all duration-200 hover:shadow-sm">
-            <button
-              onClick={() => setShowModal(true)}
-              className="w-full py-2.5 rounded-xl text-sm text-white transition active:scale-95"
-              style={{ backgroundColor: BRAND_GREEN }}
-            >
-              ✍️ {buttonText}
-            </button>
-          </div>
-
-          {showDetailedBreakdown && estimateId && (
-            <Link href={`/public/estimates/${estimateId}/itemized`}>
-              <button className="w-full mt-3 py-2.5 rounded-xl border border-green-200 bg-green-50 text-green-700 text-sm font-medium hover:bg-green-100 transition flex items-center justify-center gap-2">
-                <span>📋</span> View Detailed Breakdown
-              </button>
-            </Link>
-          )}
-        </>
-      )}
-
-      {/* Signature Modal */}
-  {showModal && (
-  <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-    <div 
-      className="bg-white rounded-xl w-full max-w-md p-5 shadow-lg border border-green-100"
-      onClick={(e) => e.stopPropagation()}
+  {/* Terms */}
+  <div className="rounded-xl border border-slate-200 overflow-hidden">
+    <button
+      onClick={() => setShowTerms(!showTerms)}
+      className="w-full px-3 py-2 flex items-center justify-between bg-slate-50"
     >
-      <h3 className="text-base font-semibold mb-3 text-gray-900">
-        Customer Signature
-      </h3>
+      <span className="text-[11px] font-semibold text-slate-700">
+        Terms & Conditions
+      </span>
 
-      {/* Toggle Buttons – Draw first, then Type */}
-      <div className="flex gap-2 mb-4">
-        <button
-          onClick={() => setSignatureType("draw")}
-          className={`flex-1 py-2 text-sm rounded-lg transition ${
-            signatureType === "draw"
-              ? "text-white"
-              : "bg-gray-100 text-gray-600"
-          }`}
-          style={
-            signatureType === "draw"
-              ? { backgroundColor: BRAND_GREEN }
-              : undefined
-          }
-        >
-          Draw Signature
-        </button>
-        
-        <button
-          onClick={() => setSignatureType("type")}
-          className={`flex-1 py-2 text-sm rounded-lg transition ${
-            signatureType === "type"
-              ? "text-white"
-              : "bg-gray-100 text-gray-600"
-          }`}
-          style={
-            signatureType === "type"
-              ? { backgroundColor: BRAND_GREEN }
-              : undefined
-          }
-        >
-          Type Name
-        </button>
+      <span
+        className={`text-xs text-slate-400 transition ${
+          showTerms ? "rotate-180" : ""
+        }`}
+      >
+        ▼
+      </span>
+    </button>
+
+    {showTerms && (
+      <div className="border-t border-slate-100 p-3">
+        <TermsAndConditions />
+      </div>
+    )}
+  </div>
+
+  {signed ? (
+    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3">
+
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold text-emerald-700">
+          Signed
+        </span>
+
+        {signature && (
+          <span className="text-[10px] text-emerald-600">
+            {/* {new Date(signature.date).toLocaleDateString()} */}
+          </span>
+        )}
       </div>
 
-      {/* Input Area */}
-      {signatureType === "type" ? (
-        <div className="space-y-2">
+      {signature && (
+        <div className="mt-3 flex flex-col items-center text-center">
+  {signature.type === "draw" ? (
+    <img
+      src={signature.value}
+      alt="Signature"
+      className="max-h-14 object-contain"
+    />
+  ) : (
+    <div
+      className="text-[32px] text-slate-700"
+      style={{
+        fontFamily: "'Great Vibes', cursive",
+        lineHeight: 1.1,
+      }}
+    >
+      {signature.value}
+    </div>
+  )}
+
+  <div className="w-48 border-b border-slate-300 mt-1"></div>
+
+  <div className="mt-1 text-[10px] text-slate-500">
+    Electronically signed • {new Date(signature.date).toLocaleDateString()}
+    <p>Thank you for your business.</p>
+  </div>
+</div>
+      )}
+    </div>
+  ) : (
+    <>
+      <button
+        onClick={() => setShowModal(true)}
+        className="w-full py-2.5 rounded-xl text-sm font-medium text-white"
+        style={{ backgroundColor: BRAND_GREEN }}
+      >
+        ✍️ Sign Estimate
+      </button>
+
+      {showDetailedBreakdown && estimateId && (
+        <Link href={`/public/estimates/${estimateId}/itemized`}>
+          <button className="w-full py-2.5 rounded-xl border border-slate-200 text-sm text-slate-700 hover:bg-slate-50 transition">
+            View Detailed Breakdown
+          </button>
+        </Link>
+      )}
+    </>
+  )}
+
+  {/* Signature Modal */}
+  {showModal && (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div
+        className="bg-white rounded-2xl max-w-sm w-full p-4 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+
+        <h3 className="text-sm font-semibold mb-3 text-slate-800">
+          Customer Signature
+        </h3>
+
+        <div className="flex gap-2 mb-3">
+          <button
+            onClick={() => setSignatureType("draw")}
+            className={`flex-1 py-2 text-sm rounded-lg transition ${
+              signatureType === "draw"
+                ? "text-white"
+                : "bg-slate-100 text-slate-600"
+            }`}
+            style={
+              signatureType === "draw"
+                ? { backgroundColor: BRAND_GREEN }
+                : undefined
+            }
+          >
+            Draw
+          </button>
+
+          <button
+            onClick={() => setSignatureType("type")}
+            className={`flex-1 py-2 text-sm rounded-lg transition ${
+              signatureType === "type"
+                ? "text-white"
+                : "bg-slate-100 text-slate-600"
+            }`}
+            style={
+              signatureType === "type"
+                ? { backgroundColor: BRAND_GREEN }
+                : undefined
+            }
+          >
+            Type
+          </button>
+        </div>
+
+        {signatureType === "type" ? (
           <input
             type="text"
-            placeholder="Type your full name"
+            placeholder="Full name"
             value={typedName}
             onChange={(e) => setTypedName(e.target.value)}
-            className="w-full border border-gray-200 rounded-lg p-3 text-base focus:outline-none focus:ring-2 focus:ring-green-500/30"
-            style={{ outlineColor: BRAND_GREEN }}
+            className="w-full border border-slate-200 rounded-lg p-3 text-sm focus:outline-none"
             autoFocus
           />
-          <p className="text-[10px] text-gray-400 text-center">
-            This will be used as your electronic signature
-          </p>
-        </div>
-      ) : (
-        <div 
-          className="border border-gray-200 rounded-lg overflow-hidden"
-          onTouchMove={(e) => e.preventDefault()}
-        >
-          <canvas
-            ref={canvasRef}
-            className="w-full bg-white touch-none"
-            style={{ height: "150px", cursor: "crosshair" }}
-            onMouseDown={startDrawing}
-            onMouseMove={draw}
-            onMouseUp={stopDrawing}
-            onMouseLeave={stopDrawing}
-            onTouchStart={startDrawing}
-            onTouchMove={draw}
-            onTouchEnd={stopDrawing}
-          />
-          <div className="flex justify-between items-center px-2 py-1 bg-gray-50">
-            <button
-              onClick={clearCanvas}
-              className="text-xs text-red-500 hover:text-red-600"
-            >
-              Clear Canvas
-            </button>
-            <span className="text-[10px] text-gray-400">
-              Sign in the box above
-            </span>
-          </div>
-        </div>
-      )}
+        ) : (
+          <div
+            className="border border-slate-200 rounded-lg overflow-hidden"
+            onTouchMove={(e) => e.preventDefault()}
+          >
+            <canvas
+              ref={canvasRef}
+              className="w-full bg-white touch-none"
+              style={{ height: "120px", cursor: "crosshair" }}
+              onMouseDown={startDrawing}
+              onMouseMove={draw}
+              onMouseUp={stopDrawing}
+              onMouseLeave={stopDrawing}
+              onTouchStart={startDrawing}
+              onTouchMove={draw}
+              onTouchEnd={stopDrawing}
+            />
 
-      {/* Action Buttons */}
-      <div className="flex gap-2 mt-4">
-        <button
-          onClick={() => setShowModal(false)}
-          className="flex-1 py-2 text-sm rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={handleSave}
-          className="flex-1 py-2 text-sm rounded-lg text-white transition hover:brightness-110 active:scale-[0.98]"
-          style={{ backgroundColor: BRAND_GREEN }}
-        >
-          Save Signature
-        </button>
-      </div>
-    </div>
-  </div>
-)}
-
-      {/* Remove Confirmation Modal */}
-      {showRemoveConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-sm w-full p-5">
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">Remove Signature?</h3>
-            <p className="text-sm text-gray-500 mb-4">
-              This will remove the signature from this document. The customer will need to sign again.
-            </p>
-            <div className="flex gap-3">
+            <div className="flex justify-end px-2 py-1 bg-slate-50">
               <button
-                onClick={() => setShowRemoveConfirm(false)}
-                className="flex-1 py-2 border border-gray-200 rounded-lg text-gray-600 text-sm hover:bg-gray-50"
+                onClick={clearCanvas}
+                className="text-xs text-red-500"
               >
-                Cancel
-              </button>
-              <button
-                onClick={handleRemove}
-                className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
-              >
-                Remove Signature
+                Clear
               </button>
             </div>
           </div>
+        )}
+
+        <div className="flex gap-2 mt-3">
+          <button
+            onClick={() => setShowModal(false)}
+            className="flex-1 py-2 rounded-lg bg-slate-100 text-sm text-slate-700"
+          >
+            Cancel
+          </button>
+
+          <button
+            onClick={handleSave}
+            className="flex-1 py-2 rounded-lg text-sm text-white"
+            style={{ backgroundColor: BRAND_GREEN }}
+          >
+            Save
+          </button>
         </div>
-      )}
+
+      </div>
     </div>
+  )}
+
+</div>
   );
 }
