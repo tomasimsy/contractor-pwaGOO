@@ -424,13 +424,17 @@ export default function PublicEstimatePage() {
               </span>
               <span className="text-[11px] font-bold text-slate-900">Pros</span>
             </div>
-            <p className="text-[9px] font-semibold text-slate-800 leading-tight">
-              One Square Roofing LLC | <span className="text-slate-400"> Issued: {formatDate(estimate?.created_at)}</span>
-            </p>
+            <p className="flex flex-wrap items-center gap-1 text-[9px] font-semibold text-slate-800 leading-tight">
+  <span>One Square Roofing LLC</span>
+  <span className="text-slate-400">| Issued: {formatDate(estimate?.created_at)}</span>
+  <span className="text-slate-500">
+    #{estimate?.estimate_number || id?.slice(0, 6)}
+  </span>
+</p>
           </div>
           <div className="pl-2 space-y-0.5">
             <h3 className="text-[11px] font-bold text-slate-900 truncate">
-              {client?.name || "Customer"} | <span className="text-slate-400">#{estimate?.estimate_number || id?.slice(0, 6)}</span>
+              {client?.name || "Customer"} 
             </h3>
             {client?.address && <p className="text-[9px] text-slate-500 truncate">{client.address}</p>}
             {client?.email && <p className="text-[8px] text-slate-400 truncate">✉ {client.email}</p>}

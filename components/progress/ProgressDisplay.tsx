@@ -104,7 +104,7 @@ export default function ProgressDisplay({
   <div className="flex items-center gap-3 text-[10px]">
 
     {/* LABEL (now aligned to the bar line) */}
-    <span className="font-medium text-slate-700 leading-none whitespace-nowrap flex items-center h-2">
+    <span className="text-[9px] text-slate-700 leading-none whitespace-nowrap flex items-center h-2">
       Project Progress:
     </span>
 
