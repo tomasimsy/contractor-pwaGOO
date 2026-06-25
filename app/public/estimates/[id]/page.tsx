@@ -457,23 +457,25 @@ export default function PublicEstimatePage() {
 
           <div className="p-4 space-y-5">
             {/* PROGRESS */}
-            <div className="bg-slate-50 border border-slate-100 rounded-lg p-1">
-              <ProgressDisplay
-                estimateId={id as string}
-                projects={projectsWithTotals}
-                hasPayment={totalPaid > 0}
-                paymentNote={formatCurrency(totalPaid)}
-                totalPaid={totalPaid}
-                overallTotal={overallTotal}
-                refreshKey={progressRefresh}
-              />
-            </div>
+{projectsWithTotals.length > 0 && (
+  <div className="bg-slate-50 border border-slate-100 rounded-lg p-1">
+    <ProgressDisplay
+      estimateId={id as string}
+      projects={projectsWithTotals}
+      hasPayment={totalPaid > 0}
+      paymentNote={formatCurrency(totalPaid)}
+      totalPaid={totalPaid}
+      overallTotal={overallTotal}
+      refreshKey={progressRefresh}
+    />
+  </div>
+)}
 
             {/* OBJECTIVE + NOTES */}
             {(estimate?.description || estimate?.notes) && (
               <div className="space-y-3">
                 {estimate?.description && (
-                  <div className="border-l-4 border-amber-400 bg-amber-50/40 rounded-md p-3">
+                  <div className="border-l-2 border-amber-400 bg-amber-50/40 rounded-md p-3">
                     <div className="text-[9px] font-black uppercase tracking-wider text-amber-800 mb-1">
                       Project Objective
                     </div>
@@ -483,7 +485,7 @@ export default function PublicEstimatePage() {
                   </div>
                 )}
                 {estimate?.notes && (
-                  <div className="border-l-4 border-slate-300 bg-amber-50/40 rounded-md p-3">
+                  <div className="border-l-2 border-slate-500 bg-amber-50/40 rounded-md p-3">
                     <div className="text-[9px] font-black uppercase tracking-wider text-amber-800 mb-1">
                       Notes*
                     </div>
@@ -494,7 +496,7 @@ export default function PublicEstimatePage() {
             )}
 
             {/* SCOPE HEADER */}
-            <div className="flex items-center justify-between border-t pt-4">
+            <div className="flex items-center justify-between  border-t border-emerald-400 pt-4">
               <div className="text-[10px] font-black uppercase tracking-widest text-slate-600">
                 Scope Summary
               </div>
@@ -511,7 +513,7 @@ export default function PublicEstimatePage() {
             </div>
 
             {/* PROJECTS */}
-            <div className="space-y-4">
+            <div className="space-y-4 bg-slate">
               {Object.entries(
                 items.reduce((acc, item) => {
                   const key = item.project_name || "Uncategorized";
