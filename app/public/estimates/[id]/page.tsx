@@ -427,17 +427,18 @@ export default function PublicEstimatePage() {
             <p className="flex flex-wrap items-center gap-1 text-[9px] font-semibold text-slate-800 leading-tight">
   <span>One Square Roofing LLC</span>
   <span className="text-slate-400">| Issued: {formatDate(estimate?.created_at)}</span>
-  <span className="text-slate-500">
-    #{estimate?.estimate_number || id?.slice(0, 6)}
-  </span>
+  
 </p>
           </div>
           <div className="pl-2 space-y-0.5">
             <h3 className="text-[11px] font-bold text-slate-900 truncate">
               {client?.name || "Customer"} 
             </h3>
-            {client?.address && <p className="text-[9px] text-slate-500 truncate">{client.address}</p>}
-            {client?.email && <p className="text-[8px] text-slate-400 truncate">✉ {client.email}</p>}
+            {client?.address && <p className="text-[9px] text-slate-500 truncate d-flex">{client.address}</p>}
+            {/* {client?.email && <p className="text-[8px] text-slate-400 truncate">✉ {client.email}</p>} */}
+            <p className="text-slate-500 text-[8px] ">
+              #{estimate?.estimate_number || id?.slice(0, 6)}
+            </p>
           </div>
         </div>
 
@@ -553,7 +554,7 @@ export default function PublicEstimatePage() {
 
               {/* CHANGE ORDERS */}
               {changeOrders.length > 0 && (
-                <div className="space-y-2 pt-3 bg-slate-50 border-t-slate-300 border-l-4 border-l-emerald-600 pl-4">
+                <div className="space-y-2 pt-3 bg-slate-50 border-t-slate-300 border-l-5 border-l-emerald-600 pl-4">
                     <div className="text-[10px] font-black uppercase tracking-widest text-slate-600">
                     Change Orders
                   </div>
