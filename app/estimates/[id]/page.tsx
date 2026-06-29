@@ -1341,7 +1341,7 @@ const currentDepositAmount = currentRevisedTotal * 0.5;
   <FileEdit size={12} /> <span>Change Order</span>
 </button>
       <button onClick={() => { setShowFinancialsModal(true); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors">
-        <DollarSign size={12} /> <span>Finance</span>
+        <DollarSign size={12} /> <span>Project Payments</span>
       </button>
       <button onClick={() => { setShowExpenseModal(true); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors">
         <Receipt size={12} /> <span> Expense</span>
