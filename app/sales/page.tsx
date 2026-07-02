@@ -372,7 +372,7 @@ export default function SalesPlaybook() {
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <button className="inline-flex items-center gap-2 px-5 py-2.5 bg-white/10 backdrop-blur-sm hover:bg-white/20 rounded-xl border border-white/10 text-sm font-medium text-white transition-all duration-200">
-                <Bookmark size={16} /> Save Playbook
+                <Bookmark size={16} /> <a href="/sales/examples/deck" className="text-white hover:text-emerald-200">Sell a Deck Example</a>
               </button>
               <button className="inline-flex items-center gap-2 px-5 py-2.5 bg-white/10 backdrop-blur-sm hover:bg-white/20 rounded-xl border border-white/10 text-sm font-medium text-white transition-all duration-200">
                 <BookOpen size={16} /> <a href="/sales/simple" className="text-white hover:text-emerald-200">View Simple Version</a>
