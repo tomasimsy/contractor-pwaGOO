@@ -531,9 +531,9 @@ export default function PublicEstimatePage() {
                       <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-900 truncate">
                         {projectName}
                       </span>
-                      <span className="text-[10px] font-mono font-bold text-slate-600">
+                      {/* <span className="text-[10px] font-mono font-bold text-slate-600">
                         {formatCurrency(subtotal)}
-                      </span>
+                      </span> */}
                     </div>
                     <div className="space-y-0.5">
                       {list.map((item) => (
@@ -630,34 +630,42 @@ export default function PublicEstimatePage() {
               <span>Financial Summary</span>
             </div>
             <div className="space-y-1 font-mono text-slate-400 text-[11px]">
-              <div className="flex justify-between">
-                <span>Original Estimate Subtotal</span>
-                <span className="text-slate-200">{formatCurrency(originalSubtotal)}</span>
-              </div>
+              {!signed && (
+                <div className="flex justify-between">
+                  <span>{changeOrders.length > 0 ? "Original Estimate Subtotal" : "Current Estimate"}</span>
+                  <span className="text-slate-200 font-bold">{formatCurrency(originalSubtotal)}</span>
+                </div>
+              )}
               {approvedTotal !== 0 && (
                 <div className="flex justify-between text-blue-400">
                   <span>Approved Change Orders</span>
                   <span>+{formatCurrency(approvedTotal)}</span>
                 </div>
               )}
-              <div className="flex justify-between border-t border-slate-700 pt-1 mt-1">
-                <span><strong>Revised Total</strong></span>
-                <span className="text-slate-200 font-semibold">{formatCurrency(revisedTotal)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Deposit (50% of Revised Total)</span>
-                <span className="text-emerald-300">{formatCurrency(depositAmount)}</span>
-              </div>
+              {changeOrders.length > 0 && (
+                <div className="flex justify-between border-t border-slate-700 pt-1 mt-1">
+                  <span><strong>Revised Total</strong></span>
+                  <span className="text-slate-200 font-semibold">{formatCurrency(revisedTotal)}</span>
+                </div>
+              )}
+              {signed && (
+                <div className="flex justify-between">
+                  <span>Deposit (50% of Revised Total)</span>
+                  <span className="text-emerald-300">{formatCurrency(depositAmount)}</span>
+                </div>
+              )}
               {totalPaid > 0 && (
                 <div className="flex justify-between text-emerald-400">
                   <span>Payments Received</span>
                   <span>-{formatCurrency(totalPaid)}</span>
                 </div>
               )}
-              <div className="flex justify-between border-t border-slate-800 pt-1 mt-1 text-sm font-bold">
-                <span>Current Balance Due</span>
-                <span className="text-white">{formatCurrency(remainingBalance)}</span>
-              </div>
+              {signed && (
+                <div className="flex justify-between border-t border-slate-800 pt-1 mt-1 text-sm font-bold">
+                  <span>Current Balance Due</span>
+                  <span className="text-white">{formatCurrency(remainingBalance)}</span>
+                </div>
+              )}
               {pendingTotal > 0 && (
                 <>
                   <div className="flex justify-between text-yellow-400 bg-yellow-900/20 px-2 py-1 rounded -mx-2">
