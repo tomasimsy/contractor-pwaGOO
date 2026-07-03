@@ -458,7 +458,7 @@ export default function PublicEstimatePage() {
 
           <div className="p-4 space-y-5">
             {/* PROGRESS */}
-{projectsWithTotals.length > 0 && (
+ {projectsWithTotals.length > 0 && totalPaid > 0 && (
   <div className="bg-slate-50 border border-slate-100 rounded-lg p-1">
     <ProgressDisplay
       estimateId={id as string}
