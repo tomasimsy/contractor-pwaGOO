@@ -525,7 +525,7 @@ const drawLabel = (
   currentY += bodySize + lineGap;
 };
 
-drawLabel("📍 (proximate)", streetAddress);
+drawLabel("📍", streetAddress);
 
 drawLabel(
   "🕒",
