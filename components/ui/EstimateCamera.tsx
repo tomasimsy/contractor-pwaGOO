@@ -235,7 +235,14 @@ export function EstimateCamera({
         audio: false,
       });
       setStream(s);
-      if (videoRef.current) videoRef.current.srcObject = s;
+      if (videoRef.current) {
+        videoRef.current.srcObject = s;
+        try {
+          await videoRef.current.play();
+        } catch (playErr) {
+          console.error("Video play() failed:", playErr);
+        }
+      }
     } catch (err) {
       console.error(err);
       toast.error("Couldn't access the camera. Check your browser permissions.");
@@ -428,7 +435,7 @@ export function EstimateCamera({
               </div>
 
               <div className="flex-1 relative overflow-hidden bg-black">
-                <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                <video ref={videoRef} autoPlay playsInline muted {...{ "webkit-playsinline": "true" }} className="w-full h-full object-cover" />
               </div>
 
               <div className="py-6 flex items-center justify-center bg-black">
