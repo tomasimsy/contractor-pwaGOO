@@ -471,7 +471,7 @@ ctx.fillStyle = "#F8FAFC";
 ctx.font = `bold ${titleSize}px Arial`;
 
 ctx.fillText(
-  "ONE SQUARE ROOF",
+  "OSR Pros",
   x + padding,
   y + padding + titleSize
 );

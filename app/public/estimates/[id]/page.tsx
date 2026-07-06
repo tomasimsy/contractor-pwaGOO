@@ -623,13 +623,13 @@ const [estimate, setEstimate] = useState<any>(null);
                               </div>
                             </div>
                           </div>
-{/* Photos section */}
-{estimate && (
-  <div className="bg-white  ">
-    {/* <EstimateCamera estimateId={estimate.id} onUploaded={() => setGalleryRefresh((n) => n + 1)} /> */}
-    <EstimateImageGallery estimateId={estimate.id} refreshKey={galleryRefresh} />
-  </div>
-)}
+                          {/* Photos section */}
+                          {estimate && (
+                            <div className="bg-white  ">
+                              {/* <EstimateCamera estimateId={estimate.id} onUploaded={() => setGalleryRefresh((n) => n + 1)} /> */}
+                              <EstimateImageGallery estimateId={estimate.id} refreshKey={galleryRefresh} />
+                            </div>
+                          )}
                           {/* Financial Summary Card */}
                           <div
                             className="bg-slate-900 text-white rounded-xl p-4 shadow-md border border-slate-950 flex flex-col gap-3 relative overflow-hidden">
