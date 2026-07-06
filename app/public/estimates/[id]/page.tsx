@@ -8,6 +8,8 @@ import { formatCurrency, formatDate } from "@/lib/utils/formatting";
 import { Receipt } from "lucide-react";
 import toast from "react-hot-toast";
 import ProgressDisplay from "@/components/progress/ProgressDisplay";
+import { EstimateImageGallery } from "@/components/ui/EstimateImages";
+
 
 type Signature = { type: "draw" | "type"; value: string; date: string };
 type ChangeOrder = {
@@ -67,6 +69,12 @@ const [estimate, setEstimate] = useState<any>(null);
               const [totalPaid, setTotalPaid] = useState(0);
               const [remainingBalance, setRemainingBalance] = useState(0);
               const [depositAmount, setDepositAmount] = useState(0);
+
+              //Camera setups
+              const [estimateId] = useState(() => crypto.randomUUID());
+              const [estimateRowCreated, setEstimateRowCreated] = useState(false);
+              const [galleryRefresh, setGalleryRefresh] = useState(0);
+              
 
               // Modals
               const [showApproveConfirm, setShowApproveConfirm] = useState(false);
@@ -615,7 +623,13 @@ const [estimate, setEstimate] = useState<any>(null);
                               </div>
                             </div>
                           </div>
-
+{/* Photos section */}
+{estimate && (
+  <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
+    {/* <EstimateCamera estimateId={estimate.id} onUploaded={() => setGalleryRefresh((n) => n + 1)} /> */}
+    <EstimateImageGallery estimateId={estimate.id} refreshKey={galleryRefresh} />
+  </div>
+)}
                           {/* Financial Summary Card */}
                           <div
                             className="bg-slate-900 text-white rounded-xl p-4 shadow-md border border-slate-950 flex flex-col gap-3 relative overflow-hidden">
@@ -629,7 +643,7 @@ const [estimate, setEstimate] = useState<any>(null);
                               <div className="space-y-1 font-mono text-slate-400 text-[11px]">
                                 {!signed && (
                                 <div className="flex justify-between">
-                                  <span>{changeOrders.length > 0 ? "Original Estimate Subtotal" : "Current Estimate"}</span>
+                                  <span>{changeOrders.length > 0 ? "Original Estimate Subtotal" : "CurrentEstimate"}</span>
                                   <span className="text-slate-200 font-bold">{formatCurrency(originalSubtotal)}</span>
                                 </div>
                                 )}

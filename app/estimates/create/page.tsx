@@ -15,6 +15,9 @@ import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { generateEstimateNumber } from "@/lib/utils/estimateNumber";
 import toast from "react-hot-toast";
 
+import { EstimateCamera } from "@/components/ui/EstimateCamera";
+import { EstimateImageGallery } from "@/components/ui/EstimateImages";
+
 type Project = {
   id: string;
   name: string;
@@ -32,6 +35,10 @@ export default function CreateEstimate() {
   
   const [showTargetModal, setShowTargetModal] = useState(false);
   const [targetTotal, setTargetTotal] = useState<number | null>(null);
+
+const [estimateId] = useState(() => crypto.randomUUID());
+const [estimateRowCreated, setEstimateRowCreated] = useState(false);
+const [galleryRefresh, setGalleryRefresh] = useState(0);
 
   const BRAND_GREEN = "#0e542c";
   const BRAND_GREEN_LIGHT = "#e8f5e9";
@@ -72,6 +79,18 @@ export default function CreateEstimate() {
       setLastAddedItemId(null);
     }
   }, [lastAddedItemId]);
+
+  // Cacmera FK
+  useEffect(() => {
+  if (!clientId || estimateRowCreated) return;
+  supabase
+    .from("estimates")
+    .upsert({ id: estimateId, client_id: clientId, status: "pending" }, { onConflict: "id" })
+    .then(({ error }) => {
+      if (!error) setEstimateRowCreated(true);
+      else console.error("Failed to create draft estimate row:", error);
+    });
+}, [clientId, estimateId, estimateRowCreated]);
 
   const allItems = projects.flatMap((project) =>
     project.items.map((item) => ({
@@ -204,17 +223,21 @@ export default function CreateEstimate() {
     const estimateNumber = await generateEstimateNumber();
     setSaving(true);
 
-    const { data: estimate, error } = await supabase
-      .from("estimates")
-      .insert({
-        client_id: clientId,
-        estimate_number: estimateNumber,
-        description: description || null,
-        notes: notes || null,
-        subtotal,
-        total,
-        status: "pending",
-      })
+const { data: estimate, error } = await supabase
+  .from("estimates")
+  .upsert(
+    {
+      id: estimateId,
+      client_id: clientId,
+      estimate_number: estimateNumber,
+      description: description || null,
+      notes: notes || null,
+      subtotal,
+      total,
+      status: "pending",
+    },
+    { onConflict: "id" }
+  )
       .select()
       .single();
 
@@ -328,6 +351,20 @@ export default function CreateEstimate() {
   placeholder="Brief description of work..."
 />
 </div>
+
+{/* Camera Uploader */}
+{/* Camera Uploader */}
+<div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
+  {estimateRowCreated ? (
+    <>
+<EstimateCamera estimateId={estimateId} onUploaded={() => setGalleryRefresh((n) => n + 1)} />
+<EstimateImageGallery estimateId={estimateId} refreshKey={galleryRefresh} />
+    </>
+  ) : (
+    <p className="text-xs text-gray-400">Select a client above to enable photo uploads.</p>
+  )}
+</div>
+          </div>
 
           {/* Projects */}
           <div className="space-y-3">
@@ -507,7 +544,7 @@ export default function CreateEstimate() {
   />
 </div>
         </div>
-      </div>
+       
     </ProtectedRoute>
   );
 }
