@@ -625,7 +625,7 @@ const [estimate, setEstimate] = useState<any>(null);
                           </div>
 {/* Photos section */}
 {estimate && (
-  <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
+  <div className="bg-white  ">
     {/* <EstimateCamera estimateId={estimate.id} onUploaded={() => setGalleryRefresh((n) => n + 1)} /> */}
     <EstimateImageGallery estimateId={estimate.id} refreshKey={galleryRefresh} />
   </div>
