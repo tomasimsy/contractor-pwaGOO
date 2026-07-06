@@ -165,12 +165,13 @@ export function EstimateImageUploader({
           <div key={img.id} className="relative group aspect-square rounded-lg overflow-hidden border border-slate-200">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={img.url} alt={label} className="w-full h-full object-cover" />
+            {/* Remove button — always visible with a semi‑transparent background */}
             <button
               onClick={() => handleDelete(img)}
-              className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+              className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1.5 transition-colors hover:bg-red-600"
               title="Remove photo"
             >
-              <Trash2 size={12} />
+              <Trash2 size={14} />
             </button>
           </div>
         ))}

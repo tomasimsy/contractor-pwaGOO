@@ -13,6 +13,7 @@ import {
   Tag,
   CloudOff,
   RefreshCw,
+  Trash2, // <-- added for remove button
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -293,327 +294,309 @@ export function EstimateCamera({
     setOpen(false);
   };
 
-const capturePhoto = async () => {
-  const video = videoRef.current;
-  const canvas = canvasRef.current;
-
-  if (!video || !canvas) return;
-
-canvas.width = video.videoWidth || 1920;
-canvas.height = video.videoHeight || 1080;
-
-  const ctx = canvas.getContext("2d");
-
-  if (!ctx) return;
-
-
-  // --------------------------------------------------
-  // Draw Camera Image
-  // --------------------------------------------------
-
-  if (facingMode === "user") {
-    ctx.translate(canvas.width, 0);
-    ctx.scale(-1, 1);
-  }
-
-  ctx.drawImage(
-    video,
-    0,
-    0,
-    canvas.width,
-    canvas.height
-  );
-
-  ctx.setTransform(
-    1,
-    0,
-    0,
-    1,
-    0,
-    0
-  );
-
-
-  // --------------------------------------------------
-  // Get Address
-  // --------------------------------------------------
-
-  let streetAddress = "N/A";
-
-  if (location) {
-    try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${location.lat}&lon=${location.lng}`
-      );
-
-      const json = await res.json();
-
-      const addr = json.address ?? {};
-
-      streetAddress =
-        [
-          addr.house_number,
-          addr.road,
-          addr.city || addr.town,
-          addr.state,
-        ]
-          .filter(Boolean)
-          .join(", ") || "N/A";
-
-    } catch {
-      streetAddress = "N/A";
+  // ---- New: Remove photo (discard and close) ----
+  const handleRemove = () => {
+    if (window.confirm("Remove this photo? It will be discarded.")) {
+      handleClose();
     }
-  }
-
-
-  // --------------------------------------------------
-  // Date / Time
-  // --------------------------------------------------
-
-  const now = new Date();
-
-  const date = now.toLocaleDateString(
-    "en-US",
-    {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }
-  );
-
-
-  const time = now.toLocaleTimeString(
-    "en-US",
-    {
-      hour: "numeric",
-      minute: "2-digit",
-    }
-  );
-
-
-  // --------------------------------------------------
-  // iPhone Compatible Rounded Box
-  // --------------------------------------------------
-
-  const drawRoundedRect = (
-    x:number,
-    y:number,
-    width:number,
-    height:number,
-    radius:number
-  ) => {
-
-    ctx.beginPath();
-
-    ctx.moveTo(
-      x + radius,
-      y
-    );
-
-    ctx.lineTo(
-      x + width - radius,
-      y
-    );
-
-    ctx.quadraticCurveTo(
-      x + width,
-      y,
-      x + width,
-      y + radius
-    );
-
-    ctx.lineTo(
-      x + width,
-      y + height - radius
-    );
-
-    ctx.quadraticCurveTo(
-      x + width,
-      y + height,
-      x + width - radius,
-      y + height
-    );
-
-    ctx.lineTo(
-      x + radius,
-      y + height
-    );
-
-    ctx.quadraticCurveTo(
-      x,
-      y + height,
-      x,
-      y + height - radius
-    );
-
-    ctx.lineTo(
-      x,
-      y + radius
-    );
-
-    ctx.quadraticCurveTo(
-      x,
-      y,
-      x + radius,
-      y
-    );
-
-    ctx.closePath();
   };
 
+  const capturePhoto = async () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
 
-  // --------------------------------------------------
-  // Overlay Layout
-  // --------------------------------------------------
+    if (!video || !canvas) return;
 
-  const padding = 18;
+    canvas.width = video.videoWidth || 1920;
+    canvas.height = video.videoHeight || 1080;
 
-const titleSize = Math.max(18, canvas.width * 0.012);
+    const ctx = canvas.getContext("2d");
 
-const bodySize = Math.max(20, canvas.width * 0.011);
+    if (!ctx) return;
 
-  const lines = [
-    `Address: ${streetAddress}`,
-    `${date} • ${time}`,
-  ];
+    // --------------------------------------------------
+    // Draw Camera Image
+    // --------------------------------------------------
 
+    if (facingMode === "user") {
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+    }
 
-//   ctx.font = `${bodySize}px Arial`;
-  ctx.font = `bold ${bodySize}px -apple-system, BlinkMacSystemFont, Arial, sans-serif`;
-
-
-  let widest = 0;
-
-  lines.forEach((line)=>{
-
-    widest = Math.max(
-      widest,
-      ctx.measureText(line).width
+    ctx.drawImage(
+      video,
+      0,
+      0,
+      canvas.width,
+      canvas.height
     );
 
-  });
-
-
-  const boxWidth = Math.min(
-    widest + padding * 2,
-    canvas.width * .88
-  );
-
-
-  const boxHeight =
-    padding * 2 +
-    titleSize +
-    25 +
-    lines.length *
-    (bodySize + 10);
-
-
-  const x = 24;
-
-  const y =
-    canvas.height -
-    boxHeight -
-    24;
-
-
-  // --------------------------------------------------
-  // Draw Overlay
-  // --------------------------------------------------
-
-  if (canvas.width === 0 || canvas.height === 0) {
-  toast.error("Camera image not ready");
-  return;
-}
-  ctx.fillStyle =
-    "rgba(15,23,42,.55)";
-
-
-  drawRoundedRect(
-    x,
-    y,
-    boxWidth,
-    boxHeight,
-    16
-  );
-
-
-  ctx.fill();
-
-
-  ctx.fillStyle =
-    "#FFFFFF";
-
-
-  ctx.font = `bold ${titleSize}px -apple-system, BlinkMacSystemFont, Arial, sans-serif`;
-    
-
-
-  ctx.fillText(
-    "OSR Pros",
-    x + padding,
-    y + padding + titleSize
-  );
-
-
-  ctx.font =
-    `${bodySize}px Arial`;
-
-
-  let currentY =
-    y +
-    padding +
-    titleSize +
-    35;
-
-
-  lines.forEach((line)=>{
-
-    ctx.fillText(
-      line,
-      x + padding,
-      currentY
+    ctx.setTransform(
+      1,
+      0,
+      0,
+      1,
+      0,
+      0
     );
 
-    currentY += bodySize + 10;
+    // --------------------------------------------------
+    // Get Address
+    // --------------------------------------------------
 
-  });
+    let streetAddress = "N/A";
 
-
-  ctx.restore();
-
-
-
-  // --------------------------------------------------
-  // Export Image
-  // --------------------------------------------------
-
-requestAnimationFrame(() => {
-  requestAnimationFrame(() => {
-
-    canvas.toBlob(
-      (blob) => {
-
-        if (!blob) return;
-
-        setCapturedBlob(blob);
-
-        setCapturedUrl(
-          URL.createObjectURL(blob)
+    if (location) {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${location.lat}&lon=${location.lng}`
         );
 
-        setStep("review");
+        const json = await res.json();
 
-        stopCamera();
+        const addr = json.address ?? {};
 
-      },
-      "image/jpeg",
-      0.95
+        streetAddress =
+          [
+            addr.house_number,
+            addr.road,
+            addr.city || addr.town,
+            addr.state,
+          ]
+            .filter(Boolean)
+            .join(", ") || "N/A";
+
+      } catch {
+        streetAddress = "N/A";
+      }
+    }
+
+    // --------------------------------------------------
+    // Date / Time
+    // --------------------------------------------------
+
+    const now = new Date();
+
+    const date = now.toLocaleDateString(
+      "en-US",
+      {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }
     );
 
-  });
-});
+    const time = now.toLocaleTimeString(
+      "en-US",
+      {
+        hour: "numeric",
+        minute: "2-digit",
+      }
+    );
 
-}; // <-- IMPORTANT: closes capturePhoto
+    // --------------------------------------------------
+    // iPhone Compatible Rounded Box
+    // --------------------------------------------------
+
+    const drawRoundedRect = (
+      x: number,
+      y: number,
+      width: number,
+      height: number,
+      radius: number
+    ) => {
+
+      ctx.beginPath();
+
+      ctx.moveTo(
+        x + radius,
+        y
+      );
+
+      ctx.lineTo(
+        x + width - radius,
+        y
+      );
+
+      ctx.quadraticCurveTo(
+        x + width,
+        y,
+        x + width,
+        y + radius
+      );
+
+      ctx.lineTo(
+        x + width,
+        y + height - radius
+      );
+
+      ctx.quadraticCurveTo(
+        x + width,
+        y + height,
+        x + width - radius,
+        y + height
+      );
+
+      ctx.lineTo(
+        x + radius,
+        y + height
+      );
+
+      ctx.quadraticCurveTo(
+        x,
+        y + height,
+        x,
+        y + height - radius
+      );
+
+      ctx.lineTo(
+        x,
+        y + radius
+      );
+
+      ctx.quadraticCurveTo(
+        x,
+        y,
+        x + radius,
+        y
+      );
+
+      ctx.closePath();
+    };
+
+    // --------------------------------------------------
+    // Overlay Layout
+    // --------------------------------------------------
+
+    const padding = 18;
+
+    const titleSize = Math.max(18, canvas.width * 0.012);
+
+    const bodySize = Math.max(20, canvas.width * 0.011);
+
+    const lines = [
+      `Address: ${streetAddress}`,
+      `${date} • ${time}`,
+    ];
+
+    ctx.font = `bold ${bodySize}px -apple-system, BlinkMacSystemFont, Arial, sans-serif`;
+
+    let widest = 0;
+
+    lines.forEach((line) => {
+
+      widest = Math.max(
+        widest,
+        ctx.measureText(line).width
+      );
+
+    });
+
+    const boxWidth = Math.min(
+      widest + padding * 2,
+      canvas.width * .88
+    );
+
+    const boxHeight =
+      padding * 2 +
+      titleSize +
+      25 +
+      lines.length *
+      (bodySize + 10);
+
+    const x = 24;
+
+    const y =
+      canvas.height -
+      boxHeight -
+      24;
+
+    // --------------------------------------------------
+    // Draw Overlay
+    // --------------------------------------------------
+
+    if (canvas.width === 0 || canvas.height === 0) {
+      toast.error("Camera image not ready");
+      return;
+    }
+    ctx.fillStyle =
+      "rgba(15,23,42,.55)";
+
+    drawRoundedRect(
+      x,
+      y,
+      boxWidth,
+      boxHeight,
+      16
+    );
+
+    ctx.fill();
+
+    ctx.fillStyle =
+      "#FFFFFF";
+
+    ctx.font = `bold ${titleSize}px -apple-system, BlinkMacSystemFont, Arial, sans-serif`;
+
+    ctx.fillText(
+      "OSR Pros",
+      x + padding,
+      y + padding + titleSize
+    );
+
+    ctx.font =
+      `${bodySize}px Arial`;
+
+    let currentY =
+      y +
+      padding +
+      titleSize +
+      35;
+
+    lines.forEach((line) => {
+
+      ctx.fillText(
+        line,
+        x + padding,
+        currentY
+      );
+
+      currentY += bodySize + 10;
+
+    });
+
+    ctx.restore();
+
+    // --------------------------------------------------
+    // Export Image
+    // --------------------------------------------------
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+
+        canvas.toBlob(
+          (blob) => {
+
+            if (!blob) return;
+
+            setCapturedBlob(blob);
+
+            setCapturedUrl(
+              URL.createObjectURL(blob)
+            );
+
+            setStep("review");
+
+            stopCamera();
+
+          },
+          "image/jpeg",
+          0.95
+        );
+
+      });
+    });
+
+  }; // <-- closes capturePhoto
 
   const retake = () => {
     if (capturedUrl) URL.revokeObjectURL(capturedUrl);
@@ -753,9 +736,20 @@ requestAnimationFrame(() => {
                   <X size={22} />
                 </button>
                 <span className="text-[12px] font-medium text-white/70">Review Photo</span>
-                <button onClick={retake} className="p-2 text-[12px] text-white/70">
-                  Retake
-                </button>
+                <div className="flex gap-2">
+                  {/* Retake button */}
+                  <button onClick={retake} className="p-2 text-[12px] text-white/70">
+                    Retake
+                  </button>
+                  {/* New Remove button */}
+                  <button
+                    onClick={handleRemove}
+                    className="p-2 text-[12px] text-red-400 hover:text-red-300 transition-colors flex items-center gap-1"
+                  >
+                    <Trash2 size={16} />
+                    Remove
+                  </button>
+                </div>
               </div>
 
               <div
