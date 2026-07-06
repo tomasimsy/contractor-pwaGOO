@@ -13,10 +13,11 @@ import {
   Tag,
   CloudOff,
   RefreshCw,
+  Upload, // new icon for gallery upload
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
-// Types
+// Types (unchanged)
 // ---------------------------------------------------------------------------
 
 export type PhotoStage = "before" | "during" | "after";
@@ -55,8 +56,7 @@ const DB_NAME = "osr-photo-queue";
 const STORE_NAME = "queued_photos";
 
 // ---------------------------------------------------------------------------
-// IndexedDB queue — no external dependency. This is what makes capture work
-// with no signal: photos are written locally first, then synced when online.
+// IndexedDB queue — unchanged
 // ---------------------------------------------------------------------------
 
 function openQueueDb(): Promise<IDBDatabase> {
@@ -176,7 +176,7 @@ async function getQueueCount(estimateId?: string): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
-// EstimateCamera — the capture flow
+// EstimateCamera — updated with "Add Images" and file upload option
 // ---------------------------------------------------------------------------
 
 export function EstimateCamera({
@@ -191,7 +191,7 @@ export function EstimateCamera({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<"camera" | "review">("camera");
+  const [step, setStep] = useState<"select" | "camera" | "review">("select");
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
   const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
@@ -208,6 +208,7 @@ export function EstimateCamera({
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const refreshPendingCount = useCallback(async () => {
     setPendingCount(await getQueueCount(estimateId));
@@ -274,7 +275,7 @@ export function EstimateCamera({
   };
 
   const handleOpen = () => {
-    setStep("camera");
+    setStep("select");
     setCapturedBlob(null);
     setCapturedUrl(null);
     setAnnotations([]);
@@ -293,6 +294,19 @@ export function EstimateCamera({
     setOpen(false);
   };
 
+  // ---- File upload handler ----
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Reset so the same file can be selected again
+    e.target.value = "";
+    const blob = file;
+    setCapturedBlob(blob);
+    setCapturedUrl(URL.createObjectURL(blob));
+    setStep("review");
+  };
+
+  // ---- Camera capture ----
   const capturePhoto = () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -394,7 +408,7 @@ export function EstimateCamera({
         className={`inline-flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white text-sm font-semibold rounded-lg hover:bg-slate-800 transition-colors ${className}`}
       >
         <Camera size={16} />
-        Take Photo
+        Add Images
         {pendingCount > 0 && (
           <span className="ml-1 inline-flex items-center gap-1 text-[10px] bg-amber-500 text-white px-1.5 py-0.5 rounded-full">
             <CloudOff size={10} /> {pendingCount}
@@ -404,6 +418,57 @@ export function EstimateCamera({
 
       {open && (
         <div className="fixed inset-0 bg-black z-[100] flex flex-col">
+          {/* ---- Select step: choose upload or camera ---- */}
+          {step === "select" && (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-950 text-white">
+              <button
+                onClick={handleClose}
+                className="absolute top-4 right-4 p-2 text-white/70 hover:text-white"
+              >
+                <X size={22} />
+              </button>
+              <h2 className="text-xl font-semibold mb-6">Add Photo</h2>
+              <div className="flex flex-col sm:flex-row gap-4 w-full max-w-xs">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center justify-center gap-2 px-6 py-4 bg-white/10 hover:bg-white/20 rounded-xl text-lg font-medium transition-colors"
+                >
+                  <Upload size={20} />
+                  Upload from Gallery
+                </button>
+                <button
+                  onClick={() => setStep("camera")}
+                  className="flex items-center justify-center gap-2 px-6 py-4 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-lg font-medium transition-colors"
+                >
+                  <Camera size={20} />
+                  Take Photo
+                </button>
+              </div>
+              <p className="mt-6 text-sm text-white/50 flex items-center gap-1">
+                {locating ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" /> Locating...
+                  </>
+                ) : location ? (
+                  <>
+                    <MapPin size={14} /> Location captured
+                  </>
+                ) : (
+                  <>
+                    <MapPin size={14} className="opacity-40" /> No location
+                  </>
+                )}
+              </p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+            </div>
+          )}
+
           {/* ---- Camera step ---- */}
           {step === "camera" && (
             <>
@@ -575,8 +640,7 @@ export function EstimateCamera({
 }
 
 // ---------------------------------------------------------------------------
-// PhotoQueueStatus — optional small badge you can drop anywhere (e.g. your
-// app header/nav) to show + retry pending offline uploads globally.
+// PhotoQueueStatus — unchanged
 // ---------------------------------------------------------------------------
 
 export function PhotoQueueStatus({ className = "" }: { className?: string }) {
