@@ -582,29 +582,31 @@ const capturePhoto = async () => {
   // Export Image
   // --------------------------------------------------
 
-  canvas.toBlob(
-    (blob)=>{
+requestAnimationFrame(() => {
+  requestAnimationFrame(() => {
 
-      if(!blob) return;
+    canvas.toBlob(
+      (blob) => {
 
+        if (!blob) return;
 
-      setCapturedBlob(blob);
+        setCapturedBlob(blob);
 
+        setCapturedUrl(
+          URL.createObjectURL(blob)
+        );
 
-      setCapturedUrl(
-        URL.createObjectURL(blob)
-      );
+        setStep("review");
 
+        stopCamera();
 
-      setStep("review");
+      },
+      "image/jpeg",
+      0.95
+    );
 
-
-      stopCamera();
-
-    },
-    "image/jpeg",
-    0.95
-  );
+  });
+});
 
 }; // <-- IMPORTANT: closes capturePhoto
 
