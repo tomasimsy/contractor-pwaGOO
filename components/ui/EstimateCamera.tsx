@@ -303,7 +303,9 @@ const capturePhoto = async () => {
   canvas.height = video.videoHeight;
 
   const ctx = canvas.getContext("2d");
+
   if (!ctx) return;
+
 
   // --------------------------------------------------
   // Draw Camera Image
@@ -314,279 +316,297 @@ const capturePhoto = async () => {
     ctx.scale(-1, 1);
   }
 
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(
+    video,
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
 
-  if (facingMode === "user") {
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.setTransform(
+    1,
+    0,
+    0,
+    1,
+    0,
+    0
+  );
+
+
+  // --------------------------------------------------
+  // Get Address
+  // --------------------------------------------------
+
+  let streetAddress = "N/A";
+
+  if (location) {
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${location.lat}&lon=${location.lng}`
+      );
+
+      const json = await res.json();
+
+      const addr = json.address ?? {};
+
+      streetAddress =
+        [
+          addr.house_number,
+          addr.road,
+          addr.city || addr.town,
+          addr.state,
+        ]
+          .filter(Boolean)
+          .join(", ") || "N/A";
+
+    } catch {
+      streetAddress = "N/A";
+    }
   }
 
+
   // --------------------------------------------------
-  // Reverse Geocode Street Address
+  // Date / Time
   // --------------------------------------------------
 
-  // ============================================================================
-// MODERN PHOTO METADATA OVERLAY
-// Replace ONLY the overlay drawing section inside capturePhoto()
-// (after you've drawn the image to the canvas)
-// ============================================================================
+  const now = new Date();
 
-// Reverse geocode (keep your existing code)
-// ============================================================================
-// CLEAN MODERN INSPECTION OVERLAY (NO BORDER)
-// Replace ONLY the overlay drawing section.
-// ============================================================================
+  const date = now.toLocaleDateString(
+    "en-US",
+    {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }
+  );
 
-// Reverse geocode
-// ============================================================================
-// MODERN SAMSUNG-STYLE CAMERA OVERLAY
-// Minimal • Bottom Left • Professional Inspection Style
-// Replace the ENTIRE overlay drawing section after drawImage()
-// ============================================================================
 
-// --------------------------------------------------------------------------
-// Reverse Geocode
-// --------------------------------------------------------------------------
+  const time = now.toLocaleTimeString(
+    "en-US",
+    {
+      hour: "numeric",
+      minute: "2-digit",
+    }
+  );
 
-let streetAddress = "N/A";
 
-if (location) {
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${location.lat}&lon=${location.lng}`
+  // --------------------------------------------------
+  // iPhone Compatible Rounded Box
+  // --------------------------------------------------
+
+  const drawRoundedRect = (
+    x:number,
+    y:number,
+    width:number,
+    height:number,
+    radius:number
+  ) => {
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+      x + radius,
+      y
     );
 
-    const json = await res.json();
+    ctx.lineTo(
+      x + width - radius,
+      y
+    );
 
-    const addr = json.address ?? {};
+    ctx.quadraticCurveTo(
+      x + width,
+      y,
+      x + width,
+      y + radius
+    );
 
-    streetAddress =
-  [
-    addr.house_number,
-    addr.road,
-    addr.city || addr.town,
-  ]
- 
-        .filter(Boolean)
-        .join(", ") || json.display_name || "N/A";
-  } catch {
-    streetAddress = "N/A";
-  }
-}
+    ctx.lineTo(
+      x + width,
+      y + height - radius
+    );
 
-// --------------------------------------------------------------------------
-// Date / Time
-// --------------------------------------------------------------------------
+    ctx.quadraticCurveTo(
+      x + width,
+      y + height,
+      x + width - radius,
+      y + height
+    );
 
-const now = new Date();
+    ctx.lineTo(
+      x + radius,
+      y + height
+    );
 
-const date = now.toLocaleDateString("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-});
+    ctx.quadraticCurveTo(
+      x,
+      y + height,
+      x,
+      y + height - radius
+    );
 
-const time = now.toLocaleTimeString("en-US", {
-  hour: "numeric",
-  minute: "2-digit",
-});
+    ctx.lineTo(
+      x,
+      y + radius
+    );
 
-const project = projectName || "N/A";
-const area = tag || "N/A";
-const stageName = stage
-  ? stage.charAt(0).toUpperCase() + stage.slice(1)
-  : "N/A";
+    ctx.quadraticCurveTo(
+      x,
+      y,
+      x + radius,
+      y
+    );
 
-// --------------------------------------------------------------------------
-// Layout
-// --------------------------------------------------------------------------
+    ctx.closePath();
+  };
 
-const left = 28;
-const bottom = 28;
 
-const padding = 20;
+  // --------------------------------------------------
+  // Overlay Layout
+  // --------------------------------------------------
 
-const titleSize = Math.max(20, canvas.width * 0.012);
+  const padding = 18;
 
-const bodySize = Math.max(26, canvas.width * 0.014);
+  const titleSize = 24;
 
-const smallSize = Math.max(22, canvas.width * 0.012);
+  const bodySize = 28;
 
-const lineGap = 12;
+  const lines = [
+    `Address: ${streetAddress}`,
+    `${date} • ${time}`,
+  ];
 
-const lines = [
-  streetAddress,
-  `${date} • ${time}`,
-  project,
-  `${area} • ${stageName}`,
-];
 
-ctx.font = `${bodySize}px Arial`;
+  ctx.font = `${bodySize}px Arial`;
 
-let widest = 0;
 
-for (const line of lines) {
-  widest = Math.max(widest, ctx.measureText(line).width);
-}
+  let widest = 0;
 
-const boxWidth = Math.min(
-  widest + padding * 2,
-  canvas.width * 0.85
-);
+  lines.forEach((line)=>{
 
-const boxHeight =
-  padding * 2 +
-  titleSize +
-  18 +
-  lines.length * (bodySize + lineGap);
+    widest = Math.max(
+      widest,
+      ctx.measureText(line).width
+    );
 
-// --------------------------------------------------------------------------
-// Glass Background
-// --------------------------------------------------------------------------
+  });
 
-const x = left;
-const y = canvas.height - boxHeight - bottom;
 
-ctx.save();
-
-ctx.fillStyle = "rgba(15,23,42,.42)";
-
-ctx.beginPath();
-
-ctx.roundRect(
-  x,
-  y,
-  boxWidth,
-  boxHeight,
-  18
-);
-
-ctx.fill();
-
-// --------------------------------------------------------------------------
-// Header
-// --------------------------------------------------------------------------
-
-ctx.fillStyle = "#F8FAFC";
-
-ctx.font = `bold ${titleSize}px Arial`;
-
-ctx.fillText(
-  "OSR Pros",
-  x + padding,
-  y + padding + titleSize
-);
-
-// --------------------------------------------------------------------------
-// Divider
-// --------------------------------------------------------------------------
-
-ctx.beginPath();
-
-ctx.strokeStyle = "rgba(255,255,255,.18)";
-ctx.lineWidth = 1;
-
-ctx.moveTo(
-  x + padding,
-  y + padding + titleSize + 12
-);
-
-ctx.lineTo(
-  x + boxWidth - padding,
-  y + padding + titleSize + 12
-);
-
-ctx.stroke();
-
-// --------------------------------------------------------------------------
-// Body
-// --------------------------------------------------------------------------
-
-let currentY =
-  y +
-  padding +
-  titleSize +
-  42;
-
-ctx.font = `${bodySize}px Arial`;
-
-const drawLabel = (
-  icon: string,
-  text: string,
-  color = "#FFFFFF"
-) => {
-  ctx.fillStyle = color;
-
-  ctx.fillText(
-    `${icon} ${text}`,
-    x + padding,
-    currentY
+  const boxWidth = Math.min(
+    widest + padding * 2,
+    canvas.width * .88
   );
 
-  currentY += bodySize + lineGap;
-};
 
-drawLabel("📍", streetAddress);
+  const boxHeight =
+    padding * 2 +
+    titleSize +
+    25 +
+    lines.length *
+    (bodySize + 10);
 
-drawLabel(
-  "🕒",
-  `${date} • ${time}`
-);
 
-// drawLabel(
-//   "🏠",
-//   project
-// );
+  const x = 24;
 
-// drawLabel(
-//   "🛠",
-//   `${area} • ${stageName}`
-// );
+  const y =
+    canvas.height -
+    boxHeight -
+    24;
 
-// --------------------------------------------------------------------------
-// Optional Notes
-// --------------------------------------------------------------------------
 
-if (caption.trim()) {
-  currentY += 8;
+  // --------------------------------------------------
+  // Draw Overlay
+  // --------------------------------------------------
 
-  ctx.fillStyle = "rgba(255,255,255,.72)";
-  ctx.font = `${smallSize}px Arial`;
+  ctx.fillStyle =
+    "rgba(15,23,42,.55)";
 
-  const note =
-    caption.length > 55
-      ? caption.substring(0, 55) + "..."
-      : caption;
+
+  drawRoundedRect(
+    x,
+    y,
+    boxWidth,
+    boxHeight,
+    16
+  );
+
+
+  ctx.fill();
+
+
+  ctx.fillStyle =
+    "#FFFFFF";
+
+
+  ctx.font =
+    `bold ${titleSize}px Arial`;
+
 
   ctx.fillText(
-    note,
+    "OSR Pros",
     x + padding,
-    currentY
+    y + padding + titleSize
   );
-}
 
-ctx.restore();
+
+  ctx.font =
+    `${bodySize}px Arial`;
+
+
+  let currentY =
+    y +
+    padding +
+    titleSize +
+    35;
+
+
+  lines.forEach((line)=>{
+
+    ctx.fillText(
+      line,
+      x + padding,
+      currentY
+    );
+
+    currentY += bodySize + 10;
+
+  });
+
+
+  ctx.restore();
+
+
+
   // --------------------------------------------------
   // Export Image
   // --------------------------------------------------
 
   canvas.toBlob(
-    (blob) => {
-      if (!blob) return;
+    (blob)=>{
+
+      if(!blob) return;
+
 
       setCapturedBlob(blob);
 
-      const url = URL.createObjectURL(blob);
 
-      setCapturedUrl(url);
+      setCapturedUrl(
+        URL.createObjectURL(blob)
+      );
+
 
       setStep("review");
 
+
       stopCamera();
+
     },
     "image/jpeg",
     0.95
   );
-};
+
+}; // <-- IMPORTANT: closes capturePhoto
 
   const retake = () => {
     if (capturedUrl) URL.revokeObjectURL(capturedUrl);
