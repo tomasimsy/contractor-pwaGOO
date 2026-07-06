@@ -299,8 +299,8 @@ const capturePhoto = async () => {
 
   if (!video || !canvas) return;
 
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+canvas.width = video.videoWidth || 1920;
+canvas.height = video.videoHeight || 1080;
 
   const ctx = canvas.getContext("2d");
 
@@ -468,9 +468,9 @@ const capturePhoto = async () => {
 
   const padding = 18;
 
-  const titleSize = 24;
+const titleSize = Math.max(18, canvas.width * 0.012);
 
-  const bodySize = 28;
+const bodySize = Math.max(20, canvas.width * 0.011);
 
   const lines = [
     `Address: ${streetAddress}`,
@@ -478,7 +478,8 @@ const capturePhoto = async () => {
   ];
 
 
-  ctx.font = `${bodySize}px Arial`;
+//   ctx.font = `${bodySize}px Arial`;
+  ctx.font = `bold ${bodySize}px -apple-system, BlinkMacSystemFont, Arial, sans-serif`;
 
 
   let widest = 0;
@@ -519,6 +520,10 @@ const capturePhoto = async () => {
   // Draw Overlay
   // --------------------------------------------------
 
+  if (canvas.width === 0 || canvas.height === 0) {
+  toast.error("Camera image not ready");
+  return;
+}
   ctx.fillStyle =
     "rgba(15,23,42,.55)";
 
@@ -539,8 +544,8 @@ const capturePhoto = async () => {
     "#FFFFFF";
 
 
-  ctx.font =
-    `bold ${titleSize}px Arial`;
+  ctx.font = `bold ${titleSize}px -apple-system, BlinkMacSystemFont, Arial, sans-serif`;
+    
 
 
   ctx.fillText(
