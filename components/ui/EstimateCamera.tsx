@@ -13,11 +13,10 @@ import {
   Tag,
   CloudOff,
   RefreshCw,
-  Upload, // new icon for gallery upload
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
-// Types (unchanged)
+// Types
 // ---------------------------------------------------------------------------
 
 export type PhotoStage = "before" | "during" | "after";
@@ -56,7 +55,8 @@ const DB_NAME = "osr-photo-queue";
 const STORE_NAME = "queued_photos";
 
 // ---------------------------------------------------------------------------
-// IndexedDB queue — unchanged
+// IndexedDB queue — no external dependency. This is what makes capture work
+// with no signal: photos are written locally first, then synced when online.
 // ---------------------------------------------------------------------------
 
 function openQueueDb(): Promise<IDBDatabase> {
@@ -176,7 +176,7 @@ async function getQueueCount(estimateId?: string): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
-// EstimateCamera — updated with "Add Images" and file upload option
+// EstimateCamera — the capture flow
 // ---------------------------------------------------------------------------
 
 export function EstimateCamera({
@@ -191,7 +191,7 @@ export function EstimateCamera({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<"select" | "camera" | "review">("select");
+  const [step, setStep] = useState<"camera" | "review">("camera");
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
   const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
@@ -208,7 +208,6 @@ export function EstimateCamera({
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const refreshPendingCount = useCallback(async () => {
     setPendingCount(await getQueueCount(estimateId));
@@ -275,7 +274,7 @@ export function EstimateCamera({
   };
 
   const handleOpen = () => {
-    setStep("select");
+    setStep("camera");
     setCapturedBlob(null);
     setCapturedUrl(null);
     setAnnotations([]);
@@ -294,44 +293,300 @@ export function EstimateCamera({
     setOpen(false);
   };
 
-  // ---- File upload handler ----
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    // Reset so the same file can be selected again
-    e.target.value = "";
-    const blob = file;
-    setCapturedBlob(blob);
-    setCapturedUrl(URL.createObjectURL(blob));
-    setStep("review");
-  };
+const capturePhoto = async () => {
+  const video = videoRef.current;
+  const canvas = canvasRef.current;
 
-  // ---- Camera capture ----
-  const capturePhoto = () => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas) return;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    if (facingMode === "user") {
-      ctx.translate(canvas.width, 0);
-      ctx.scale(-1, 1);
-    }
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) return;
-        setCapturedBlob(blob);
-        setCapturedUrl(URL.createObjectURL(blob));
-        setStep("review");
-        stopCamera();
-      },
-      "image/jpeg",
-      0.9
+  if (!video || !canvas) return;
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  // --------------------------------------------------
+  // Draw Camera Image
+  // --------------------------------------------------
+
+  if (facingMode === "user") {
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+  }
+
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  if (facingMode === "user") {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+
+  // --------------------------------------------------
+  // Reverse Geocode Street Address
+  // --------------------------------------------------
+
+  // ============================================================================
+// MODERN PHOTO METADATA OVERLAY
+// Replace ONLY the overlay drawing section inside capturePhoto()
+// (after you've drawn the image to the canvas)
+// ============================================================================
+
+// Reverse geocode (keep your existing code)
+// ============================================================================
+// CLEAN MODERN INSPECTION OVERLAY (NO BORDER)
+// Replace ONLY the overlay drawing section.
+// ============================================================================
+
+// Reverse geocode
+// ============================================================================
+// MODERN SAMSUNG-STYLE CAMERA OVERLAY
+// Minimal • Bottom Left • Professional Inspection Style
+// Replace the ENTIRE overlay drawing section after drawImage()
+// ============================================================================
+
+// --------------------------------------------------------------------------
+// Reverse Geocode
+// --------------------------------------------------------------------------
+
+let streetAddress = "N/A";
+
+if (location) {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${location.lat}&lon=${location.lng}`
     );
-  };
+
+    const json = await res.json();
+
+    const addr = json.address ?? {};
+
+    streetAddress =
+  [
+    addr.house_number,
+    addr.road,
+    addr.city || addr.town,
+  ]
+ 
+        .filter(Boolean)
+        .join(", ") || json.display_name || "N/A";
+  } catch {
+    streetAddress = "N/A";
+  }
+}
+
+// --------------------------------------------------------------------------
+// Date / Time
+// --------------------------------------------------------------------------
+
+const now = new Date();
+
+const date = now.toLocaleDateString("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
+
+const time = now.toLocaleTimeString("en-US", {
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+const project = projectName || "N/A";
+const area = tag || "N/A";
+const stageName = stage
+  ? stage.charAt(0).toUpperCase() + stage.slice(1)
+  : "N/A";
+
+// --------------------------------------------------------------------------
+// Layout
+// --------------------------------------------------------------------------
+
+const left = 28;
+const bottom = 28;
+
+const padding = 20;
+
+const titleSize = Math.max(20, canvas.width * 0.012);
+
+const bodySize = Math.max(26, canvas.width * 0.014);
+
+const smallSize = Math.max(22, canvas.width * 0.012);
+
+const lineGap = 12;
+
+const lines = [
+  streetAddress,
+  `${date} • ${time}`,
+  project,
+  `${area} • ${stageName}`,
+];
+
+ctx.font = `${bodySize}px Arial`;
+
+let widest = 0;
+
+for (const line of lines) {
+  widest = Math.max(widest, ctx.measureText(line).width);
+}
+
+const boxWidth = Math.min(
+  widest + padding * 2,
+  canvas.width * 0.85
+);
+
+const boxHeight =
+  padding * 2 +
+  titleSize +
+  18 +
+  lines.length * (bodySize + lineGap);
+
+// --------------------------------------------------------------------------
+// Glass Background
+// --------------------------------------------------------------------------
+
+const x = left;
+const y = canvas.height - boxHeight - bottom;
+
+ctx.save();
+
+ctx.fillStyle = "rgba(15,23,42,.42)";
+
+ctx.beginPath();
+
+ctx.roundRect(
+  x,
+  y,
+  boxWidth,
+  boxHeight,
+  18
+);
+
+ctx.fill();
+
+// --------------------------------------------------------------------------
+// Header
+// --------------------------------------------------------------------------
+
+ctx.fillStyle = "#F8FAFC";
+
+ctx.font = `bold ${titleSize}px Arial`;
+
+ctx.fillText(
+  "ONE SQUARE ROOF",
+  x + padding,
+  y + padding + titleSize
+);
+
+// --------------------------------------------------------------------------
+// Divider
+// --------------------------------------------------------------------------
+
+ctx.beginPath();
+
+ctx.strokeStyle = "rgba(255,255,255,.18)";
+ctx.lineWidth = 1;
+
+ctx.moveTo(
+  x + padding,
+  y + padding + titleSize + 12
+);
+
+ctx.lineTo(
+  x + boxWidth - padding,
+  y + padding + titleSize + 12
+);
+
+ctx.stroke();
+
+// --------------------------------------------------------------------------
+// Body
+// --------------------------------------------------------------------------
+
+let currentY =
+  y +
+  padding +
+  titleSize +
+  42;
+
+ctx.font = `${bodySize}px Arial`;
+
+const drawLabel = (
+  icon: string,
+  text: string,
+  color = "#FFFFFF"
+) => {
+  ctx.fillStyle = color;
+
+  ctx.fillText(
+    `${icon} ${text}`,
+    x + padding,
+    currentY
+  );
+
+  currentY += bodySize + lineGap;
+};
+
+drawLabel("📍 (proximate)", streetAddress);
+
+drawLabel(
+  "🕒",
+  `${date} • ${time}`
+);
+
+// drawLabel(
+//   "🏠",
+//   project
+// );
+
+// drawLabel(
+//   "🛠",
+//   `${area} • ${stageName}`
+// );
+
+// --------------------------------------------------------------------------
+// Optional Notes
+// --------------------------------------------------------------------------
+
+if (caption.trim()) {
+  currentY += 8;
+
+  ctx.fillStyle = "rgba(255,255,255,.72)";
+  ctx.font = `${smallSize}px Arial`;
+
+  const note =
+    caption.length > 55
+      ? caption.substring(0, 55) + "..."
+      : caption;
+
+  ctx.fillText(
+    note,
+    x + padding,
+    currentY
+  );
+}
+
+ctx.restore();
+  // --------------------------------------------------
+  // Export Image
+  // --------------------------------------------------
+
+  canvas.toBlob(
+    (blob) => {
+      if (!blob) return;
+
+      setCapturedBlob(blob);
+
+      const url = URL.createObjectURL(blob);
+
+      setCapturedUrl(url);
+
+      setStep("review");
+
+      stopCamera();
+    },
+    "image/jpeg",
+    0.95
+  );
+};
 
   const retake = () => {
     if (capturedUrl) URL.revokeObjectURL(capturedUrl);
@@ -408,7 +663,7 @@ export function EstimateCamera({
         className={`inline-flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white text-sm font-semibold rounded-lg hover:bg-slate-800 transition-colors ${className}`}
       >
         <Camera size={16} />
-        Add Images
+        Take Photo
         {pendingCount > 0 && (
           <span className="ml-1 inline-flex items-center gap-1 text-[10px] bg-amber-500 text-white px-1.5 py-0.5 rounded-full">
             <CloudOff size={10} /> {pendingCount}
@@ -418,57 +673,6 @@ export function EstimateCamera({
 
       {open && (
         <div className="fixed inset-0 bg-black z-[100] flex flex-col">
-          {/* ---- Select step: choose upload or camera ---- */}
-          {step === "select" && (
-            <div className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-950 text-white">
-              <button
-                onClick={handleClose}
-                className="absolute top-4 right-4 p-2 text-white/70 hover:text-white"
-              >
-                <X size={22} />
-              </button>
-              <h2 className="text-xl font-semibold mb-6">Add Photo</h2>
-              <div className="flex flex-col sm:flex-row gap-4 w-full max-w-xs">
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center justify-center gap-2 px-6 py-4 bg-white/10 hover:bg-white/20 rounded-xl text-lg font-medium transition-colors"
-                >
-                  <Upload size={20} />
-                  Upload from Gallery
-                </button>
-                <button
-                  onClick={() => setStep("camera")}
-                  className="flex items-center justify-center gap-2 px-6 py-4 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-lg font-medium transition-colors"
-                >
-                  <Camera size={20} />
-                  Take Photo
-                </button>
-              </div>
-              <p className="mt-6 text-sm text-white/50 flex items-center gap-1">
-                {locating ? (
-                  <>
-                    <Loader2 size={14} className="animate-spin" /> Locating...
-                  </>
-                ) : location ? (
-                  <>
-                    <MapPin size={14} /> Location captured
-                  </>
-                ) : (
-                  <>
-                    <MapPin size={14} className="opacity-40" /> No location
-                  </>
-                )}
-              </p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleFileSelect}
-              />
-            </div>
-          )}
-
           {/* ---- Camera step ---- */}
           {step === "camera" && (
             <>
@@ -640,7 +844,8 @@ export function EstimateCamera({
 }
 
 // ---------------------------------------------------------------------------
-// PhotoQueueStatus — unchanged
+// PhotoQueueStatus — optional small badge you can drop anywhere (e.g. your
+// app header/nav) to show + retry pending offline uploads globally.
 // ---------------------------------------------------------------------------
 
 export function PhotoQueueStatus({ className = "" }: { className?: string }) {
