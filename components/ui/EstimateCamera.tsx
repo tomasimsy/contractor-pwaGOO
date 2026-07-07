@@ -13,19 +13,22 @@ import {
   Tag,
   CloudOff,
   RefreshCw,
-  Trash2, // <-- added for remove button
+  Trash2,
+  Images,
+  ZoomIn,
+  Upload,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
-// Types
+// Types (your original types)
 // ---------------------------------------------------------------------------
 
 export type PhotoStage = "before" | "during" | "after";
 
 export type PhotoAnnotation = {
   id: string;
-  x: number; // percentage 0-100, relative to image width
-  y: number; // percentage 0-100, relative to image height
+  x: number;
+  y: number;
   note: string;
 };
 
@@ -43,6 +46,22 @@ export type QueuedPhoto = {
   blob: Blob;
 };
 
+export type EstimateImage = {
+  id: string;
+  estimate_id: string;
+  project_name: string | null;
+  stage: PhotoStage;
+  storage_path: string | null;
+  url: string;
+  file_name: string;
+  caption: string | null;
+  tag: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  captured_at: string | null;
+  created_at: string;
+};
+
 const STAGE_LABELS: Record<PhotoStage, string> = {
   before: "Before",
   during: "During",
@@ -56,8 +75,7 @@ const DB_NAME = "osr-photo-queue";
 const STORE_NAME = "queued_photos";
 
 // ---------------------------------------------------------------------------
-// IndexedDB queue — no external dependency. This is what makes capture work
-// with no signal: photos are written locally first, then synced when online.
+// IndexedDB queue (your original code)
 // ---------------------------------------------------------------------------
 
 function openQueueDb(): Promise<IDBDatabase> {
@@ -106,18 +124,14 @@ async function queueRemove(localId: string) {
 
 async function uploadQueuedPhoto(photo: QueuedPhoto) {
   const path = `${photo.estimateId}/${photo.stage}/${photo.localId}.jpg`;
-
   const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, photo.blob, {
     cacheControl: "3600",
     upsert: true,
     contentType: "image/jpeg",
   });
   if (uploadError) throw uploadError;
-
   const { data: publicUrlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
-
   const fileName = `${photo.stage}-${photo.localId}.jpg`;
-
   const { error: insertError } = await supabase.from("estimate_images").insert({
     estimate_id: photo.estimateId,
     project_name: photo.projectName,
@@ -136,11 +150,6 @@ async function uploadQueuedPhoto(photo: QueuedPhoto) {
   if (insertError) throw insertError;
 }
 
-/**
- * Attempts to upload every queued photo. Safe to call repeatedly — call this
- * from a layout-level effect on `online`, from this component on mount, or
- * from a manual "retry" button. Photos that fail stay queued for next time.
- */
 export async function syncPhotoQueue(): Promise<{ uploaded: number; remaining: number }> {
   let uploaded = 0;
   try {
@@ -150,19 +159,13 @@ export async function syncPhotoQueue(): Promise<{ uploaded: number; remaining: n
         await uploadQueuedPhoto(photo);
         await queueRemove(photo.localId);
         uploaded++;
-      } catch (err: any) {
-        console.error(
-          "Sync failed for queued photo, will retry later:",
-          String(err),
-          err?.message,
-          JSON.stringify(err, Object.getOwnPropertyNames(err || {}))
-        );
+      } catch (err) {
+        console.error("Sync failed for queued photo, will retry later:", err);
       }
     }
     const remaining = (await queueGetAll()).length;
     return { uploaded, remaining };
-  } catch (err) {
-    // IndexedDB unavailable (e.g. private browsing) — fail quietly
+  } catch {
     return { uploaded, remaining: 0 };
   }
 }
@@ -177,7 +180,33 @@ async function getQueueCount(estimateId?: string): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
-// EstimateCamera — the capture flow
+// Gallery fetch & delete
+// ---------------------------------------------------------------------------
+
+async function fetchEstimateImages(estimateId: string): Promise<EstimateImage[]> {
+  const { data, error } = await supabase
+    .from("estimate_images")
+    .select("*")
+    .eq("estimate_id", estimateId)
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.error("Failed to load estimate images:", error);
+    return [];
+  }
+  return data || [];
+}
+
+async function deleteEstimateImage(image: EstimateImage): Promise<void> {
+  if (image.storage_path) {
+    const { error: storageError } = await supabase.storage.from(BUCKET).remove([image.storage_path]);
+    if (storageError) throw storageError;
+  }
+  const { error: dbError } = await supabase.from("estimate_images").delete().eq("id", image.id);
+  if (dbError) throw dbError;
+}
+
+// ---------------------------------------------------------------------------
+// EstimateCamera — with "Add Images" select, preserving your original capture
 // ---------------------------------------------------------------------------
 
 export function EstimateCamera({
@@ -191,14 +220,25 @@ export function EstimateCamera({
   onUploaded?: () => void;
   className?: string;
 }) {
+  // --- Modal & step ---
   const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<"camera" | "review">("camera");
+  const [step, setStep] = useState<"select" | "camera" | "review">("select");
+
+  // --- Camera (your original) ---
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
+  const [cameraStarting, setCameraStarting] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+
+  // --- Captured image ---
   const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
   const [capturedUrl, setCapturedUrl] = useState<string | null>(null);
+
+  // --- Location ---
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(false);
+
+  // --- Metadata (your original fields) ---
   const [stage, setStage] = useState<PhotoStage>("before");
   const [tag, setTag] = useState("");
   const [caption, setCaption] = useState("");
@@ -207,19 +247,37 @@ export function EstimateCamera({
   const [saving, setSaving] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
 
+  // --- Gallery ---
+  const [galleryImages, setGalleryImages] = useState<EstimateImage[]>([]);
+  const [loadingGallery, setLoadingGallery] = useState(true);
+  const [lightbox, setLightbox] = useState<EstimateImage | null>(null);
+
+  // --- Refs ---
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // --- Helpers (your original refresh & gallery) ---
   const refreshPendingCount = useCallback(async () => {
     setPendingCount(await getQueueCount(estimateId));
   }, [estimateId]);
 
-  // Sync whenever we come back online, and once on mount
+  const loadGallery = useCallback(async () => {
+    if (!estimateId) return;
+    setLoadingGallery(true);
+    const imgs = await fetchEstimateImages(estimateId);
+    setGalleryImages(imgs);
+    setLoadingGallery(false);
+  }, [estimateId]);
+
+  // --- Sync & mount ---
   useEffect(() => {
     refreshPendingCount();
+    loadGallery();
     const handleOnline = async () => {
       await syncPhotoQueue();
       await refreshPendingCount();
+      await loadGallery();
       onUploaded?.();
     };
     if (navigator.onLine) handleOnline();
@@ -228,25 +286,48 @@ export function EstimateCamera({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- Camera lifecycle ----
+  useEffect(() => {
+    loadGallery();
+  }, [loadGallery, onUploaded]);
+
+  // --- Camera lifecycle (your original) ---
   const startCamera = useCallback(async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setCameraError("Camera not supported on this device.");
+      return;
+    }
+    setCameraStarting(true);
+    setCameraError(null);
     try {
-      const s = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      const constraints: MediaStreamConstraints = {
+        video: {
+          facingMode: { ideal: facingMode },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
         audio: false,
-      });
+      };
+      const s = await navigator.mediaDevices.getUserMedia(constraints);
       setStream(s);
       if (videoRef.current) {
         videoRef.current.srcObject = s;
+        videoRef.current.load();
         try {
           await videoRef.current.play();
         } catch (playErr) {
           console.error("Video play() failed:", playErr);
+          setCameraError("Could not start video playback. Please tap Retry.");
         }
       }
-    } catch (err) {
-      console.error(err);
-      toast.error("Couldn't access the camera. Check your browser permissions.");
+    } catch (err: any) {
+      console.error("Camera error:", err);
+      let msg = "Could not access camera. Please check permissions.";
+      if (err.name === "NotAllowedError") msg = "Camera access denied.";
+      else if (err.name === "NotFoundError") msg = "No camera found on this device.";
+      setCameraError(msg);
+      toast.error(msg);
+    } finally {
+      setCameraStarting(false);
     }
   }, [facingMode]);
 
@@ -256,11 +337,20 @@ export function EstimateCamera({
   }, [stream]);
 
   useEffect(() => {
-    if (open && step === "camera") startCamera();
-    return () => stopCamera();
+    if (open && step === "camera") {
+      const timer = setTimeout(() => startCamera(), 100);
+      return () => {
+        clearTimeout(timer);
+        stopCamera();
+      };
+    }
+    if (step !== "camera") {
+      stopCamera();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, step, facingMode]);
+  }, [open, step, facingMode, startCamera]);
 
+  // --- Location ---
   const requestLocation = () => {
     if (!navigator.geolocation) return;
     setLocating(true);
@@ -274,8 +364,9 @@ export function EstimateCamera({
     );
   };
 
+  // --- Open / Close ---
   const handleOpen = () => {
-    setStep("camera");
+    setStep("select");
     setCapturedBlob(null);
     setCapturedUrl(null);
     setAnnotations([]);
@@ -284,6 +375,8 @@ export function EstimateCamera({
     setTag("");
     setStage("before");
     setLocation(null);
+    setCameraError(null);
+    setCameraStarting(false);
     setOpen(true);
     requestLocation();
   };
@@ -294,13 +387,17 @@ export function EstimateCamera({
     setOpen(false);
   };
 
-  // ---- New: Remove photo (discard and close) ----
-  const handleRemove = () => {
-    if (window.confirm("Remove this photo? It will be discarded.")) {
-      handleClose();
-    }
+  // --- File upload (gallery) ---
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setCapturedBlob(file);
+    setCapturedUrl(URL.createObjectURL(file));
+    setStep("review");
   };
 
+  // --- Your original capturePhoto (full overlay, OSR Pros, etc.) ---
   const capturePhoto = async () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -341,7 +438,7 @@ export function EstimateCamera({
     );
 
     // --------------------------------------------------
-    // Get Address
+    // Get Address (your original)
     // --------------------------------------------------
 
     let streetAddress = "N/A";
@@ -395,7 +492,7 @@ export function EstimateCamera({
     );
 
     // --------------------------------------------------
-    // iPhone Compatible Rounded Box
+    // iPhone Compatible Rounded Box (your original)
     // --------------------------------------------------
 
     const drawRoundedRect = (
@@ -465,7 +562,7 @@ export function EstimateCamera({
     };
 
     // --------------------------------------------------
-    // Overlay Layout
+    // Overlay Layout (your original)
     // --------------------------------------------------
 
     const padding = 18;
@@ -567,7 +664,7 @@ export function EstimateCamera({
     ctx.restore();
 
     // --------------------------------------------------
-    // Export Image
+    // Export Image (your original)
     // --------------------------------------------------
 
     requestAnimationFrame(() => {
@@ -596,8 +693,9 @@ export function EstimateCamera({
       });
     });
 
-  }; // <-- closes capturePhoto
+  };
 
+  // --- Retake, Annotations, Remove (your original) ---
   const retake = () => {
     if (capturedUrl) URL.revokeObjectURL(capturedUrl);
     setCapturedBlob(null);
@@ -605,6 +703,12 @@ export function EstimateCamera({
     setAnnotations([]);
     setAnnotateMode(false);
     setStep("camera");
+  };
+
+  const handleRemove = () => {
+    if (window.confirm("Remove this photo? It will be discarded.")) {
+      handleClose();
+    }
   };
 
   const handleAnnotateClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -620,6 +724,7 @@ export function EstimateCamera({
     setAnnotations((prev) => prev.filter((a) => a.id !== id));
   };
 
+  // --- Save (your original queue + upload) ---
   const save = async () => {
     if (!capturedBlob) return;
     setSaving(true);
@@ -638,8 +743,6 @@ export function EstimateCamera({
     };
 
     try {
-      // Always write to the local queue first — this is what protects the
-      // photo if upload fails or the connection drops mid-save.
       await queueAdd(photo);
       await refreshPendingCount();
 
@@ -649,6 +752,7 @@ export function EstimateCamera({
           await queueRemove(photo.localId);
           await refreshPendingCount();
           toast.success("Photo uploaded.");
+          await loadGallery();
           onUploaded?.();
         } catch (err) {
           console.error(err);
@@ -666,14 +770,89 @@ export function EstimateCamera({
     }
   };
 
+  // --- Gallery delete & lightbox ---
+  const handleDeleteImage = useCallback(async (image: EstimateImage) => {
+    const confirmed = window.confirm("Remove this photo?");
+    if (!confirmed) return;
+    try {
+      await deleteEstimateImage(image);
+      setGalleryImages((prev) => prev.filter((img) => img.id !== image.id));
+      toast.success("Photo removed.");
+      onUploaded?.();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Failed to remove photo.");
+    }
+  }, [onUploaded]);
+
+  const renderGallery = () => {
+    if (loadingGallery) {
+      return <div className="text-[11px] text-slate-400 py-2">Loading photos...</div>;
+    }
+    if (galleryImages.length === 0) {
+      return <div className="text-[11px] text-slate-400 py-2">No photos yet.</div>;
+    }
+
+    const before = galleryImages.filter((img) => img.stage === "before");
+    const during = galleryImages.filter((img) => img.stage === "during");
+    const after = galleryImages.filter((img) => img.stage === "after");
+
+    const renderColumn = (label: string, list: EstimateImage[]) => {
+      if (list.length === 0) return null;
+      return (
+        <div className="flex-1 min-w-[140px]">
+          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-1.5">{label}</div>
+          <div className="grid grid-cols-3 gap-1.5">
+            {list.map((img) => (
+              <div key={img.id} className="relative aspect-square rounded-md overflow-hidden border border-slate-200 group">
+                <button
+                  onClick={() => setLightbox(img)}
+                  className="w-full h-full focus:outline-none"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={img.url} alt={label} className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 flex items-center justify-center transition-colors">
+                    <ZoomIn size={14} className="text-white opacity-0 group-hover:opacity-100" />
+                  </div>
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteImage(img);
+                  }}
+                  className="absolute top-1 right-1 z-10 bg-white hover:bg-red-50 text-red-600 hover:text-red-700 rounded-full p-1 shadow-md border border-red-300 transition-colors text-xs font-bold"
+                  title="Remove photo"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <div className="flex flex-col sm:flex-row gap-4 mt-2">
+        {renderColumn("Before", before)}
+        {renderColumn("During", during)}
+        {renderColumn("After", after)}
+      </div>
+    );
+  };
+
+  // ---------------------------------------------------------------------------
+  // Main render
+  // ---------------------------------------------------------------------------
+
   return (
     <>
       <button
         onClick={handleOpen}
         className={`inline-flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white text-sm font-semibold rounded-lg hover:bg-slate-800 transition-colors ${className}`}
       >
-        <Camera size={16} />
-        Take Photo
+        <Images size={16} />
+        Add Images
         {pendingCount > 0 && (
           <span className="ml-1 inline-flex items-center gap-1 text-[10px] bg-amber-500 text-white px-1.5 py-0.5 rounded-full">
             <CloudOff size={10} /> {pendingCount}
@@ -681,9 +860,93 @@ export function EstimateCamera({
         )}
       </button>
 
+      {/* Gallery */}
+      <div className="mt-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Images size={14} className="text-emerald-600" />
+          <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-600">Uploaded Photos</h3>
+        </div>
+        {renderGallery()}
+      </div>
+
+      {/* Lightbox */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-[200] p-4"
+          onClick={() => setLightbox(null)}
+        >
+          <button
+            onClick={() => setLightbox(null)}
+            className="absolute top-4 right-4 text-white/80 hover:text-white z-[201]"
+          >
+            <X size={22} />
+          </button>
+          <div className="max-w-full max-h-full flex flex-col items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={lightbox.url}
+              alt={lightbox.stage}
+              className="max-w-full max-h-[80vh] rounded-lg object-contain"
+            />
+            {lightbox.caption && (
+              <p className="text-white/80 text-sm text-center max-w-md">{lightbox.caption}</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal */}
       {open && (
         <div className="fixed inset-0 bg-black z-[100] flex flex-col">
-          {/* ---- Camera step ---- */}
+          {/* ---- SELECT step (NEW) ---- */}
+          {step === "select" && (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-950 text-white">
+              <button onClick={handleClose} className="absolute top-4 right-4 p-2 text-white/70 hover:text-white">
+                <X size={22} />
+              </button>
+              <h2 className="text-xl font-semibold mb-6">Add Photo</h2>
+              <div className="flex flex-col sm:flex-row gap-4 w-full max-w-xs">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center justify-center gap-2 px-6 py-4 bg-white/10 hover:bg-white/20 rounded-xl text-lg font-medium transition-colors"
+                >
+                  <Upload size={20} />
+                  Upload from Gallery
+                </button>
+                <button
+                  onClick={() => setStep("camera")}
+                  className="flex items-center justify-center gap-2 px-6 py-4 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-lg font-medium transition-colors"
+                >
+                  <Camera size={20} />
+                  Take Photo
+                </button>
+              </div>
+              <p className="mt-6 text-sm text-white/50 flex items-center gap-1">
+                {locating ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" /> Locating...
+                  </>
+                ) : location ? (
+                  <>
+                    <MapPin size={14} /> Location captured
+                  </>
+                ) : (
+                  <>
+                    <MapPin size={14} className="opacity-40" /> No location
+                  </>
+                )}
+              </p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+            </div>
+          )}
+
+          {/* ---- CAMERA step (your original) ---- */}
           {step === "camera" && (
             <>
               <div className="flex items-center justify-between px-4 py-3 text-white">
@@ -714,13 +977,46 @@ export function EstimateCamera({
               </div>
 
               <div className="flex-1 relative overflow-hidden bg-black">
-                <video ref={videoRef} autoPlay playsInline muted {...{ "webkit-playsinline": "true" }} className="w-full h-full object-cover" />
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  webkit-playsinline="true"
+                  className="w-full h-full object-cover"
+                />
+                {(cameraStarting || cameraError) && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+                    {cameraStarting && <Loader2 size={36} className="animate-spin text-white/70" />}
+                    {cameraError && (
+                      <div className="text-center text-white p-4">
+                        <p className="text-red-400 mb-2">{cameraError}</p>
+                        <button
+                          onClick={() => {
+                            setCameraError(null);
+                            startCamera();
+                          }}
+                          className="px-4 py-2 bg-white/20 rounded-lg hover:bg-white/30"
+                        >
+                          Retry
+                        </button>
+                        <button
+                          onClick={() => setStep("select")}
+                          className="mt-2 px-4 py-2 bg-white/10 rounded-lg block mx-auto"
+                        >
+                          Choose another option
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="py-6 flex items-center justify-center bg-black">
                 <button
                   onClick={capturePhoto}
-                  className="w-16 h-16 rounded-full border-4 border-white flex items-center justify-center active:scale-95 transition-transform"
+                  disabled={cameraStarting || !!cameraError}
+                  className="w-16 h-16 rounded-full border-4 border-white flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50"
                 >
                   <span className="w-12 h-12 rounded-full bg-white" />
                 </button>
@@ -728,7 +1024,7 @@ export function EstimateCamera({
             </>
           )}
 
-          {/* ---- Review / metadata step ---- */}
+          {/* ---- REVIEW step (your original) ---- */}
           {step === "review" && capturedUrl && (
             <div className="flex-1 flex flex-col bg-slate-950 text-white overflow-y-auto">
               <div className="flex items-center justify-between px-4 py-3">
@@ -737,11 +1033,9 @@ export function EstimateCamera({
                 </button>
                 <span className="text-[12px] font-medium text-white/70">Review Photo</span>
                 <div className="flex gap-2">
-                  {/* Retake button */}
                   <button onClick={retake} className="p-2 text-[12px] text-white/70">
                     Retake
                   </button>
-                  {/* New Remove button */}
                   <button
                     onClick={handleRemove}
                     className="p-2 text-[12px] text-red-400 hover:text-red-300 transition-colors flex items-center gap-1"
@@ -865,8 +1159,7 @@ export function EstimateCamera({
 }
 
 // ---------------------------------------------------------------------------
-// PhotoQueueStatus — optional small badge you can drop anywhere (e.g. your
-// app header/nav) to show + retry pending offline uploads globally.
+// PhotoQueueStatus (your original)
 // ---------------------------------------------------------------------------
 
 export function PhotoQueueStatus({ className = "" }: { className?: string }) {

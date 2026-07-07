@@ -962,16 +962,18 @@ const currentDepositAmount = currentRevisedTotal * 0.5;
 {estimate && (
   <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
     <EstimateCamera estimateId={estimate.id} onUploaded={() => setGalleryRefresh((n) => n + 1)} />
-<EstimateImageUploader
+{/* <EstimateImageUploader
   estimateId={estimate.id}
   onUploaded={() => setGalleryRefresh((n) => n + 1)}
 />
 
- 
+<EstimateImageView
+  estimateId={estimate.id}
+  refreshKey={galleryRefresh} 
+/>   */}
 
- </div>
-)
-}
+</div>
+)}
  
         {/* Projects */}
         <div className="space-y-3.5">
