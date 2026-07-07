@@ -14,9 +14,11 @@ import { formatCurrency } from "@/lib/utils/formatting";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { generateEstimateNumber } from "@/lib/utils/estimateNumber";
 import toast from "react-hot-toast";
+import { Upload, X, Loader2, Images, ZoomIn } from "lucide-react";
+
 
 import { EstimateCamera } from "@/components/ui/EstimateCamera";
-import { EstimateImageGallery } from "@/components/ui/EstimateImages";
+import { EstimateImageUploader, EstimateImageView } from "@/components/ui/EstimateImages";
 
 type Project = {
   id: string;
@@ -353,13 +355,19 @@ const { data: estimate, error } = await supabase
 </div>
 
 {/* Camera Uploader */}
-{/* Camera Uploader */}
+Camera Uploader
 <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
   {estimateRowCreated ? (
     <>
 <EstimateCamera estimateId={estimateId} onUploaded={() => setGalleryRefresh((n) => n + 1)} />
-<EstimateImageGallery estimateId={estimateId} refreshKey={galleryRefresh} />
-    </>
+
+<EstimateImageUploader
+  estimateId={estimateId}   // <--- use the state variable
+  onUploaded={() => setGalleryRefresh((n) => n + 1)}
+/> 
+
+ 
+</>
   ) : (
     <p className="text-xs text-gray-400">Select a client above to enable photo uploads.</p>
   )}

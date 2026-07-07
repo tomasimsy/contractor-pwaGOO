@@ -8,8 +8,7 @@ import { formatCurrency, formatDate } from "@/lib/utils/formatting";
 import { Receipt } from "lucide-react";
 import toast from "react-hot-toast";
 import ProgressDisplay from "@/components/progress/ProgressDisplay";
-import { EstimateImageGallery } from "@/components/ui/EstimateImages";
-
+import { EstimateImageUploader, EstimateImageView } from "@/components/ui/EstimateImages";
 
 type Signature = { type: "draw" | "type"; value: string; date: string };
 type ChangeOrder = {
@@ -627,7 +626,10 @@ const [estimate, setEstimate] = useState<any>(null);
                           {estimate && (
                             <div className="bg-white  ">
                               {/* <EstimateCamera estimateId={estimate.id} onUploaded={() => setGalleryRefresh((n) => n + 1)} /> */}
-                              <EstimateImageGallery estimateId={estimate.id} refreshKey={galleryRefresh} />
+                              <EstimateImageView
+                                  estimateId={estimate.id}
+                                  refreshKey={galleryRefresh}
+                                />
                             </div>
                           )}
                           {/* Financial Summary Card */}

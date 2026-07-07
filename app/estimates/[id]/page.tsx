@@ -15,7 +15,7 @@ import ProgressModal from "@/components/progress/ProgressModal";
 import ProgressDisplay from "@/components/progress/ProgressDisplay";
 import ClientSelector from "@/components/forms/ClientSelector"; // <-- ADD AT TOP (kept but not used)
 import { EstimateCamera } from "@/components/ui/EstimateCamera";
-import { EstimateImageGallery } from "@/components/ui/EstimateImages";
+import { EstimateImageUploader, EstimateImageView } from "@/components/ui/EstimateImages";
 
 
 type ProjectWithItems = {
@@ -75,7 +75,6 @@ const [progressRefresh, setProgressRefresh] = useState(0);
   const [estimateId] = useState(() => crypto.randomUUID());
 const [estimateRowCreated, setEstimateRowCreated] = useState(false);
 const [galleryRefresh, setGalleryRefresh] = useState(0);
-
 // 
 const [pendingChangeOrdersTotal, setPendingChangeOrdersTotal] = useState(0);
 
@@ -963,9 +962,16 @@ const currentDepositAmount = currentRevisedTotal * 0.5;
 {estimate && (
   <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
     <EstimateCamera estimateId={estimate.id} onUploaded={() => setGalleryRefresh((n) => n + 1)} />
-    <EstimateImageGallery estimateId={estimate.id} refreshKey={galleryRefresh} />
-  </div>
-)}
+<EstimateImageUploader
+  estimateId={estimate.id}
+  onUploaded={() => setGalleryRefresh((n) => n + 1)}
+/>
+
+ 
+
+ </div>
+)
+}
  
         {/* Projects */}
         <div className="space-y-3.5">

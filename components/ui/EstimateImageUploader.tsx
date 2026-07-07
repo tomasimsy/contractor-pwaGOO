@@ -63,12 +63,10 @@ export function EstimateImageUploader({
   estimateId,
   projectName,
   className = "",
-  onUploaded,
 }: {
   estimateId: string;
   projectName?: string;
   className?: string;
-  onUploaded?: () => void; // <-- new callback
 }) {
   const [images, setImages] = useState<EstimateImage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,17 +75,13 @@ export function EstimateImageUploader({
   const duringInputRef = useRef<HTMLInputElement>(null);
   const afterInputRef = useRef<HTMLInputElement>(null);
 
-  const loadImages = useCallback(() => {
+  useEffect(() => {
     if (!estimateId) return;
     fetchEstimateImages(estimateId).then((imgs) => {
       setImages(imgs);
       setLoading(false);
     });
   }, [estimateId]);
-
-  useEffect(() => {
-    loadImages();
-  }, [loadImages]);
 
   const beforeImages = images.filter((img) => img.stage === "before");
   const duringImages = images.filter((img) => img.stage === "during");
@@ -133,7 +127,6 @@ export function EstimateImageUploader({
           setImages((prev) => [...prev, inserted as EstimateImage]);
         }
         toast.success(`Photo${files.length > 1 ? "s" : ""} uploaded.`);
-        onUploaded?.(); // <-- notify parent
       } catch (err: any) {
         console.error(err);
         toast.error(err.message || "Failed to upload image.");
@@ -141,7 +134,7 @@ export function EstimateImageUploader({
         setUploadingStage(null);
       }
     },
-    [estimateId, projectName, onUploaded]
+    [estimateId, projectName]
   );
 
   const handleDelete = useCallback(async (image: EstimateImage) => {
@@ -151,12 +144,11 @@ export function EstimateImageUploader({
       await deleteEstimateImage(image);
       setImages((prev) => prev.filter((img) => img.id !== image.id));
       toast.success("Photo removed.");
-      onUploaded?.(); // <-- also notify parent on delete (optional)
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "Failed to remove photo.");
     }
-  }, [onUploaded]);
+  }, []);
 
   const renderColumn = (
     stage: EstimateImageStage,
