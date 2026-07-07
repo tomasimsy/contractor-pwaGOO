@@ -16,6 +16,7 @@ import ProgressDisplay from "@/components/progress/ProgressDisplay";
 import ClientSelector from "@/components/forms/ClientSelector"; // <-- ADD AT TOP (kept but not used)
 import { EstimateCamera } from "@/components/ui/EstimateCamera";
 import { EstimateImageUploader, EstimateImageView } from "@/components/ui/EstimateImages";
+import ProtectedRoute from "@/components/auth/ProtectedRoute";
 
 
 type ProjectWithItems = {
@@ -776,7 +777,9 @@ const currentDepositAmount = currentRevisedTotal * 0.5;
     window.location.href = `sms:${phoneNumber}?body=${message}`;
   };
 
-  if (loading) return <div className="p-8 text-center">Loading...</div>;
+  if (loading) 
+    
+    return <div className="p-8 text-center">Loading...</div>;
 
   const getStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
@@ -915,7 +918,7 @@ const currentDepositAmount = currentRevisedTotal * 0.5;
               </div>
               <div className="flex gap-1.5 shrink-0 scale-95 origin-right">
                 <button onClick={() => setIsEditMode(false)} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:bg-slate-50 transition-colors shadow-3xs">Cancel</button>
-                <button onClick={() => saveEdit()} disabled={saving} className="rounded-lg bg-slate-950 px-3 py-1 text-[11px] font-black text-white hover:bg-slate-800 disabled:opacity-50 transition-colors shadow-sm">{saving ? "Saving..." : "Apply"}</button>
+                <button onClick={() => saveEdit()} disabled={saving} className="rounded-lg bg-slate-950 px-3 py-1 text-[11px] font-black text-white hover:bg-slate-800 disabled:opacity-50 transition-colors shadow-sm">{saving ? "Saving..." : "Save Edit"}</button>
               </div>
             </div>
           )}
@@ -1706,6 +1709,9 @@ function ChangeOrderModal({
           </div>
         </div>
       </div>
+      
     </div>
+
+    
   );
 }
