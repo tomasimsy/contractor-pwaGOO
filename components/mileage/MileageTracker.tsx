@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import { Camera, RefreshCw, Play, Square } from 'lucide-react';
+import { Camera, RefreshCw, Play, Square, Info } from 'lucide-react';
 import { useTrip } from './context/TripContext';
 import { useOfflineSync } from './useOfflineSync';
 import { MileageSummary } from './MileageSummary';
@@ -10,6 +10,9 @@ import { MileageHistory } from './MileageHistory';
 import { PhotoCapture, Trip, Estimate } from './types';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
+import { MileageReimbursementModal } from './MileageReimbursementModal';
+import { MILE_RATE } from './utils';
+
 
 const MileageMap = dynamic(
   () => import('@/components/mileage/MileageMap').then((mod) => mod.MileageMap),
@@ -46,6 +49,7 @@ export function MileageTracker({ uploadImage, estimateId, className = '' }: Mile
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [estimates, setEstimates] = useState<Estimate[]>([]);
   const [online, setOnline] = useState(false);
+  const [showReimbursementModal, setShowReimbursementModal] = useState(false);
 
   // -------- Effects (user, online, estimates) --------
   useEffect(() => {
@@ -237,107 +241,205 @@ export function MileageTracker({ uploadImage, estimateId, className = '' }: Mile
 
   // -------- Render --------
   return (
-    <div className={`max-w-3xl mx-auto p-4 ${className}`}>
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <h2 className="text-2xl font-bold text-gray-800">Mileage Tracker</h2>
+<div className={`max-w-5xl mx-auto px-4 py-4 space-y-5 ${className}`}>
+
+  {/* =========================================================
+      HEADER
+  ========================================================= */}
+  <div className="bg-white rounded-2xl border shadow-sm p-4">
+    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-2xl font-bold text-gray-900">
+            Mileage Tracker
+          </h1>
+
           {userName && (
-            <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+            <span className="rounded-full bg-gray-100 px-3 py-1 text-xs uppercase font-medium text-gray-600">
               👤 {userName}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleRefresh}
-            disabled={!online}
-            className="p-2 rounded-full hover:bg-gray-100 text-gray-600 disabled:opacity-50"
-            aria-label="Refresh from cloud"
-          >
-            <RefreshCw size={20} className={isSyncing ? 'animate-spin' : ''} />
-          </button>
-          <button
-            onClick={handleSync}
-            disabled={isSyncing || !online}
-            className="p-2 rounded-full hover:bg-gray-100 text-gray-600 disabled:opacity-50"
-            aria-label="Sync pending trips"
-          >
-            <RefreshCw size={20} className={isSyncing ? 'animate-spin' : ''} />
-          </button>
-          <span className="text-xs text-gray-500">
-            {online ? '🟢 Online' : '🔴 Offline'}
-          </span>
-        </div>
-      </div>
 
-      <MileageSummary trips={trips} />
-
-      <div className="my-6 space-y-4">
-        <div className="flex items-center justify-center gap-3">
-          <button
-            onClick={handleManualStart}
-            disabled={!!start || isSaving || !online}
-            className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-5 rounded-full flex items-center gap-2 shadow transition disabled:opacity-50"
-          >
-            <Play size={18} />
-            Start Trip
-          </button>
-          <button
-            onClick={handleManualEnd}
-            disabled={!start || isSaving || !online}
-            className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-5 rounded-full flex items-center gap-2 shadow transition disabled:opacity-50"
-          >
-            <Square size={18} />
-            End Trip
-          </button>
-        </div>
-        <p className="text-xs text-gray-500 text-center">
-          {start ? '📍 Trip active. Click "End Trip" when you arrive.' : 'Click "Start Trip" to begin.'}
+        <p className="mt-1 text-sm text-gray-500">
+          Track work trips and automatically calculate mileage.
         </p>
-
-        {/* <div className="border-t border-gray-200 pt-3 flex flex-col items-center">
-          <button
-            onClick={handleTakePhoto}
-            disabled={isCapturing || isSaving || typeof uploadImage !== 'function'}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-5 rounded-full flex items-center gap-2 shadow transition disabled:opacity-50"
-          >
-            <Camera size={18} />
-            {isCapturing ? 'Compressing...' : 'Take Photo Instead'}
-          </button>
-          <span className="text-xs text-gray-400 mt-1">(Alternative: upload photos with GPS)</span>
-        </div> */}
       </div>
 
-      {selectedTrip && (
-        <div className="mb-6">
-          <div className="flex justify-between items-center mb-2">
-            <h3 className="text-lg font-semibold">Route View</h3>
-            <button
-              onClick={() => setSelectedTrip(null)}
-              className="text-sm text-blue-600 hover:underline"
-            >
-              Close
-            </button>
-          </div>
-          <MileageMap trip={selectedTrip} />
-          <div className="text-sm text-gray-600 mt-1 flex justify-between">
-            <span>{selectedTrip.route_summary || 'Driving route'}</span>
-            <span>{selectedTrip.distance_miles.toFixed(2)} mi</span>
-          </div>
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-2">
 
-      <div className="mt-6">
-        <h3 className="text-lg font-semibold mb-3">Trip History</h3>
-        <MileageHistory
-            trips={trips}
-            estimates={estimates}
-            userName={userName || 'User'} // fallback
-            onDelete={handleDelete}
-            onViewRoute={handleViewRoute}
-            onUpdateTrip={updateTrip}
-            />
+        <span
+          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+            online
+              ? "bg-green-100 text-green-700"
+              : "bg-red-100 text-red-700"
+          }`}
+        >
+          {online ? "🟢 Online" : "🔴 Offline"}
+        </span>
+
+        <button
+          onClick={() => setShowReimbursementModal(true)}
+          className="flex items-center gap-1 rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+        >
+          <Info size={16} />
+          Rate
+        </button>
+
+        <button
+          onClick={handleRefresh}
+          disabled={!online}
+          className="rounded-lg border p-2 hover:bg-gray-50 disabled:opacity-50"
+        >
+          <RefreshCw
+            size={18}
+            className={isSyncing ? "animate-spin" : ""}
+          />
+        </button>
+
+        <button
+          onClick={handleSync}
+          disabled={!online || isSyncing}
+          className="rounded-lg bg-blue-600 p-2 text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          <RefreshCw
+            size={18}
+            className={isSyncing ? "animate-spin" : ""}
+          />
+        </button>
+
       </div>
+
     </div>
+  </div>
+
+  {/* =========================================================
+      SUMMARY
+  ========================================================= */}
+
+  <div className="rounded-2xl border bg-white p-4 shadow-sm">
+    <MileageSummary trips={trips} />
+  </div>
+
+  {/* =========================================================
+      START / END
+  ========================================================= */}
+
+  <div className="rounded-2xl border bg-white p-5 shadow-sm">
+
+    <div className="mb-4">
+      <h2 className="text-lg font-semibold text-gray-900">
+        Trip Controls
+      </h2>
+
+      <p className="text-sm text-gray-500">
+        Start a trip before driving and stop it once you arrive.
+      </p>
+    </div>
+
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+
+      <button
+        onClick={handleManualStart}
+        disabled={!!start || isSaving || !online}
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 px-5 py-3 font-semibold text-white transition hover:bg-green-700 disabled:opacity-50"
+      >
+        <Play size={18} />
+        Start Trip
+      </button>
+
+      <button
+        onClick={handleManualEnd}
+        disabled={!start || isSaving || !online}
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-5 py-3 font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
+      >
+        <Square size={18} />
+        End Trip
+      </button>
+
+    </div>
+
+    <div className="mt-4 rounded-xl bg-gray-50 p-3 text-center text-sm text-gray-600">
+      {start
+        ? "📍 Trip is currently active."
+        : "Press Start Trip to begin tracking mileage."}
+    </div>
+
+  </div>
+
+  {/* =========================================================
+      ROUTE VIEW
+  ========================================================= */}
+
+  {selectedTrip && (
+    <div className="rounded-2xl border bg-white p-5 shadow-sm">
+
+      <div className="mb-4 flex items-center justify-between">
+
+        <h2 className="text-lg font-semibold">
+          Route Preview
+        </h2>
+
+        <button
+          onClick={() => setSelectedTrip(null)}
+          className="text-sm font-medium text-blue-600 hover:text-blue-700"
+        >
+          Close
+        </button>
+
+      </div>
+
+      <MileageMap trip={selectedTrip} />
+
+      <div className="mt-3 flex items-center justify-between text-sm text-gray-500">
+        <span>
+          {selectedTrip.route_summary || "Driving Route"}
+        </span>
+
+        <span className="font-semibold text-gray-800">
+          {selectedTrip.distance_miles.toFixed(2)} mi
+        </span>
+      </div>
+
+    </div>
+  )}
+
+  {/* =========================================================
+      HISTORY
+  ========================================================= */}
+
+  <div className="rounded-2xl border bg-white p-5 shadow-sm">
+
+    <div className="mb-4 flex items-center justify-between">
+
+      <h2 className="text-lg font-semibold">
+        Trip History
+      </h2>
+
+      <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-500">
+        {trips.length} Trips
+      </span>
+
+    </div>
+
+    <MileageHistory
+      trips={trips}
+      estimates={estimates}
+      userName={userName || "User"}
+      onDelete={handleDelete}
+      onViewRoute={handleViewRoute}
+      onUpdateTrip={updateTrip}
+    />
+
+  </div>
+
+  <MileageReimbursementModal
+    isOpen={showReimbursementModal}
+    onClose={() => setShowReimbursementModal(false)}
+    rate={MILE_RATE}
+  />
+
+</div>
   );
 }
