@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase/client";
 import Header from "@/components/ui/Header";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import Link from "next/link";
-import { Settings2, Building2, Users, Trash2, FileText, Receipt } from "lucide-react";
+import { Settings2, Building2, Users, Trash2, FileText, Receipt, Car } from "lucide-react";
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
@@ -173,6 +173,23 @@ export default function SettingsPage() {
               </div>
             </div>
             <div className="text-xs font-medium text-slate-400 group-hover:text-slate-700 transition">Open →</div>
+          </Link>
+
+                    <Link
+            href="/mileage/"
+            target=""
+            className="group flex items-center justify-between rounded-xl border border-slate-200/70 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 group-hover:bg-emerald-600 group-hover:text-white transition">
+                <Car size={18} />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-slate-800">Track Mileage</div>
+                {/* <div className="text-xs text-slate-500">Manage client list</div> */}
+              </div>
+            </div>
+            {/* <div className="text-xs font-medium text-slate-400 group-hover:text-slate-700 transition">Open →</div> */}
           </Link>
 
           {/* COMPANY */}
