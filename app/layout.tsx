@@ -12,7 +12,7 @@ import RealtimeNotificationListener from "@/components/RealtimeNotificationListe
 import { Toaster } from "react-hot-toast";
 
 import { supabase } from "@/lib/supabase/client";
-
+import { TripProvider } from '@/components/mileage/context/TripContext';
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -180,17 +180,20 @@ useEffect(() => {
         <link rel="dns-prefetch" href="https://randomuser.me" />
       </head>
       <body className={`${inter.className} flex justify-center`} style={{ backgroundColor: "#000000ff" }}>
-
         <NotificationProvider>
           <SEO />
           <RealtimeNotificationListener />
           <Toaster position="top-right" />
-          <div className="w-full min-h-screen relative flex justify-center">
-            <div className="w-full max-w-screen-2xl min-h-screen shadow-xl relative">
-              {children}
-              {showBottomNav && <BottomNav />}
+          
+          {/* ✅ Wrap everything that needs trip context inside TripProvider */}
+          <TripProvider>
+            <div className="w-full min-h-screen relative flex justify-center">
+              <div className="w-full max-w-screen-2xl min-h-screen shadow-xl relative">
+                {children}
+                {showBottomNav && <BottomNav />}
+              </div>
             </div>
-          </div>
+          </TripProvider>
         </NotificationProvider>
       </body>
     </html>

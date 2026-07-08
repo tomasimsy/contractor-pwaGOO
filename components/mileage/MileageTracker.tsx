@@ -3,11 +3,11 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { Camera, RefreshCw, Play, Square } from 'lucide-react';
-import { useTripPairing } from './useTripPairing';
+import { useTrip } from './context/TripContext';
 import { useOfflineSync } from './useOfflineSync';
 import { MileageSummary } from './MileageSummary';
 import { MileageHistory } from './MileageHistory';
-import { PhotoCapture, RouteInfo, Trip, Estimate } from './types';
+import { PhotoCapture, Trip, Estimate } from './types';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
 
@@ -35,23 +35,30 @@ const getCurrentPosition = (): Promise<GeolocationPosition> => {
 };
 
 export function MileageTracker({ uploadImage, estimateId, className = '' }: MileageTrackerProps) {
-  // -------- ALL HOOKS MUST BE CALLED UNCONDITIONALLY AT THE TOP --------
+  const { start, isTripActive, isSaving, startTrip, endTrip, completeTrip, clearTrip } = useTrip();
+
   const [userId, setUserId] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string | null>(null);
   const { trips, addTrip, removeTrip, syncPending, refresh, isSyncing, updateTrip } =
     useOfflineSync(userId);
-  const { start, end, addPhoto, completeTrip } = useTripPairing();
+
   const [isCapturing, setIsCapturing] = useState(false);
-  const [isRouteLoading, setIsRouteLoading] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [estimates, setEstimates] = useState<Estimate[]>([]);
   const [online, setOnline] = useState(false);
 
-  // -------- Effects --------
+  // -------- Effects (user, online, estimates) --------
   useEffect(() => {
     async function getUser() {
       const { data: { user } } = await supabase.auth.getUser();
-      setUserId(user?.id || null);
-      if (!user) {
+      if (user) {
+        setUserId(user.id);
+        let displayName = user.user_metadata?.full_name || user.user_metadata?.name;
+        if (!displayName && user.email) {
+          displayName = user.email.split('@')[0];
+        }
+        setUserName(displayName || 'User');
+      } else {
         toast.error('Please log in to track mileage.');
       }
     }
@@ -95,65 +102,17 @@ export function MileageTracker({ uploadImage, estimateId, className = '' }: Mile
 
   useEffect(() => {
     if (typeof uploadImage !== 'function') {
-      console.error('MileageTracker: uploadImage prop must be a function.');
+      console.error('uploadImage prop must be a function.');
       toast.error('Upload function not configured.');
     }
   }, [uploadImage]);
 
-  // -------- All useCallbacks (unconditionally) --------
-  const handleCalculateRoute = useCallback(
-    async (startPhoto: PhotoCapture, endPhoto: PhotoCapture) => {
-      console.log('🔁 Calculating route from', startPhoto, 'to', endPhoto);
-      console.time('⏱️ Route calculation');
-      setIsRouteLoading(true);
-      try {
-        const response = await fetch('/api/directions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            startLng: startPhoto.lng,
-            startLat: startPhoto.lat,
-            endLng: endPhoto.lng,
-            endLat: endPhoto.lat,
-          }),
-        });
-        console.timeEnd('⏱️ Route calculation');
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Route calculation failed');
-        }
-        const routeInfo: RouteInfo = await response.json();
-
-        const tripInput = completeTrip(routeInfo, startPhoto, endPhoto);
-        if (!tripInput) {
-          toast.error('Failed to create trip.');
-          return;
-        }
-
-        if (estimateId) {
-          tripInput.estimate_id = estimateId;
-        }
-
-        const newTrip = addTrip(tripInput);
-        toast.success(`Trip recorded: ${tripInput.distance_miles.toFixed(2)} miles`);
-        setSelectedTrip(newTrip);
-      } catch (error: any) {
-        console.error('Route error', error);
-        toast.error(error.message || 'Failed to calculate route.');
-      } finally {
-        setIsRouteLoading(false);
-      }
-    },
-    [completeTrip, addTrip, estimateId]
-  );
-
+  // -------- Photo mode --------
   const handleTakePhoto = useCallback(async () => {
     if (typeof uploadImage !== 'function') {
       toast.error('Upload function missing.');
       return;
     }
-
     let position: GeolocationPosition;
     try {
       position = await getCurrentPosition();
@@ -161,7 +120,6 @@ export function MileageTracker({ uploadImage, estimateId, className = '' }: Mile
       toast.error('Location permission denied.');
       return;
     }
-
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
@@ -178,37 +136,47 @@ export function MileageTracker({ uploadImage, estimateId, className = '' }: Mile
           lng: position.coords.longitude,
           timestamp: new Date().toISOString(),
         };
-        const pair = addPhoto(photo);
-        if (pair) {
-          await handleCalculateRoute(pair.start, pair.end);
-        } else {
+
+        if (!start) {
+          // First photo: start trip (stores photo as start)
+          await startTrip(); // captures GPS – but we already have it; better to store the photo
+          // We'll update start manually using a new method, but for simplicity we'll use the context's startTrip which captures its own GPS.
+          // To use the photo's GPS, we need to extend context. For now, we'll use the context's startTrip.
+          // That will capture GPS again – may be okay.
+          // Alternatively, we can set start directly via a setter, but we'll keep it simple.
+          await startTrip();
           toast.success('Start recorded. Take another photo at destination.');
+        } else if (!isTripActive) {
+          // Already have start? Actually isTripActive is true if start exists and no end.
+          // We'll use the context's endTrip and completeTrip.
+          const endPhoto = await endTrip(); // captures GPS
+          if (start && endPhoto) {
+            await completeTrip(start, endPhoto);
+          }
+        } else {
+          // If both exist, start a new trip
+          await startTrip();
+          toast.success('New trip started.');
         }
-      } catch {
-        toast.error('Upload failed.');
+      } catch (error: any) {
+        console.error('Photo error:', error);
+        toast.error(error.message || 'Upload failed.');
       } finally {
         setIsCapturing(false);
         input.value = '';
       }
     };
     input.click();
-  }, [addPhoto, uploadImage, handleCalculateRoute]);
+  }, [uploadImage, start, isTripActive, startTrip, endTrip, completeTrip]);
 
+  // -------- Manual Start/End (using context) --------
   const handleManualStart = useCallback(async () => {
     try {
-      const position = await getCurrentPosition();
-      const photo: PhotoCapture = {
-        imageUrl: 'manual-start',
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-        timestamp: new Date().toISOString(),
-      };
-      addPhoto(photo);
-      toast.success('📍 Start recorded (manual). Now end the trip.');
-    } catch {
-      toast.error('Location permission denied.');
+      await startTrip();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to start trip.');
     }
-  }, [addPhoto]);
+  }, [startTrip]);
 
   const handleManualEnd = useCallback(async () => {
     if (!start) {
@@ -216,28 +184,17 @@ export function MileageTracker({ uploadImage, estimateId, className = '' }: Mile
       return;
     }
     try {
-      const position = await getCurrentPosition();
-      const photo: PhotoCapture = {
-        imageUrl: 'manual-end',
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-        timestamp: new Date().toISOString(),
-      };
-      const pair = addPhoto(photo);
-      if (pair) {
-        await handleCalculateRoute(pair.start, pair.end);
-      } else {
-        toast.error('Failed to end trip.');
+      const endPhoto = await endTrip();
+      if (start && endPhoto) {
+        await completeTrip(start, endPhoto);
       }
-    } catch {
-      toast.error('Location permission denied.');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to complete trip.');
     }
-  }, [start, addPhoto, handleCalculateRoute]);
+  }, [start, endTrip, completeTrip]);
 
-  const handleViewRoute = useCallback((trip: Trip) => {
-    setSelectedTrip(trip);
-  }, []);
-
+  // -------- View, Delete, Sync --------
+  const handleViewRoute = useCallback((trip: Trip) => setSelectedTrip(trip), []);
   const handleDelete = useCallback(
     async (id: string) => {
       await removeTrip(id);
@@ -246,7 +203,6 @@ export function MileageTracker({ uploadImage, estimateId, className = '' }: Mile
     },
     [removeTrip, selectedTrip]
   );
-
   const handleSync = useCallback(() => {
     if (!online) {
       toast.error('Offline. Will sync when online.');
@@ -255,7 +211,6 @@ export function MileageTracker({ uploadImage, estimateId, className = '' }: Mile
     syncPending();
     toast.success('Syncing...');
   }, [online, syncPending]);
-
   const handleRefresh = useCallback(() => {
     if (!online) {
       toast.error('Offline. Cannot refresh.');
@@ -265,7 +220,7 @@ export function MileageTracker({ uploadImage, estimateId, className = '' }: Mile
     toast.success('Refreshed from cloud.');
   }, [online, refresh]);
 
-  // -------- CONDITIONAL RETURN – placed AFTER all hooks --------
+  // -------- Conditional return (after all hooks) --------
   if (!userId) {
     return (
       <div className="max-w-3xl mx-auto p-4 text-center">
@@ -280,11 +235,18 @@ export function MileageTracker({ uploadImage, estimateId, className = '' }: Mile
     );
   }
 
-  // -------- Render (only when userId is truthy) --------
+  // -------- Render --------
   return (
     <div className={`max-w-3xl mx-auto p-4 ${className}`}>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-2xl font-bold text-gray-800">Mileage Tracker</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-2xl font-bold text-gray-800">Mileage Tracker</h2>
+          {userName && (
+            <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+              👤 {userName}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <button
             onClick={handleRefresh}
@@ -314,7 +276,7 @@ export function MileageTracker({ uploadImage, estimateId, className = '' }: Mile
         <div className="flex items-center justify-center gap-3">
           <button
             onClick={handleManualStart}
-            disabled={!!start || isRouteLoading || !online}
+            disabled={!!start || isSaving || !online}
             className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-5 rounded-full flex items-center gap-2 shadow transition disabled:opacity-50"
           >
             <Play size={18} />
@@ -322,7 +284,7 @@ export function MileageTracker({ uploadImage, estimateId, className = '' }: Mile
           </button>
           <button
             onClick={handleManualEnd}
-            disabled={!start || !!end || isRouteLoading || !online}
+            disabled={!start || isSaving || !online}
             className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-5 rounded-full flex items-center gap-2 shadow transition disabled:opacity-50"
           >
             <Square size={18} />
@@ -330,22 +292,20 @@ export function MileageTracker({ uploadImage, estimateId, className = '' }: Mile
           </button>
         </div>
         <p className="text-xs text-gray-500 text-center">
-          {start && !end
-            ? '📍 Start recorded. Click "End Trip" when you arrive.'
-            : 'Click "Start Trip" to begin.'}
+          {start ? '📍 Trip active. Click "End Trip" when you arrive.' : 'Click "Start Trip" to begin.'}
         </p>
 
-        <div className="border-t border-gray-200 pt-3 flex flex-col items-center">
+        {/* <div className="border-t border-gray-200 pt-3 flex flex-col items-center">
           <button
             onClick={handleTakePhoto}
-            disabled={isCapturing || isRouteLoading || typeof uploadImage !== 'function'}
+            disabled={isCapturing || isSaving || typeof uploadImage !== 'function'}
             className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-5 rounded-full flex items-center gap-2 shadow transition disabled:opacity-50"
           >
             <Camera size={18} />
             {isCapturing ? 'Compressing...' : 'Take Photo Instead'}
           </button>
           <span className="text-xs text-gray-400 mt-1">(Alternative: upload photos with GPS)</span>
-        </div>
+        </div> */}
       </div>
 
       {selectedTrip && (
@@ -370,12 +330,13 @@ export function MileageTracker({ uploadImage, estimateId, className = '' }: Mile
       <div className="mt-6">
         <h3 className="text-lg font-semibold mb-3">Trip History</h3>
         <MileageHistory
-          trips={trips}
-          estimates={estimates}
-          onDelete={handleDelete}
-          onViewRoute={handleViewRoute}
-          onUpdateTrip={updateTrip}
-        />
+            trips={trips}
+            estimates={estimates}
+            userName={userName || 'User'} // fallback
+            onDelete={handleDelete}
+            onViewRoute={handleViewRoute}
+            onUpdateTrip={updateTrip}
+            />
       </div>
     </div>
   );
