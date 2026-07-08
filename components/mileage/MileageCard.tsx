@@ -13,6 +13,15 @@ interface MileageCardProps {
   onUpdateTrip: (id: string, updates: Partial<Trip>) => void;
 }
 
+// Helper to truncate text to a max number of words
+const truncateWords = (text: string, maxWords: number = 10): string => {
+  if (!text) return '';
+  const words = text.split(/\s+/);
+  if (words.length <= maxWords) return text;
+  return words.slice(0, maxWords).join(' ') + '...';
+};
+
+
 export function MileageCard({
   trip,
   estimates = [],
@@ -67,8 +76,9 @@ export function MileageCard({
             <option value="">Select estimate</option>
             {estimates.map((est) => (
               <option key={est.id} value={est.id}>
-                {est.estimate_number ? `#${est.estimate_number} - ` : ''}{est.title}
-              </option>
+  {est.estimate_number ? `#${est.estimate_number} - ` : ''}
+  {truncateWords(est.description || est.title, 10)}
+</option>
             ))}
           </select>
         </div>

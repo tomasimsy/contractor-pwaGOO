@@ -3,16 +3,19 @@ import { Trip, TripStatus, TripInput } from './types';
 import { isOnline, generateId } from './utils';
 import { supabase } from '@/lib/supabase';
 
-const STORAGE_KEY = 'mileage_trips_offline';
-
-export function useOfflineSync() {
+export function useOfflineSync(userId: string | null) {
+  // -------- State --------
   const [trips, setTrips] = useState<Trip[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
 
+  // User‑specific storage key
+  const storageKey = userId ? `mileage_trips_offline_${userId}` : 'mileage_trips_offline_temp';
+
   // -------- Local storage load/save --------
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!userId) return;
+    const stored = localStorage.getItem(storageKey);
     if (stored) {
       try {
         const parsed = JSON.parse(stored) as Trip[];
@@ -21,51 +24,65 @@ export function useOfflineSync() {
         setTrips([]);
       }
     }
-  }, []);
+  }, [userId, storageKey]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(trips));
-  }, [trips]);
+    if (!userId) return;
+    localStorage.setItem(storageKey, JSON.stringify(trips));
+  }, [trips, userId, storageKey]);
 
   // -------- Add trip (local only, status = 'pending') --------
-  const addTrip = useCallback((trip: TripInput) => {
-    const newTrip: Trip = {
-      ...trip,
-      id: generateId(),
-      status: 'pending',
-      created_at: new Date().toISOString(),
-    };
-    setTrips((prev) => [newTrip, ...prev]);
-    return newTrip;
-  }, []);
+  const addTrip = useCallback(
+    (trip: TripInput) => {
+      if (!userId) return null as any;
+      const newTrip: Trip = {
+        ...trip,
+        user_id: userId,
+        id: generateId(),
+        status: 'pending',
+        created_at: new Date().toISOString(),
+      };
+      setTrips((prev) => [newTrip, ...prev]);
+      return newTrip;
+    },
+    [userId]
+  );
 
   // -------- Update trip (local + remote) --------
-  const updateTrip = useCallback(async (id: string, updates: Partial<Trip>) => {
-    setTrips((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, ...updates } : t))
-    );
-
-    if (isOnline()) {
-      const { error } = await supabase
-        .from('mileage_trips')
-        .update(updates)
-        .eq('id', id);
-      if (error) {
-        console.error('Failed to update trip in Supabase', error);
-      } else {
-        console.log('Updated trip in Supabase', id, updates);
+  const updateTrip = useCallback(
+    async (id: string, updates: Partial<Trip>) => {
+      if (!userId) return;
+      setTrips((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, ...updates } : t))
+      );
+      if (isOnline()) {
+        const { error } = await supabase
+          .from('mileage_trips')
+          .update(updates)
+          .eq('id', id)
+          .eq('user_id', userId);
+        if (error) console.error('Update error', error);
       }
-    }
-  }, []);
+    },
+    [userId]
+  );
 
   // -------- Delete trip (local + remote) --------
-  const removeTrip = useCallback(async (id: string) => {
-    setTrips((prev) => prev.filter((t) => t.id !== id));
-    if (isOnline()) {
-      const { error } = await supabase.from('mileage_trips').delete().eq('id', id);
-      if (error) console.error('Failed to delete from Supabase', error);
-    }
-  }, []);
+  const removeTrip = useCallback(
+    async (id: string) => {
+      if (!userId) return;
+      setTrips((prev) => prev.filter((t) => t.id !== id));
+      if (isOnline()) {
+        const { error } = await supabase
+          .from('mileage_trips')
+          .delete()
+          .eq('id', id)
+          .eq('user_id', userId);
+        if (error) console.error('Delete error', error);
+      }
+    },
+    [userId]
+  );
 
   // -------- Update trip status (local) --------
   const updateTripStatus = useCallback((id: string, status: TripStatus) => {
@@ -76,14 +93,18 @@ export function useOfflineSync() {
 
   // -------- Sync pending/error trips to Supabase --------
   const syncPending = useCallback(async () => {
-    if (!isOnline() || isSyncing) return;
+    if (!userId || !isOnline() || isSyncing) return;
     const pending = trips.filter((t) => t.status === 'pending' || t.status === 'error');
-    if (pending.length === 0) return;
+    if (pending.length === 0) {
+      console.log('✅ No pending trips to sync');
+      return;
+    }
 
     setIsSyncing(true);
     try {
       for (const trip of pending) {
         const insertData = {
+          user_id: userId,
           estimate_id: trip.estimate_id || null,
           start_image: trip.start_image,
           end_image: trip.end_image,
@@ -101,14 +122,12 @@ export function useOfflineSync() {
           reimbursement: trip.reimbursement,
           status: 'completed',
         };
-
         const { error } = await supabase.from('mileage_trips').insert(insertData);
-
         if (error) {
-          console.error('Sync failed for trip', trip.id, error);
+          console.error('❌ Sync failed for trip', trip.id, error);
           updateTripStatus(trip.id!, 'error');
         } else {
-          console.log('Synced trip', trip.id);
+          console.log('✅ Synced trip', trip.id);
           updateTripStatus(trip.id!, 'synced');
         }
       }
@@ -117,16 +136,17 @@ export function useOfflineSync() {
     } finally {
       setIsSyncing(false);
     }
-  }, [trips, isSyncing, updateTripStatus]);
+  }, [userId, trips, isSyncing, updateTripStatus]);
 
-  // -------- Fetch remote trips and merge --------
+  // -------- Fetch remote trips for this user and merge with local pending --------
   const fetchRemoteTrips = useCallback(async () => {
-    if (!isOnline() || isFetching) return;
+    if (!userId || !isOnline() || isFetching) return;
     setIsFetching(true);
     try {
       const { data, error } = await supabase
         .from('mileage_trips')
         .select('*')
+        .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -136,6 +156,7 @@ export function useOfflineSync() {
 
       const remoteTrips: Trip[] = data.map((row: any) => ({
         id: row.id,
+        user_id: row.user_id,
         estimate_id: row.estimate_id,
         start_image: row.start_image,
         end_image: row.end_image,
@@ -164,35 +185,63 @@ export function useOfflineSync() {
       });
 
       setTrips(merged);
-      console.log(`✅ Merged ${remoteTrips.length} remote + ${localPending.length} pending = ${merged.length} trips`);
+      console.log(`✅ Merged ${remoteTrips.length} remote + ${localPending.length} pending = ${merged.length} trips for user ${userId}`);
     } catch (err) {
       console.error('Fetch remote error', err);
     } finally {
       setIsFetching(false);
     }
-  }, [trips, isFetching]);
+  }, [userId, trips, isFetching]);
 
-  // -------- Auto-load on mount --------
-  useEffect(() => {
-    if (isOnline()) {
-      fetchRemoteTrips();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // -------- Manual refresh --------
+  // -------- Manual refresh (for refresh button) --------
   const refresh = useCallback(() => {
     fetchRemoteTrips();
   }, [fetchRemoteTrips]);
+
+  // -------- AUTO‑SYNC: when trips change and we have pending/error trips --------
+  useEffect(() => {
+    if (!userId || !isOnline() || isSyncing) return;
+    const hasPending = trips.some((t) => t.status === 'pending' || t.status === 'error');
+    if (hasPending) {
+      syncPending();
+    }
+  }, [trips, userId, isOnline, isSyncing, syncPending]);
+
+  // -------- AUTO‑REFRESH when coming online --------
+  useEffect(() => {
+    const handleOnline = () => {
+      if (userId) {
+        fetchRemoteTrips();
+      }
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [userId, fetchRemoteTrips]);
+
+  // -------- Auto‑sync on mount (when userId becomes available) --------
+  useEffect(() => {
+    if (userId && isOnline()) {
+      syncPending();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  // -------- Auto‑fetch remote trips on mount (when userId becomes available) --------
+  useEffect(() => {
+    if (userId && isOnline()) {
+      fetchRemoteTrips();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   // -------- Return all functions and state --------
   return {
     trips,
     addTrip,
     removeTrip,
-    updateTrip,           // ✅ NOW EXPORTED – fixes the error
-    syncPending,
-    refresh,
+    updateTrip,
+    syncPending,    // you can still call it manually if needed
+    refresh,        // manual refresh
     isSyncing,
     isFetching,
     isOnline: isOnline(),
