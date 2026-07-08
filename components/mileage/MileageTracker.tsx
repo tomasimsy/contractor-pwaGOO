@@ -2,14 +2,14 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import { Camera, RefreshCw } from 'lucide-react';
+import { Camera, RefreshCw, Play, Square } from 'lucide-react';
 import { useTripPairing } from './useTripPairing';
 import { useOfflineSync } from './useOfflineSync';
 import { MileageSummary } from './MileageSummary';
 import { MileageHistory } from './MileageHistory';
+import { PhotoCapture, RouteInfo, Trip, Estimate } from './types';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
-import { PhotoCapture, RouteInfo, Trip, Estimate } from './types';
 
 const MileageMap = dynamic(
   () => import('@/components/mileage/MileageMap').then((mod) => mod.MileageMap),
@@ -24,22 +24,28 @@ interface MileageTrackerProps {
   className?: string;
 }
 
-// Local Estimate type (should match your 'estimates' table)
- 
+// Helper to get current position
+const getCurrentPosition = (): Promise<GeolocationPosition> => {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0,
+    });
+  });
+};
 
 export function MileageTracker({ uploadImage, estimateId, className = '' }: MileageTrackerProps) {
-  // Offline sync hook – includes updateTrip for modifying trips
   const { trips, addTrip, removeTrip, syncPending, refresh, isSyncing, updateTrip } = useOfflineSync();
-
   const { start, end, addPhoto, completeTrip } = useTripPairing();
   const [isCapturing, setIsCapturing] = useState(false);
   const [isRouteLoading, setIsRouteLoading] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [estimates, setEstimates] = useState<Estimate[]>([]);
-
-  // Client-only online status
   const [online, setOnline] = useState(false);
+  const [isManualStart, setIsManualStart] = useState(false); // track if start was set manually
 
+  // Online status
   useEffect(() => {
     setOnline(navigator.onLine);
     const handleOnline = () => setOnline(true);
@@ -52,35 +58,31 @@ export function MileageTracker({ uploadImage, estimateId, className = '' }: Mile
     };
   }, []);
 
-  // Fetch recent 10 estimates from Supabase
-useEffect(() => {
-  async function fetchEstimates() {
-    if (!online) return;
-    try {
-const { data, error } = await supabase
-  .from('estimates')
-  .select('id, title, estimate_number, created_at')
-  .order('estimate_number', { ascending: false })
-  .limit(10);
-
-      if (error) {
-        console.error('Failed to fetch estimates:', error.message);
-        console.error('Full error:', error);
-        // Show toast to user
-        toast.error(`Could not load estimates: ${error.message}`);
-      } else {
-        setEstimates(data || []);
-        console.log('Fetched estimates:', data?.length);
+  // Fetch estimates
+  useEffect(() => {
+    async function fetchEstimates() {
+      if (!online) return;
+      try {
+        const { data, error } = await supabase
+          .from('estimates')
+          .select('id, title, estimate_number, created_at')
+          .order('estimate_number', { ascending: false })
+          .limit(10);
+        if (error) {
+          console.error('Failed to fetch estimates:', error.message);
+          toast.error(`Could not load estimates: ${error.message}`);
+        } else {
+          setEstimates(data || []);
+        }
+      } catch (err) {
+        console.error('Unexpected error fetching estimates:', err);
+        toast.error('Failed to load estimates.');
       }
-    } catch (err) {
-      console.error('Unexpected error fetching estimates:', err);
-      toast.error('Failed to load estimates.');
     }
-  }
-  fetchEstimates();
-}, [online]);
+    fetchEstimates();
+  }, [online]);
 
-  // Validate uploadImage prop
+  // Validate uploadImage
   useEffect(() => {
     if (typeof uploadImage !== 'function') {
       console.error('MileageTracker: uploadImage prop must be a function.');
@@ -88,7 +90,7 @@ const { data, error } = await supabase
     }
   }, [uploadImage]);
 
-  // Route calculation using OpenRouteService (as you had)
+  // Route calculation (shared)
   const handleCalculateRoute = useCallback(
     async (startPhoto: PhotoCapture, endPhoto: PhotoCapture) => {
       console.log('🔁 Calculating route from', startPhoto, 'to', endPhoto);
@@ -126,6 +128,8 @@ const { data, error } = await supabase
         const newTrip = addTrip(tripInput);
         toast.success(`Trip recorded: ${tripInput.distance_miles.toFixed(2)} miles`);
         setSelectedTrip(newTrip);
+        // Reset manual start flag
+        setIsManualStart(false);
       } catch (error: any) {
         console.error('Route error', error);
         toast.error(error.message || 'Failed to calculate route.');
@@ -136,7 +140,7 @@ const { data, error } = await supabase
     [completeTrip, addTrip, estimateId]
   );
 
-  // Handle photo capture
+  // ----- Photo mode (existing) -----
   const handleTakePhoto = useCallback(async () => {
     if (typeof uploadImage !== 'function') {
       toast.error('Upload function missing.');
@@ -145,13 +149,7 @@ const { data, error } = await supabase
 
     let position: GeolocationPosition;
     try {
-      position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0,
-        });
-      });
+      position = await getCurrentPosition();
     } catch {
       toast.error('Location permission denied.');
       return;
@@ -189,6 +187,51 @@ const { data, error } = await supabase
     input.click();
   }, [addPhoto, uploadImage, handleCalculateRoute]);
 
+  // ----- Manual mode: Start -----
+  const handleManualStart = useCallback(async () => {
+    try {
+      const position = await getCurrentPosition();
+      const photo: PhotoCapture = {
+        imageUrl: 'manual-start', // placeholder
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        timestamp: new Date().toISOString(),
+      };
+      addPhoto(photo);
+      setIsManualStart(true);
+      toast.success('📍 Start recorded (manual). Now end the trip.');
+    } catch {
+      toast.error('Location permission denied.');
+    }
+  }, [addPhoto]);
+
+  // ----- Manual mode: End -----
+  const handleManualEnd = useCallback(async () => {
+    if (!start) {
+      toast.error('Start the trip first.');
+      return;
+    }
+    try {
+      const position = await getCurrentPosition();
+      const photo: PhotoCapture = {
+        imageUrl: 'manual-end', // placeholder
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        timestamp: new Date().toISOString(),
+      };
+      const pair = addPhoto(photo);
+      if (pair) {
+        await handleCalculateRoute(pair.start, pair.end);
+      } else {
+        // Should not happen because start exists
+        toast.error('Failed to end trip.');
+      }
+    } catch {
+      toast.error('Location permission denied.');
+    }
+  }, [start, addPhoto, handleCalculateRoute]);
+
+  // ----- View/Delete/Sync -----
   const handleViewRoute = useCallback((trip: Trip) => {
     setSelectedTrip(trip);
   }, []);
@@ -249,18 +292,43 @@ const { data, error } = await supabase
 
       <MileageSummary trips={trips} />
 
-      <div className="my-6 flex flex-col items-center">
-        <button
-          onClick={handleTakePhoto}
-          disabled={isCapturing || isRouteLoading || typeof uploadImage !== 'function'}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-full flex items-center gap-2 shadow-lg transition disabled:opacity-50"
-        >
-          <Camera size={20} />
-          {isCapturing ? 'Compressing & uploading...' : isRouteLoading ? 'Calculating route...' : 'Take Photo for Mileage'}
-        </button>
-        <p className="text-xs text-gray-500 mt-2">
-          {start && !end ? '📍 Start recorded. Take another photo at destination.' : 'Take a photo at your start location.'}
+      {/* ----- Trip Controls ----- */}
+      <div className="my-6 space-y-4">
+        {/* Manual buttons */}
+        <div className="flex items-center justify-center gap-3">
+          <button
+            onClick={handleManualStart}
+            disabled={!!start || isRouteLoading || !online}
+            className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-5 rounded-full flex items-center gap-2 shadow transition disabled:opacity-50"
+          >
+            <Play size={18} />
+            Start Trip
+          </button>
+          <button
+            onClick={handleManualEnd}
+            disabled={!start || !!end || isRouteLoading || !online}
+            className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-5 rounded-full flex items-center gap-2 shadow transition disabled:opacity-50"
+          >
+            <Square size={18} />
+            End Trip
+          </button>
+        </div>
+        <p className="text-xs text-gray-500 text-center">
+          {start && !end ? '📍 Start recorded. Click "End Trip" when you arrive.' : 'Click "Start Trip" to begin.'}
         </p>
+
+        {/* Photo mode (optional) */}
+        <div className="border-t border-gray-200 pt-3 flex flex-col items-center">
+          <button
+            onClick={handleTakePhoto}
+            disabled={isCapturing || isRouteLoading || typeof uploadImage !== 'function'}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-5 rounded-full flex items-center gap-2 shadow transition disabled:opacity-50"
+          >
+            <Camera size={18} />
+            {isCapturing ? 'Compressing...' : 'Take Photo Instead'}
+          </button>
+          <span className="text-xs text-gray-400 mt-1">(Alternative: upload photos with GPS)</span>
+        </div>
       </div>
 
       {selectedTrip && (
@@ -284,7 +352,6 @@ const { data, error } = await supabase
 
       <div className="mt-6">
         <h3 className="text-lg font-semibold mb-3">Trip History</h3>
-        {/* Pass estimates and updateTrip to MileageHistory */}
         <MileageHistory
           trips={trips}
           estimates={estimates}
