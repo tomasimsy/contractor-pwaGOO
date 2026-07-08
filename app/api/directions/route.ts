@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+console.log('ORS API Key exists?', !!process.env.OPENROUTESERVICE_API_KEY);
 
 const ORS_API_KEY = process.env.OPENROUTESERVICE_API_KEY;
 const ORS_URL = 'https://api.openrouteservice.org/v2/directions/driving-car';
@@ -14,12 +15,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!ORS_API_KEY) {
-      return NextResponse.json(
-        { error: 'OpenRouteService API key not configured' },
-        { status: 500 }
-      );
-    }
+if (!ORS_API_KEY) {
+  return NextResponse.json(
+    { error: 'OpenRouteService API key not configured' },
+    { status: 500 }
+  );
+}
 
     // Build query params: start and end as lng,lat
     const start = `${startLng},${startLat}`;
