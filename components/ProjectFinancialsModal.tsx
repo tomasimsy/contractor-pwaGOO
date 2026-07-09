@@ -250,48 +250,50 @@ export default function ProjectFinancialsModal({
     setSaving(false);
   }
 
-  async function assignSubcontractor() {
-    if (!selectedSubId) {
-      alert("Select a subcontractor");
-      return;
-    }
-    if (assignedSubs.some((s) => s.subcontractor_id === selectedSubId)) {
-      alert("Already assigned");
-      return;
-    }
-
-    const amountToSave = subAmount && subAmount > 0 ? subAmount : 0;
-
-    const { data: newSub, error } = await supabase
-      .from("estimate_subcontractors")
-      .insert({
-        estimate_id: estimateId,
-        subcontractor_id: selectedSubId,
-        amount: amountToSave,
-        notes: subNotes || null,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      alert("Error assigning subcontractor");
-    } else if (newSub) {
-      if (amountToSave > 0) {
-        await supabase.from("subcontractor_payments").insert({
-          estimate_subcontractor_id: newSub.id,
-          amount: amountToSave,
-          payment_method: "cash",
-        });
-      }
-      await loadAllData();
-      onRefresh();
-      alert(amountToSave > 0 ? "Subcontractor assigned with payment!" : "Subcontractor assigned");
-    }
-
-    setSelectedSubId("");
-    setSubAmount(null);
-    setSubNotes("");
+async function assignSubcontractor() {
+  if (!selectedSubId) {
+    alert("Select a subcontractor");
+    return;
   }
+  if (assignedSubs.some((s) => s.subcontractor_id === selectedSubId)) {
+    alert("Already assigned");
+    return;
+  }
+
+  const amountToSave = subAmount && subAmount > 0 ? subAmount : 0;
+
+  const { data: newSub, error } = await supabase
+    .from("estimate_subcontractors")
+    .insert({
+      estimate_id: estimateId,
+      subcontractor_id: selectedSubId,
+      amount: amountToSave,
+      notes: subNotes || null,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    alert("Error assigning subcontractor");
+  } else if (newSub) {
+    if (amountToSave > 0) {
+      // ✅ Include estimate_id when creating the first payment
+      await supabase.from("subcontractor_payments").insert({
+        estimate_subcontractor_id: newSub.id,
+        estimate_id: estimateId,  // <-- ADD THIS LINE
+        amount: amountToSave,
+        payment_method: "cash",
+      });
+    }
+    await loadAllData();
+    onRefresh();
+    alert(amountToSave > 0 ? "Subcontractor assigned with payment!" : "Subcontractor assigned");
+  }
+
+  setSelectedSubId("");
+  setSubAmount(null);
+  setSubNotes("");
+}
 
   async function updateSubAmount(subId: string, newAmount: number) {
     if (newAmount < 0) return;
@@ -321,35 +323,36 @@ export default function ProjectFinancialsModal({
     alert("Subcontractor removed");
   }
 
-  async function recordSubPayment() {
-    if (!selectedSubForPayment || subPaymentAmount <= 0) {
-      alert("Enter a valid amount");
-      return;
-    }
-    const remainingOwed = (selectedSubForPayment.amount || 0) - (selectedSubForPayment.paid_amount || 0);
-    if (subPaymentAmount > remainingOwed) {
-      alert(`Cannot pay more than owed (${formatCurrency(remainingOwed)})`);
-      return;
-    }
-
-    setSaving(true);
-    const { error } = await supabase.from("subcontractor_payments").insert({
-      estimate_subcontractor_id: selectedSubForPayment.id,
-      amount: subPaymentAmount,
-      payment_method: subPaymentMethod,
-    });
-
-    if (error) {
-      alert("Error recording payment");
-    } else {
-      await loadAllData();
-      onRefresh();
-      alert(`Payment of ${formatCurrency(subPaymentAmount)} recorded!`);
-    }
-    setShowSubPaymentModal(false);
-    setSubPaymentAmount(0);
-    setSaving(false);
+async function recordSubPayment() {
+  if (!selectedSubForPayment || subPaymentAmount <= 0) {
+    alert("Enter a valid amount");
+    return;
   }
+  const remainingOwed = (selectedSubForPayment.amount || 0) - (selectedSubForPayment.paid_amount || 0);
+  if (subPaymentAmount > remainingOwed) {
+    alert(`Cannot pay more than owed (${formatCurrency(remainingOwed)})`);
+    return;
+  }
+
+  setSaving(true);
+  const { error } = await supabase.from("subcontractor_payments").insert({
+    estimate_subcontractor_id: selectedSubForPayment.id,
+    estimate_id: estimateId,   // <-- ADD THIS LINE
+    amount: subPaymentAmount,
+    payment_method: subPaymentMethod,
+  });
+
+  if (error) {
+    alert("Error recording payment");
+  } else {
+    await loadAllData();
+    onRefresh();
+    alert(`Payment of ${formatCurrency(subPaymentAmount)} recorded!`);
+  }
+  setShowSubPaymentModal(false);
+  setSubPaymentAmount(0);
+  setSaving(false);
+}
 
   async function deleteSubPayment(paymentId: string, subAssignmentId: string) {
     if (!confirm("Delete this payment? This will increase the subcontractor's owed amount.")) return;
