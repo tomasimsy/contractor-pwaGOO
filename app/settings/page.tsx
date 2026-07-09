@@ -176,6 +176,22 @@ export default function SettingsPage() {
             {/* <div className="text-xs font-medium text-slate-400 group-hover:text-slate-700 transition">Open →</div> */}
           </Link>
 
+          <Link
+  href="/documents"
+  className="group flex items-center justify-between rounded-xl border border-slate-200/70 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md"
+>
+  <div className="flex items-center gap-3">
+    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700 group-hover:bg-indigo-600 group-hover:text-white transition">
+      <FileText size={18} />
+    </div>
+    <div>
+      <div className="text-sm font-semibold text-slate-800">Company Documents</div>
+      <div className="text-xs text-slate-500">Insurance, IRS, policies</div>
+    </div>
+  </div>
+  <div className="text-xs font-medium text-slate-400 group-hover:text-slate-700 transition">Open →</div>
+</Link>
+
           {/* Trash */}
           <Link
             href="/deleted"
