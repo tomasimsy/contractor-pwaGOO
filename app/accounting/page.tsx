@@ -5,6 +5,8 @@ import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import Header from '@/components/ui/Header';
 import { supabase } from '@/lib/supabase/client';
 import { formatCurrency } from '@/lib/utils/formatting';
+import { MetricExplanationModal } from '@/components/accounting/MetricExplanationModal';
+
 import {
   Download,
   RefreshCw,
@@ -14,6 +16,7 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  HelpCircle
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
@@ -21,7 +24,7 @@ import {
 } from 'recharts';
 import Link from 'next/link';
 
-// ---------- Types (matches view columns) ----------
+// ---------- Types ----------
 type EstimateFinancial = {
   estimate_id: string;
   estimate_number: string;
@@ -95,7 +98,7 @@ const SummaryCard = ({ label, value, color = 'blue' }: { label: string; value: n
     emerald: 'text-emerald-600',
     indigo: 'text-indigo-600',
   };
-  const isCurrency = ['Revenue', 'Expenses', 'Profit', 'Payments', 'Balance', 'Costs'].some(w => label.includes(w));
+  const isCurrency = ['Revenue', 'Expenses', 'Profit', 'Payments', 'Balance', 'Costs', 'Deduction'].some(w => label.includes(w));
   return (
     <div className="bg-white rounded-xl shadow-sm p-3 border border-slate-100">
       <div className="text-xs text-slate-500">{label}</div>
@@ -112,6 +115,11 @@ export default function AccountingPage() {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<EstimateFinancial[]>([]);
 
+  // Additional metrics
+  const [mileageDeduction, setMileageDeduction] = useState(0);
+  const [unsoldCosts, setUnsoldCosts] = useState(0);
+  const [openInvoices, setOpenInvoices] = useState<{ id: string; invoice_number: string; client_name: string; total: number; due_date: string }[]>([]);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sortField, setSortField] = useState<SortField>('estimate_number');
@@ -119,25 +127,76 @@ export default function AccountingPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
 
-  // ---------- Fetch data from view ----------
+  const [showExplanation, setShowExplanation] = useState(false);
+
+  // ---------- Fetch data ----------
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
+
+        // 1. Main financial view
         const { data: rows, error: queryError } = await supabase
           .from('vw_estimate_financials')
           .select('*');
 
         if (queryError) throw new Error(queryError.message);
 
-        // Ensure arrays are not null
         const typedData = (rows || []).map((row: any) => ({
           ...row,
           subcontractors: row.subcontractors || [],
           agents: row.agents || [],
         })) as EstimateFinancial[];
-
         setData(typedData);
+
+        // 2. Mileage deduction (YTD)
+        const { data: mileageRows } = await supabase
+          .from('mileage_trips')
+          .select('distance_miles')
+          .gte('created_at', new Date(new Date().getFullYear(), 0, 1).toISOString());
+
+        const totalMiles = mileageRows?.reduce((sum, r) => sum + (r.distance_miles || 0), 0) || 0;
+        setMileageDeduction(totalMiles * 0.655);
+
+        // 3. Unsold costs (estimates with status draft, sent, rejected)
+        const { data: unsoldEstimates } = await supabase
+          .from('estimates')
+          .select('id')
+          .in('status', ['draft', 'sent', 'rejected']);
+
+        const unsoldIds = unsoldEstimates?.map(e => e.id) || [];
+        let totalUnsold = 0;
+        if (unsoldIds.length > 0) {
+          const { data: unsoldExpenses } = await supabase
+            .from('estimate_expenses')
+            .select('amount')
+            .in('estimate_id', unsoldIds);
+          totalUnsold = unsoldExpenses?.reduce((sum, r) => sum + (r.amount || 0), 0) || 0;
+        }
+        setUnsoldCosts(totalUnsold);
+
+        // 4. Open invoices (not paid)
+        const { data: openInvRows } = await supabase
+          .from('invoices')
+          .select(`
+            id,
+            invoice_number,
+            client_id,
+            total,
+            due_date,
+            clients (name)
+          `)
+          .is('paid_at', null)
+          .neq('status', 'paid');
+
+        const formatted = (openInvRows || []).map((inv: any) => ({
+          id: inv.id,
+          invoice_number: inv.invoice_number,
+          client_name: inv.clients?.name || 'Unassigned',
+          total: inv.total || 0,
+          due_date: inv.due_date,
+        }));
+        setOpenInvoices(formatted);
       } catch (err: any) {
         setError(err.message || 'Failed to load data');
       } finally {
@@ -223,7 +282,7 @@ export default function AccountingPage() {
       .slice(0, 5);
   }, [sortedData]);
 
-  // ---------- Monthly P&L (group by month) ----------
+  // ---------- Monthly P&L ----------
   const monthlyData = useMemo(() => {
     const months: Record<string, { income: number; expense: number }> = {};
     sortedData.forEach(row => {
@@ -235,10 +294,10 @@ export default function AccountingPage() {
     return Object.entries(months)
       .map(([month, values]) => ({ month, ...values }))
       .sort((a, b) => a.month.localeCompare(b.month))
-      .slice(-12); // last 12 months
+      .slice(-12);
   }, [sortedData]);
 
-  // ---------- Expense breakdown (three categories) ----------
+  // ---------- Expense breakdown ----------
   const expenseBreakdown = useMemo(() => {
     const totalSub = totals.subcontractor_paid;
     const totalAgent = totals.agent_paid;
@@ -357,6 +416,13 @@ export default function AccountingPage() {
             <h1 className="text-xl font-bold text-slate-800">Financial Summary</h1>
             <div className="flex gap-2">
               <button
+                onClick={() => setShowExplanation(true)}
+                className="p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition"
+                aria-label="Explain metrics"
+              >
+                <HelpCircle size={18} />
+              </button>
+              <button
                 onClick={() => window.location.reload()}
                 className="p-2 rounded-full hover:bg-slate-200 transition"
               >
@@ -381,11 +447,13 @@ export default function AccountingPage() {
             <SummaryCard label="Subcontractor Paid" value={totals.subcontractor_paid} color="purple" />
             <SummaryCard label="Agent Paid" value={totals.agent_paid} color="indigo" />
             <SummaryCard label="Other Expenses" value={totals.other_expenses} color="red" />
+            <SummaryCard label="Mileage Deduction" value={mileageDeduction} color="purple" />
+            <SummaryCard label="Unsold Costs" value={unsoldCosts} color="red" />
+            <SummaryCard label="Open Invoices" value={openInvoices.reduce((s, i) => s + i.total, 0)} color="orange" />
           </div>
 
           {/* Charts Row */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            {/* Monthly P&L */}
             {monthlyData.length > 0 && (
               <div className="bg-white rounded-xl shadow-sm p-4 border border-slate-100">
                 <h2 className="text-sm font-semibold text-slate-700 mb-2">Monthly P&L</h2>
@@ -402,7 +470,6 @@ export default function AccountingPage() {
               </div>
             )}
 
-            {/* Expense Breakdown */}
             {expenseBreakdown.length > 0 && (
               <div className="bg-white rounded-xl shadow-sm p-4 border border-slate-100">
                 <h2 className="text-sm font-semibold text-slate-700 mb-2">Expense Breakdown</h2>
@@ -443,6 +510,36 @@ export default function AccountingPage() {
             </div>
           )}
 
+          {/* Open Invoices Section */}
+          {openInvoices.length > 0 && (
+            <div className="my-4 bg-white rounded-xl shadow-sm border border-slate-100 p-4">
+              <h2 className="text-sm font-semibold text-slate-700 mb-2">Open Invoices ({openInvoices.length})</h2>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-left text-slate-500 border-b">
+                    <tr>
+                      <th className="pb-2">Invoice #</th>
+                      <th className="pb-2">Client</th>
+                      <th className="pb-2 text-right">Amount</th>
+                      <th className="pb-2 text-right">Due Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {openInvoices.map(inv => (
+                      <tr key={inv.id} className="border-b border-slate-50 last:border-0">
+                        <td className="py-2">{inv.invoice_number}</td>
+                        <td className="py-2">{inv.client_name}</td>
+                        <td className="py-2 text-right font-medium">{formatCurrency(inv.total)}</td>
+                        <td className="py-2 text-right text-slate-500">{inv.due_date ? new Date(inv.due_date).toLocaleDateString() : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+
           {/* Filters & Search */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-4 flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2 flex-1 min-w-[200px]">
@@ -475,7 +572,7 @@ export default function AccountingPage() {
             </div>
           </div>
 
-          {/* Table */}
+          {/* Main Table */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -537,22 +634,22 @@ export default function AccountingPage() {
                       </td>
                       <td className="px-4 py-3 text-right font-mono font-semibold">{formatCurrency(row.revised_total)}</td>
                       <td className="px-4 py-3 text-right">
-                      <div className="flex flex-col items-end">
-                        <span className="font-mono text-rose-600">{formatCurrency(row.subcontractor_paid)}</span>
-                        {row.subcontractor_paid > 0 && (row.subcontractors || []).length > 0 && (
-                          <div className="text-[10px] text-slate-500 font-normal mt-0.5 space-x-1">
-                            {(row.subcontractors || []).map((sub, idx) => (
-                              <span key={sub.id}>
-                                <Link href={`/reports/subcontractor/${sub.id}`} className="text-emerald-600 hover:underline">
-                                  {sub.name}
-                                </Link>
-                                {idx < (row.subcontractors || []).length - 1 && ' · '}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </td>
+                        <div className="flex flex-col items-end">
+                          <span className="font-mono text-rose-600">{formatCurrency(row.subcontractor_paid)}</span>
+                          {row.subcontractor_paid > 0 && (row.subcontractors || []).length > 0 && (
+                            <div className="text-[10px] text-slate-500 font-normal mt-0.5 space-x-1">
+                              {(row.subcontractors || []).map((sub, idx) => (
+                                <span key={sub.id}>
+                                  <Link href={`/reports/subcontractor/${sub.id}`} className="text-emerald-600 hover:underline">
+                                    {sub.name}
+                                  </Link>
+                                  {idx < (row.subcontractors || []).length - 1 && ' · '}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex flex-col items-end">
                           <span className="font-mono text-amber-600">{formatCurrency(row.agent_paid)}</span>
@@ -627,14 +724,24 @@ export default function AccountingPage() {
             </button>
           </div>
 
+
+
           <div className="mt-4 text-xs text-slate-400 space-y-1">
             <p>* Only estimates with at least one invoice in <strong>paid</strong> or <strong>partial</strong> status are shown.</p>
             <p>* Click the estimate number to view details.</p>
             <p>* Revised Total = Estimate Total + Approved Change Orders</p>
             <p>* Company Profit = Revised Total − (Subcontractor Paid + Agent Paid + Other Expenses)</p>
+            <p>* Mileage Deduction = total miles × $0.655 (YTD)</p>
+            <p>* Unsold Costs = expenses on estimates with status Draft, Sent, or Rejected</p>
           </div>
         </div>
       </div>
+
+      {/* // At bottom of component: */}
+<MetricExplanationModal
+  isOpen={showExplanation}
+  onClose={() => setShowExplanation(false)}
+/>
     </ProtectedRoute>
   );
 }
