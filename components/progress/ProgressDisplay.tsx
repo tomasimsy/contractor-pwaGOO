@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { getCompanyId } from "@/lib/supabase/getCompanyId"; // 👈 import
 
 interface Milestone {
   milestone_order: number;
@@ -32,18 +33,32 @@ export default function ProgressDisplay({
   const [milestonesMap, setMilestonesMap] = useState<Record<string, Milestone[]>>({});
 
   const loadProgress = useCallback(async () => {
-    const { data } = await supabase
+    // Get company_id once
+    const companyId = await getCompanyId();
+    if (!companyId) {
+      console.warn("No company_id – skipping progress load");
+      return;
+    }
+
+    const { data, error } = await supabase
       .from("project_milestones")
       .select("*")
       .eq("estimate_id", estimateId)
+      .eq("company_id", companyId) // 👈 filter by company
       .order("milestone_order");
+
+    if (error) {
+      console.error("Error loading milestones:", error);
+      return;
+    }
+
     if (data) {
       const map: Record<string, Milestone[]> = {};
       data.forEach((m) => {
         if (!map[m.project_name]) map[m.project_name] = [];
         map[m.project_name].push({
           ...m,
-          note: m.note, // note is string from DB, will be displayed as plain text
+          note: m.note,
         });
       });
       setMilestonesMap(map);
@@ -99,74 +114,57 @@ export default function ProgressDisplay({
         const activeNote = lastCompleted?.note || null;
 
         return (
-<div key={project.name} className="border-b border-slate-100 last:border-0 pb-2">
-
-  <div className="flex items-center gap-3 text-[10px]">
-
-    {/* LABEL (now aligned to the bar line) */}
-    <span className="text-[9px] text-slate-700 leading-none whitespace-nowrap flex items-center h-2">
-      Project Progress:
-    </span>
-
-    {/* PROGRESS BAR */}
-    <div className="relative flex-1 h-2 flex items-center">
-
-      <div className="absolute left-0 right-0 h-px bg-slate-200" />
-
-      <div
-        className="absolute left-0 h-px bg-emerald-500 transition-all"
-        style={{ width: `${progressPercent}%` }}
-      />
-
-      <div className="relative flex justify-between w-full">
-        {allMilestones.map((m, idx) => (
-          <div
-            key={m.milestone_order || idx}
-            className="flex flex-col items-center"
-            style={{ width: `${100 / allMilestones.length}%` }}
-          >
-            <div
-              className={`w-2 h-2 rounded-full transition-colors ${
-                m.completed_at ? "bg-emerald-500" : "bg-slate-300"
-              }`}
-            />
+          <div key={project.name} className="border-b border-slate-100 last:border-0 pb-2">
+            <div className="flex items-center gap-3 text-[10px]">
+              <span className="text-[9px] text-slate-700 leading-none whitespace-nowrap flex items-center h-2">
+                Project Progress:
+              </span>
+              <div className="relative flex-1 h-2 flex items-center">
+                <div className="absolute left-0 right-0 h-px bg-slate-200" />
+                <div
+                  className="absolute left-0 h-px bg-emerald-500 transition-all"
+                  style={{ width: `${progressPercent}%` }}
+                />
+                <div className="relative flex justify-between w-full">
+                  {allMilestones.map((m, idx) => (
+                    <div
+                      key={m.milestone_order || idx}
+                      className="flex flex-col items-center"
+                      style={{ width: `${100 / allMilestones.length}%` }}
+                    >
+                      <div
+                        className={`w-2 h-2 rounded-full transition-colors ${
+                          m.completed_at ? "bg-emerald-500" : "bg-slate-300"
+                        }`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <span className="font-bold text-emerald-600 whitespace-nowrap leading-none">
+                {progressPercent}%
+              </span>
+            </div>
+            <div className="flex justify-between -mt-1">
+              {allMilestones.map((m, idx) => (
+                <span
+                  key={m.milestone_order || idx}
+                  className={`text-[7px] text-center w-full px-[1px] truncate ${
+                    m.completed_at
+                      ? "text-emerald-700 font-medium"
+                      : "text-slate-400"
+                  }`}
+                >
+                  {m.title}
+                </span>
+              ))}
+            </div>
+            {activeNote && (
+              <div className="text-[8px] text-amber-700 bg-amber-50/70 rounded px-1.5 py-0.5 italic truncate">
+                {typeof activeNote === "string" ? activeNote : activeNote}
+              </div>
+            )}
           </div>
-        ))}
-      </div>
-
-    </div>
-
-    {/* PERCENT (aligned to same baseline) */}
-    <span className="font-bold text-emerald-600 whitespace-nowrap leading-none">
-      {progressPercent}%
-    </span>
-
-  </div>
-
-  {/* milestone labels */}
-  <div className="flex justify-between -mt-1">
-    {allMilestones.map((m, idx) => (
-      <span
-        key={m.milestone_order || idx}
-        className={`text-[7px] text-center w-full px-[1px] truncate ${
-          m.completed_at
-            ? "text-emerald-700 font-medium"
-            : "text-slate-400"
-        }`}
-      >
-        {m.title}
-      </span>
-    ))}
-  </div>
-
-  {/* Active note */}
-  {activeNote && (
-    <div className="text-[8px] text-amber-700 bg-amber-50/70 rounded px-1.5 py-0.5 italic truncate">
-      {typeof activeNote === "string" ? activeNote : activeNote}
-    </div>
-  )}
-
-</div>
         );
       })
       .filter(Boolean);

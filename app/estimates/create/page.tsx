@@ -16,7 +16,6 @@ import { generateEstimateNumber } from "@/lib/utils/estimateNumber";
 import toast from "react-hot-toast";
 import { Upload, X, Loader2, Images, ZoomIn } from "lucide-react";
 
-
 import { EstimateCamera } from "@/components/ui/EstimateCamera";
 import { EstimateImageUploader, EstimateImageView } from "@/components/ui/EstimateImages";
 
@@ -38,9 +37,12 @@ export default function CreateEstimate() {
   const [showTargetModal, setShowTargetModal] = useState(false);
   const [targetTotal, setTargetTotal] = useState<number | null>(null);
 
-const [estimateId] = useState(() => crypto.randomUUID());
-const [estimateRowCreated, setEstimateRowCreated] = useState(false);
-const [galleryRefresh, setGalleryRefresh] = useState(0);
+  const [estimateId] = useState(() => crypto.randomUUID());
+  const [estimateRowCreated, setEstimateRowCreated] = useState(false);
+  const [galleryRefresh, setGalleryRefresh] = useState(0);
+
+  // ---- NEW: store company ID after fetching ----
+  const [companyId, setCompanyId] = useState<string | null>(null);
 
   const BRAND_GREEN = "#0e542c";
   const BRAND_GREEN_LIGHT = "#e8f5e9";
@@ -82,17 +84,65 @@ const [galleryRefresh, setGalleryRefresh] = useState(0);
     }
   }, [lastAddedItemId]);
 
-  // Cacmera FK
+  // ---- CREATE DRAFT ESTIMATE with company_id (clean pattern) ----
   useEffect(() => {
-  if (!clientId || estimateRowCreated) return;
-  supabase
-    .from("estimates")
-    .upsert({ id: estimateId, client_id: clientId, status: "pending" }, { onConflict: "id" })
-    .then(({ error }) => {
-      if (!error) setEstimateRowCreated(true);
-      else console.error("Failed to create draft estimate row:", error);
-    });
-}, [clientId, estimateId, estimateRowCreated]);
+    if (!clientId || estimateRowCreated) return;
+
+    const createDraft = async () => {
+      // Get logged-in user
+      const {
+        data: { user },
+        error: userError
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        toast.error("You must be logged in to create an estimate.");
+        return;
+      }
+
+      // Get user's company
+      const {
+        data: profile,
+        error: profileError
+      } = await supabase
+        .from("profiles")
+        .select("company_id")
+        .eq("id", user.id)
+        .single();
+
+      if (profileError || !profile?.company_id) {
+        console.error("Missing company profile:", profileError);
+        toast.error("Your account is not assigned to a company.");
+        return;
+      }
+
+      const companyId = profile.company_id;
+
+      // Create estimate with company_id
+      const { error } = await supabase
+        .from("estimates")
+        .upsert(
+          {
+            id: estimateId,
+            client_id: clientId,
+            status: "pending",
+            company_id: companyId,
+          },
+          { onConflict: "id" }
+        );
+
+      if (error) {
+        console.error("Failed to create draft estimate:", error);
+        toast.error("Failed to create draft estimate.");
+        return;
+      }
+
+      setCompanyId(companyId);
+      setEstimateRowCreated(true);
+    };
+
+    createDraft();
+  }, [clientId, estimateId, estimateRowCreated]);
 
   const allItems = projects.flatMap((project) =>
     project.items.map((item) => ({
@@ -222,24 +272,32 @@ const [galleryRefresh, setGalleryRefresh] = useState(0);
       return;
     }
 
+    // Ensure company_id is available
+    if (!companyId) {
+      toast.error("Company not found. Please refresh and try again.");
+      return;
+    }
+
     const estimateNumber = await generateEstimateNumber();
     setSaving(true);
 
-const { data: estimate, error } = await supabase
-  .from("estimates")
-  .upsert(
-    {
-      id: estimateId,
-      client_id: clientId,
-      estimate_number: estimateNumber,
-      description: description || null,
-      notes: notes || null,
-      subtotal,
-      total,
-      status: "pending",
-    },
-    { onConflict: "id" }
-  )
+    // Upsert estimate with company_id
+    const { data: estimate, error } = await supabase
+      .from("estimates")
+      .upsert(
+        {
+          id: estimateId,
+          client_id: clientId,
+          estimate_number: estimateNumber,
+          description: description || null,
+          notes: notes || null,
+          subtotal,
+          total,
+          status: "pending",
+          company_id: companyId,
+        },
+        { onConflict: "id" }
+      )
       .select()
       .single();
 
@@ -249,6 +307,7 @@ const { data: estimate, error } = await supabase
       return;
     }
 
+    // Insert line items with company_id
     const itemsToInsert = projects.flatMap((project) =>
       project.items.map((item) => ({
         estimate_id: estimate.id,
@@ -261,6 +320,7 @@ const { data: estimate, error } = await supabase
         unit_price: item.unit_price,
         taxable: item.taxable,
         total: item.quantity * item.unit_price,
+        company_id: companyId,
       }))
     );
 
@@ -340,39 +400,41 @@ const { data: estimate, error } = await supabase
         <div className="p-3 space-y-3">
           {/* Client */}
           <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
-            <ClientSelector selectedId={clientId} onSelect={setClientId} />
+            <ClientSelector
+            selectedId={clientId}
+            onSelect={setClientId}
+            companyId={companyId}   // 👈 pass the company ID
+          />
           </div>
 
           {/* Description */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 transition-all duration-200 focus-within:border-green-500 focus-within:ring-2 focus-within:ring-green-500/20">
-<textarea
-  value={description}
-  onChange={(e) => setDescription(e.target.value)}
-  className="w-full min-h-[100px] text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none resize-none capitalize"
-  rows={5}
-  placeholder="Brief description of work..."
-/>
-</div>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full min-h-[100px] text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none resize-none capitalize"
+              rows={5}
+              placeholder="Brief description of work..."
+            />
+          </div>
 
 {/* Camera Uploader */}
-Camera Uploader
 <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
   {estimateRowCreated ? (
     <>
-<EstimateCamera estimateId={estimateId} onUploaded={() => setGalleryRefresh((n) => n + 1)} />
-
-<EstimateImageUploader
-  estimateId={estimateId}   // <--- use the state variable
-  onUploaded={() => setGalleryRefresh((n) => n + 1)}
-/> 
-
- 
-</>
+      <EstimateCamera
+        estimateId={estimateId}
+        onUploaded={() => setGalleryRefresh((n) => n + 1)}
+      />
+      <EstimateImageUploader
+        estimateId={estimateId}
+        onUploaded={() => setGalleryRefresh((n) => n + 1)}
+      />
+    </>
   ) : (
     <p className="text-xs text-gray-400">Select a client above to enable photo uploads.</p>
   )}
 </div>
-          </div>
 
           {/* Projects */}
           <div className="space-y-3">
@@ -406,36 +468,36 @@ Camera Uploader
 
                 {/* Project Description */}
                 <div className="px-3 pt-2">
-  <textarea
-    value={project.description}
-    onChange={(e) => updateProject(project.id, "description", e.target.value)}
-    rows={1}
-    placeholder="Project description (optional)"
-    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-700 placeholder:text-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 resize-none transition-all capitalize"
-  />
-</div>
+                  <textarea
+                    value={project.description}
+                    onChange={(e) => updateProject(project.id, "description", e.target.value)}
+                    rows={1}
+                    placeholder="Project description (optional)"
+                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-700 placeholder:text-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 resize-none transition-all capitalize"
+                  />
+                </div>
 
                 {/* Items */}
-                <div className="px-3   space-y-2">
+                <div className="px-3 space-y-2">
                   {project.items.map((item, itemIdx) => (
                     <div
                       key={item.id}
                       ref={(el) => { newItemRefs.current[item.id] = el; }}
                       className="bg-gray-50 rounded-lg p-2 border border-gray-200"
                     >
-                      <div className="flex gap-2 mb-2 ">
-<div className="flex-1 flex items-center gap-1">
-  <span className="text-[10px] text-gray-400 w-5">{itemIdx + 1}.</span>
-  <div className="flex-1">
-    <input
-      type="text"
-      value={item.name}
-      onChange={(e) => updateItemInProject(project.id, item.id, "name", e.target.value)}
-      placeholder="Item name"
-      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-[10px] text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 placeholder:text-gray-400 transition-all capitalize"
-    />
-  </div>
-</div>
+                      <div className="flex gap-2 mb-2">
+                        <div className="flex-1 flex items-center gap-1">
+                          <span className="text-[10px] text-gray-400 w-5">{itemIdx + 1}.</span>
+                          <div className="flex-1">
+                            <input
+                              type="text"
+                              value={item.name}
+                              onChange={(e) => updateItemInProject(project.id, item.id, "name", e.target.value)}
+                              placeholder="Item name"
+                              className="w-full bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-[10px] text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 placeholder:text-gray-400 transition-all capitalize"
+                            />
+                          </div>
+                        </div>
                         <button
                           onClick={() => removeItemFromProject(project.id, item.id)}
                           className="text-red-400 text-xs px-1"
@@ -456,38 +518,38 @@ Camera Uploader
 
                       <div className="flex items-center gap-2">
                         <div className="flex items-center gap-1 bg-white px-2 py-1 rounded border border-gray-200 transition-all duration-200 focus-within:border-green-500 focus-within:ring-2 focus-within:ring-green-500/20">
-  <span className="text-[10px] text-gray-400">Qty</span>
-  <input
-    type="number"
-    value={item.quantity === 0 ? "" : item.quantity}
-    onChange={(e) => {
-      const val = e.target.value === "" ? 0 : Number(e.target.value);
-      updateItemInProject(project.id, item.id, "quantity", val);
-    }}
-    className="w-12 text-sm text-gray-700 text-center focus:outline-none bg-transparent"
-    placeholder="0"
-  />
-</div>
-                        <div className="flex items-center  gap-1 bg-white px-2 py-1 rounded border border-gray-200 transition-all duration-200 focus-within:border-green-500 focus-within:ring-2 focus-within:ring-green-500/20">
-  <span className="text-[10px] text-gray-400">$</span>
-  <input
-    type="number"
-    value={item.unit_price === 0 ? "" : item.unit_price}
-    onChange={(e) => {
-      const val = e.target.value === "" ? 0 : Number(e.target.value);
-      updateItemInProject(project.id, item.id, "unit_price", val);
-    }}
-    className="w-20 text-sm text-gray-700 text-right focus:outline-none bg-transparent"
-    placeholder="0.00"
-    step="0.01"
-  />
-</div>
-                        <div className="flex-1  text-right text-sm font-medium text-gray-700">
+                          <span className="text-[10px] text-gray-400">Qty</span>
+                          <input
+                            type="number"
+                            value={item.quantity === 0 ? "" : item.quantity}
+                            onChange={(e) => {
+                              const val = e.target.value === "" ? 0 : Number(e.target.value);
+                              updateItemInProject(project.id, item.id, "quantity", val);
+                            }}
+                            className="w-12 text-sm text-gray-700 text-center focus:outline-none bg-transparent"
+                            placeholder="0"
+                          />
+                        </div>
+                        <div className="flex items-center gap-1 bg-white px-2 py-1 rounded border border-gray-200 transition-all duration-200 focus-within:border-green-500 focus-within:ring-2 focus-within:ring-green-500/20">
+                          <span className="text-[10px] text-gray-400">$</span>
+                          <input
+                            type="number"
+                            value={item.unit_price === 0 ? "" : item.unit_price}
+                            onChange={(e) => {
+                              const val = e.target.value === "" ? 0 : Number(e.target.value);
+                              updateItemInProject(project.id, item.id, "unit_price", val);
+                            }}
+                            className="w-20 text-sm text-gray-700 text-right focus:outline-none bg-transparent"
+                            placeholder="0.00"
+                            step="0.01"
+                          />
+                        </div>
+                        <div className="flex-1 text-right text-sm font-medium text-gray-700">
                           {formatCurrency(item.quantity * item.unit_price)}
                         </div>
                       </div>
                     </div>
-                  ))}       
+                  ))}
                 </div>
 
                 {/* Add Item Button - Green */}
@@ -542,17 +604,17 @@ Camera Uploader
           </div>
 
           {/* Notes */}
-<div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 transition-all duration-200 focus-within:border-green-500 focus-within:shadow-md">
-  <textarea
-    value={notes}
-    onChange={(e) => setNotes(e.target.value)}
-    className="w-full text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none resize-none"
-    rows={2}
-    placeholder="Notes for client (optional)..."
-  />
-</div>
+          <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 transition-all duration-200 focus-within:border-green-500 focus-within:shadow-md">
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="w-full text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none resize-none"
+              rows={2}
+              placeholder="Notes for client (optional)..."
+            />
+          </div>
         </div>
-       
+      </div>
     </ProtectedRoute>
   );
 }

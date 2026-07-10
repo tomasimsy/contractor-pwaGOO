@@ -3,10 +3,12 @@
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { Client } from "@/types";
+import { getCompanyId } from "@/lib/supabase/getCompanyId";
 
 interface ClientSelectorProps {
-selectedId: string;
-onSelect: (id: string) => void;
+  selectedId: string;
+  onSelect: (id: string) => void;
+  companyId?: string | null; // 👈 add this
 }
 
 export default function ClientSelector({
@@ -54,12 +56,15 @@ const [clients, setClients] = useState<Client[]>([]);
       async function createClient() {
       if (!newName.trim()) return;
 
+       const companyId = await getCompanyId();
+       
       const { data } = await supabase
       .from("clients")
       .insert({
       name: newName,
       phone: newPhone || null,
       email: newEmail || null,
+      company_id: companyId, // 👈 add this line
       })
       .select()
       .single();

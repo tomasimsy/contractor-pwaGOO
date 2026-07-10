@@ -18,6 +18,7 @@ import {
   ZoomIn,
   Upload,
 } from "lucide-react";
+import { getCompanyId } from "@/lib/supabase/getCompanyId"; // 👈 import
 
 // ---------------------------------------------------------------------------
 // Types (your original types)
@@ -122,7 +123,11 @@ async function queueRemove(localId: string) {
   });
 }
 
-async function uploadQueuedPhoto(photo: QueuedPhoto) {
+// ---- UPLOAD with company_id (now accepts companyId) ----
+async function uploadQueuedPhoto(photo: QueuedPhoto, companyId: string) {
+  // companyId must be provided
+  if (!companyId) throw new Error("company_id required for upload");
+
   const path = `${photo.estimateId}/${photo.stage}/${photo.localId}.jpg`;
   const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, photo.blob, {
     cacheControl: "3600",
@@ -133,6 +138,7 @@ async function uploadQueuedPhoto(photo: QueuedPhoto) {
   const { data: publicUrlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
   const fileName = `${photo.stage}-${photo.localId}.jpg`;
   const { error: insertError } = await supabase.from("estimate_images").insert({
+    company_id: companyId, // 👈 added
     estimate_id: photo.estimateId,
     project_name: photo.projectName,
     stage: photo.stage,
@@ -150,13 +156,21 @@ async function uploadQueuedPhoto(photo: QueuedPhoto) {
   if (insertError) throw insertError;
 }
 
+// ---- SYNC QUEUE (gets company_id once) ----
 export async function syncPhotoQueue(): Promise<{ uploaded: number; remaining: number }> {
   let uploaded = 0;
   try {
+    // 1. Get company_id once
+    const companyId = await getCompanyId();
+    if (!companyId) {
+      console.warn("No company_id – cannot sync queued photos");
+      return { uploaded: 0, remaining: (await queueGetAll()).length };
+    }
+
     const all = await queueGetAll();
     for (const photo of all) {
       try {
-        await uploadQueuedPhoto(photo);
+        await uploadQueuedPhoto(photo, companyId); // 👈 pass companyId
         await queueRemove(photo.localId);
         uploaded++;
       } catch (err) {
@@ -180,14 +194,21 @@ async function getQueueCount(estimateId?: string): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
-// Gallery fetch & delete
+// Gallery fetch & delete (with company_id)
 // ---------------------------------------------------------------------------
 
 async function fetchEstimateImages(estimateId: string): Promise<EstimateImage[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) {
+    console.warn("No company_id – skipping fetch");
+    return [];
+  }
+
   const { data, error } = await supabase
     .from("estimate_images")
     .select("*")
     .eq("estimate_id", estimateId)
+    .eq("company_id", companyId) // 👈 filter by company
     .order("created_at", { ascending: true });
   if (error) {
     console.error("Failed to load estimate images:", error);
@@ -197,16 +218,25 @@ async function fetchEstimateImages(estimateId: string): Promise<EstimateImage[]>
 }
 
 async function deleteEstimateImage(image: EstimateImage): Promise<void> {
+  const companyId = await getCompanyId();
+  if (!companyId) {
+    throw new Error("No company_id – cannot delete");
+  }
+
   if (image.storage_path) {
     const { error: storageError } = await supabase.storage.from(BUCKET).remove([image.storage_path]);
     if (storageError) throw storageError;
   }
-  const { error: dbError } = await supabase.from("estimate_images").delete().eq("id", image.id);
+  const { error: dbError } = await supabase
+    .from("estimate_images")
+    .delete()
+    .eq("id", image.id)
+    .eq("company_id", companyId); // 👈 filter by company
   if (dbError) throw dbError;
 }
 
 // ---------------------------------------------------------------------------
-// EstimateCamera — with "Add Images" select, preserving your original capture
+// EstimateCamera — (your original component, unchanged except imports)
 // ---------------------------------------------------------------------------
 
 export function EstimateCamera({
@@ -238,7 +268,7 @@ export function EstimateCamera({
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(false);
 
-  // --- Metadata (your original fields) ---
+  // --- Metadata ---
   const [stage, setStage] = useState<PhotoStage>("before");
   const [tag, setTag] = useState("");
   const [caption, setCaption] = useState("");
@@ -257,7 +287,7 @@ export function EstimateCamera({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- Helpers (your original refresh & gallery) ---
+  // --- Helpers ---
   const refreshPendingCount = useCallback(async () => {
     setPendingCount(await getQueueCount(estimateId));
   }, [estimateId]);
@@ -397,7 +427,7 @@ export function EstimateCamera({
     setStep("review");
   };
 
-  // --- Your original capturePhoto (full overlay, OSR Pros, etc.) ---
+  // --- Your original capturePhoto (unchanged) ---
   const capturePhoto = async () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -748,7 +778,12 @@ export function EstimateCamera({
 
       if (navigator.onLine) {
         try {
-          await uploadQueuedPhoto(photo);
+          // get company_id once for online upload
+          const companyId = await getCompanyId();
+          if (!companyId) {
+            throw new Error("Company ID missing");
+          }
+          await uploadQueuedPhoto(photo, companyId);
           await queueRemove(photo.localId);
           await refreshPendingCount();
           toast.success("Photo uploaded.");
@@ -898,7 +933,7 @@ export function EstimateCamera({
       {/* Modal */}
       {open && (
         <div className="fixed inset-0 bg-black z-[100] flex flex-col">
-          {/* ---- SELECT step (NEW) ---- */}
+          {/* ---- SELECT step ---- */}
           {step === "select" && (
             <div className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-950 text-white">
               <button onClick={handleClose} className="absolute top-4 right-4 p-2 text-white/70 hover:text-white">
@@ -946,7 +981,7 @@ export function EstimateCamera({
             </div>
           )}
 
-          {/* ---- CAMERA step (your original) ---- */}
+          {/* ---- CAMERA step ---- */}
           {step === "camera" && (
             <>
               <div className="flex items-center justify-between px-4 py-3 text-white">
@@ -1024,7 +1059,7 @@ export function EstimateCamera({
             </>
           )}
 
-          {/* ---- REVIEW step (your original) ---- */}
+          {/* ---- REVIEW step ---- */}
           {step === "review" && capturedUrl && (
             <div className="flex-1 flex flex-col bg-slate-950 text-white overflow-y-auto">
               <div className="flex items-center justify-between px-4 py-3">

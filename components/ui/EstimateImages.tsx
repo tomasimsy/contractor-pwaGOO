@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import toast from "react-hot-toast";
 import { Upload, X, Loader2, Images, ZoomIn } from "lucide-react";
+import { getCompanyId } from "@/lib/supabase/getCompanyId";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -30,15 +31,23 @@ export type EstimateImage = {
 const BUCKET = "estimate-images";
 
 // ---------------------------------------------------------------------------
-// Shared fetch & delete
+// Shared fetch & delete (now with consistent company_id handling)
 // ---------------------------------------------------------------------------
 
 async function fetchEstimateImages(estimateId: string): Promise<EstimateImage[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) {
+    console.warn("No company_id found – skipping fetch");
+    return [];
+  }
+
   const { data, error } = await supabase
     .from("estimate_images")
     .select("*")
     .eq("estimate_id", estimateId)
+    .eq("company_id", companyId)
     .order("created_at", { ascending: true });
+
   if (error) {
     console.error("Failed to load estimate images:", error);
     return [];
@@ -47,11 +56,24 @@ async function fetchEstimateImages(estimateId: string): Promise<EstimateImage[]>
 }
 
 async function deleteEstimateImage(image: EstimateImage): Promise<void> {
+  const companyId = await getCompanyId();
+  if (!companyId) {
+    throw new Error("No company_id found – cannot delete");
+  }
+
   if (image.storage_path) {
-    const { error: storageError } = await supabase.storage.from(BUCKET).remove([image.storage_path]);
+    const { error: storageError } = await supabase.storage
+      .from(BUCKET)
+      .remove([image.storage_path]);
     if (storageError) throw storageError;
   }
-  const { error: dbError } = await supabase.from("estimate_images").delete().eq("id", image.id);
+
+  const { error: dbError } = await supabase
+    .from("estimate_images")
+    .delete()
+    .eq("id", image.id)
+    .eq("company_id", companyId);
+
   if (dbError) throw dbError;
 }
 
@@ -68,7 +90,7 @@ export function EstimateImageUploader({
   estimateId: string;
   projectName?: string;
   className?: string;
-  onUploaded?: () => void; // <-- new callback
+  onUploaded?: () => void;
 }) {
   const [images, setImages] = useState<EstimateImage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,6 +118,14 @@ export function EstimateImageUploader({
   const handleUpload = useCallback(
     async (files: FileList | null, stage: EstimateImageStage) => {
       if (!files || files.length === 0) return;
+
+      // 1. Get company_id once before the loop
+      const companyId = await getCompanyId();
+      if (!companyId) {
+        toast.error("Company not found – cannot upload photos");
+        return;
+      }
+
       setUploadingStage(stage);
       try {
         for (const file of Array.from(files)) {
@@ -107,17 +137,23 @@ export function EstimateImageUploader({
           const fileName = `${stage}-${crypto.randomUUID()}.${ext}`;
           const path = `${estimateId}/${stage}/${fileName}`;
 
-          const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file, {
-            cacheControl: "3600",
-            upsert: true,
-          });
+          const { error: uploadError } = await supabase.storage
+            .from(BUCKET)
+            .upload(path, file, {
+              cacheControl: "3600",
+              upsert: true,
+            });
           if (uploadError) throw uploadError;
 
-          const { data: publicUrlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
+          const { data: publicUrlData } = supabase.storage
+            .from(BUCKET)
+            .getPublicUrl(path);
 
+          // Insert with company_id
           const { data: inserted, error: insertError } = await supabase
             .from("estimate_images")
             .insert({
+              company_id: companyId,
               estimate_id: estimateId,
               project_name: projectName || null,
               stage,
@@ -128,12 +164,13 @@ export function EstimateImageUploader({
             })
             .select()
             .single();
+
           if (insertError) throw insertError;
 
           setImages((prev) => [...prev, inserted as EstimateImage]);
         }
         toast.success(`Photo${files.length > 1 ? "s" : ""} uploaded.`);
-        onUploaded?.(); // <-- notify parent
+        onUploaded?.();
       } catch (err: any) {
         console.error(err);
         toast.error(err.message || "Failed to upload image.");
@@ -151,13 +188,14 @@ export function EstimateImageUploader({
       await deleteEstimateImage(image);
       setImages((prev) => prev.filter((img) => img.id !== image.id));
       toast.success("Photo removed.");
-      onUploaded?.(); // <-- also notify parent on delete (optional)
+      onUploaded?.();
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "Failed to remove photo.");
     }
   }, [onUploaded]);
 
+  // ----- render helpers -----
   const renderColumn = (
     stage: EstimateImageStage,
     label: string,
@@ -167,17 +205,13 @@ export function EstimateImageUploader({
     <div className="flex-1 min-w-[180px]">
       <div className="flex items-center justify-between mb-2">
         <span className="text-[11px] font-bold uppercase tracking-wide text-slate-600">{label}</span>
-        <span className="text-[10px] text-slate-400">
-          {list.length} photo{list.length === 1 ? "" : "s"}
-        </span>
+        <span className="text-[10px] text-slate-400">{list.length} photo{list.length === 1 ? "" : "s"}</span>
       </div>
-
       <div className="grid grid-cols-3 gap-2">
         {list.map((img) => (
           <div key={img.id} className="relative aspect-square rounded-lg overflow-hidden border border-slate-200">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={img.url} alt={label} className="w-full h-full object-cover" />
-            {/* DELETE BUTTON – white, red border, red "✕" */}
             <button
               onClick={() => handleDelete(img)}
               className="absolute top-1.5 right-1.5 z-10 bg-white hover:bg-red-50 text-red-600 hover:text-red-700 rounded-full p-1.5 shadow-md border-2 border-red-400 transition-colors flex items-center justify-center w-7 h-7"
@@ -210,21 +244,25 @@ export function EstimateImageUploader({
     </div>
   );
 
+  if (loading) {
+    return (
+      <div className={`bg-white rounded-xl border border-slate-200/60 shadow-sm p-4 ${className}`}>
+        <div className="text-[11px] text-slate-400 py-4 text-center">Loading photos...</div>
+      </div>
+    );
+  }
+
   return (
     <div className={`bg-white rounded-xl border border-slate-200/60 shadow-sm p-4 ${className}`}>
       <div className="flex items-center gap-2 mb-4">
         <Images size={16} className="text-emerald-600" />
         <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wide">Project Photos</h3>
       </div>
-      {loading ? (
-        <div className="text-[11px] text-slate-400 py-4 text-center">Loading photos...</div>
-      ) : (
-        <div className="flex flex-col sm:flex-row gap-4">
-          {renderColumn("before", "Before", beforeImages, beforeInputRef)}
-          {renderColumn("during", "During", duringImages, duringInputRef)}
-          {renderColumn("after", "After", afterImages, afterInputRef)}
-        </div>
-      )}
+      <div className="flex flex-col sm:flex-row gap-4">
+        {renderColumn("before", "Before", beforeImages, beforeInputRef)}
+        {renderColumn("during", "During", duringImages, duringInputRef)}
+        {renderColumn("after", "After", afterImages, afterInputRef)}
+      </div>
     </div>
   );
 }
@@ -300,14 +338,29 @@ export function EstimateImageView({
       </div>
 
       {lightbox && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={() => setLightbox(null)}>
-          <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 text-white/80 hover:text-white">
+        <div
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
+          onClick={() => setLightbox(null)}
+        >
+          <button
+            onClick={() => setLightbox(null)}
+            className="absolute top-4 right-4 text-white/80 hover:text-white"
+          >
             <X size={22} />
           </button>
-          <div className="max-w-full max-h-full flex flex-col items-center gap-2" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="max-w-full max-h-full flex flex-col items-center gap-2"
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={lightbox.url} alt={lightbox.stage} className="max-w-full max-h-[80vh] rounded-lg object-contain" />
-            {lightbox.caption && <p className="text-white/80 text-sm text-center max-w-md">{lightbox.caption}</p>}
+            <img
+              src={lightbox.url}
+              alt={lightbox.stage}
+              className="max-w-full max-h-[80vh] rounded-lg object-contain"
+            />
+            {lightbox.caption && (
+              <p className="text-white/80 text-sm text-center max-w-md">{lightbox.caption}</p>
+            )}
           </div>
         </div>
       )}

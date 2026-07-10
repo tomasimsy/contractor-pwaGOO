@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';import { useRouter, useParams } from "next/navigation";
+import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { Estimate, Client, Project, LineItem, Signature } from "@/types";
 import { formatCurrency } from "@/lib/utils/formatting";
@@ -9,15 +10,17 @@ import SignaturePad from "@/components/signature/SignaturePad";
 import ProjectFinancialsModal from "@/components/ProjectFinancialsModal";
 import ExpenseModal from "@/components/ExpenseModal";
 import Link from "next/link";
-import { SquarePen, Send, FileText, Users, Receipt, DollarSign, Plus, FileEdit, X, Trash2, ArrowLeft, Target, Sparkles, Flag,TrendingUp } from "lucide-react";
+import {
+  SquarePen, Send, FileText, Users, Receipt, DollarSign, Plus, FileEdit, X, Trash2, ArrowLeft, Target, Sparkles, Flag, TrendingUp
+} from "lucide-react";
 import toast from "react-hot-toast";
 import ProgressModal from "@/components/progress/ProgressModal";
 import ProgressDisplay from "@/components/progress/ProgressDisplay";
-import ClientSelector from "@/components/forms/ClientSelector"; // <-- ADD AT TOP (kept but not used)
+import ClientSelector from "@/components/forms/ClientSelector";
 import { EstimateCamera } from "@/components/ui/EstimateCamera";
 import { EstimateImageUploader, EstimateImageView } from "@/components/ui/EstimateImages";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
-
+import { getCompanyId } from "@/lib/supabase/getCompanyId";
 
 type ProjectWithItems = {
   id: string;
@@ -59,11 +62,9 @@ export default function EstimatePage() {
   const router = useRouter();
   const { id } = useParams();
 
-  // Project progress modal state
+  // --- state ---
   const [showProgressModal, setShowProgressModal] = useState(false);
-
-const [progressRefresh, setProgressRefresh] = useState(0);
-  // Core state
+  const [progressRefresh, setProgressRefresh] = useState(0);
   const [estimate, setEstimate] = useState<Estimate | null>(null);
   const [client, setClient] = useState<Client | null>(null);
   const [projects, setProjects] = useState<ProjectWithItems[]>([]);
@@ -71,37 +72,21 @@ const [progressRefresh, setProgressRefresh] = useState(0);
   const [converting, setConverting] = useState(false);
   const [existingInvoiceId, setExistingInvoiceId] = useState<string | null>(null);
   const fabRef = useRef<HTMLDivElement>(null);
-
-  //Camera setups
   const [estimateId] = useState(() => crypto.randomUUID());
-const [estimateRowCreated, setEstimateRowCreated] = useState(false);
-const [galleryRefresh, setGalleryRefresh] = useState(0);
-// 
-const [pendingChangeOrdersTotal, setPendingChangeOrdersTotal] = useState(0);
-
-  // Progress display state
+  const [estimateRowCreated, setEstimateRowCreated] = useState(false);
+  const [galleryRefresh, setGalleryRefresh] = useState(0);
+  const [pendingChangeOrdersTotal, setPendingChangeOrdersTotal] = useState(0);
   const [setProjectsList] = useState<{ name: string }[]>([]);
- 
-  // Modal states
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showFinancialsModal, setShowFinancialsModal] = useState(false);
   const [showChangeOrderModal, setShowChangeOrderModal] = useState(false);
   const [editingChangeOrder, setEditingChangeOrder] = useState<ChangeOrder | null>(null);
-
- 
-  // Change orders
   const [changeOrders, setChangeOrders] = useState<ChangeOrder[]>([]);
   const [changeOrdersTotal, setChangeOrdersTotal] = useState(0);
-
-  // Financial tracking
   const [subcontractorPaid, setSubcontractorPaid] = useState(0);
   const [payments, setPayments] = useState<EstimatePayment[]>([]);
-
-  // Target total state (for estimate editing)
   const [showTargetModal, setShowTargetModal] = useState(false);
   const [targetTotal, setTargetTotal] = useState<number | null>(null);
-
-  // Edit mode state
   const [isEditMode, setIsEditMode] = useState(false);
   const [editDescription, setEditDescription] = useState("");
   const [editNotes, setEditNotes] = useState("");
@@ -113,40 +98,42 @@ const [pendingChangeOrdersTotal, setPendingChangeOrdersTotal] = useState(0);
   const [fabOpen, setFabOpen] = useState(false);
   const [lastAddedItemId, setLastAddedItemId] = useState<string | null>(null);
   const newItemRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
-  const [editClientId, setEditClientId] = useState<string>(""); // <-- ADD THIS
-
-  // ---------- NEW: Client list for dropdown ----------
+  const [editClientId, setEditClientId] = useState<string>("");
   const [clientList, setClientList] = useState<{ id: string; name: string }[]>([]);
-
-  // ---------- New financial summary data ----------
   const [originalSubtotal, setOriginalSubtotal] = useState(0);
   const [revisedTotal, setRevisedTotal] = useState(0);
   const [depositAmount, setDepositAmount] = useState(0);
   const [totalPaid, setTotalPaid] = useState(0);
   const [remainingBalance, setRemainingBalance] = useState(0);
 
+  const projectsList = useMemo(() => projects.map(p => ({ name: p.name })), [projects]);
 
+  // --- helper to get company_id once ---
+  const withCompanyId = async <T,>(fn: (companyId: string) => Promise<T>): Promise<T | null> => {
+    const companyId = await getCompanyId();
+    if (!companyId) {
+      toast.error("Company not found. Please refresh and try again.");
+      return null;
+    }
+    return fn(companyId);
+  };
 
-
-  const projectsList = useMemo(() => {
-  return projects.map(p => ({ name: p.name }));
-}, [projects]);
-
-
-  // Load all data
+  // --- load data ---
   useEffect(() => {
     loadEstimate();
     loadSubcontractorPaid();
     loadChangeOrders();
-    loadPayments(); // load payments if any
+    loadPayments();
   }, [id]);
 
-  // ---------- Fetch client list ----------
   useEffect(() => {
     const fetchClients = async () => {
+      const companyId = await getCompanyId();
+      if (!companyId) return;
       const { data, error } = await supabase
         .from("clients")
         .select("id, name")
+        .eq("company_id", companyId)
         .order("name", { ascending: true });
       if (!error && data) setClientList(data);
     };
@@ -156,10 +143,13 @@ const [pendingChangeOrdersTotal, setPendingChangeOrdersTotal] = useState(0);
   useEffect(() => {
     const checkExistingInvoice = async () => {
       if (estimate?.id) {
+        const companyId = await getCompanyId();
+        if (!companyId) return;
         const { data } = await supabase
           .from("invoices")
           .select("id")
           .eq("estimate_id", estimate.id)
+          .eq("company_id", companyId)
           .maybeSingle();
         if (data) setExistingInvoiceId(data.id);
       }
@@ -186,58 +176,71 @@ const [pendingChangeOrdersTotal, setPendingChangeOrdersTotal] = useState(0);
   }, [fabOpen]);
 
   async function loadSubcontractorPaid() {
-    const { data } = await supabase
-      .from("subcontractor_payments")
-      .select("amount")
-      .eq("estimate_id", id);
-    if (data) setSubcontractorPaid(data.reduce((sum, p) => sum + (p.amount || 0), 0));
+    await withCompanyId(async (companyId) => {
+      const { data } = await supabase
+        .from("subcontractor_payments")
+        .select("amount")
+        .eq("estimate_id", id)
+        .eq("company_id", companyId);
+      if (data) setSubcontractorPaid(data.reduce((sum, p) => sum + (p.amount || 0), 0));
+    });
   }
 
   async function loadPayments() {
-    // Optional: if you have an estimate_payments table, otherwise skip
-    const { data } = await supabase
-      .from("estimate_payments")
-      .select("*")
-      .eq("estimate_id", id)
-      .order("created_at", { ascending: false });
-    if (data) {
-      setPayments(data);
-      const paidSum = data.reduce((sum, p) => sum + (p.amount || 0), 0);
-      setTotalPaid(paidSum);
-    } else {
-      setPayments([]);
-      setTotalPaid(0);
-    }
+    await withCompanyId(async (companyId) => {
+      const { data } = await supabase
+        .from("estimate_payments")
+        .select("*")
+        .eq("estimate_id", id)
+        .eq("company_id", companyId)
+        .order("created_at", { ascending: false });
+      if (data) {
+        setPayments(data);
+        const paidSum = data.reduce((sum, p) => sum + (p.amount || 0), 0);
+        setTotalPaid(paidSum);
+      } else {
+        setPayments([]);
+        setTotalPaid(0);
+      }
+    });
   }
 
-async function loadChangeOrders() {
-  const { data, error } = await supabase
-    .from("change_orders")
-    .select("*")
-    .eq("estimate_id", id)
-    .order("created_at", { ascending: false });
-  if (error) {
-    console.error("Error loading change orders:", error);
-    return;
+  async function loadChangeOrders() {
+    await withCompanyId(async (companyId) => {
+      const { data, error } = await supabase
+        .from("change_orders")
+        .select("*")
+        .eq("estimate_id", id)
+        .eq("company_id", companyId)
+        .order("created_at", { ascending: false });
+      if (error) {
+        console.error("Error loading change orders:", error);
+        return;
+      }
+      setChangeOrders(data || []);
+      const approvedTotal = (data || [])
+        .filter(co => co.status === "approved")
+        .reduce((sum, co) => sum + (co.total_amount || 0), 0);
+      const pendingTotal = (data || [])
+        .filter(co => co.status === "draft" || co.status === "pending")
+        .reduce((sum, co) => sum + (co.total_amount || 0), 0);
+      setChangeOrdersTotal(approvedTotal);
+      setPendingChangeOrdersTotal(pendingTotal);
+    });
   }
-  setChangeOrders(data || []);
-  const approvedTotal = (data || [])
-    .filter(co => co.status === "approved")
-    .reduce((sum, co) => sum + (co.total_amount || 0), 0);
-  const pendingTotal = (data || [])
-    .filter(co => co.status === "draft" || co.status === "pending")
-    .reduce((sum, co) => sum + (co.total_amount || 0), 0);
-  setChangeOrdersTotal(approvedTotal);
-  setPendingChangeOrdersTotal(pendingTotal);
-}
-
-
 
   async function loadEstimate() {
+    const companyId = await getCompanyId();
+    if (!companyId) {
+      toast.error("Company not found");
+      setLoading(false);
+      return;
+    }
     try {
       const { data: est } = await supabase
         .from("estimates")
         .select("*")
+        .eq("company_id", companyId)
         .is("deleted_at", null)
         .eq("id", id)
         .single();
@@ -253,15 +256,17 @@ async function loadChangeOrders() {
           .from("clients")
           .select("*")
           .eq("id", est.client_id)
+          .eq("company_id", companyId)
           .single();
         setClient(c);
-        setEditClientId(est.client_id); // <-- ADD THIS
+        setEditClientId(est.client_id);
       }
 
       const { data: items } = await supabase
         .from("estimate_items")
         .select("*")
-        .eq("estimate_id", id);
+        .eq("estimate_id", id)
+        .eq("company_id", companyId);
 
       const projectMap: Record<string, ProjectWithItems> = {};
       items?.forEach((item) => {
@@ -276,20 +281,18 @@ async function loadChangeOrders() {
         }
         projectMap[projectName].items.push(item);
       });
-      
       const projectsArray = Object.values(projectMap);
       setProjects(projectsArray);
       setEditProjects(JSON.parse(JSON.stringify(projectsArray)));
 
-      // Calculate original subtotal from estimate items
       const originalSum = items?.reduce((sum, i) => sum + (i.total || 0), 0) || 0;
       setOriginalSubtotal(originalSum);
 
-      // Get approved change orders total
       const { data: approvedCOs } = await supabase
         .from("change_orders")
         .select("total_amount")
         .eq("estimate_id", id)
+        .eq("company_id", companyId)
         .eq("status", "approved");
       const approvedTotal = (approvedCOs || []).reduce((sum, co) => sum + (co.total_amount || 0), 0);
       setChangeOrdersTotal(approvedTotal);
@@ -297,7 +300,6 @@ async function loadChangeOrders() {
       const revTotal = originalSum + approvedTotal;
       setRevisedTotal(revTotal);
       setDepositAmount(revTotal * 0.5);
-      // Recalculate remaining balance after payments (if any)
       const paidTotal = payments.reduce((sum, p) => sum + p.amount, 0);
       setRemainingBalance(revTotal - paidTotal);
     } catch (err) {
@@ -307,14 +309,23 @@ async function loadChangeOrders() {
     }
   }
 
-  // Change Order CRUD (unchanged)
+  // --- Change Order CRUD with company_id ---
   async function deleteChangeOrder(coId: string, status: string) {
     if (status !== "draft") {
       toast.error("Only draft change orders can be deleted.");
       return;
     }
     if (!confirm("Delete this change order permanently?")) return;
-    const { error } = await supabase.from("change_orders").delete().eq("id", coId);
+    const companyId = await getCompanyId();
+    if (!companyId) {
+      toast.error("Company not found");
+      return;
+    }
+    const { error } = await supabase
+      .from("change_orders")
+      .delete()
+      .eq("id", coId)
+      .eq("company_id", companyId);
     if (error) {
       toast.error("Error deleting change order");
     } else {
@@ -325,10 +336,13 @@ async function loadChangeOrders() {
   }
 
   async function submitForApproval(coId: string) {
+    const companyId = await getCompanyId();
+    if (!companyId) return;
     const { error } = await supabase
       .from("change_orders")
       .update({ status: "pending" })
-      .eq("id", coId);
+      .eq("id", coId)
+      .eq("company_id", companyId);
     if (error) {
       toast.error("Error submitting for approval");
     } else {
@@ -349,10 +363,13 @@ async function loadChangeOrders() {
   }
 
   async function approveChangeOrder(coId: string) {
+    const companyId = await getCompanyId();
+    if (!companyId) return;
     const { error } = await supabase
       .from("change_orders")
       .update({ status: "approved", approved_at: new Date().toISOString() })
-      .eq("id", coId);
+      .eq("id", coId)
+      .eq("company_id", companyId);
     if (error) {
       toast.error("Error approving change order");
     } else {
@@ -363,10 +380,13 @@ async function loadChangeOrders() {
   }
 
   async function rejectChangeOrder(coId: string) {
+    const companyId = await getCompanyId();
+    if (!companyId) return;
     const { error } = await supabase
       .from("change_orders")
       .update({ status: "rejected" })
-      .eq("id", coId);
+      .eq("id", coId)
+      .eq("company_id", companyId);
     if (error) {
       toast.error("Error rejecting change order");
     } else {
@@ -376,10 +396,16 @@ async function loadChangeOrders() {
   }
 
   const saveSignature = async (signature: Signature) => {
+    const companyId = await getCompanyId();
+    if (!companyId) {
+      toast.error("Company not found");
+      return;
+    }
     const { error } = await supabase
       .from("estimates")
       .update({ signature, status: "approved" })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("company_id", companyId);
     if (!error) {
       setEstimate({ ...estimate, signature } as Estimate);
       toast.success("Signature saved successfully!", {
@@ -403,21 +429,28 @@ async function loadChangeOrders() {
   };
 
   const removeSignature = async (estimateId: string) => {
-    // No confirm – the modal in SignaturePad already asked for confirmation.
+    const companyId = await getCompanyId();
+    if (!companyId) throw new Error("Company not found");
     const { error } = await supabase
       .from("estimates")
       .update({ signature: null, status: "pending" })
-      .eq("id", estimateId);
+      .eq("id", estimateId)
+      .eq("company_id", companyId);
     if (error) throw error;
-    // No alert – the SignaturePad will show a toast on success or error.
   };
 
   const markAsCompleted = async () => {
     if (!confirm("Mark this estimate as completed? It will be moved to completed list and won't be editable.")) return;
+    const companyId = await getCompanyId();
+    if (!companyId) {
+      toast.error("Company not found");
+      return;
+    }
     const { error } = await supabase
       .from("estimates")
       .update({ completed_at: new Date().toISOString(), is_completed: true, status: "completed" })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("company_id", companyId);
     if (!error) {
       toast.success("Estimate marked as completed!");
       loadEstimate();
@@ -429,11 +462,17 @@ async function loadChangeOrders() {
 
   const convertToInvoice = async () => {
     if (!estimate) return;
+    const companyId = await getCompanyId();
+    if (!companyId) {
+      toast.error("Company not found");
+      return;
+    }
 
     const { data: existingInvoice } = await supabase
       .from("invoices")
       .select("id")
       .eq("estimate_id", id)
+      .eq("company_id", companyId)
       .maybeSingle();
     if (existingInvoice) {
       toast(`Invoice already exists.`, {
@@ -460,6 +499,7 @@ async function loadChangeOrders() {
         .from("invoices")
         .select("id")
         .eq("invoice_number", invoiceNumber)
+        .eq("company_id", companyId)
         .maybeSingle();
       if (duplicateInvoice) {
         toast.error(`Invoice #${invoiceNumber} already exists`);
@@ -471,18 +511,19 @@ async function loadChangeOrders() {
       const { data: items, error: itemsFetchError } = await supabase
         .from("estimate_items")
         .select("*")
-        .eq("estimate_id", id);
+        .eq("estimate_id", id)
+        .eq("company_id", companyId);
       if (itemsFetchError || !items || items.length === 0) {
         toast.error("No items found on this estimate");
         setConverting(false);
         return;
       }
 
-      // Get approved change orders
       const { data: approvedCOs } = await supabase
         .from("change_orders")
         .select("*")
         .eq("estimate_id", id)
+        .eq("company_id", companyId)
         .eq("status", "approved");
       const changeOrdersTotalAmount = (approvedCOs || []).reduce((sum, co) => sum + (co.total_amount || 0), 0) || 0;
 
@@ -509,6 +550,7 @@ async function loadChangeOrders() {
           signature: estimate.signature,
           issue_date: new Date().toISOString().split("T")[0],
           due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+          company_id: companyId,
         })
         .select()
         .single();
@@ -524,6 +566,7 @@ async function loadChangeOrders() {
         unit_price: item.unit_price,
         taxable: item.taxable,
         total: item.total,
+        company_id: companyId,
       }));
       await supabase.from("invoice_items").insert(itemsToCopy);
 
@@ -538,11 +581,16 @@ async function loadChangeOrders() {
           unit_price: co.total_amount,
           taxable: false,
           total: co.total_amount,
+          company_id: companyId,
         }));
         await supabase.from("invoice_items").insert(coItems);
       }
 
-      await supabase.from("estimates").update({ status: "converted" }).eq("id", id);
+      await supabase
+        .from("estimates")
+        .update({ status: "converted" })
+        .eq("id", id)
+        .eq("company_id", companyId);
       toast.success("Invoice created successfully!");
       router.push(`/invoices/${invoice.id}`);
     } catch (err) {
@@ -553,20 +601,18 @@ async function loadChangeOrders() {
     }
   };
 
-// project totals for progress display
   const projectsWithTotals = useMemo(() => {
-  return projects.map(project => ({
-    name: project.name,
-    total: project.items.reduce((sum, item) => sum + (item.total || 0), 0)
-  }));
-}, [projects]);
+    return projects.map(project => ({
+      name: project.name,
+      total: project.items.reduce((sum, item) => sum + (item.total || 0), 0)
+    }));
+  }, [projects]);
 
-const overallTotal = useMemo(() => {
-  return projectsWithTotals.reduce((sum, p) => sum + p.total, 0);
-}, [projectsWithTotals]);
+  const overallTotal = useMemo(() => {
+    return projectsWithTotals.reduce((sum, p) => sum + p.total, 0);
+  }, [projectsWithTotals]);
 
-
-  // Edit mode functions (unchanged, kept from original)
+  // --- Edit mode functions ---
   const addEditItem = (projectId: string) => {
     const newItem: LineItem = {
       id: crypto.randomUUID(),
@@ -622,49 +668,47 @@ const overallTotal = useMemo(() => {
     total: 0,
   });
 
-const distributeToTargetTotal = async () => {
-  if (!targetTotal || targetTotal <= 0) {
-    toast.error("Please enter a valid target total");
-    return;
-  }
+  const distributeToTargetTotal = async () => {
+    if (!targetTotal || targetTotal <= 0) {
+      toast.error("Please enter a valid target total");
+      return;
+    }
 
-  const currentTotal = editSubtotal;
-  const difference = targetTotal - currentTotal;
+    const currentTotal = editSubtotal;
+    const difference = targetTotal - currentTotal;
 
-  if (difference === 0) {
-    toast("Target total is already equal to current total", { icon: "ℹ️" });
-    return;
-  }
+    if (difference === 0) {
+      toast("Target total is already equal to current total", { icon: "ℹ️" });
+      return;
+    }
 
-  const allLineItems = editProjects.flatMap((p) => p.items);
-  if (allLineItems.length === 0) {
-    toast.error("No items to distribute to");
-    return;
-  }
+    const allLineItems = editProjects.flatMap((p) => p.items);
+    if (allLineItems.length === 0) {
+      toast.error("No items to distribute to");
+      return;
+    }
 
-  const distributionPerItem = difference / allLineItems.length;
+    const distributionPerItem = difference / allLineItems.length;
 
-  const updatedProjects = editProjects.map((project) => ({
-    ...project,
-    items: project.items.map((item) => {
-      const newUnitPrice = Math.max(0, item.unit_price + distributionPerItem);
-      return {
-        ...item,
-        unit_price: newUnitPrice,
-        total: item.quantity * newUnitPrice,
-      };
-    }),
-  }));
+    const updatedProjects = editProjects.map((project) => ({
+      ...project,
+      items: project.items.map((item) => {
+        const newUnitPrice = Math.max(0, item.unit_price + distributionPerItem);
+        return {
+          ...item,
+          unit_price: newUnitPrice,
+          total: item.quantity * newUnitPrice,
+        };
+      }),
+    }));
 
-  // Update local state
-  setEditProjects(updatedProjects);
-  setTargetTotal(null);
-  setShowTargetModal(false);
-  toast.success(`Total updated to ${formatCurrency(targetTotal)}`);
+    setEditProjects(updatedProjects);
+    setTargetTotal(null);
+    setShowTargetModal(false);
+    toast.success(`Total updated to ${formatCurrency(targetTotal)}`);
 
-  // Save the updated projects to database
-  await saveEdit(updatedProjects);
-};
+    await saveEdit(updatedProjects);
+  };
 
   const addProject = () => {
     setEditProjects((prev) => [...prev, { id: crypto.randomUUID(), name: "", description: "", items: [createEmptyItem()] }]);
@@ -679,62 +723,69 @@ const distributeToTargetTotal = async () => {
     setEditProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, [field]: value } : p)));
   };
 
-const saveEdit = async (projectsToSave?: ProjectWithItems[]) => {
-  const projects = projectsToSave || editProjects;
-  setSaving(true);
-  try {
-    const allItems = projects.flatMap((p) => p.items);
-    const subtotal = calculateSubtotal(allItems);
-    const tax = calculateTax(subtotal, editTaxRate);
-    const total = calculateTotal(subtotal, editMarkup, editDiscount, tax);
-
-    const { error: updateError } = await supabase
-      .from("estimates")
-      .update({
-         client_id: editClientId,
-        description: editDescription || null,
-        notes: editNotes || null,
-        markup: editMarkup,
-        discount: editDiscount,
-        tax_rate: editTaxRate,
-        subtotal,
-        total,
-      })
-      .eq("id", id);
-    if (updateError) throw updateError;
-
-    await supabase.from("estimate_items").delete().eq("estimate_id", id);
-    const itemsToInsert = projects.flatMap((p) =>
-      p.items.map((item) => ({
-        estimate_id: id,
-        project_name: p.name,
-        category: item.category,
-        name: item.name,
-        description: item.description || null,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        taxable: item.taxable,
-        total: item.quantity * item.unit_price,
-      }))
-    );
-    if (itemsToInsert.length) {
-      const { error: itemsError } = await supabase.from("estimate_items").insert(itemsToInsert);
-      if (itemsError) throw itemsError;
+  const saveEdit = async (projectsToSave?: ProjectWithItems[]) => {
+    const companyId = await getCompanyId();
+    if (!companyId) {
+      toast.error("Company not found");
+      return;
     }
+    const projects = projectsToSave || editProjects;
+    setSaving(true);
+    try {
+      const allItems = projects.flatMap((p) => p.items);
+      const subtotal = calculateSubtotal(allItems);
+      const tax = calculateTax(subtotal, editTaxRate);
+      const total = calculateTotal(subtotal, editMarkup, editDiscount, tax);
 
-    toast.success("Estimate updated successfully!");
-    setIsEditMode(false);
-    setEditProjects(projects); // keep state in sync
-    loadEstimate(); // reload to fetch updated values
-  } catch (err) {
-    console.error(err);
-    toast.error("Error saving changes");
-  } finally {
-    setSaving(false);
-  }
-};
+      const { error: updateError } = await supabase
+        .from("estimates")
+        .update({
+          client_id: editClientId,
+          description: editDescription || null,
+          notes: editNotes || null,
+          markup: editMarkup,
+          discount: editDiscount,
+          tax_rate: editTaxRate,
+          subtotal,
+          total,
+        })
+        .eq("id", id)
+        .eq("company_id", companyId);
+      if (updateError) throw updateError;
 
-  // Calculations
+      await supabase.from("estimate_items").delete().eq("estimate_id", id).eq("company_id", companyId);
+      const itemsToInsert = projects.flatMap((p) =>
+        p.items.map((item) => ({
+          estimate_id: id,
+          project_name: p.name,
+          category: item.category,
+          name: item.name,
+          description: item.description || null,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          taxable: item.taxable,
+          total: item.quantity * item.unit_price,
+          company_id: companyId,
+        }))
+      );
+      if (itemsToInsert.length) {
+        const { error: itemsError } = await supabase.from("estimate_items").insert(itemsToInsert);
+        if (itemsError) throw itemsError;
+      }
+
+      toast.success("Estimate updated successfully!");
+      setIsEditMode(false);
+      setEditProjects(projects);
+      loadEstimate();
+    } catch (err) {
+      console.error(err);
+      toast.error("Error saving changes");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // --- calculations ---
   const viewSubtotal = calculateSubtotal(projects.flatMap((p) => p.items));
   const viewTax = calculateTax(viewSubtotal, estimate?.tax_rate || 0);
   const viewTotal = calculateTotal(viewSubtotal, estimate?.markup || 0, estimate?.discount || 0, viewTax);
@@ -744,11 +795,10 @@ const saveEdit = async (projectsToSave?: ProjectWithItems[]) => {
   const editTax = calculateTax(editSubtotal, editTaxRate);
   const editTotal = calculateTotal(editSubtotal, editMarkup, editDiscount, editTax);
 
-    // Current financial summary (based on edit mode or persisted)
-const currentSubtotal = isEditMode ? editSubtotal : originalSubtotal;
-const currentRevisedTotal = isEditMode ? editTotal + changeOrdersTotal : revisedTotal;
-const currentRemainingBalance = currentRevisedTotal - totalPaid;
-const currentDepositAmount = currentRevisedTotal * 0.5;
+  const currentSubtotal = isEditMode ? editSubtotal : originalSubtotal;
+  const currentRevisedTotal = isEditMode ? editTotal + changeOrdersTotal : revisedTotal;
+  const currentRemainingBalance = currentRevisedTotal - totalPaid;
+  const currentDepositAmount = currentRevisedTotal * 0.5;
 
   const sendSMSLink = async () => {
     let currentClient = client;
@@ -777,9 +827,7 @@ const currentDepositAmount = currentRevisedTotal * 0.5;
     window.location.href = `sms:${phoneNumber}?body=${message}`;
   };
 
-  if (loading) 
-    
-    return <div className="p-8 text-center">Loading...</div>;
+  if (loading) return <div className="p-8 text-center">Loading...</div>;
 
   const getStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
@@ -791,8 +839,6 @@ const currentDepositAmount = currentRevisedTotal * 0.5;
     };
     return styles[status] || "bg-gray-100";
   };
-
- 
 
   return (
     <div className="min-h-screen bg-slate-50/70 pb-20 text-slate-800 antialiased text-xs">
@@ -859,31 +905,31 @@ const currentDepositAmount = currentRevisedTotal * 0.5;
                 <ArrowLeft size={14} />
               </button>
               <div className="min-w-0">
-  <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Customer</span>
-  {isEditMode ? (
-<select
-  value={editClientId}
-  onChange={(e) => setEditClientId(e.target.value)}
-  className="w-full bg-emerald-700/80 border border-emerald-600 rounded-lg px-2.5 py-1.5 text-xs font-medium text-white placeholder:text-slate-300 focus:outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400/40 transition-all"
->
-  <option value="">Select a client…</option>
-  {clientList.map((c) => (
-    <option key={c.id} value={c.id}>
-      {c.name}
-    </option>
-  ))}
-</select>
-  ) : (
-    <>
-      <h3 className="text-xs font-black text-slate-800 tracking-tight truncate">
-        {client?.name || "Unassigned Account"}
-      </h3>
-      {client?.email && (
-        <p className="text-[10px] text-slate-400 font-medium truncate hidden sm:block mt-0.5">{client.email}</p>
-      )}
-    </>
-  )}
-</div>
+                <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Customer</span>
+                {isEditMode ? (
+                  <select
+                    value={editClientId}
+                    onChange={(e) => setEditClientId(e.target.value)}
+                    className="w-full bg-emerald-700/80 border border-emerald-600 rounded-lg px-2.5 py-1.5 text-xs font-medium text-white placeholder:text-slate-300 focus:outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400/40 transition-all"
+                  >
+                    <option value="">Select a client…</option>
+                    {clientList.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <>
+                    <h3 className="text-xs font-black text-slate-800 tracking-tight truncate">
+                      {client?.name || "Unassigned Account"}
+                    </h3>
+                    {client?.email && (
+                      <p className="text-[10px] text-slate-400 font-medium truncate hidden sm:block mt-0.5">{client.email}</p>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
             <div className="flex items-center justify-between gap-3 min-w-0 justify-self-end w-full max-w-[180px] sm:max-w-none">
               <div className="min-w-0 text-left sm:text-right sm:ml-auto">
@@ -950,62 +996,52 @@ const currentDepositAmount = currentRevisedTotal * 0.5;
           </div>
         )}
 
-        {/* // Progress Display */}
-          <ProgressDisplay
-  estimateId={id as string}
-  projects={projectsWithTotals}
-  hasPayment={totalPaid > 0}
-  paymentNote={formatCurrency(totalPaid)}
-  totalPaid={totalPaid}
-  overallTotal={overallTotal}
-  refreshKey={progressRefresh}
-/>
- 
-{/* Camera Uploader */}
-{estimate && (
-  <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
-    <EstimateCamera estimateId={estimate.id} onUploaded={() => setGalleryRefresh((n) => n + 1)} />
-{/* <EstimateImageUploader
-  estimateId={estimate.id}
-  onUploaded={() => setGalleryRefresh((n) => n + 1)}
-/>
+        {/* Progress Display */}
+        <ProgressDisplay
+          estimateId={id as string}
+          projects={projectsWithTotals}
+          hasPayment={totalPaid > 0}
+          paymentNote={formatCurrency(totalPaid)}
+          totalPaid={totalPaid}
+          overallTotal={overallTotal}
+          refreshKey={progressRefresh}
+        />
 
-<EstimateImageView
-  estimateId={estimate.id}
-  refreshKey={galleryRefresh} 
-/>   */}
+        {/* Camera Uploader */}
+        {estimate && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
+            <EstimateCamera estimateId={estimate.id} onUploaded={() => setGalleryRefresh((n) => n + 1)} />
+          </div>
+        )}
 
-</div>
-)}
- 
         {/* Projects */}
         <div className="space-y-3.5">
           {(isEditMode ? editProjects : projects).map((project, projectIdx) => (
             <div key={project.id} className="bg-white rounded-xl shadow-xs border border-slate-200/70 overflow-hidden group">
               <div className="bg-slate-900 text-white px-3.5 py-2 flex items-center justify-between gap-3 shadow-inner">
-  <div className="flex items-center gap-2.5 flex-1 min-w-0">
-    <span className="text-[10px] font-extrabold text-emerald-400 bg-emerald-950/60 border border-emerald-900/50 px-2 py-0.5 rounded font-mono tracking-tight shrink-0">
-      STAGE {String(projectIdx + 1).padStart(2, '0')}
-    </span>
-<input
-  type="text"
-  value={project.name}
-  onChange={(e) => updateProject(project.id, "name", e.target.value)}
-  placeholder="Name this project stage..."
-  className={`flex-1 text-white placeholder:text-slate-500 text-xs font-black focus:outline-none truncate ${
-    isEditMode
-      ? "bg-slate-500/60 border border-slate-600/60 rounded-lg px-3.5 py-1.5 focus:border-slate-200 focus:ring-1 focus:ring-slate-300/40 transition-all"
-      : "bg-transparent"
-  }`}
-  disabled={!isEditMode}
-/>
-  </div>
-  {isEditMode && editProjects.length > 1 && (
-    <button onClick={() => removeProject(project.id)} className="text-slate-500 hover:text-rose-400 p-1 transition-colors rounded-lg hover:bg-white/5">
-      <X size={14} />
-    </button>
-  )}
-</div>
+                <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                  <span className="text-[10px] font-extrabold text-emerald-400 bg-emerald-950/60 border border-emerald-900/50 px-2 py-0.5 rounded font-mono tracking-tight shrink-0">
+                    STAGE {String(projectIdx + 1).padStart(2, '0')}
+                  </span>
+                  <input
+                    type="text"
+                    value={project.name}
+                    onChange={(e) => updateProject(project.id, "name", e.target.value)}
+                    placeholder="Name this project stage..."
+                    className={`flex-1 text-white placeholder:text-slate-500 text-xs font-black focus:outline-none truncate ${
+                      isEditMode
+                        ? "bg-slate-500/60 border border-slate-600/60 rounded-lg px-3.5 py-1.5 focus:border-slate-200 focus:ring-1 focus:ring-slate-300/40 transition-all"
+                        : "bg-transparent"
+                    }`}
+                    disabled={!isEditMode}
+                  />
+                </div>
+                {isEditMode && editProjects.length > 1 && (
+                  <button onClick={() => removeProject(project.id)} className="text-slate-500 hover:text-rose-400 p-1 transition-colors rounded-lg hover:bg-white/5">
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
 
               {isEditMode ? (
                 <div className="px-3 pt-3">
@@ -1196,66 +1232,64 @@ const currentDepositAmount = currentRevisedTotal * 0.5;
           </div>
         )}
 
-        {/* ========== NEW FINANCIAL SUMMARY CARD (with deposit & payment history) ========== */}
-<div className="bg-slate-900 text-white rounded-xl p-4 shadow-md border border-slate-950 flex flex-col gap-3 relative overflow-hidden">
-  <div className="absolute top-0 right-0 h-36 w-36 bg-gradient-to-bl from-emerald-500/10 to-transparent rounded-bl-full pointer-events-none" />
-  <div className="flex-1 text-xs space-y-1.5">
-    <div className="text-[9px] font-extrabold text-slate-500 uppercase tracking-wider border-b border-slate-800 pb-1.5 mb-1.5 flex justify-between items-center">
-      <span>Financial Summary</span>
-      {isEditMode && (
-        <button onClick={() => setShowTargetModal(true)} className="text-[9px] font-extrabold text-emerald-400 underline hover:text-emerald-300 flex items-center gap-0.5">
-          🎯 Set Target Total
-        </button>
-      )}
-    </div>
-<div className="space-y-1 font-mono text-slate-400 text-[11px]">
-  <div className="flex justify-between">
-    <span>Original Estimate Subtotal</span>
-    <span className="text-slate-200">{formatCurrency(currentSubtotal)}</span>
-  </div>
-  {changeOrdersTotal !== 0 && (
-    <div className="flex justify-between text-blue-400">
-      <span>Approved Change Orders</span>
-      <span>+{formatCurrency(changeOrdersTotal)}</span>
-    </div>
-  )}
-  <div className="flex justify-between border-t border-slate-700 pt-1 mt-1">
-    <span><strong>Revised Total</strong></span>
-    <span className="text-slate-200 font-semibold">{formatCurrency(currentRevisedTotal)}</span>
-  </div>
-  <div className="flex justify-between">
-    <span>Deposit (50% of Revised Total)</span>
-    <span className="text-emerald-300">{formatCurrency(currentDepositAmount)}</span>
-  </div>
-  {totalPaid > 0 && (
-    <div className="flex justify-between text-emerald-400">
-      <span>Payments Received</span>
-      <span>-{formatCurrency(totalPaid)}</span>
-    </div>
-  )}
-  <div className="flex justify-between border-t border-slate-800 pt-1 mt-1 text-sm font-bold">
-    <span>Current Balance Due</span>
-    <span className="text-white">{formatCurrency(currentRemainingBalance)}</span>
-  </div>
+        {/* Financial Summary Card */}
+        <div className="bg-slate-900 text-white rounded-xl p-4 shadow-md border border-slate-950 flex flex-col gap-3 relative overflow-hidden">
+          <div className="absolute top-0 right-0 h-36 w-36 bg-gradient-to-bl from-emerald-500/10 to-transparent rounded-bl-full pointer-events-none" />
+          <div className="flex-1 text-xs space-y-1.5">
+            <div className="text-[9px] font-extrabold text-slate-500 uppercase tracking-wider border-b border-slate-800 pb-1.5 mb-1.5 flex justify-between items-center">
+              <span>Financial Summary</span>
+              {isEditMode && (
+                <button onClick={() => setShowTargetModal(true)} className="text-[9px] font-extrabold text-emerald-400 underline hover:text-emerald-300 flex items-center gap-0.5">
+                  🎯 Set Target Total
+                </button>
+              )}
+            </div>
+            <div className="space-y-1 font-mono text-slate-400 text-[11px]">
+              <div className="flex justify-between">
+                <span>Original Estimate Subtotal</span>
+                <span className="text-slate-200">{formatCurrency(currentSubtotal)}</span>
+              </div>
+              {changeOrdersTotal !== 0 && (
+                <div className="flex justify-between text-blue-400">
+                  <span>Approved Change Orders</span>
+                  <span>+{formatCurrency(changeOrdersTotal)}</span>
+                </div>
+              )}
+              <div className="flex justify-between border-t border-slate-700 pt-1 mt-1">
+                <span><strong>Revised Total</strong></span>
+                <span className="text-slate-200 font-semibold">{formatCurrency(currentRevisedTotal)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Deposit (50% of Revised Total)</span>
+                <span className="text-emerald-300">{formatCurrency(currentDepositAmount)}</span>
+              </div>
+              {totalPaid > 0 && (
+                <div className="flex justify-between text-emerald-400">
+                  <span>Payments Received</span>
+                  <span>-{formatCurrency(totalPaid)}</span>
+                </div>
+              )}
+              <div className="flex justify-between border-t border-slate-800 pt-1 mt-1 text-sm font-bold">
+                <span>Current Balance Due</span>
+                <span className="text-white">{formatCurrency(currentRemainingBalance)}</span>
+              </div>
+              {pendingChangeOrdersTotal !== 0 && (
+                <>
+                  <div className="flex justify-between text-yellow-400 bg-yellow-900/20 px-2 py-1 rounded -mx-2">
+                    <span>Pending Change Orders</span>
+                    <span>+{formatCurrency(pendingChangeOrdersTotal)}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-yellow-700 pt-1 mt-1 text-sm font-bold text-yellow-300 bg-yellow-900/20 px-2 py-1 rounded -mx-2">
+                    <span>Potential Balance Due</span>
+                    <span>{formatCurrency(currentRemainingBalance + pendingChangeOrdersTotal)}</span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
 
-  {/* ===== NEW: Pending Change Orders ===== */}
-  {pendingChangeOrdersTotal !== 0 && (
-    <>
-      <div className="flex justify-between text-yellow-400 bg-yellow-900/20 px-2 py-1 rounded -mx-2">
-        <span>Pending Change Orders</span>
-        <span>+{formatCurrency(pendingChangeOrdersTotal)}</span>
-      </div>
-      <div className="flex justify-between border-t border-yellow-700 pt-1 mt-1 text-sm font-bold text-yellow-300 bg-yellow-900/20 px-2 py-1 rounded -mx-2">
-        <span>Potential Balance Due</span>
-        <span>{formatCurrency(currentRemainingBalance + pendingChangeOrdersTotal)}</span>
-      </div>
-    </>
-  )}
-</div>
-  </div>
-</div>
-
-        {/* Payment History Section (if any payments exist) */}
+        {/* Payment History */}
         {payments.length > 0 && (
           <div className="bg-white rounded-xl border border-slate-200/80 overflow-hidden shadow-xs">
             <div className="bg-slate-50 px-3.5 py-2 border-b border-slate-200/60 flex justify-between items-center">
@@ -1289,16 +1323,16 @@ const currentDepositAmount = currentRevisedTotal * 0.5;
               <FileText size={12} className="text-slate-300" /> Authorized Customer Endorsement
             </div>
             <div className="bg-slate-50 border border-slate-200/60 rounded-xl p-1 shadow-inner">
-<SignaturePad
-  onSave={saveSignature}
-  onRemove={removeSignature}
-  isCompleted={estimate?.is_completed}
-  existingSignature={estimate?.signature}
-  buttonText="Need Customer Signature"
-  showRemoveButton={true}
-  estimateId={id as string}
-  onRefresh={loadEstimate}
-/>
+              <SignaturePad
+                onSave={saveSignature}
+                onRemove={removeSignature}
+                isCompleted={estimate?.is_completed}
+                existingSignature={estimate?.signature}
+                buttonText="Need Customer Signature"
+                showRemoveButton={true}
+                estimateId={id as string}
+                onRefresh={loadEstimate}
+              />
             </div>
           </div>
         )}
@@ -1336,7 +1370,6 @@ const currentDepositAmount = currentRevisedTotal * 0.5;
                 <span>{converting ? "Processing Ledger..." : "Convert Scope to Invoice Asset"}</span>
               </button>
             )}
-            {/* Mark as Completed button – visible unless already completed */}
             {estimate?.status !== "completed" && (
               <button onClick={markAsCompleted} className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition-colors shadow-2xs flex items-center justify-center gap-1.5">
                 <span>Mark Project Cycle as Completed</span>
@@ -1347,70 +1380,68 @@ const currentDepositAmount = currentRevisedTotal * 0.5;
       </div>
 
       {/* FAB */}
-{!isEditMode && (
-  <div className="fixed bottom-21 right-6 z-50" onMouseEnter={() => setFabOpen(true)} onMouseLeave={() => setFabOpen(false)}>
-    <div className={`absolute bottom-full right-0 pb-3 flex flex-col items-end gap-1.5 transition-all duration-200 transform origin-bottom ${
-      fabOpen ? "scale-100 opacity-100 translate-y-0" : "scale-75 opacity-0 translate-y-4 pointer-events-none"
-    }`}>
-      {!estimate?.signature && (
-        <button onClick={() => { setIsEditMode(true); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors">
-          <SquarePen size={12} /> <span>Edit</span>
-        </button>
+      {!isEditMode && (
+        <div className="fixed bottom-21 right-6 z-50" onMouseEnter={() => setFabOpen(true)} onMouseLeave={() => setFabOpen(false)}>
+          <div className={`absolute bottom-full right-0 pb-3 flex flex-col items-end gap-1.5 transition-all duration-200 transform origin-bottom ${
+            fabOpen ? "scale-100 opacity-100 translate-y-0" : "scale-75 opacity-0 translate-y-4 pointer-events-none"
+          }`}>
+            {!estimate?.signature && (
+              <button onClick={() => { setIsEditMode(true); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors">
+                <SquarePen size={12} /> <span>Edit</span>
+              </button>
+            )}
+            <button
+              onClick={() => {
+                setEditingChangeOrder(null);
+                setShowChangeOrderModal(true);
+                setFabOpen(false);
+              }}
+              className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors whitespace-nowrap"
+            >
+              <FileEdit size={12} /> <span>Change Order</span>
+            </button>
+            <button onClick={() => { setShowFinancialsModal(true); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors">
+              <DollarSign size={12} /> <span>Project Payments</span>
+            </button>
+            <button onClick={() => { setShowExpenseModal(true); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors">
+              <Receipt size={12} /> <span> Expense</span>
+            </button>
+            <button onClick={() => { sendSMSLink(); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors">
+              <Send size={12} /> <span>SMS</span>
+            </button>
+            <Link href={`/api/estimates/${id}/pdf`} target="_blank" onClick={() => setFabOpen(false)} className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors">
+              <FileText size={12} /> <span>PDF</span>
+            </Link>
+            <button
+              onClick={() => setShowProgressModal(true)}
+              className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md border border-slate-100 hover:bg-emerald-500 transition-colors"
+            >
+              <TrendingUp size={12} className="text-white" />
+              <span> Project Progress</span>
+            </button>
+          </div>
+          <button onClick={() => setFabOpen(!fabOpen)} className="h-12 w-12 rounded-full bg-emerald-600 text-white shadow-xl hover:bg-emerald-500 transition-all duration-150 flex items-center justify-center active:scale-95">
+            <Plus size={20} className={`transition-transform duration-200 ${fabOpen ? "rotate-45" : "rotate-0"}`} />
+          </button>
+        </div>
       )}
-<button
-  onClick={() => {
-    setEditingChangeOrder(null);
-    setShowChangeOrderModal(true);
-    setFabOpen(false);
-  }}
-  className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors whitespace-nowrap"
->
-  <FileEdit size={12} /> <span>Change Order</span>
-</button>
-      <button onClick={() => { setShowFinancialsModal(true); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors">
-        <DollarSign size={12} /> <span>Project Payments</span>
-      </button>
-      <button onClick={() => { setShowExpenseModal(true); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors">
-        <Receipt size={12} /> <span> Expense</span>
-      </button>
-      <button onClick={() => { sendSMSLink(); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors">
-        <Send size={12} /> <span>SMS</span>
-      </button>
-      <Link href={`/api/estimates/${id}/pdf`} target="_blank" onClick={() => setFabOpen(false)} className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors">
-        <FileText size={12} /> <span>PDF</span>
-      </Link>
-      <button
-  onClick={() => setShowProgressModal(true)}
-  className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md border border-slate-100 hover:bg-emerald-500 transition-colors"
->
-  <TrendingUp size={12} className="text-white" />
-  <span> Project Progress</span>
-</button> 
-    </div>
-    <button onClick={() => setFabOpen(!fabOpen)} className="h-12 w-12 rounded-full bg-emerald-600 text-white shadow-xl hover:bg-emerald-500 transition-all duration-150 flex items-center justify-center active:scale-95">
-      <Plus size={20} className={`transition-transform duration-200 ${fabOpen ? "rotate-45" : "rotate-0"}`} />
-    </button>
 
-  </div>
-)}
+      <ProgressModal
+        isOpen={showProgressModal}
+        onClose={() => setShowProgressModal(false)}
+        estimateId={id as string}
+        projects={projects.map(p => ({ name: p.name }))}
+        onSaved={() => {
+          loadEstimate();
+          setProgressRefresh(prev => prev + 1);
+        }}
+      />
 
-<ProgressModal
-  isOpen={showProgressModal}
-  onClose={() => setShowProgressModal(false)}
-  estimateId={id as string}
-  projects={projects.map(p => ({ name: p.name }))}
-  onSaved={() => {
-    loadEstimate();               // optional, if needed
-    setProgressRefresh(prev => prev + 1); // force progress display refresh
-  }}
-/>
-
-      {/* Secondary Modals */}
       <ProjectFinancialsModal
         isOpen={showFinancialsModal}
         onClose={() => setShowFinancialsModal(false)}
         estimateId={id as string}
-        estimateTotal={revisedTotal} // pass revised total (original + change orders)
+        estimateTotal={revisedTotal}
         onRefresh={() => {
           loadSubcontractorPaid();
           loadEstimate();
@@ -1427,7 +1458,7 @@ const currentDepositAmount = currentRevisedTotal * 0.5;
   );
 }
 
-// =============== Change Order Modal Component (unchanged) ===============
+// =============== Change Order Modal (with company_id) ===============
 function ChangeOrderModal({
   estimateId,
   estimateTotal,
@@ -1447,6 +1478,15 @@ function ChangeOrderModal({
     { id: crypto.randomUUID(), description: "", quantity: 1, unit_price: 0, total: 0, type: "addition" },
   ]);
   const [saving, setSaving] = useState(false);
+  const [companyId, setCompanyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchCompany = async () => {
+      const cid = await getCompanyId();
+      setCompanyId(cid);
+    };
+    fetchCompany();
+  }, []);
 
   useEffect(() => {
     if (existingOrder) {
@@ -1457,10 +1497,12 @@ function ChangeOrderModal({
   }, [existingOrder]);
 
   async function loadLineItems(coId: string) {
+    if (!companyId) return;
     const { data } = await supabase
       .from("change_order_line_items")
       .select("*")
-      .eq("change_order_id", coId);
+      .eq("change_order_id", coId)
+      .eq("company_id", companyId);
     if (data && data.length) {
       const items = data.map((item) => ({
         id: item.id,
@@ -1511,20 +1553,34 @@ function ChangeOrderModal({
       alert("Add at least one line item with a value");
       return;
     }
+    if (!companyId) {
+      alert("Company not found. Please refresh.");
+      return;
+    }
 
     setSaving(true);
     const totalChange = calculateTotalChange();
 
     try {
       if (existingOrder) {
-        // Update existing
         const { error: updateError } = await supabase
           .from("change_orders")
-          .update({ title, description, total_amount: totalChange, updated_at: new Date().toISOString() })
-          .eq("id", existingOrder.id);
+          .update({
+            title,
+            description,
+            total_amount: totalChange,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", existingOrder.id)
+          .eq("company_id", companyId);
         if (updateError) throw updateError;
 
-        await supabase.from("change_order_line_items").delete().eq("change_order_id", existingOrder.id);
+        await supabase
+          .from("change_order_line_items")
+          .delete()
+          .eq("change_order_id", existingOrder.id)
+          .eq("company_id", companyId);
+
         const itemsToInsert = lineItems.map((item) => ({
           change_order_id: existingOrder.id,
           description: item.description,
@@ -1532,19 +1588,19 @@ function ChangeOrderModal({
           unit_price: item.unit_price,
           total: item.quantity * item.unit_price,
           type: item.type,
+          company_id: companyId,
         }));
         if (itemsToInsert.length) {
           const { error: itemsError } = await supabase.from("change_order_line_items").insert(itemsToInsert);
           if (itemsError) throw itemsError;
         }
       } else {
-        // Create new – with null check
         const { data: estimateData, error: estError } = await supabase
           .from("estimates")
           .select("total")
           .eq("id", estimateId)
+          .eq("company_id", companyId)
           .single();
-
         if (estError || !estimateData) {
           alert("Could not fetch estimate data. Please try again.");
           setSaving(false);
@@ -1554,7 +1610,8 @@ function ChangeOrderModal({
         const { count } = await supabase
           .from("change_orders")
           .select("id", { count: "exact", head: true })
-          .eq("estimate_id", estimateId);
+          .eq("estimate_id", estimateId)
+          .eq("company_id", companyId);
 
         const coNumber = `CO-${(count || 0) + 1}`;
 
@@ -1568,6 +1625,7 @@ function ChangeOrderModal({
             original_estimate_total: estimateData.total,
             total_amount: totalChange,
             status: "draft",
+            company_id: companyId,
           })
           .select()
           .single();
@@ -1580,6 +1638,7 @@ function ChangeOrderModal({
           unit_price: item.unit_price,
           total: item.quantity * item.unit_price,
           type: item.type,
+          company_id: companyId,
         }));
         if (itemsToInsert.length) {
           const { error: itemsError } = await supabase.from("change_order_line_items").insert(itemsToInsert);
@@ -1709,9 +1768,6 @@ function ChangeOrderModal({
           </div>
         </div>
       </div>
-      
     </div>
-
-    
   );
 }

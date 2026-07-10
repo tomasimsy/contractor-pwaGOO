@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { X, CheckCircle, Circle } from "lucide-react";
 import toast from "react-hot-toast";
+import { getCompanyId } from "@/lib/supabase/getCompanyId"; // 👈 import
 
 interface Milestone {
   id?: string;
@@ -30,18 +31,43 @@ const DEFAULT_MILESTONES = [
 export default function ProgressModal({ isOpen, onClose, estimateId, projects, onSaved }: ProgressModalProps) {
   const [loading, setLoading] = useState(false);
   const [milestonesMap, setMilestonesMap] = useState<Record<string, Milestone[]>>({});
+  const [companyId, setCompanyId] = useState<string | null>(null);
 
+  // Fetch company_id once when modal opens
   useEffect(() => {
-    if (isOpen) loadAllMilestones();
+    const fetchCompany = async () => {
+      const cid = await getCompanyId();
+      setCompanyId(cid);
+    };
+    if (isOpen) fetchCompany();
   }, [isOpen]);
 
+  // Load milestones only when modal opens and we have companyId
+  useEffect(() => {
+    if (isOpen && companyId) {
+      loadAllMilestones();
+    }
+  }, [isOpen, companyId]);
+
   async function loadAllMilestones() {
-    const { data } = await supabase
+    if (!companyId) {
+      toast.error("Company not found");
+      return;
+    }
+    const { data, error } = await supabase
       .from("project_milestones")
       .select("*")
       .eq("estimate_id", estimateId)
+      .eq("company_id", companyId) // 👈 filter by company
       .order("project_name")
       .order("milestone_order");
+
+    if (error) {
+      console.error("Error loading milestones:", error);
+      toast.error("Failed to load milestones");
+      return;
+    }
+
     if (data) {
       const map: Record<string, Milestone[]> = {};
       data.forEach((m) => {
@@ -54,7 +80,6 @@ export default function ProgressModal({ isOpen, onClose, estimateId, projects, o
 
   const getMilestonesForProject = (projectName: string): Milestone[] => {
     const existing = milestonesMap[projectName] || [];
-    // Fill missing milestones from defaults, preserving any existing data
     const result = DEFAULT_MILESTONES.map((def) => {
       const found = existing.find((m) => m.milestone_order === def.order);
       return found || {
@@ -89,6 +114,10 @@ export default function ProgressModal({ isOpen, onClose, estimateId, projects, o
   };
 
   const saveAll = async () => {
+    if (!companyId) {
+      toast.error("Company not found");
+      return;
+    }
     setLoading(true);
     const records = [];
     for (const [projectName, milestones] of Object.entries(milestonesMap)) {
@@ -101,20 +130,23 @@ export default function ProgressModal({ isOpen, onClose, estimateId, projects, o
           note: m.note || null,
           completed_at: m.completed_at || null,
           updated_at: new Date().toISOString(),
+          company_id: companyId, // 👈 add company_id
         });
       }
     }
-    // Upsert all (use a transaction or loop; simple loop is fine for small sets)
+
+    // Upsert all records
     for (const record of records) {
       const { error } = await supabase
-  .from("project_milestones")
-  .upsert(record, { onConflict: "estimate_id, project_name, milestone_order" });
-if (error) {
-  console.error("Upsert error for", record.project_name, record.milestone_order, error);
-  toast.error(`Failed to save ${record.project_name}: ${error.message}`);
-  setLoading(false);
-  return;
-}
+        .from("project_milestones")
+        .upsert(record, { onConflict: "estimate_id, project_name, milestone_order" });
+
+      if (error) {
+        console.error("Upsert error for", record.project_name, record.milestone_order, error);
+        toast.error(`Failed to save ${record.project_name}: ${error.message}`);
+        setLoading(false);
+        return;
+      }
     }
     toast.success("All progress saved");
     setLoading(false);

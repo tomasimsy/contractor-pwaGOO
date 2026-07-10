@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils/formatting";
 import { X, Trash2, Edit2, Check, DollarSign, Users, Plus, Receipt, Eye } from "lucide-react";
 import ChangeOrderTab from "@/components/changeOrder/ChangeOrderTab";
+import { getCompanyId } from "@/lib/supabase/getCompanyId";
 
 type Subcontractor = {
   id: string;
@@ -143,6 +144,25 @@ export default function ProjectFinancialsModal({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // ---- company_id state ----
+  const [companyId, setCompanyId] = useState<string | null>(null);
+
+  // Fetch company_id once when modal opens
+  useEffect(() => {
+    const fetchCompany = async () => {
+      const cid = await getCompanyId();
+      setCompanyId(cid);
+    };
+    if (isOpen) fetchCompany();
+  }, [isOpen]);
+
+  // Load data only when companyId is available
+  useEffect(() => {
+    if (isOpen && companyId) {
+      loadAllData();
+    }
+  }, [isOpen, companyId]);
+
   const totalSubAssigned = assignedSubs.reduce((sum, s) => sum + (s.amount || 0), 0);
   const totalSubPaid = assignedSubs.reduce((sum, s) => sum + (s.paid_amount || 0), 0);
   const totalSubOwed = totalSubAssigned - totalSubPaid;
@@ -154,20 +174,27 @@ export default function ProjectFinancialsModal({
   const totalAgentPaid = assignedAgents.reduce((sum, a) => sum + (a.paid_amount || 0), 0);
   const remainingToDistribute = remainingForAgents - totalAgentAssigned;
 
-  useEffect(() => {
-    if (isOpen) loadAllData();
-  }, [isOpen]);
-
   async function loadAllData() {
+    if (!companyId) {
+      alert("Company not found");
+      return;
+    }
     setLoading(true);
     try {
-      const { data: subs } = await supabase.from("subcontractors").select("*").order("name");
+      // Subcontractors (company-scoped)
+      const { data: subs } = await supabase
+        .from("subcontractors")
+        .select("*")
+        .eq("company_id", companyId)
+        .order("name");
       if (subs) setSubcontractors(subs);
 
+      // Assigned subcontractors
       const { data: assigned } = await supabase
         .from("estimate_subcontractors")
         .select("*, subcontractors(*)")
-        .eq("estimate_id", estimateId);
+        .eq("estimate_id", estimateId)
+        .eq("company_id", companyId);
 
       if (assigned) {
         const subsWithPayments = await Promise.all(
@@ -176,6 +203,7 @@ export default function ProjectFinancialsModal({
               .from("subcontractor_payments")
               .select("*")
               .eq("estimate_subcontractor_id", sub.id)
+              .eq("company_id", companyId)
               .order("created_at", { ascending: false });
             const paidAmount = payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
             return { ...sub, paid_amount: paidAmount, payments: payments || [] };
@@ -184,20 +212,29 @@ export default function ProjectFinancialsModal({
         setAssignedSubs(subsWithPayments);
       }
 
+      // Expenses
       const { data: expenseData } = await supabase
         .from("estimate_expenses")
         .select("*")
         .eq("estimate_id", estimateId)
+        .eq("company_id", companyId)
         .order("expense_date", { ascending: false });
       if (expenseData) setExpenses(expenseData);
 
-      const { data: ags } = await supabase.from("agents").select("*").order("name");
+      // Agents (company-scoped)
+      const { data: ags } = await supabase
+        .from("agents")
+        .select("*")
+        .eq("company_id", companyId)
+        .order("name");
       if (ags) setAgents(ags);
 
+      // Assigned agents
       const { data: assignedAgentsData } = await supabase
         .from("estimate_agents")
         .select("*, agents(*)")
-        .eq("estimate_id", estimateId);
+        .eq("estimate_id", estimateId)
+        .eq("company_id", companyId);
 
       if (assignedAgentsData) {
         const agentsWithPayments = await Promise.all(
@@ -207,6 +244,7 @@ export default function ProjectFinancialsModal({
               .select("*")
               .eq("estimate_id", estimateId)
               .eq("agent_id", agent.agent_id)
+              .eq("company_id", companyId)
               .order("payment_date", { ascending: false });
             const paidAmount = payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
             return { ...agent, paid_amount: paidAmount, payments: payments || [] };
@@ -226,6 +264,10 @@ export default function ProjectFinancialsModal({
       alert("Name is required");
       return;
     }
+    if (!companyId) {
+      alert("Company not found");
+      return;
+    }
     setSaving(true);
     const { data, error } = await supabase
       .from("subcontractors")
@@ -234,6 +276,7 @@ export default function ProjectFinancialsModal({
         company_name: newSub.company_name || null,
         phone: newSub.phone || null,
         email: newSub.email || null,
+        company_id: companyId,
       })
       .select()
       .single();
@@ -250,58 +293,68 @@ export default function ProjectFinancialsModal({
     setSaving(false);
   }
 
-async function assignSubcontractor() {
-  if (!selectedSubId) {
-    alert("Select a subcontractor");
-    return;
-  }
-  if (assignedSubs.some((s) => s.subcontractor_id === selectedSubId)) {
-    alert("Already assigned");
-    return;
-  }
-
-  const amountToSave = subAmount && subAmount > 0 ? subAmount : 0;
-
-  const { data: newSub, error } = await supabase
-    .from("estimate_subcontractors")
-    .insert({
-      estimate_id: estimateId,
-      subcontractor_id: selectedSubId,
-      amount: amountToSave,
-      notes: subNotes || null,
-    })
-    .select()
-    .single();
-
-  if (error) {
-    alert("Error assigning subcontractor");
-  } else if (newSub) {
-    if (amountToSave > 0) {
-      // ✅ Include estimate_id when creating the first payment
-      await supabase.from("subcontractor_payments").insert({
-        estimate_subcontractor_id: newSub.id,
-        estimate_id: estimateId,  // <-- ADD THIS LINE
-        amount: amountToSave,
-        payment_method: "cash",
-      });
+  async function assignSubcontractor() {
+    if (!selectedSubId) {
+      alert("Select a subcontractor");
+      return;
     }
-    await loadAllData();
-    onRefresh();
-    alert(amountToSave > 0 ? "Subcontractor assigned with payment!" : "Subcontractor assigned");
-  }
+    if (assignedSubs.some((s) => s.subcontractor_id === selectedSubId)) {
+      alert("Already assigned");
+      return;
+    }
+    if (!companyId) {
+      alert("Company not found");
+      return;
+    }
 
-  setSelectedSubId("");
-  setSubAmount(null);
-  setSubNotes("");
-}
+    const amountToSave = subAmount && subAmount > 0 ? subAmount : 0;
+
+    const { data: newSub, error } = await supabase
+      .from("estimate_subcontractors")
+      .insert({
+        estimate_id: estimateId,
+        subcontractor_id: selectedSubId,
+        amount: amountToSave,
+        notes: subNotes || null,
+        company_id: companyId,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      alert("Error assigning subcontractor");
+    } else if (newSub) {
+      if (amountToSave > 0) {
+        await supabase.from("subcontractor_payments").insert({
+          estimate_subcontractor_id: newSub.id,
+          estimate_id: estimateId,
+          amount: amountToSave,
+          payment_method: "cash",
+          company_id: companyId,
+        });
+      }
+      await loadAllData();
+      onRefresh();
+      alert(amountToSave > 0 ? "Subcontractor assigned with payment!" : "Subcontractor assigned");
+    }
+
+    setSelectedSubId("");
+    setSubAmount(null);
+    setSubNotes("");
+  }
 
   async function updateSubAmount(subId: string, newAmount: number) {
     if (newAmount < 0) return;
+    if (!companyId) {
+      alert("Company not found");
+      return;
+    }
     setSaving(true);
     const { error } = await supabase
       .from("estimate_subcontractors")
       .update({ amount: newAmount })
-      .eq("id", subId);
+      .eq("id", subId)
+      .eq("company_id", companyId);
     if (error) {
       alert("Error updating amount");
     } else {
@@ -314,50 +367,75 @@ async function assignSubcontractor() {
 
   async function removeSubAssignment(subId: string) {
     if (!confirm("Remove this subcontractor? All related payments will also be deleted.")) return;
+    if (!companyId) {
+      alert("Company not found");
+      return;
+    }
     setSaving(true);
-    await supabase.from("subcontractor_payments").delete().eq("estimate_subcontractor_id", subId);
-    await supabase.from("estimate_subcontractors").delete().eq("id", subId);
+    await supabase
+      .from("subcontractor_payments")
+      .delete()
+      .eq("estimate_subcontractor_id", subId)
+      .eq("company_id", companyId);
+    await supabase
+      .from("estimate_subcontractors")
+      .delete()
+      .eq("id", subId)
+      .eq("company_id", companyId);
     await loadAllData();
     onRefresh();
     setSaving(false);
     alert("Subcontractor removed");
   }
 
-async function recordSubPayment() {
-  if (!selectedSubForPayment || subPaymentAmount <= 0) {
-    alert("Enter a valid amount");
-    return;
-  }
-  const remainingOwed = (selectedSubForPayment.amount || 0) - (selectedSubForPayment.paid_amount || 0);
-  if (subPaymentAmount > remainingOwed) {
-    alert(`Cannot pay more than owed (${formatCurrency(remainingOwed)})`);
-    return;
-  }
+  async function recordSubPayment() {
+    if (!selectedSubForPayment || subPaymentAmount <= 0) {
+      alert("Enter a valid amount");
+      return;
+    }
+    const remainingOwed = (selectedSubForPayment.amount || 0) - (selectedSubForPayment.paid_amount || 0);
+    if (subPaymentAmount > remainingOwed) {
+      alert(`Cannot pay more than owed (${formatCurrency(remainingOwed)})`);
+      return;
+    }
+    if (!companyId) {
+      alert("Company not found");
+      return;
+    }
 
-  setSaving(true);
-  const { error } = await supabase.from("subcontractor_payments").insert({
-    estimate_subcontractor_id: selectedSubForPayment.id,
-    estimate_id: estimateId,   // <-- ADD THIS LINE
-    amount: subPaymentAmount,
-    payment_method: subPaymentMethod,
-  });
+    setSaving(true);
+    const { error } = await supabase.from("subcontractor_payments").insert({
+      estimate_subcontractor_id: selectedSubForPayment.id,
+      estimate_id: estimateId,
+      amount: subPaymentAmount,
+      payment_method: subPaymentMethod,
+      company_id: companyId,
+    });
 
-  if (error) {
-    alert("Error recording payment");
-  } else {
-    await loadAllData();
-    onRefresh();
-    alert(`Payment of ${formatCurrency(subPaymentAmount)} recorded!`);
+    if (error) {
+      alert("Error recording payment");
+    } else {
+      await loadAllData();
+      onRefresh();
+      alert(`Payment of ${formatCurrency(subPaymentAmount)} recorded!`);
+    }
+    setShowSubPaymentModal(false);
+    setSubPaymentAmount(0);
+    setSaving(false);
   }
-  setShowSubPaymentModal(false);
-  setSubPaymentAmount(0);
-  setSaving(false);
-}
 
   async function deleteSubPayment(paymentId: string, subAssignmentId: string) {
     if (!confirm("Delete this payment? This will increase the subcontractor's owed amount.")) return;
+    if (!companyId) {
+      alert("Company not found");
+      return;
+    }
     setSaving(true);
-    await supabase.from("subcontractor_payments").delete().eq("id", paymentId);
+    await supabase
+      .from("subcontractor_payments")
+      .delete()
+      .eq("id", paymentId)
+      .eq("company_id", companyId);
     await loadAllData();
     onRefresh();
     setSaving(false);
@@ -369,8 +447,16 @@ async function recordSubPayment() {
       alert("Amount cannot be negative");
       return;
     }
+    if (!companyId) {
+      alert("Company not found");
+      return;
+    }
     setSaving(true);
-    await supabase.from("subcontractor_payments").update({ amount: newAmount }).eq("id", paymentId);
+    await supabase
+      .from("subcontractor_payments")
+      .update({ amount: newAmount })
+      .eq("id", paymentId)
+      .eq("company_id", companyId);
     await loadAllData();
     onRefresh();
     setEditingSubPayment(null);
@@ -387,6 +473,10 @@ async function recordSubPayment() {
       alert("Enter a description");
       return;
     }
+    if (!companyId) {
+      alert("Company not found");
+      return;
+    }
 
     setSaving(true);
     const { error } = await supabase.from("estimate_expenses").insert({
@@ -396,6 +486,7 @@ async function recordSubPayment() {
       amount: expenseForm.amount,
       expense_date: expenseForm.expense_date,
       notes: expenseForm.notes || null,
+      company_id: companyId,
     });
 
     if (error) {
@@ -416,11 +507,16 @@ async function recordSubPayment() {
   }
 
   async function updateExpense(expenseId: string, newAmount: number, newDescription: string) {
+    if (!companyId) {
+      alert("Company not found");
+      return;
+    }
     setSaving(true);
     await supabase
       .from("estimate_expenses")
       .update({ amount: newAmount, description: newDescription })
-      .eq("id", expenseId);
+      .eq("id", expenseId)
+      .eq("company_id", companyId);
     await loadAllData();
     onRefresh();
     setEditingExpense(null);
@@ -429,8 +525,16 @@ async function recordSubPayment() {
 
   async function deleteExpense(expenseId: string) {
     if (!confirm("Delete this expense?")) return;
+    if (!companyId) {
+      alert("Company not found");
+      return;
+    }
     setSaving(true);
-    await supabase.from("estimate_expenses").delete().eq("id", expenseId);
+    await supabase
+      .from("estimate_expenses")
+      .delete()
+      .eq("id", expenseId)
+      .eq("company_id", companyId);
     await loadAllData();
     onRefresh();
     setSaving(false);
@@ -441,6 +545,10 @@ async function recordSubPayment() {
       alert("Name is required");
       return;
     }
+    if (!companyId) {
+      alert("Company not found");
+      return;
+    }
     setSaving(true);
     const { data, error } = await supabase
       .from("agents")
@@ -448,6 +556,7 @@ async function recordSubPayment() {
         name: newAgent.name,
         email: newAgent.email || null,
         phone: newAgent.phone || null,
+        company_id: companyId,
       })
       .select()
       .single();
@@ -470,6 +579,10 @@ async function recordSubPayment() {
       alert("Agent already assigned");
       return;
     }
+    if (!companyId) {
+      alert("Company not found");
+      return;
+    }
 
     setSaving(true);
     const { error } = await supabase.from("estimate_agents").insert({
@@ -477,6 +590,7 @@ async function recordSubPayment() {
       agent_id: selectedAgentId,
       amount: 0,
       notes: agentNotes || null,
+      company_id: companyId,
     });
 
     if (error) {
@@ -495,17 +609,33 @@ async function recordSubPayment() {
     const count = assignedAgents.length;
     if (count === 0 || remainingForAgents <= 0) return;
     const equalShare = remainingForAgents / count;
+    if (!companyId) {
+      alert("Company not found");
+      return;
+    }
 
     for (const agent of assignedAgents) {
-      await supabase.from("estimate_agents").update({ amount: equalShare }).eq("id", agent.id);
+      await supabase
+        .from("estimate_agents")
+        .update({ amount: equalShare })
+        .eq("id", agent.id)
+        .eq("company_id", companyId);
     }
   }
 
   async function redistributeByPercentage() {
     if (assignedAgents.length === 0 || remainingForAgents <= 0) return;
     const equalShare = remainingForAgents / assignedAgents.length;
+    if (!companyId) {
+      alert("Company not found");
+      return;
+    }
     for (const agent of assignedAgents) {
-      await supabase.from("estimate_agents").update({ amount: equalShare }).eq("id", agent.id);
+      await supabase
+        .from("estimate_agents")
+        .update({ amount: equalShare })
+        .eq("id", agent.id)
+        .eq("company_id", companyId);
     }
     await loadAllData();
     onRefresh();
@@ -514,8 +644,16 @@ async function recordSubPayment() {
 
   async function updateAgentAmount(agentId: string, newAmount: number) {
     if (newAmount < 0) return;
+    if (!companyId) {
+      alert("Company not found");
+      return;
+    }
     setSaving(true);
-    await supabase.from("estimate_agents").update({ amount: newAmount }).eq("id", agentId);
+    await supabase
+      .from("estimate_agents")
+      .update({ amount: newAmount })
+      .eq("id", agentId)
+      .eq("company_id", companyId);
     await loadAllData();
     onRefresh();
     setEditingAgent(null);
@@ -524,9 +662,22 @@ async function recordSubPayment() {
 
   async function removeAgentAssignment(agentAssignId: string, agentId: string) {
     if (!confirm("Remove this agent? All payments made to this agent for this estimate will be permanently deleted.")) return;
+    if (!companyId) {
+      alert("Company not found");
+      return;
+    }
     setSaving(true);
-    await supabase.from("agent_payments").delete().eq("estimate_id", estimateId).eq("agent_id", agentId);
-    await supabase.from("estimate_agents").delete().eq("id", agentAssignId);
+    await supabase
+      .from("agent_payments")
+      .delete()
+      .eq("estimate_id", estimateId)
+      .eq("agent_id", agentId)
+      .eq("company_id", companyId);
+    await supabase
+      .from("estimate_agents")
+      .delete()
+      .eq("id", agentAssignId)
+      .eq("company_id", companyId);
     await redistributeAgentEvenly();
     await loadAllData();
     onRefresh();
@@ -544,6 +695,10 @@ async function recordSubPayment() {
       alert(`Cannot pay more than owed (${formatCurrency(remainingOwed)})`);
       return;
     }
+    if (!companyId) {
+      alert("Company not found");
+      return;
+    }
 
     setSaving(true);
     const { error } = await supabase.from("agent_payments").insert({
@@ -552,6 +707,7 @@ async function recordSubPayment() {
       amount: agentPaymentAmount,
       payment_method: agentPaymentMethod,
       payment_date: new Date().toISOString(),
+      company_id: companyId,
     });
 
     if (error) {
@@ -568,8 +724,16 @@ async function recordSubPayment() {
 
   async function deleteAgentPayment(paymentId: string, agentId: string) {
     if (!confirm("Delete this payment? This will increase the agent's owed amount.")) return;
+    if (!companyId) {
+      alert("Company not found");
+      return;
+    }
     setSaving(true);
-    await supabase.from("agent_payments").delete().eq("id", paymentId);
+    await supabase
+      .from("agent_payments")
+      .delete()
+      .eq("id", paymentId)
+      .eq("company_id", companyId);
     await loadAllData();
     onRefresh();
     setSaving(false);
@@ -581,8 +745,16 @@ async function recordSubPayment() {
       alert("Amount cannot be negative");
       return;
     }
+    if (!companyId) {
+      alert("Company not found");
+      return;
+    }
     setSaving(true);
-    await supabase.from("agent_payments").update({ amount: newAmount }).eq("id", paymentId);
+    await supabase
+      .from("agent_payments")
+      .update({ amount: newAmount })
+      .eq("id", paymentId)
+      .eq("company_id", companyId);
     await loadAllData();
     onRefresh();
     setEditingAgentPayment(null);
@@ -602,6 +774,7 @@ async function recordSubPayment() {
   const getCategoryLabel = (category: string) => EXPENSE_CATEGORIES.find(c => c.value === category)?.label || category;
   const getCategoryIcon = (category: string) => EXPENSE_CATEGORIES.find(c => c.value === category)?.icon || "📦";
 
+  // ---- RENDER (JSX) – completely unchanged ----
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto">

@@ -4,6 +4,9 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils/formatting";
 import { X, Trash2 } from "lucide-react";
+import { getCompanyId } from "@/lib/supabase/getCompanyId"; // 👈 import
+import toast from "react-hot-toast";
+
 
 type Expense = {
   id: string;
@@ -36,7 +39,8 @@ export default function ExpenseModal({ isOpen, onClose, estimateId, onRefresh }:
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [saving, setSaving] = useState(false);
-  
+  const [companyId, setCompanyId] = useState<string | null>(null);
+
   const [formData, setFormData] = useState({
     category: "materials",
     description: "",
@@ -45,20 +49,40 @@ export default function ExpenseModal({ isOpen, onClose, estimateId, onRefresh }:
     notes: "",
   });
 
+  // Fetch company_id once when modal opens
   useEffect(() => {
-    if (isOpen) {
-      loadExpenses();
-    }
+    const fetchCompany = async () => {
+      const cid = await getCompanyId();
+      setCompanyId(cid);
+    };
+    if (isOpen) fetchCompany();
   }, [isOpen]);
 
+  // Load expenses only when modal opens and we have companyId
+  useEffect(() => {
+    if (isOpen && companyId) {
+      loadExpenses();
+    }
+  }, [isOpen, companyId]);
+
   async function loadExpenses() {
+    if (!companyId) {
+      toast.error("Company not found");
+      return;
+    }
     setLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("estimate_expenses")
       .select("*")
       .eq("estimate_id", estimateId)
+      .eq("company_id", companyId) // 👈 filter by company
       .order("expense_date", { ascending: false });
-    if (data) setExpenses(data);
+    if (error) {
+      console.error("Load expenses error:", error);
+      toast.error("Failed to load expenses");
+    } else {
+      setExpenses(data || []);
+    }
     setLoading(false);
   }
 
@@ -71,7 +95,11 @@ export default function ExpenseModal({ isOpen, onClose, estimateId, onRefresh }:
       alert("Enter a description");
       return;
     }
-    
+    if (!companyId) {
+      toast.error("Company not found");
+      return;
+    }
+
     setSaving(true);
     const { error } = await supabase.from("estimate_expenses").insert({
       estimate_id: estimateId,
@@ -80,9 +108,13 @@ export default function ExpenseModal({ isOpen, onClose, estimateId, onRefresh }:
       amount: formData.amount,
       expense_date: formData.expense_date,
       notes: formData.notes || null,
+      company_id: companyId, // 👈 add company_id
     });
-    
-    if (!error) {
+
+    if (error) {
+      console.error("Add expense error:", error);
+      toast.error("Error adding expense");
+    } else {
       setShowAddForm(false);
       setFormData({
         category: "materials",
@@ -93,18 +125,29 @@ export default function ExpenseModal({ isOpen, onClose, estimateId, onRefresh }:
       });
       loadExpenses();
       onRefresh();
-    } else {
-      alert("Error adding expense");
+      toast.success("Expense added");
     }
     setSaving(false);
   }
 
   async function deleteExpense(id: string) {
+    if (!companyId) {
+      toast.error("Company not found");
+      return;
+    }
     if (confirm("Delete this expense?")) {
-      const { error } = await supabase.from("estimate_expenses").delete().eq("id", id);
-      if (!error) {
+      const { error } = await supabase
+        .from("estimate_expenses")
+        .delete()
+        .eq("id", id)
+        .eq("company_id", companyId); // 👈 filter by company
+      if (error) {
+        console.error("Delete error:", error);
+        toast.error("Error deleting expense");
+      } else {
         loadExpenses();
         onRefresh();
+        toast.success("Expense deleted");
       }
     }
   }
