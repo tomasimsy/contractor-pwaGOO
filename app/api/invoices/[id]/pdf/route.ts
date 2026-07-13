@@ -34,7 +34,8 @@ export async function GET(
       const { data: estItems } = await supabase
         .from("estimate_items")
         .select("*")
-        .eq("estimate_id", invoice.estimate_id);
+        .eq("estimate_id", invoice.estimate_id)
+        .is("deleted_at", null);
       estimateItems = estItems || [];
     }
 
@@ -45,7 +46,8 @@ export async function GET(
         .from("change_orders")
         .select("*")
         .eq("estimate_id", invoice.estimate_id)
-        .eq("status", "approved");
+        .eq("status", "approved")
+        .is("deleted_at", null);
       changeOrders = cos || [];
     }
 
@@ -54,6 +56,7 @@ export async function GET(
       .from("invoice_payments")
       .select("*")
       .eq("invoice_id", id)
+      .is("deleted_at", null)
       .order("created_at", { ascending: false });
 
     // Signature from estimate

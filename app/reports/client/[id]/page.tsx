@@ -3,6 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import { formatCurrency } from "@/lib/utils/formatting";
 import Link from "next/link";
 
@@ -40,11 +41,16 @@ export default function ClientDetail() {
 
     const fetchData = async () => {
       try {
+        const companyId = await getCompanyId();
+        if (!companyId) throw new Error("Company not found");
+
         // Get client name
         const { data: client, error: clientError } = await supabase
           .from("clients")
           .select("name")
           .eq("id", id)
+          .eq("company_id", companyId)
+          .is("deleted_at", null)
           .single();
         if (clientError) throw clientError;
         setClientName(client?.name || "Client");
@@ -60,6 +66,7 @@ export default function ClientDetail() {
             created_at
           `)
           .eq("client_id", id)
+          .eq("company_id", companyId)
           .is("deleted_at", null)
           .order("created_at", { ascending: false });
 
@@ -72,6 +79,7 @@ export default function ClientDetail() {
             .from("invoices")
             .select("estimate_id, amount_paid")
             .in("estimate_id", estimateIds)
+            .eq("company_id", companyId)
             .in("status", ["paid", "partial"]);
           if (!invError && inv) {
             invoiceData = inv;

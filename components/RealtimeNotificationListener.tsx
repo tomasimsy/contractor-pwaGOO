@@ -51,7 +51,8 @@ export default function RealtimeNotificationListener() {
       const { data: clients } = await supabase
         .from("clients")
         .select("id, name")
-        .in("id", clientIds);
+        .in("id", clientIds)
+        .is("deleted_at", null);
 
       const clientMap = new Map();
       clients?.forEach(c => clientMap.set(c.id, c.name));
@@ -107,6 +108,7 @@ export default function RealtimeNotificationListener() {
               .from("clients")
               .select("name")
               .eq("id", estimate.client_id)
+              .is("deleted_at", null)
               .single();
             const clientName = client?.name || "A customer";
             notifyEstimate(estimate.estimate_number || estId.slice(0, 8), clientName);

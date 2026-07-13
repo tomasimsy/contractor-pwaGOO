@@ -18,6 +18,7 @@ export async function POST(
       .from('change_orders')
       .select('status, company_id')
       .eq('id', id)
+      .is('deleted_at', null)
       .single();
 
     if (fetchError || !co) {

@@ -13,6 +13,7 @@ export async function GET(
       .from('change_orders')
       .select('*, change_order_line_items(*)')
       .eq('id', id)
+      .is('deleted_at', null)
       .single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 404 });
@@ -36,6 +37,7 @@ export async function PUT(
       .from('change_orders')
       .select('status')
       .eq('id', id)
+      .is('deleted_at', null)
       .single();
 
     if (!existing || existing.status !== 'draft') {
@@ -88,6 +90,7 @@ export async function DELETE(
       .from('change_orders')
       .select('status')
       .eq('id', id)
+      .is('deleted_at', null)
       .single();
 
     if (!existing || existing.status !== 'draft') {

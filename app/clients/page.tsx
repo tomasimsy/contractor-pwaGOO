@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
+import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import { Client } from "@/types";
 import Header from "@/components/ui/Header";
 import DeleteModal from "@/components/ui/DeleteModal";
@@ -22,9 +23,12 @@ export default function ClientsPage() {
   }, []);
 
   async function loadClients() {
+    const companyId = await getCompanyId();
     const { data } = await supabase
       .from("clients")
       .select("*")
+      .eq("company_id", companyId)
+      .is("deleted_at", null)
       .order("created_at", { ascending: false });
     if (data) setClients(data as Client[]);
     setLoading(false);
@@ -32,11 +36,17 @@ export default function ClientsPage() {
 
   async function handleDelete() {
     setDeleting(true);
+    const companyId = await getCompanyId();
+    // This DELETE is intercepted by a DB trigger and converted into a
+    // soft delete (deleted_at/deleted_by) — the row is recoverable,
+    // not gone. The company_id filter here is defense-in-depth so a
+    // request can't target another company's client by id.
     const { error } = await supabase
       .from("clients")
       .delete()
-      .eq("id", deleteModal.id);
-    
+      .eq("id", deleteModal.id)
+      .eq("company_id", companyId);
+
     if (error) {
       alert("Error deleting client");
     } else {
@@ -112,7 +122,7 @@ export default function ClientsPage() {
   onClose={() => setDeleteModal({ isOpen: false, id: "", name: "" })}
   onConfirm={handleDelete}
   title="Delete Client"
-  message={`Are you sure you want to delete ${deleteModal.name}? This action cannot be undone.`}
+  message={`Are you sure you want to delete ${deleteModal.name}? It will be removed from this list but can be recovered if needed.`}
   deleting={deleting}
 />
       </div>

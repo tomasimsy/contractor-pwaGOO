@@ -10,6 +10,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
+import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import toast from "react-hot-toast";
 import { formatDate } from "@/components/mileage/utils";
 
@@ -33,10 +34,12 @@ export function DocumentCard({ doc, onDelete }: DocumentCardProps) {
         await supabase.storage.from("documents").remove([filePath]);
       }
 
+      const companyId = await getCompanyId();
       const { error } = await supabase
         .from("documents")
         .delete()
-        .eq("id", doc.id);
+        .eq("id", doc.id)
+        .eq("company_id", companyId);
 
       if (error) throw error;
 

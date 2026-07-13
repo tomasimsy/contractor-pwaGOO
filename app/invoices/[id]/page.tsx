@@ -91,6 +91,7 @@ export default function InvoicePage() {
           .select("*")
           .eq("id", inv.client_id)
           .eq("company_id", companyId)
+          .is("deleted_at", null)
           .single();
         if (cl) setClient(cl);
       }
@@ -109,7 +110,8 @@ export default function InvoicePage() {
       const { data: invLines } = await supabase
         .from("invoice_items")
         .select("*")
-        .eq("invoice_id", id);
+        .eq("invoice_id", id)
+        .is("deleted_at", null);
       if (invLines) setInvoiceLineItems(invLines);
 
       // Original estimate items
@@ -118,7 +120,8 @@ export default function InvoicePage() {
         const { data: estLines } = await supabase
           .from("estimate_items")
           .select("*")
-          .eq("estimate_id", inv.estimate_id);
+          .eq("estimate_id", inv.estimate_id)
+          .is("deleted_at", null);
         estimateItemsData = estLines || [];
         setEstimateItems(estimateItemsData);
       }
@@ -131,7 +134,8 @@ export default function InvoicePage() {
           .from("change_orders")
           .select("*")
           .eq("estimate_id", inv.estimate_id)
-          .eq("status", "approved");
+          .eq("status", "approved")
+          .is("deleted_at", null);
         changeOrdersData = cos || [];
         setChangeOrders(changeOrdersData);
         approvedTotal = changeOrdersData.reduce((sum, co) => sum + (co.total_amount || 0), 0);
@@ -142,6 +146,7 @@ export default function InvoicePage() {
         .from("invoice_payments")
         .select("*")
         .eq("invoice_id", id)
+        .is("deleted_at", null)
         .order("created_at", { ascending: false });
       const paymentsData = pays || [];
       setPayments(paymentsData);

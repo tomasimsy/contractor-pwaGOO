@@ -100,11 +100,15 @@ const filteredEstimates = estimates.filter((est) => {
     setDeleteModal({ isOpen: false, id: "", name: "" });
 
     try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       const { error } = await supabase
         .from("estimates")
-        .update({ 
+        .update({
           deleted_at: new Date().toISOString(),
-          is_deleted: true 
+          deleted_by: user?.id ?? null,
+          is_deleted: true,
         })
         .eq("id", targetId);
 

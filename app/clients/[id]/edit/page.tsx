@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import Header from "@/components/ui/Header";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 
@@ -23,12 +24,15 @@ export default function EditClientPage() {
   }, [id]);
 
   async function loadClient() {
+    const companyId = await getCompanyId();
     const { data } = await supabase
       .from("clients")
       .select("*")
       .eq("id", id)
+      .eq("company_id", companyId)
+      .is("deleted_at", null)
       .single();
-    
+
     if (data) {
       setClient({
         name: data.name || "",
@@ -47,6 +51,7 @@ export default function EditClientPage() {
     }
 
     setSaving(true);
+    const companyId = await getCompanyId();
     const { error } = await supabase
       .from("clients")
       .update({
@@ -55,7 +60,8 @@ export default function EditClientPage() {
         email: client.email || null,
         address: client.address || null,
       })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("company_id", companyId);
 
     if (error) {
       alert("Error saving: " + error.message);

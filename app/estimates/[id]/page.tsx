@@ -229,6 +229,7 @@ export default function EstimatePage() {
         .select("*")
         .eq("estimate_id", id)
         .eq("company_id", companyId)
+        .is("deleted_at", null)
         .order("created_at", { ascending: false });
       if (error) {
         console.error("Error loading change orders:", error);
@@ -274,6 +275,7 @@ export default function EstimatePage() {
           .select("*")
           .eq("id", est.client_id)
           .eq("company_id", companyId)
+          .is("deleted_at", null)
           .single();
         setClient(c);
         setEditClientId(est.client_id);
@@ -283,7 +285,8 @@ export default function EstimatePage() {
         .from("estimate_items")
         .select("*")
         .eq("estimate_id", id)
-        .eq("company_id", companyId);
+        .eq("company_id", companyId)
+        .is("deleted_at", null);
 
       const projectMap: Record<string, ProjectWithItems> = {};
       items?.forEach((item) => {
@@ -310,6 +313,7 @@ export default function EstimatePage() {
         .select("total_amount")
         .eq("estimate_id", id)
         .eq("company_id", companyId)
+        .is("deleted_at", null)
         .eq("status", "approved");
       const approvedTotal = (approvedCOs || []).reduce((sum, co) => sum + (co.total_amount || 0), 0);
       setChangeOrdersTotal(approvedTotal);
@@ -529,7 +533,8 @@ export default function EstimatePage() {
         .from("estimate_items")
         .select("*")
         .eq("estimate_id", id)
-        .eq("company_id", companyId);
+        .eq("company_id", companyId)
+        .is("deleted_at", null);
       if (itemsFetchError || !items || items.length === 0) {
         toast.error("No items found on this estimate");
         setConverting(false);
@@ -541,6 +546,7 @@ export default function EstimatePage() {
         .select("*")
         .eq("estimate_id", id)
         .eq("company_id", companyId)
+        .is("deleted_at", null)
         .eq("status", "approved");
       const changeOrdersTotalAmount = (approvedCOs || []).reduce((sum, co) => sum + (co.total_amount || 0), 0) || 0;
 
@@ -824,6 +830,7 @@ export default function EstimatePage() {
         .from("clients")
         .select("*")
         .eq("id", estimate.client_id)
+        .is("deleted_at", null)
         .single();
       if (freshClient) currentClient = freshClient;
     }
@@ -1519,7 +1526,8 @@ function ChangeOrderModal({
       .from("change_order_line_items")
       .select("*")
       .eq("change_order_id", coId)
-      .eq("company_id", companyId);
+      .eq("company_id", companyId)
+      .is("deleted_at", null);
     if (data && data.length) {
       const items = data.map((item) => ({
         id: item.id,
@@ -1617,6 +1625,7 @@ function ChangeOrderModal({
           .select("total")
           .eq("id", estimateId)
           .eq("company_id", companyId)
+          .is("deleted_at", null)
           .single();
         if (estError || !estimateData) {
           alert("Could not fetch estimate data. Please try again.");
@@ -1628,7 +1637,8 @@ function ChangeOrderModal({
           .from("change_orders")
           .select("id", { count: "exact", head: true })
           .eq("estimate_id", estimateId)
-          .eq("company_id", companyId);
+          .eq("company_id", companyId)
+          .is("deleted_at", null);
 
         const coNumber = `CO-${(count || 0) + 1}`;
 

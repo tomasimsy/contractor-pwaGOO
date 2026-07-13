@@ -108,7 +108,8 @@ export default function FinancialDashboard() {
         const { data: invoices } = await supabase
           .from("invoices")
           .select("*, invoice_payments(amount)")
-          .eq("estimate_id", est.id);
+          .eq("estimate_id", est.id)
+          .filter("invoice_payments.deleted_at", "is", null);
         
 const revenue =
   invoices?.reduce(
@@ -133,43 +134,48 @@ const revenue =
         const { data: subPayments } = await supabase
           .from("subcontractor_payments")
           .select("amount")
-          .eq("estimate_id", est.id);
-        
+          .eq("estimate_id", est.id)
+          .is("deleted_at", null);
+
         const subPaid = subPayments?.reduce((sum, p) => sum + p.amount, 0) || 0;
         totalSubPaid += subPaid;
-        
+
         // Get assigned subcontractor amounts to calculate pending
         const { data: assignedSubs } = await supabase
           .from("estimate_subcontractors")
           .select("amount")
-          .eq("estimate_id", est.id);
-        
+          .eq("estimate_id", est.id)
+          .is("deleted_at", null);
+
         const subAssigned = assignedSubs?.reduce((sum, s) => sum + (s.amount || 0), 0) || 0;
         pendingSubPayments += Math.max(0, subAssigned - subPaid);
-        
+
         // Get expenses
         const { data: expenses } = await supabase
           .from("estimate_expenses")
           .select("amount")
-          .eq("estimate_id", est.id);
-        
+          .eq("estimate_id", est.id)
+          .is("deleted_at", null);
+
         const expenseTotal = expenses?.reduce((sum, e) => sum + e.amount, 0) || 0;
         totalExpenses += expenseTotal;
-        
+
         // Get agent payments
         const { data: agentPayments } = await supabase
           .from("agent_payments")
           .select("amount")
-          .eq("estimate_id", est.id);
-        
+          .eq("estimate_id", est.id)
+          .is("deleted_at", null);
+
         const agentPaid = agentPayments?.reduce((sum, a) => sum + a.amount, 0) || 0;
         totalAgentPaid += agentPaid;
-        
+
         // Get assigned agent amounts for pending
         const { data: assignedAgents } = await supabase
           .from("estimate_agents")
           .select("amount")
-          .eq("estimate_id", est.id);
+          .eq("estimate_id", est.id)
+          .is("deleted_at", null);
         
         const agentAssigned = assignedAgents?.reduce((sum, a) => sum + (a.amount || 0), 0) || 0;
         pendingAgentPayments += Math.max(0, agentAssigned - agentPaid);
@@ -230,6 +236,7 @@ const revenue =
       const { data: recentPayments } = await supabase
         .from("subcontractor_payments")
         .select("*, estimate_id, estimates(estimate_number)")
+        .is("deleted_at", null)
         .order("payment_date", { ascending: false })
         .limit(5);
       

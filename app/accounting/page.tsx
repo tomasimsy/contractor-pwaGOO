@@ -153,6 +153,7 @@ export default function AccountingPage() {
         const { data: mileageRows } = await supabase
           .from('mileage_trips')
           .select('distance_miles')
+          .is('deleted_at', null)
           .gte('created_at', new Date(new Date().getFullYear(), 0, 1).toISOString());
 
         const totalMiles = mileageRows?.reduce((sum, r) => sum + (r.distance_miles || 0), 0) || 0;
@@ -162,7 +163,8 @@ export default function AccountingPage() {
         const { data: unsoldEstimates } = await supabase
           .from('estimates')
           .select('id')
-          .in('status', ['draft', 'sent', 'rejected']);
+          .in('status', ['draft', 'sent', 'rejected'])
+          .is('deleted_at', null);
 
         const unsoldIds = unsoldEstimates?.map(e => e.id) || [];
         let totalUnsold = 0;
@@ -170,7 +172,8 @@ export default function AccountingPage() {
           const { data: unsoldExpenses } = await supabase
             .from('estimate_expenses')
             .select('amount')
-            .in('estimate_id', unsoldIds);
+            .in('estimate_id', unsoldIds)
+            .is('deleted_at', null);
           totalUnsold = unsoldExpenses?.reduce((sum, r) => sum + (r.amount || 0), 0) || 0;
         }
         setUnsoldCosts(totalUnsold);
@@ -187,6 +190,7 @@ export default function AccountingPage() {
             clients (name)
           `)
           .is('paid_at', null)
+          .is('deleted_at', null)
           .neq('status', 'paid');
 
         const formatted = (openInvRows || []).map((inv: any) => ({

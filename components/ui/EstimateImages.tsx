@@ -46,6 +46,7 @@ async function fetchEstimateImages(estimateId: string): Promise<EstimateImage[]>
     .select("*")
     .eq("estimate_id", estimateId)
     .eq("company_id", companyId)
+    .is("deleted_at", null)
     .order("created_at", { ascending: true });
 
   if (error) {

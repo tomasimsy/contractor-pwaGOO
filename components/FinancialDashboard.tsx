@@ -51,12 +51,12 @@ export default function FinancialDashboard() {
       if (!estimates) return;
 
       const [invoicesRes, subRes, expenseRes, agentRes, assignedSubsRes, assignedAgentsRes] = await Promise.all([
-        supabase.from("invoices").select("estimate_id, status, due_date, invoice_payments(amount)"),
+        supabase.from("invoices").select("estimate_id, status, due_date, invoice_payments(amount)").filter("invoice_payments.deleted_at", "is", null),
         supabase.from("subcontractor_payments").select("estimate_id, amount").is("deleted_at", null),
         supabase.from("estimate_expenses").select("estimate_id, amount").is("deleted_at", null),
         supabase.from("agent_payments").select("estimate_id, amount").is("deleted_at", null),
-        supabase.from("estimate_subcontractors").select("estimate_id, amount"),
-        supabase.from("estimate_agents").select("estimate_id, amount"),
+        supabase.from("estimate_subcontractors").select("estimate_id, amount").is("deleted_at", null),
+        supabase.from("estimate_agents").select("estimate_id, amount").is("deleted_at", null),
       ]);
 
       const invoices = invoicesRes.data || [];

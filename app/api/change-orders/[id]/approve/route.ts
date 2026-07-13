@@ -20,6 +20,7 @@ export async function POST(
       .from('change_orders')
       .select('*, estimate_id, total_amount, company_id')
       .eq('id', id)
+      .is('deleted_at', null)
       .single();
 
     if (fetchError || !co) {

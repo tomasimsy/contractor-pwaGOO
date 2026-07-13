@@ -70,13 +70,15 @@ export async function GET() {
     const { data: incomeTotals } = await supabase
       .from('estimates')
       .select('total')
-      .eq('status', 'completed');
+      .eq('status', 'completed')
+      .is('deleted_at', null);
 
     const totalIncome = incomeTotals?.reduce((sum, r) => sum + (r.total || 0), 0) || 0;
 
     const { data: expenseTotals } = await supabase
       .from('estimate_expenses')
-      .select('amount');
+      .select('amount')
+      .is('deleted_at', null);
 
     const totalExpenses = expenseTotals?.reduce((sum, r) => sum + (r.amount || 0), 0) || 0;
 

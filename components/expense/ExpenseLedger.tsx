@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Trash2, Wrench, HardHat, Users, Percent, Receipt } from "lucide-react";
+import { Trash2, Wrench, HardHat, Users, Percent, Receipt, RotateCcw } from "lucide-react";
 import { formatCurrency } from "@/lib/utils/formatting";
 import type { LedgerEntry } from "@/lib/types";
 
@@ -22,17 +22,25 @@ function formatDate(iso: string): string {
 export default function ExpenseLedger({
   entries,
   onDelete,
+  onRestore,
+  emptyLabel = "No expenses logged yet",
+  emptyHint = 'Tap "Add Expense" to log the first one.',
 }: {
   entries: LedgerEntry[];
-  onDelete: (entry: LedgerEntry) => void;
+  onDelete?: (entry: LedgerEntry) => void;
+  /** Renders entries in "archived" mode with a Restore button instead
+   * of Delete — same list UI, no separate component to keep in sync. */
+  onRestore?: (entry: LedgerEntry) => void;
+  emptyLabel?: string;
+  emptyHint?: string;
 }) {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   if (entries.length === 0) {
     return (
       <div className="bg-white rounded-xl border border-dashed border-slate-200 p-6 text-center">
-        <div className="text-sm font-semibold text-slate-500">No expenses logged yet</div>
-        <div className="text-xs text-slate-400 mt-0.5">Tap "Add Expense" to log the first one.</div>
+        <div className="text-sm font-semibold text-slate-500">{emptyLabel}</div>
+        <div className="text-xs text-slate-400 mt-0.5">{emptyHint}</div>
       </div>
     );
   }
@@ -44,7 +52,10 @@ export default function ExpenseLedger({
         const isPendingDelete = pendingDeleteId === entry.id;
 
         return (
-          <div key={`${entry.source}-${entry.id}`} className="flex items-center gap-3 p-3">
+          <div
+            key={`${entry.source}-${entry.id}`}
+            className={`flex items-center gap-3 p-3 ${onRestore ? "opacity-70" : ""}`}
+          >
             <div className="shrink-0 w-9 h-9 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-500">
               <Icon size={15} />
             </div>
@@ -62,11 +73,20 @@ export default function ExpenseLedger({
               </div>
             </div>
 
-            {isPendingDelete ? (
+            {onRestore ? (
+              <button
+                type="button"
+                onClick={() => onRestore(entry)}
+                className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 rounded-lg px-2.5 py-2"
+              >
+                <RotateCcw size={13} />
+                Restore
+              </button>
+            ) : isPendingDelete ? (
               <button
                 type="button"
                 onClick={() => {
-                  onDelete(entry);
+                  onDelete?.(entry);
                   setPendingDeleteId(null);
                 }}
                 className="shrink-0 text-[11px] font-bold text-white bg-rose-600 rounded-lg px-2.5 py-2"

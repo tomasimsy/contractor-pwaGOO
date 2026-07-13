@@ -189,6 +189,7 @@ export default function ProjectFinancialsModal({
         .from("subcontractors")
         .select("*")
         .eq("company_id", companyId)
+        .is("deleted_at", null)
         .order("name");
       if (subs) setSubcontractors(subs);
 
@@ -197,7 +198,8 @@ export default function ProjectFinancialsModal({
         .from("estimate_subcontractors")
         .select("*, subcontractors(*)")
         .eq("estimate_id", estimateId)
-        .eq("company_id", companyId);
+        .eq("company_id", companyId)
+        .is("deleted_at", null);
 
       if (assigned) {
         const subsWithPayments = await Promise.all(
@@ -231,6 +233,7 @@ export default function ProjectFinancialsModal({
         .from("agents")
         .select("*")
         .eq("company_id", companyId)
+        .is("deleted_at", null)
         .order("name");
       if (ags) setAgents(ags);
 
@@ -239,7 +242,8 @@ export default function ProjectFinancialsModal({
         .from("estimate_agents")
         .select("*, agents(*)")
         .eq("estimate_id", estimateId)
-        .eq("company_id", companyId);
+        .eq("company_id", companyId)
+        .is("deleted_at", null);
 
       if (assignedAgentsData) {
         const agentsWithPayments = await Promise.all(

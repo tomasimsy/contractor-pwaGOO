@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Document } from './types';
 import { DocumentCard } from './DocumentCard';
 import { supabase } from '@/lib/supabase/client';
+import { getCompanyId } from '@/lib/supabase/getCompanyId';
 import toast from 'react-hot-toast';
 
 export function DocumentList() {
@@ -13,9 +14,12 @@ export function DocumentList() {
   const fetchDocuments = async () => {
     setLoading(true);
     try {
+      const companyId = await getCompanyId();
       const { data, error } = await supabase
         .from('documents')
         .select('*')
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
         .order('uploaded_at', { ascending: false });
       if (error) throw error;
       setDocuments(data || []);

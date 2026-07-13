@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import { formatCurrency, formatShortDate } from "@/lib/utils/formatting";
 import Header from "@/components/ui/Header";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
@@ -20,23 +21,27 @@ export default function DeletedEstimatesPage() {
   }, []);
 
   async function loadDeleted() {
+    const companyId = await getCompanyId();
     const { data } = await supabase
       .from("estimates")
       .select("*, clients(name, phone)")
+      .eq("company_id", companyId)
       .not("deleted_at", "is", null)
       .order("deleted_at", { ascending: false });
-    
+
     if (data) setDeletedEstimates(data);
     setLoading(false);
   }
 
   async function restoreEstimate(id: string) {
     setRestoring(id);
+    const companyId = await getCompanyId();
     const { error } = await supabase
       .from("estimates")
-      .update({ deleted_at: null, is_deleted: false })
-      .eq("id", id);
-    
+      .update({ deleted_at: null, deleted_by: null, is_deleted: false })
+      .eq("id", id)
+      .eq("company_id", companyId);
+
     if (!error) {
       await loadDeleted();
       alert("Estimate restored!");
@@ -48,13 +53,15 @@ export default function DeletedEstimatesPage() {
 
   async function permanentDelete(id: string) {
     if (!confirm("Permanently delete this estimate? This action CANNOT be undone.")) return;
-    
+
     setPermanentDeleting(id);
+    const companyId = await getCompanyId();
     const { error } = await supabase
       .from("estimates")
       .delete()
-      .eq("id", id);
-    
+      .eq("id", id)
+      .eq("company_id", companyId);
+
     if (!error) {
       await loadDeleted();
       alert("Estimate permanently deleted");
@@ -66,9 +73,10 @@ export default function DeletedEstimatesPage() {
 
   async function deleteAllPermanently() {
     if (!confirm(`Permanently delete ALL ${deletedEstimates.length} estimates? This action CANNOT be undone.`)) return;
-    
+
+    const companyId = await getCompanyId();
     for (const est of deletedEstimates) {
-      await supabase.from("estimates").delete().eq("id", est.id);
+      await supabase.from("estimates").delete().eq("id", est.id).eq("company_id", companyId);
     }
     await loadDeleted();
     alert("All estimates permanently deleted");
@@ -76,12 +84,14 @@ export default function DeletedEstimatesPage() {
 
   async function restoreAll() {
     if (!confirm(`Restore ALL ${deletedEstimates.length} estimates?`)) return;
-    
+
+    const companyId = await getCompanyId();
     for (const est of deletedEstimates) {
       await supabase
         .from("estimates")
-        .update({ deleted_at: null, is_deleted: false })
-        .eq("id", est.id);
+        .update({ deleted_at: null, deleted_by: null, is_deleted: false })
+        .eq("id", est.id)
+        .eq("company_id", companyId);
     }
     await loadDeleted();
     alert("All estimates restored!");

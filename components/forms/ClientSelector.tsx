@@ -49,7 +49,7 @@ const [clients, setClients] = useState<Client[]>([]);
       }, [showSearch]);
 
       async function loadClients() {
-      const { data } = await supabase.from("clients").select("*").limit(20);
+      const { data } = await supabase.from("clients").select("*").is("deleted_at", null).limit(20);
       if (data) setClients(data);
       }
 

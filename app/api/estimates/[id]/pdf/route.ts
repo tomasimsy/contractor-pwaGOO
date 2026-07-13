@@ -32,7 +32,8 @@ const { data: estimate } = await supabase
     const { data: items } = await supabase
       .from("estimate_items")
       .select("*")
-      .eq("estimate_id", id);
+      .eq("estimate_id", id)
+      .is("deleted_at", null);
 
     const subtotal = items?.reduce((sum, i) => sum + (i.total || 0), 0) || 0;
     const depositAmount = estimate.deposit_amount || subtotal * 0.5;

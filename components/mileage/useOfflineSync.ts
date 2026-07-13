@@ -367,6 +367,7 @@ export function useOfflineSync(userId: string | null) {
             .from("mileage_trips")
             .select("*")
             .eq("user_id", userId)
+            .is("deleted_at", null)
             .order(
               "created_at",
               {

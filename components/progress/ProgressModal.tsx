@@ -59,6 +59,7 @@ export default function ProgressModal({ isOpen, onClose, estimateId, projects, o
       .select("*")
       .eq("estimate_id", estimateId)
       .eq("company_id", companyId) // 👈 filter by company
+      .is("deleted_at", null)
       .order("project_name")
       .order("milestone_order");
 

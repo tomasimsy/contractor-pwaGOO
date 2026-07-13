@@ -3,6 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import { formatCurrency } from "@/lib/utils/formatting";
 import Link from "next/link";
 
@@ -28,11 +29,16 @@ export default function SubcontractorDetail() {
 
     const fetchData = async () => {
       try {
+        const companyId = await getCompanyId();
+        if (!companyId) throw new Error("Company not found");
+
         // Get subcontractor name
         const { data: sub, error: subError } = await supabase
           .from("subcontractors")
           .select("name")
           .eq("id", id)
+          .eq("company_id", companyId)
+          .is("deleted_at", null)
           .single();
         if (subError) throw subError;
         setSubcontractorName(sub?.name || "Subcontractor");
@@ -49,7 +55,9 @@ export default function SubcontractorDetail() {
               client:client_id (name)
             )
           `)
-          .eq("subcontractor_id", id);
+          .eq("subcontractor_id", id)
+          .eq("company_id", companyId)
+          .is("deleted_at", null);
 
         if (linkError) throw linkError;
 

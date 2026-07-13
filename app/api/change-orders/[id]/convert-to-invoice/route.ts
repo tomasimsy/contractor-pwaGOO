@@ -19,6 +19,8 @@ export async function POST(
       .from('change_orders')
       .select('*, change_order_line_items(*), estimate:estimates(*)')
       .eq('id', id)
+      .is('deleted_at', null)
+      .filter('change_order_line_items.deleted_at', 'is', null)
       .single();
 
     if (coError || !co) {
@@ -38,6 +40,7 @@ export async function POST(
       .from('invoices')
       .select('id')
       .eq('change_order_id', id)
+      .is('deleted_at', null)
       .maybeSingle();
 
     if (existingInvoice) {

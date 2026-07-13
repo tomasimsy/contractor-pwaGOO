@@ -57,7 +57,8 @@ export default function PublicItemizedEstimatePage() {
       const { data: items } = await supabase
         .from("estimate_items")
         .select("*")
-        .eq("estimate_id", id);
+        .eq("estimate_id", id)
+        .is("deleted_at", null);
 
       const projectMap: Record<string, Project> = {};
       items?.forEach((item) => {

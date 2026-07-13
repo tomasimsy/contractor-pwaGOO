@@ -45,6 +45,7 @@ export default function ProgressDisplay({
       .select("*")
       .eq("estimate_id", estimateId)
       .eq("company_id", companyId) // 👈 filter by company
+      .is("deleted_at", null)
       .order("milestone_order");
 
     if (error) {

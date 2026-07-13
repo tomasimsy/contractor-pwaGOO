@@ -3,6 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import { formatCurrency } from "@/lib/utils/formatting";
 import Link from "next/link";
 
@@ -28,11 +29,16 @@ export default function AgentDetail() {
 
     const fetchData = async () => {
       try {
+        const companyId = await getCompanyId();
+        if (!companyId) throw new Error("Company not found");
+
         // Get agent name
         const { data: agent, error: agentError } = await supabase
           .from("agents")
           .select("name")
           .eq("id", id)
+          .eq("company_id", companyId)
+          .is("deleted_at", null)
           .single();
         if (agentError) throw agentError;
         setAgentName(agent?.name || "Agent");
@@ -50,6 +56,7 @@ export default function AgentDetail() {
             )
           `)
           .eq("agent_id", id)
+          .eq("company_id", companyId)
           .is("deleted_at", null);
 
         if (payError) throw payError;

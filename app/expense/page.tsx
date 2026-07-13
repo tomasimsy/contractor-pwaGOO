@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { getProjectBundle, getProjectSummaries } from "@/lib/queries/projects";
+import { getDeletedEntries, getProjectBundle, getProjectSummaries } from "@/lib/queries/projects";
 import {
   addEntry,
   assignSubcontractorToProject,
@@ -24,6 +24,8 @@ import RecentProjectCards from "@/components/expense/RecentProjectCards";
 import ProjectCombobox from "@/components/expense/ProjectCombobox";
 import AddExpenseSheet, { type FormCategory } from "@/components/expense/AddExpenseSheet";
 import DesktopDashboard from "@/components/expense/desktop/DesktopDashboard";
+import ExpenseLedger from "@/components/expense/ExpenseLedger";
+import DashboardPanel from "@/components/expense/desktop/DashboardPanel";
 
 export default function ProjectExpensePage() {
   const [recentProjects, setRecentProjects] = useState<ProjectSummary[]>([]);
@@ -33,6 +35,9 @@ export default function ProjectExpensePage() {
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
   const [addSheetCategory, setAddSheetCategory] = useState<FormCategory | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [deletedLedger, setDeletedLedger] = useState<LedgerEntry[]>([]);
+  const [isLoadingDeleted, setIsLoadingDeleted] = useState(false);
 
   useEffect(() => {
     const recentIds = getRecentProjectIds();
@@ -70,6 +75,45 @@ export default function ProjectExpensePage() {
   useEffect(() => {
     if (selectedProjectId) loadBundle(selectedProjectId);
   }, [selectedProjectId, loadBundle]);
+
+  // Reset the archived view whenever the selected project changes, so
+  // stale deleted rows from a previous project can't linger on screen.
+  useEffect(() => {
+    setShowDeleted(false);
+    setDeletedLedger([]);
+  }, [selectedProjectId]);
+
+  const loadDeleted = useCallback(async () => {
+    if (!bundle) return;
+    setIsLoadingDeleted(true);
+    try {
+      const deleted = await getDeletedEntries(bundle.project.id, bundle.project.company_id);
+      // Reuses buildLedger as-is — it only reads expenses/subcontractorPayments/
+      // agentPayments plus the name-lookup lists, which are unchanged here.
+      setDeletedLedger(buildLedger({ ...bundle, ...deleted }));
+    } catch (err) {
+      console.error("getDeletedEntries failed:", err);
+    } finally {
+      setIsLoadingDeleted(false);
+    }
+  }, [bundle]);
+
+  async function toggleShowDeleted() {
+    const next = !showDeleted;
+    setShowDeleted(next);
+    if (next) await loadDeleted();
+  }
+
+  async function handleRestoreEntry(entry: LedgerEntry) {
+    try {
+      await restoreEntry(entry);
+      toast.success(`${entry.payeeLabel} restored`);
+      if (selectedProjectId) await loadBundle(selectedProjectId);
+      await loadDeleted();
+    } catch {
+      toast.error("Couldn't restore that entry.");
+    }
+  }
 
   function handleSelectProject(projectId: string, summary?: ProjectSummary) {
     setSelectedProjectId(projectId);
@@ -182,6 +226,36 @@ export default function ProjectExpensePage() {
           onOpenAddSheet={openAddSheet}
           onDeleteEntry={handleDeleteEntry}
         />
+      )}
+
+      {!isLoadingBundle && bundle && (
+        <DashboardPanel
+          title="Archived"
+          action={
+            <button
+              type="button"
+              onClick={toggleShowDeleted}
+              className="text-[11px] font-bold text-slate-500 hover:text-slate-700"
+            >
+              {showDeleted ? "Hide" : "Show deleted"}
+            </button>
+          }
+        >
+          {!showDeleted && (
+            <div className="text-xs text-slate-400">Deleted expenses and payments for this project can be restored here.</div>
+          )}
+          {showDeleted && isLoadingDeleted && (
+            <div className="text-xs text-slate-400 text-center py-4">Loading…</div>
+          )}
+          {showDeleted && !isLoadingDeleted && (
+            <ExpenseLedger
+              entries={deletedLedger}
+              onRestore={handleRestoreEntry}
+              emptyLabel="Nothing deleted"
+              emptyHint="Deleted expenses and payments will show up here."
+            />
+          )}
+        </DashboardPanel>
       )}
 
       {isAddSheetOpen && bundle && (

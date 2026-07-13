@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
+import { getCompanyId } from '@/lib/supabase/getCompanyId';
 import { Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -40,6 +41,7 @@ export function DocumentUpload({ onUploaded }: DocumentUploadProps) {
         .getPublicUrl(fileName);
       const fileUrl = urlData.publicUrl;
 
+      const companyId = await getCompanyId();
       const { error: insertError } = await supabase
         .from('documents')
         .insert({
@@ -49,6 +51,7 @@ export function DocumentUpload({ onUploaded }: DocumentUploadProps) {
           file_name: file.name,
           file_url: fileUrl,
           file_size: file.size,
+          company_id: companyId,
         });
       if (insertError) throw insertError;
 

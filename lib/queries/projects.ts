@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase/client";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
-import type { ProjectBundle, ProjectSummary } from "@/lib/types";
+import type { AgentPaymentRow, EstimateExpenseRow, ProjectBundle, ProjectSummary, SubcontractorPaymentRow } from "@/lib/types";
 
 const SEARCH_LIMIT = 15;
 
@@ -135,16 +135,19 @@ export async function getProjectBundle(projectId: string): Promise<ProjectBundle
       .from("estimate_subcontractors")
       .select("id, subcontractor_id, amount, subcontractors(id, name, trade)")
       .eq("estimate_id", projectId)
-      .eq("company_id", companyId),
+      .eq("company_id", companyId)
+      .is("deleted_at", null),
     supabase
       .from("subcontractors")
       .select("id, name, trade")
       .eq("company_id", companyId)
+      .is("deleted_at", null)
       .order("name"),
     supabase
       .from("agents")
       .select("id, name")
       .eq("company_id", companyId)
+      .is("deleted_at", null)
       .order("name"),
   ]);
 
@@ -175,6 +178,58 @@ export async function getProjectBundle(projectId: string): Promise<ProjectBundle
     })),
     allSubcontractors: allSubcontractors ?? [],
     salesAgents: salesAgents ?? [],
+  };
+}
+
+/**
+ * Mirrors the expense/payment half of getProjectBundle above, but pulls
+ * the soft-deleted rows instead of the live ones — powers the "Show
+ * deleted" toggle on the Expense page. Kept separate from
+ * getProjectBundle rather than adding a flag there, since the two never
+ * need to be fetched with the same filter and this keeps the common
+ * case's query untouched.
+ */
+export async function getDeletedEntries(projectId: string, companyId: string): Promise<{
+  expenses: EstimateExpenseRow[];
+  subcontractorPayments: SubcontractorPaymentRow[];
+  agentPayments: AgentPaymentRow[];
+}> {
+  const [
+    { data: expenses, error: expensesError },
+    { data: subcontractorPayments, error: subPaymentsError },
+    { data: agentPayments, error: agentPaymentsError },
+  ] = await Promise.all([
+    supabase
+      .from("estimate_expenses")
+      .select("*")
+      .eq("estimate_id", projectId)
+      .eq("company_id", companyId)
+      .not("deleted_at", "is", null)
+      .order("deleted_at", { ascending: false }),
+    supabase
+      .from("subcontractor_payments")
+      .select("*")
+      .eq("estimate_id", projectId)
+      .eq("company_id", companyId)
+      .not("deleted_at", "is", null)
+      .order("deleted_at", { ascending: false }),
+    supabase
+      .from("agent_payments")
+      .select("*")
+      .eq("estimate_id", projectId)
+      .eq("company_id", companyId)
+      .not("deleted_at", "is", null)
+      .order("deleted_at", { ascending: false }),
+  ]);
+
+  if (expensesError) throw expensesError;
+  if (subPaymentsError) throw subPaymentsError;
+  if (agentPaymentsError) throw agentPaymentsError;
+
+  return {
+    expenses: expenses ?? [],
+    subcontractorPayments: subcontractorPayments ?? [],
+    agentPayments: agentPayments ?? [],
   };
 }
 

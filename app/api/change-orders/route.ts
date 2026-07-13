@@ -30,7 +30,8 @@ export async function POST(request: Request) {
     const { count } = await supabase
       .from('change_orders')
       .select('id', { count: 'exact', head: true })
-      .eq('estimate_id', estimate_id);
+      .eq('estimate_id', estimate_id)
+      .is('deleted_at', null);
 
     const coNumber = `CO-${(count || 0) + 1}`;
 
