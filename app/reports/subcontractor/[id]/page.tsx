@@ -59,7 +59,8 @@ export default function SubcontractorDetail() {
           const { data: paymentsData, error: payError } = await supabase
             .from("subcontractor_payments")
             .select("amount, estimate_subcontractor_id, created_at")
-            .in("estimate_subcontractor_id", linkIds);
+            .in("estimate_subcontractor_id", linkIds)
+            .is("deleted_at", null);
           if (!payError && paymentsData) {
             allPayments = paymentsData;
           }

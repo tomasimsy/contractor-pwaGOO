@@ -108,18 +108,21 @@ export async function getProjectBundle(projectId: string): Promise<ProjectBundle
       .select("*")
       .eq("estimate_id", projectId)
       .eq("company_id", companyId)
+      .is("deleted_at", null)
       .order("expense_date", { ascending: false }),
     supabase
       .from("subcontractor_payments")
       .select("*")
       .eq("estimate_id", projectId)
       .eq("company_id", companyId)
+      .is("deleted_at", null)
       .order("payment_date", { ascending: false }),
     supabase
       .from("agent_payments")
       .select("*")
       .eq("estimate_id", projectId)
       .eq("company_id", companyId)
+      .is("deleted_at", null)
       .order("payment_date", { ascending: false }),
     supabase
       .from("invoices")

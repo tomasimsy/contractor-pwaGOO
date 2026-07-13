@@ -6,6 +6,8 @@ import { formatCurrency } from "@/lib/utils/formatting";
 import { X, Trash2, Edit2, Check, DollarSign, Users, Plus, Receipt, Eye } from "lucide-react";
 import ChangeOrderTab from "@/components/changeOrder/ChangeOrderTab";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
+import { splitEvenly, splitProfit, type CompanyPercentage } from "@/lib/utils/profitSplit";
+import { softDeleteAgentPayment, softDeleteExpense, softDeleteSubcontractorPayment } from "@/lib/queries/expenses";
 
 type Subcontractor = {
   id: string;
@@ -92,8 +94,7 @@ export default function ProjectFinancialsModal({
   onRefresh,
 }: ProjectFinancialsModalProps) {
   const [activeTab, setActiveTab] = useState<"subcontractors" | "expenses" | "agents" | "changeorders">("subcontractors");
-  const [companyPercentage, setCompanyPercentage] = useState<30 | 60>(30);
-  const agentPercentage = companyPercentage === 30 ? 70 : 40;
+  const [companyPercentage, setCompanyPercentage] = useState<CompanyPercentage>(30);
   const [newSub, setNewSub] = useState({ name: "", company_name: "", phone: "", email: "" });
   const [newAgent, setNewAgent] = useState({ name: "", email: "", phone: "" });
   
@@ -168,8 +169,10 @@ export default function ProjectFinancialsModal({
   const totalSubOwed = totalSubAssigned - totalSubPaid;
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
   const afterSubcontractorAndExpenses = estimateTotal - totalSubPaid - totalExpenses;
-  const companyAmount = (afterSubcontractorAndExpenses * companyPercentage) / 100;
-  const remainingForAgents = afterSubcontractorAndExpenses - companyAmount;
+  const { companyAmount, agentAmount: remainingForAgents, agentPercentage } = splitProfit(
+    afterSubcontractorAndExpenses,
+    companyPercentage
+  );
   const totalAgentAssigned = assignedAgents.reduce((sum, a) => sum + (a.amount || 0), 0);
   const totalAgentPaid = assignedAgents.reduce((sum, a) => sum + (a.paid_amount || 0), 0);
   const remainingToDistribute = remainingForAgents - totalAgentAssigned;
@@ -204,6 +207,7 @@ export default function ProjectFinancialsModal({
               .select("*")
               .eq("estimate_subcontractor_id", sub.id)
               .eq("company_id", companyId)
+              .is("deleted_at", null)
               .order("created_at", { ascending: false });
             const paidAmount = payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
             return { ...sub, paid_amount: paidAmount, payments: payments || [] };
@@ -218,6 +222,7 @@ export default function ProjectFinancialsModal({
         .select("*")
         .eq("estimate_id", estimateId)
         .eq("company_id", companyId)
+        .is("deleted_at", null)
         .order("expense_date", { ascending: false });
       if (expenseData) setExpenses(expenseData);
 
@@ -245,6 +250,7 @@ export default function ProjectFinancialsModal({
               .eq("estimate_id", estimateId)
               .eq("agent_id", agent.agent_id)
               .eq("company_id", companyId)
+              .is("deleted_at", null)
               .order("payment_date", { ascending: false });
             const paidAmount = payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
             return { ...agent, paid_amount: paidAmount, payments: payments || [] };
@@ -366,15 +372,19 @@ export default function ProjectFinancialsModal({
   }
 
   async function removeSubAssignment(subId: string) {
-    if (!confirm("Remove this subcontractor? All related payments will also be deleted.")) return;
+    if (!confirm("Remove this subcontractor? Their payment history will be kept but hidden.")) return;
     if (!companyId) {
       alert("Company not found");
       return;
     }
     setSaving(true);
+    // Payment rows are soft-deleted (auditable, undoable) — only the
+    // assignment link itself is actually removed, since un-assigning a
+    // subcontractor from a project is a structural change, not a
+    // payment record.
     await supabase
       .from("subcontractor_payments")
-      .delete()
+      .update({ deleted_at: new Date().toISOString() })
       .eq("estimate_subcontractor_id", subId)
       .eq("company_id", companyId);
     await supabase
@@ -426,16 +436,8 @@ export default function ProjectFinancialsModal({
 
   async function deleteSubPayment(paymentId: string, subAssignmentId: string) {
     if (!confirm("Delete this payment? This will increase the subcontractor's owed amount.")) return;
-    if (!companyId) {
-      alert("Company not found");
-      return;
-    }
     setSaving(true);
-    await supabase
-      .from("subcontractor_payments")
-      .delete()
-      .eq("id", paymentId)
-      .eq("company_id", companyId);
+    await softDeleteSubcontractorPayment(paymentId);
     await loadAllData();
     onRefresh();
     setSaving(false);
@@ -525,16 +527,8 @@ export default function ProjectFinancialsModal({
 
   async function deleteExpense(expenseId: string) {
     if (!confirm("Delete this expense?")) return;
-    if (!companyId) {
-      alert("Company not found");
-      return;
-    }
     setSaving(true);
-    await supabase
-      .from("estimate_expenses")
-      .delete()
-      .eq("id", expenseId)
-      .eq("company_id", companyId);
+    await softDeleteExpense(expenseId);
     await loadAllData();
     onRefresh();
     setSaving(false);
@@ -605,38 +599,29 @@ export default function ProjectFinancialsModal({
     setSaving(false);
   }
 
+  // Both buttons that used to redistribute independently had identical
+  // bodies (just diverging in whether they refresh/alert afterward) —
+  // consolidated onto the shared splitEvenly() so a rounding fix here
+  // only has to happen once.
   async function redistributeAgentEvenly() {
     const count = assignedAgents.length;
     if (count === 0 || remainingForAgents <= 0) return;
-    const equalShare = remainingForAgents / count;
     if (!companyId) {
       alert("Company not found");
       return;
     }
-
-    for (const agent of assignedAgents) {
-      await supabase
-        .from("estimate_agents")
-        .update({ amount: equalShare })
-        .eq("id", agent.id)
-        .eq("company_id", companyId);
-    }
+    const shares = splitEvenly(remainingForAgents, count);
+    await Promise.all(
+      assignedAgents.map((agent, i) =>
+        supabase.from("estimate_agents").update({ amount: shares[i] }).eq("id", agent.id).eq("company_id", companyId)
+      )
+    );
   }
 
   async function redistributeByPercentage() {
     if (assignedAgents.length === 0 || remainingForAgents <= 0) return;
     const equalShare = remainingForAgents / assignedAgents.length;
-    if (!companyId) {
-      alert("Company not found");
-      return;
-    }
-    for (const agent of assignedAgents) {
-      await supabase
-        .from("estimate_agents")
-        .update({ amount: equalShare })
-        .eq("id", agent.id)
-        .eq("company_id", companyId);
-    }
+    await redistributeAgentEvenly();
     await loadAllData();
     onRefresh();
     alert(`Distributed ${formatCurrency(remainingForAgents)} evenly among ${assignedAgents.length} agents (${formatCurrency(equalShare)} each)`);
@@ -661,15 +646,17 @@ export default function ProjectFinancialsModal({
   }
 
   async function removeAgentAssignment(agentAssignId: string, agentId: string) {
-    if (!confirm("Remove this agent? All payments made to this agent for this estimate will be permanently deleted.")) return;
+    if (!confirm("Remove this agent? Their payment history will be kept but hidden.")) return;
     if (!companyId) {
       alert("Company not found");
       return;
     }
     setSaving(true);
+    // Same reasoning as removeSubAssignment: soft-delete the payment
+    // records, hard-delete only the assignment link.
     await supabase
       .from("agent_payments")
-      .delete()
+      .update({ deleted_at: new Date().toISOString() })
       .eq("estimate_id", estimateId)
       .eq("agent_id", agentId)
       .eq("company_id", companyId);
@@ -682,7 +669,7 @@ export default function ProjectFinancialsModal({
     await loadAllData();
     onRefresh();
     setSaving(false);
-    alert("Agent removed and associated payments deleted");
+    alert("Agent removed");
   }
 
   async function recordAgentPayment() {
@@ -724,16 +711,8 @@ export default function ProjectFinancialsModal({
 
   async function deleteAgentPayment(paymentId: string, agentId: string) {
     if (!confirm("Delete this payment? This will increase the agent's owed amount.")) return;
-    if (!companyId) {
-      alert("Company not found");
-      return;
-    }
     setSaving(true);
-    await supabase
-      .from("agent_payments")
-      .delete()
-      .eq("id", paymentId)
-      .eq("company_id", companyId);
+    await softDeleteAgentPayment(paymentId);
     await loadAllData();
     onRefresh();
     setSaving(false);
@@ -762,7 +741,7 @@ export default function ProjectFinancialsModal({
     alert(`Payment updated from ${formatCurrency(oldAmount)} to ${formatCurrency(newAmount)}`);
   }
 
-  async function updateCompanyPercentage(percentage: 30 | 60) {
+  async function updateCompanyPercentage(percentage: CompanyPercentage) {
     setCompanyPercentage(percentage);
     await redistributeAgentEvenly();
     await loadAllData();

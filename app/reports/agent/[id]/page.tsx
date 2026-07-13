@@ -49,7 +49,8 @@ export default function AgentDetail() {
               client:client_id (name)
             )
           `)
-          .eq("agent_id", id);
+          .eq("agent_id", id)
+          .is("deleted_at", null);
 
         if (payError) throw payError;
 

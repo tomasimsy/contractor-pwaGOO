@@ -181,7 +181,8 @@ export default function EstimatePage() {
         .from("subcontractor_payments")
         .select("amount")
         .eq("estimate_id", id)
-        .eq("company_id", companyId);
+        .eq("company_id", companyId)
+        .is("deleted_at", null);
       if (data) setSubcontractorPaid(data.reduce((sum, p) => sum + (p.amount || 0), 0));
     });
   }

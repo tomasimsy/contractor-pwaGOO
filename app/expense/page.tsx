@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import { getProjectBundle, getProjectSummaries } from "@/lib/queries/projects";
 import {
   addEntry,
@@ -8,6 +9,7 @@ import {
   buildLedger,
   deleteEntry,
   derivePaymentStatus,
+  restoreEntry,
   summarizeFinancials,
   totalAmountPaid,
 } from "@/lib/queries/expenses";
@@ -113,7 +115,25 @@ export default function ProjectExpensePage() {
       return { ...prev, agentPayments: prev.agentPayments.filter((p) => p.id !== entry.id) };
     });
     try {
-      await deleteEntry(entry);
+      await deleteEntry(entry); // soft delete — row stays, just hidden from here on
+      toast(
+        (t) => (
+          <span className="flex items-center gap-3 text-sm">
+            {entry.payeeLabel} removed
+            <button
+              onClick={async () => {
+                toast.dismiss(t.id);
+                await restoreEntry(entry);
+                if (selectedProjectId) await loadBundle(selectedProjectId);
+              }}
+              className="font-bold text-emerald-700 underline shrink-0"
+            >
+              Undo
+            </button>
+          </span>
+        ),
+        { duration: 6000 } // longer than the default 4s — undo toasts need real reaction time
+      );
     } catch {
       setBundle(previous); // roll back on failure
     }

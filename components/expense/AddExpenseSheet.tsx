@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, Camera } from "lucide-react";
+import { X, Camera, Check } from "lucide-react";
 import {
   EXPENSE_CATEGORIES,
   EXPENSE_CATEGORY_LABEL,
@@ -11,7 +11,11 @@ import {
   type NewEntryInput,
   type ProjectBundle,
 } from "@/lib/types";
-import { getLastCategory, getLastPaymentMethod, setLastCategory, setLastPaymentMethod } from "@/lib/expense/recent-projects";;
+import { getLastCategory, getLastPaymentMethod, setLastCategory, setLastPaymentMethod } from "@/lib/expense/recent-projects";
+import { formatCurrency } from "@/lib/utils/formatting";
+import { COMPANY_PERCENTAGE_OPTIONS, splitEvenly, splitProfit, type CompanyPercentage } from "@/lib/utils/profitSplit";
+
+const SPLIT_TOLERANCE = 0.05; // percentage points — absorbs float rounding, not real mismatches
 
 export type FormCategory =
   | EstimateExpenseCategory
@@ -44,7 +48,7 @@ export default function AddExpenseSheet({
   ) => Promise<AssignedSubcontractor>;
 }) {
   const [category, setCategory] = useState<FormCategory>(
-    (getLastCategory() as FormCategory) || "material"
+    initialCategory ?? ((getLastCategory() as FormCategory) || "material")
   );
   const [amount, setAmount] = useState("");
   const [tax, setTax] = useState("");
@@ -54,9 +58,11 @@ export default function AddExpenseSheet({
   const [paidBy, setPaidBy] = useState("");
   const [assignmentId, setAssignmentId] = useState(""); // existing estimate_subcontractor_id, or NEW_SUB_OPTION
   const [newSubcontractorId, setNewSubcontractorId] = useState("");
-  const [agentId, setAgentId] = useState("");
+  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
+  const [agentPercentages, setAgentPercentages] = useState<Record<string, number>>({});
   const [notes, setNotes] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [companyPercentage, setCompanyPercentage] = useState<CompanyPercentage>(30);
 
   const parsedAmount = Number(amount);
   const parsedTax = Number(tax || 0);
@@ -64,10 +70,47 @@ export default function AddExpenseSheet({
   const isAgent = category === "agent_commission";
   const isExpenseCategory = !isSubcontractor && !isAgent;
 
+  // Same net-after-costs formula ProjectFinancialsModal uses, applied to
+  // whatever's already loaded in the bundle — no extra fetch needed.
+  const totalSubPaid = bundle.subcontractorPayments.reduce((sum, p) => sum + p.amount, 0);
+  const totalExpensesLogged = bundle.expenses.reduce((sum, e) => sum + e.amount, 0);
+  const netAfterCosts = bundle.project.total - totalSubPaid - totalExpensesLogged;
+  const profitSplit = splitProfit(netAfterCosts, companyPercentage);
+
+  // Percentages are the source of truth per agent; dollar amounts are
+  // always derived from them, so changing the overall Amount field
+  // rescales every agent's $ share automatically instead of going stale.
+  function toggleAgent(agentId: string) {
+    setSelectedAgentIds((prev) => {
+      const next = prev.includes(agentId) ? prev.filter((id) => id !== agentId) : [...prev, agentId];
+      const shares = splitEvenly(100, next.length);
+      setAgentPercentages(Object.fromEntries(next.map((id, i) => [id, shares[i]])));
+      return next;
+    });
+  }
+
+  function splitAgentsEvenly() {
+    const shares = splitEvenly(100, selectedAgentIds.length);
+    setAgentPercentages(Object.fromEntries(selectedAgentIds.map((id, i) => [id, shares[i]])));
+  }
+
+  function setAgentPercentage(agentId: string, pct: number) {
+    setAgentPercentages((prev) => ({ ...prev, [agentId]: pct }));
+  }
+
+  function setAgentDollarAmount(agentId: string, dollars: number) {
+    const pct = parsedAmount > 0 ? (dollars / parsedAmount) * 100 : 0;
+    setAgentPercentage(agentId, pct);
+  }
+
+  const totalAgentPercentage = selectedAgentIds.reduce((sum, id) => sum + (agentPercentages[id] ?? 0), 0);
+  const isAgentSplitValid =
+    selectedAgentIds.length > 0 && Math.abs(totalAgentPercentage - 100) < SPLIT_TOLERANCE;
+
   const isValid =
     parsedAmount > 0 &&
     (!isSubcontractor || (assignmentId && (assignmentId !== NEW_SUB_OPTION || newSubcontractorId))) &&
-    (!isAgent || agentId);
+    (!isAgent || isAgentSplitValid);
 
   async function handleSubmit() {
     if (!isValid || isSaving) return;
@@ -109,16 +152,29 @@ export default function AddExpenseSheet({
           notes: notes || null,
         });
       } else {
-        await onSubmit({
-          kind: "agent_payment",
-          estimateId: bundle.project.id,
-          companyId: bundle.project.company_id,
-          agentId,
-          amount: parsedAmount,
-          paymentDate: entryDate,
-          paymentMethod,
-          notes: notes || null,
-        });
+        // Each selected agent becomes its own agent_payments row — the
+        // schema already models one row per agent per payment, so a
+        // multi-agent split needs no new tables or columns, just N
+        // inserts. The last agent absorbs whatever cent of rounding
+        // remainder is left so the rows always sum exactly to the
+        // entered amount.
+        const dollarShares = selectedAgentIds.map((id) => (parsedAmount * (agentPercentages[id] ?? 0)) / 100);
+        const rounded = dollarShares.map((d) => Math.round(d * 100) / 100);
+        const allocated = rounded.slice(0, -1).reduce((sum, d) => sum + d, 0);
+        if (rounded.length > 0) rounded[rounded.length - 1] = Math.round((parsedAmount - allocated) * 100) / 100;
+
+        for (let i = 0; i < selectedAgentIds.length; i++) {
+          await onSubmit({
+            kind: "agent_payment",
+            estimateId: bundle.project.id,
+            companyId: bundle.project.company_id,
+            agentId: selectedAgentIds[i],
+            amount: rounded[i],
+            paymentDate: entryDate,
+            paymentMethod,
+            notes: notes || null,
+          });
+        }
       }
       onClose();
     } finally {
@@ -127,7 +183,7 @@ export default function AddExpenseSheet({
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex items-end sm:items-center sm:justify-center">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center">
       <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
 
       <div className="relative w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl max-h-[92vh] overflow-y-auto">
@@ -220,19 +276,126 @@ export default function AddExpenseSheet({
 
           {isAgent && (
             <div>
-              <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Sales Agent</label>
-              <select
-                value={agentId}
-                onChange={(e) => setAgentId(e.target.value)}
-                className="w-full h-11 mt-1 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-800"
-              >
-                <option value="">Select agent…</option>
-                {bundle.salesAgents.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
+              <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                Sales Agents <span className="normal-case font-medium text-slate-300">(select one or more)</span>
+              </label>
+              <div className="mt-1 rounded-xl border border-slate-200 divide-y divide-slate-100 max-h-40 overflow-y-auto">
+                {bundle.salesAgents.length === 0 ? (
+                  <div className="p-3 text-xs text-slate-400">No sales agents on this company yet.</div>
+                ) : (
+                  bundle.salesAgents.map((a) => {
+                    const selected = selectedAgentIds.includes(a.id);
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => toggleAgent(a.id)}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 text-sm font-semibold text-left ${
+                          selected ? "bg-slate-800 text-white" : "text-slate-800"
+                        }`}
+                      >
+                        <span className="truncate">{a.name}</span>
+                        {selected && <Check size={15} className="shrink-0" />}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+
+              {selectedAgentIds.length > 0 && (
+                <div className="mt-2 space-y-2">
+                  {selectedAgentIds.map((id) => {
+                    const agent = bundle.salesAgents.find((a) => a.id === id);
+                    const pct = agentPercentages[id] ?? 0;
+                    const dollars = (parsedAmount * pct) / 100;
+                    return (
+                      <div key={id} className="flex items-center gap-2">
+                        <span className="flex-1 min-w-0 truncate text-xs font-semibold text-slate-700">
+                          {agent?.name ?? "Agent"}
+                        </span>
+                        <div className="relative shrink-0">
+                          <input
+                            type="number"
+                            value={Number.isFinite(pct) ? Math.round(pct * 100) / 100 : 0}
+                            onChange={(e) => setAgentPercentage(id, Number(e.target.value))}
+                            className="w-16 h-9 rounded-lg border border-slate-200 pl-2 pr-5 text-sm font-semibold text-slate-800 text-right"
+                            step="0.1"
+                          />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+                        </div>
+                        <div className="relative shrink-0">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">$</span>
+                          <input
+                            type="number"
+                            value={Number.isFinite(dollars) ? Math.round(dollars * 100) / 100 : 0}
+                            onChange={(e) => setAgentDollarAmount(id, Number(e.target.value))}
+                            className="w-20 h-9 rounded-lg border border-slate-200 pl-4 pr-2 text-sm font-semibold text-slate-800 text-right"
+                            step="0.01"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleAgent(id)}
+                          className="shrink-0 p-1.5 text-slate-300 hover:text-rose-600"
+                          aria-label="Remove agent"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className={`text-[11px] font-bold ${isAgentSplitValid ? "text-emerald-600" : "text-rose-600"}`}>
+                      Total: {totalAgentPercentage.toFixed(1)}% ({formatCurrency((parsedAmount * totalAgentPercentage) / 100)})
+                    </span>
+                    {selectedAgentIds.length > 1 && (
+                      <button type="button" onClick={splitAgentsEvenly} className="text-[11px] font-bold text-slate-500 underline">
+                        Split evenly
+                      </button>
+                    )}
+                  </div>
+                  {!isAgentSplitValid && (
+                    <div className="text-[11px] text-rose-600">Splits must add up to 100% before saving.</div>
+                  )}
+                </div>
+              )}
+
+              {/* Same company/agent split ProjectFinancialsModal uses —
+                  a calculator to help pick the commission amount, not a
+                  replacement for typing one in directly above. */}
+              <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Profit Split</label>
+                <div className="grid grid-cols-2 gap-1.5 mt-1.5">
+                  {COMPANY_PERCENTAGE_OPTIONS.map((pct) => (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() => setCompanyPercentage(pct)}
+                      className={`h-9 rounded-lg text-xs font-bold ${
+                        companyPercentage === pct
+                          ? "bg-slate-800 text-white"
+                          : "bg-white text-slate-600 border border-slate-200"
+                      }`}
+                    >
+                      Company {pct}% / Agent {100 - pct}%
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between mt-2.5">
+                  <span className="text-xs text-slate-500">
+                    Agent share ({profitSplit.agentPercentage}% of {formatCurrency(netAfterCosts)} net)
+                  </span>
+                  <span className="text-sm font-black text-slate-800">{formatCurrency(profitSplit.agentAmount)}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAmount(profitSplit.agentAmount.toFixed(2))}
+                  className="w-full h-9 mt-2 rounded-lg bg-white border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-100"
+                >
+                  Use this amount
+                </button>
+              </div>
             </div>
           )}
 

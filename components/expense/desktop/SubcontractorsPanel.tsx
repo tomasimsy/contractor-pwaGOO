@@ -1,13 +1,31 @@
 import { formatCurrency } from "@/lib/utils/formatting";
-import type { ProjectBundle } from "@/lib/types";
+import type { LedgerEntry, ProjectBundle } from "@/lib/types";
 import DashboardPanel from "./DashboardPanel";
+import ExpenseLedger from "@/components/expense/ExpenseLedger";
 
-export default function SubcontractorsPanel({ bundle }: { bundle: ProjectBundle }) {
+export default function SubcontractorsPanel({
+  bundle,
+  ledger,
+  onDelete,
+}: {
+  bundle: ProjectBundle;
+  ledger: LedgerEntry[];
+  onDelete: (entry: LedgerEntry) => void;
+}) {
+  // Ledger entries don't carry estimate_subcontractor_id (they're a
+  // display-shaped projection), so payments are matched back to their
+  // subcontractor by id through the raw bundle rows instead of
+  // re-deriving payeeLabel/category display logic a second time here.
+  const subIdByPaymentId = new Map(
+    bundle.subcontractorPayments.map((p) => [p.id, p.estimate_subcontractor_id])
+  );
+
   const rows = bundle.assignedSubcontractors.map((sub) => {
-    const paid = bundle.subcontractorPayments
-      .filter((p) => p.estimate_subcontractor_id === sub.estimateSubcontractorId)
-      .reduce((sum, p) => sum + p.amount, 0);
-    return { ...sub, paid, remaining: sub.contractedAmount - paid };
+    const payments = ledger.filter(
+      (e) => e.source === "subcontractor_payment" && subIdByPaymentId.get(e.id) === sub.estimateSubcontractorId
+    );
+    const paid = payments.reduce((sum, p) => sum + p.amount, 0);
+    return { ...sub, paid, remaining: sub.contractedAmount - paid, payments };
   });
 
   return (
@@ -29,6 +47,11 @@ export default function SubcontractorsPanel({ bundle }: { bundle: ProjectBundle 
                   {row.remaining > 0 ? `${formatCurrency(row.remaining)} left` : "Settled"}
                 </span>
               </div>
+              {row.payments.length > 0 && (
+                <div className="mt-2">
+                  <ExpenseLedger entries={row.payments} onDelete={onDelete} />
+                </div>
+              )}
             </div>
           ))}
         </div>

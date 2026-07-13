@@ -25,6 +25,7 @@ export type EstimateExpenseRow = {
   receipt_url: string | null;
   receipt_storage_path: string | null;
   receipt_file_name: string | null;
+  deleted_at: string | null;
 };
 
 /** The category values the Add Expense form writes. estimate_expenses
@@ -54,6 +55,7 @@ export type AgentPaymentRow = {
   notes: string | null;
   created_at: string | null;
   company_id: string;
+  deleted_at: string | null;
 };
 
 /** The authoritative source for client payment status — confirmed.
@@ -117,6 +119,7 @@ export type SubcontractorPaymentRow = {
   created_at: string | null;
   estimate_id: string | null;
   company_id: string;
+  deleted_at: string | null;
 };
 
 /** Assigns a subcontractor to a project, with the contracted amount

@@ -91,15 +91,64 @@ export async function assignSubcontractorToProject(
   };
 }
 
-export async function deleteEntry(entry: LedgerEntry): Promise<void> {
-  const table =
-    entry.source === "expense"
-      ? "estimate_expenses"
-      : entry.source === "subcontractor_payment"
-        ? "subcontractor_payments"
-        : "agent_payments";
-  const { error } = await supabase.from(table).delete().eq("id", entry.id);
+/**
+ * Soft-delete helpers — one per table, shared by the Expense page and
+ * ProjectFinancialsModal so both surfaces delete (and restore) the
+ * same way instead of one hard-deleting and the other not. Deleted
+ * rows stay in the database with `deleted_at` set; every read in this
+ * file and in getProjectBundle() filters them out, so they disappear
+ * from ledgers and totals without losing the audit trail or breaking
+ * a payment's relationship to its subcontractor/agent/estimate.
+ */
+export async function softDeleteExpense(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("estimate_expenses")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id);
   if (error) throw error;
+}
+
+export async function softDeleteSubcontractorPayment(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("subcontractor_payments")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function softDeleteAgentPayment(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("agent_payments")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function restoreExpense(id: string): Promise<void> {
+  const { error } = await supabase.from("estimate_expenses").update({ deleted_at: null }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function restoreSubcontractorPayment(id: string): Promise<void> {
+  const { error } = await supabase.from("subcontractor_payments").update({ deleted_at: null }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function restoreAgentPayment(id: string): Promise<void> {
+  const { error } = await supabase.from("agent_payments").update({ deleted_at: null }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteEntry(entry: LedgerEntry): Promise<void> {
+  if (entry.source === "expense") return softDeleteExpense(entry.id);
+  if (entry.source === "subcontractor_payment") return softDeleteSubcontractorPayment(entry.id);
+  return softDeleteAgentPayment(entry.id);
+}
+
+export async function restoreEntry(entry: LedgerEntry): Promise<void> {
+  if (entry.source === "expense") return restoreExpense(entry.id);
+  if (entry.source === "subcontractor_payment") return restoreSubcontractorPayment(entry.id);
+  return restoreAgentPayment(entry.id);
 }
 
 const EXPENSE_CATEGORY_DISPLAY: Record<string, string> = {

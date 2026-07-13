@@ -56,8 +56,8 @@ export default function DesktopDashboard({
 
       {/* Subcontractors / Agents */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-        <SubcontractorsPanel bundle={bundle} />
-        <AgentsPanel bundle={bundle} />
+        <SubcontractorsPanel bundle={bundle} ledger={ledger} onDelete={onDeleteEntry} />
+        <AgentsPanel bundle={bundle} ledger={ledger} onDelete={onDeleteEntry} />
       </div>
 
       {/* Receipts */}

@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils/formatting";
 import { X, Trash2 } from "lucide-react";
 import { getCompanyId } from "@/lib/supabase/getCompanyId"; // 👈 import
+import { softDeleteExpense } from "@/lib/queries/expenses";
 import toast from "react-hot-toast";
 
 
@@ -76,6 +77,7 @@ export default function ExpenseModal({ isOpen, onClose, estimateId, onRefresh }:
       .select("*")
       .eq("estimate_id", estimateId)
       .eq("company_id", companyId) // 👈 filter by company
+      .is("deleted_at", null)
       .order("expense_date", { ascending: false });
     if (error) {
       console.error("Load expenses error:", error);
@@ -131,23 +133,15 @@ export default function ExpenseModal({ isOpen, onClose, estimateId, onRefresh }:
   }
 
   async function deleteExpense(id: string) {
-    if (!companyId) {
-      toast.error("Company not found");
-      return;
-    }
     if (confirm("Delete this expense?")) {
-      const { error } = await supabase
-        .from("estimate_expenses")
-        .delete()
-        .eq("id", id)
-        .eq("company_id", companyId); // 👈 filter by company
-      if (error) {
-        console.error("Delete error:", error);
-        toast.error("Error deleting expense");
-      } else {
+      try {
+        await softDeleteExpense(id);
         loadExpenses();
         onRefresh();
         toast.success("Expense deleted");
+      } catch (error) {
+        console.error("Delete error:", error);
+        toast.error("Error deleting expense");
       }
     }
   }

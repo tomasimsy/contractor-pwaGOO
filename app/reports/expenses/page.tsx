@@ -174,6 +174,7 @@ export default function ExpensesReportPage() {
               q
                 .select("amount, estimate_subcontractor_id")
                 .in("estimate_subcontractor_id", subLinkIds)
+                .is("deleted_at", null)
           );
         }
 
@@ -200,6 +201,7 @@ export default function ExpensesReportPage() {
                 agents (id, name)
               `)
               .in("estimate_id", activeIds)
+              .is("deleted_at", null)
         );
 
         const agentMap: Record<string, { id: string; name: string }[]> = {};
@@ -220,7 +222,7 @@ export default function ExpensesReportPage() {
         const expensePayments = await safeFetch(
           "estimate_expenses",
           (q: any) =>
-            q.select("estimate_id, amount").in("estimate_id", activeIds)
+            q.select("estimate_id, amount").in("estimate_id", activeIds).is("deleted_at", null)
         );
         const expenseTotals: Record<string, number> = {};
         expensePayments.forEach((p: any) => {

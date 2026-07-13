@@ -77,6 +77,7 @@ export default async function EstimateReportPage({ params }: { params: Params })
       "subcontractor_payments",
       (q: any) => q.select("id, amount, payment_date, notes, estimate_subcontractor_id")
           .in("estimate_subcontractor_id", subEstIds)
+          .is("deleted_at", null)
     );
   }
 
@@ -92,7 +93,7 @@ export default async function EstimateReportPage({ params }: { params: Params })
   // ---- 4. Agent payments ----
   const agentPayments = await safeFetch(
     "agent_payments",
-    (q: any) => q.select("id, amount, payment_date, notes, agent:agent_id (name)").eq("estimate_id", id)
+    (q: any) => q.select("id, amount, payment_date, notes, agent:agent_id (name)").eq("estimate_id", id).is("deleted_at", null)
   );
   const agentPaymentDetails = agentPayments.map((p: any) => ({
     id: p.id,
@@ -106,7 +107,7 @@ export default async function EstimateReportPage({ params }: { params: Params })
   // ---- 5. Other expenses ----
   const expenses = await safeFetch(
     "estimate_expenses",
-    (q: any) => q.select("id, amount, expense_date, description, category").eq("estimate_id", id)
+    (q: any) => q.select("id, amount, expense_date, description, category").eq("estimate_id", id).is("deleted_at", null)
   );
   const expenseDetails = expenses.map((e: any) => ({
     id: e.id,

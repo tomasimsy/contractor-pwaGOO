@@ -114,11 +114,11 @@ export default function FinancialDashboard() {
         expensesRes
       ] = await Promise.all([
         supabase.from("estimates").select("id, total, status, completed_at, estimate_number").in("status", ["completed", "converted"]).gte("completed_at", startDateStr),
-        supabase.from("subcontractor_payments").select(`amount, created_at, estimate_subcontractors(subcontractors(name))`).gte("created_at", startDateStr),
+        supabase.from("subcontractor_payments").select(`amount, created_at, estimate_subcontractors(subcontractors(name))`).is("deleted_at", null).gte("created_at", startDateStr),
         supabase.from("estimate_subcontractors").select("amount, paid_amount"),
-        supabase.from("agent_payments").select(`amount, payment_date, agents(name), estimates(estimate_number)`).gte("payment_date", startDateStr),
+        supabase.from("agent_payments").select(`amount, payment_date, agents(name), estimates(estimate_number)`).is("deleted_at", null).gte("payment_date", startDateStr),
         supabase.from("estimate_agents").select("amount, paid_amount"),
-        supabase.from("estimate_expenses").select("amount, category, description, expense_date").gte("expense_date", startDateStr)
+        supabase.from("estimate_expenses").select("amount, category, description, expense_date").is("deleted_at", null).gte("expense_date", startDateStr)
       ]);
 
       if (estimatesRes.error) throw new Error(`Estimates error: ${estimatesRes.error.message}`);
