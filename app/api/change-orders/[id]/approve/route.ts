@@ -46,8 +46,36 @@ export async function POST(
 
     if (updateError) throw updateError;
 
-    // Note: The frontend will recalculate the estimate total by summing approved change orders.
-    // You can optionally update the estimate.total column here if you prefer.
+    // Keep estimates.total in sync with the same formula used
+    // everywhere else this total is recomputed (originalSubtotal +
+    // approvedChangeOrdersTotal — see approve_public_change_order RPC
+    // and the Estimate/Invoice pages' live recalculation). The
+    // frontend recomputes live and was never affected by this being
+    // stale, but list/dashboard views that read estimates.total
+    // directly need it kept current too.
+    const [{ data: items }, { data: approvedCOs }] = await Promise.all([
+      supabase
+        .from('estimate_items')
+        .select('total')
+        .eq('estimate_id', co.estimate_id)
+        .eq('company_id', auth.companyId)
+        .is('deleted_at', null),
+      supabase
+        .from('change_orders')
+        .select('total_amount')
+        .eq('estimate_id', co.estimate_id)
+        .eq('company_id', auth.companyId)
+        .eq('status', 'approved')
+        .is('deleted_at', null),
+    ]);
+    const newTotal =
+      (items || []).reduce((sum, i) => sum + (i.total || 0), 0) +
+      (approvedCOs || []).reduce((sum, c) => sum + (c.total_amount || 0), 0);
+    await supabase
+      .from('estimates')
+      .update({ total: newTotal })
+      .eq('id', co.estimate_id)
+      .eq('company_id', auth.companyId);
 
     return NextResponse.json({ success: true });
   } catch (err: any) {

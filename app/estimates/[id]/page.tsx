@@ -393,11 +393,43 @@ export default function EstimatePage() {
       .eq("company_id", companyId);
     if (error) {
       toast.error("Error approving change order");
-    } else {
-      await loadChangeOrders();
-      await loadEstimate();
-      toast.success("Change order approved! Estimate total updated.");
+      return;
     }
+
+    // Keep estimates.total in sync using the same formula every other
+    // recompute of this total uses (originalSubtotal +
+    // approvedChangeOrdersTotal — see approve_public_change_order RPC
+    // and the public/internal Invoice pages). This page and the
+    // invoice page always recompute live and were never affected by
+    // this being stale, but list/dashboard views that read
+    // estimates.total directly need it kept current too.
+    const [{ data: items }, { data: approvedCOs }] = await Promise.all([
+      supabase
+        .from("estimate_items")
+        .select("total")
+        .eq("estimate_id", id)
+        .eq("company_id", companyId)
+        .is("deleted_at", null),
+      supabase
+        .from("change_orders")
+        .select("total_amount")
+        .eq("estimate_id", id)
+        .eq("company_id", companyId)
+        .eq("status", "approved")
+        .is("deleted_at", null),
+    ]);
+    const newTotal =
+      (items || []).reduce((sum, i) => sum + (i.total || 0), 0) +
+      (approvedCOs || []).reduce((sum, co) => sum + (co.total_amount || 0), 0);
+    await supabase
+      .from("estimates")
+      .update({ total: newTotal })
+      .eq("id", id)
+      .eq("company_id", companyId);
+
+    await loadChangeOrders();
+    await loadEstimate();
+    toast.success("Change order approved! Estimate total updated.");
   }
 
   async function rejectChangeOrder(coId: string) {
