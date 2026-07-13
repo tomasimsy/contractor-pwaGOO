@@ -186,13 +186,29 @@ export default function EstimatePage() {
     });
   }
 
+  // Reads through invoice_payments (the table actually written to when a
+  // payment is recorded on the Invoice page) instead of estimate_payments,
+  // which nothing in the app ever writes — that table was always empty,
+  // so this tab silently showed no payments regardless of reality.
   async function loadPayments() {
     await withCompanyId(async (companyId) => {
-      const { data } = await supabase
-        .from("estimate_payments")
-        .select("*")
+      const { data: invoiceRows } = await supabase
+        .from("invoices")
+        .select("id")
         .eq("estimate_id", id)
-        .eq("company_id", companyId)
+        .eq("company_id", companyId);
+
+      const invoiceIds = (invoiceRows ?? []).map((inv) => inv.id);
+      if (invoiceIds.length === 0) {
+        setPayments([]);
+        setTotalPaid(0);
+        return;
+      }
+
+      const { data } = await supabase
+        .from("invoice_payments")
+        .select("*")
+        .in("invoice_id", invoiceIds)
         .order("created_at", { ascending: false });
       if (data) {
         setPayments(data);

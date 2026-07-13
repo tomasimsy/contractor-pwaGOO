@@ -1,6 +1,7 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { requireCompanyUser } from '@/lib/api/requireCompanyUser';
 
 export async function POST(
   request: Request,
@@ -9,16 +10,24 @@ export async function POST(
   try {
     const { id } = await params;
     const supabase = createRouteHandlerClient({ cookies });
+
+    const auth = await requireCompanyUser(supabase);
+    if (!auth.ok) return auth.response;
+
     const { signature } = await request.json();
 
     const { data: co, error: fetchError } = await supabase
       .from('change_orders')
-      .select('*, estimate_id, total_amount')
+      .select('*, estimate_id, total_amount, company_id')
       .eq('id', id)
       .single();
 
     if (fetchError || !co) {
       return NextResponse.json({ error: 'Change order not found' }, { status: 404 });
+    }
+
+    if (co.company_id !== auth.companyId) {
+      return NextResponse.json({ error: 'Not authorized to approve this change order' }, { status: 403 });
     }
 
     if (co.status !== 'pending') {

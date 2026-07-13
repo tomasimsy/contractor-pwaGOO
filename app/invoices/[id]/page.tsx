@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import { Invoice, Client, Project, Signature } from "@/types";
 import { formatCurrency, formatDate } from "@/lib/utils/formatting";
 import SignaturePad from "@/components/signature/SignaturePad";
@@ -11,6 +12,7 @@ import Link from "next/link";
 import { useCompanySettings } from "@/lib/hooks/useCompanySettings";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import ProjectFinancialsModal from "@/components/ProjectFinancialsModal";
+import toast from "react-hot-toast";
 
 import { Trash2, Lock, Unlock, AlertCircle, ArrowLeft, FileText, Receipt, DollarSign } from "lucide-react";
 
@@ -57,27 +59,22 @@ export default function InvoicePage() {
   }, [id]);
 
   useEffect(() => {
-    const fetchEstimateId = async () => {
-      if (!invoice?.invoice_number) return;
-      const { data, error } = await supabase
-        .from("estimates")
-        .select("id")
-        .eq("estimate_number", invoice.invoice_number)
-        .maybeSingle();
-      if (data) setEstimateId(data.id);
-      else console.warn("No estimate found for number", invoice.invoice_number);
-    };
-    fetchEstimateId();
+    // The invoice already carries the real FK to its estimate — no need
+    // to re-derive it by string-matching invoice/estimate numbers, which
+    // silently fails whenever the two numbering schemes don't coincide.
+    setEstimateId(invoice?.estimate_id ?? null);
   }, [invoice]);
 
   // ----- loadInvoice with skipLoading flag -----
   async function loadInvoice(skipLoading = false) {
     try {
       if (!skipLoading) setLoading(true);
+      const companyId = await getCompanyId();
       const { data: inv, error: invError } = await supabase
         .from("invoices")
         .select("*")
         .eq("id", id)
+        .eq("company_id", companyId)
         .single();
 
       if (invError || !inv) {
@@ -93,6 +90,7 @@ export default function InvoicePage() {
           .from("clients")
           .select("*")
           .eq("id", inv.client_id)
+          .eq("company_id", companyId)
           .single();
         if (cl) setClient(cl);
       }
@@ -104,9 +102,12 @@ export default function InvoicePage() {
         .eq("invoice_id", id);
       if (projs) setProjects(projs);
 
-      // Invoice line items (flat)
+      // Invoice line items — this used to read a table ("invoice_line_items")
+      // that nothing in the app ever writes to (confirmed: it doesn't exist
+      // in the live schema), so this section always rendered empty. The
+      // real rows created at invoice time live in `invoice_items`.
       const { data: invLines } = await supabase
-        .from("invoice_line_items")
+        .from("invoice_items")
         .select("*")
         .eq("invoice_id", id);
       if (invLines) setInvoiceLineItems(invLines);
@@ -150,7 +151,10 @@ export default function InvoicePage() {
       const originalSum = estimateItemsData.reduce((sum, i) => sum + (i.total || 0), 0);
       const revTotal = originalSum + approvedTotal;
       const remaining = revTotal - totalPaidSum;
-      const deposit = revTotal * 0.5;
+      // Use the invoice's actual configured deposit if one was set;
+      // only fall back to the 50% convention when no deposit was
+      // configured at all, instead of assuming every project is 50%.
+      const deposit = inv.deposit_amount > 0 ? inv.deposit_amount : revTotal * 0.5;
       const fullyPaid = remaining <= 0;
       const overdue = inv.due_date && !fullyPaid && remaining > 0 && new Date(inv.due_date) < new Date();
 
@@ -166,7 +170,7 @@ export default function InvoicePage() {
       setCanUnlock(inv.is_locked === true);
     } catch (err) {
       console.error(err);
-      alert("Error loading invoice data");
+      toast.error("Error loading invoice data");
     } finally {
       if (!skipLoading) setLoading(false);
     }
@@ -193,10 +197,10 @@ export default function InvoicePage() {
       const { error } = await supabase.from("invoices").update(updateData).eq("id", id);
       if (error) throw error;
       await loadInvoice();
-      alert(newLockStatus ? "✅ Invoice locked" : "✅ Invoice unlocked");
+      toast.success(newLockStatus ? "Invoice locked" : "Invoice unlocked");
     } catch (err) {
       console.error(err);
-      alert("Error updating lock status");
+      toast.error("Error updating lock status");
     } finally {
       setLocking(false);
     }
@@ -205,13 +209,15 @@ export default function InvoicePage() {
   // ----- Record payment -----
   const recordPayment = async (amount: number, method: string) => {
     if (isLocked) {
-      alert("❌ Invoice is locked. Cannot record payments.");
+      toast.error("Invoice is locked. Cannot record payments.");
       return;
     }
     setSavingPayment(true);
     try {
+      const companyId = await getCompanyId();
       const { error: paymentError } = await supabase.from("invoice_payments").insert({
         invoice_id: id,
+        company_id: companyId,
         amount,
         method,
         created_at: new Date().toISOString(),
@@ -231,14 +237,19 @@ export default function InvoicePage() {
         .from("invoices")
         .update(updateData)
         .eq("id", id);
-      if (updateError) throw updateError;
+      if (updateError) {
+        // The payment row is already saved at this point — surface the
+        // failure loudly rather than reporting success, since the
+        // invoice's cached totals are now stale until this is retried.
+        throw new Error(`Payment saved, but invoice totals failed to update: ${updateError.message}`);
+      }
 
       await loadInvoice();
-      alert(`✅ Payment of ${formatCurrency(amount)} recorded!`);
+      toast.success(`Payment of ${formatCurrency(amount)} recorded`);
       setShowPaymentModal(false);
     } catch (err) {
       console.error(err);
-      alert(`❌ Error recording payment: ${err instanceof Error ? err.message : "Unknown error"}`);
+      toast.error(err instanceof Error ? err.message : "Error recording payment");
     } finally {
       setSavingPayment(false);
     }
@@ -247,7 +258,7 @@ export default function InvoicePage() {
   // ----- Delete payment -----
   const deletePayment = async (paymentId: string) => {
     if (isLocked) {
-      alert("❌ Invoice is locked. Cannot delete payments.");
+      toast.error("Invoice is locked. Cannot delete payments.");
       return;
     }
     const paymentToDelete = payments.find(p => p.id === paymentId);
@@ -261,17 +272,20 @@ export default function InvoicePage() {
       const newTotalPaid = remainingPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
       const newRemaining = revisedTotal - newTotalPaid;
       const newStatus = newRemaining <= 0 ? "paid" : newRemaining === revisedTotal ? "pending" : "partial";
-      await supabase.from("invoices").update({
+      const { error: updateError } = await supabase.from("invoices").update({
         amount_paid: newTotalPaid,
         remaining_balance: newRemaining,
         status: newStatus,
         paid_at: newRemaining <= 0 ? new Date().toISOString() : null,
       }).eq("id", id);
+      if (updateError) {
+        throw new Error(`Payment deleted, but invoice totals failed to update: ${updateError.message}`);
+      }
       await loadInvoice();
-      alert("✅ Payment deleted");
+      toast.success("Payment deleted");
     } catch (err) {
       console.error(err);
-      alert("❌ Error deleting payment");
+      toast.error(err instanceof Error ? err.message : "Error deleting payment");
     } finally {
       setDeletingPaymentId(null);
     }

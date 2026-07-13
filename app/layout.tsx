@@ -189,8 +189,16 @@ useEffect(() => {
           <TripProvider>
             <div className="w-full min-h-screen relative flex justify-center">
               <div className="w-full max-w-screen-2xl min-h-screen shadow-xl relative">
-                {children}
-                {showBottomNav && <BottomNav />}
+                {checkingAuth && !isPublicPage ? (
+                  <div className="min-h-screen flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600" />
+                  </div>
+                ) : (
+                  <>
+                    {children}
+                    {showBottomNav && <BottomNav />}
+                  </>
+                )}
               </div>
             </div>
           </TripProvider>

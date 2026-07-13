@@ -23,38 +23,26 @@ export default function PublicInvoicePage() {
     loadInvoice();
   }, [id]);
 
+  // Routed through get_public_invoice_bundle (a SECURITY DEFINER RPC)
+  // instead of direct table reads — this page is reachable with no
+  // login, and the tables it used to query directly are no longer
+  // openly readable. See supabase/migrations/20260712235900_*.
   async function loadInvoice() {
     try {
-      const { data: inv } = await supabase
-        .from("invoices")
-        .select("*")
-        .eq("id", id)
-        .single();
-      
+      const { data: bundle, error } = await supabase.rpc("get_public_invoice_bundle", {
+        p_invoice_id: id,
+      });
+      if (error) throw error;
+      const inv = bundle?.invoice;
+
       if (inv) {
         setInvoice(inv);
         setSigned(!!inv.signature);
         if (inv.signature) setSignature(inv.signature);
-        
-        const { data: clientData } = await supabase
-          .from("clients")
-          .select("*")
-          .eq("id", inv.client_id)
-          .single();
-        setClient(clientData);
-        
-        const { data: itemsData } = await supabase
-          .from("invoice_items")
-          .select("*")
-          .eq("invoice_id", id);
-        setItems(itemsData || []);
-        
-        const { data: paymentsData } = await supabase
-          .from("invoice_payments")
-          .select("*")
-          .eq("invoice_id", id)
-          .order("created_at", { ascending: false });
-        setPayments(paymentsData || []);
+
+        setClient(bundle.client);
+        setItems(bundle.items || []);
+        setPayments(bundle.payments || []);
       }
     } catch (err) {
       console.error(err);
@@ -64,11 +52,11 @@ export default function PublicInvoicePage() {
   }
 
   const saveSignature = async (newSignature: Signature) => {
-    const { error } = await supabase
-      .from("invoices")
-      .update({ signature: newSignature, status: "signed" })
-      .eq("id", id);
-    
+    const { error } = await supabase.rpc("sign_public_invoice", {
+      p_invoice_id: id,
+      p_signature: newSignature,
+    });
+
     if (!error) {
       setSigned(true);
       setSignature(newSignature);

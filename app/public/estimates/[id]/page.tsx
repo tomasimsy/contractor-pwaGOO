@@ -107,68 +107,44 @@ const [estimate, setEstimate] = useState<any>(null);
                       if (id) loadEstimate();
                       }, [id]);
 
-                      // ---- Load estimate ----
+                      // ---- Load estimate -----
+                      // Routed through get_public_estimate_bundle (a SECURITY DEFINER
+                      // RPC) instead of five direct table reads — this page is reachable
+                      // with no login, and the tables it used to query directly are no
+                      // longer openly readable. See supabase/migrations/20260712235900_*.
                       async function loadEstimate() {
                       try {
-                      const { data: est } = await supabase
-                      .from("estimates")
-                      .select("*")
-                      .eq("id", id)
-                      .single();
+                      const { data: bundle, error } = await supabase.rpc("get_public_estimate_bundle", {
+                      p_estimate_id: id,
+                      });
+                      if (error) throw error;
+                      const est = bundle?.estimate;
 
                       if (est) {
                       setEstimate(est);
                       setSigned(!!est.signature);
                       if (est.signature) setSignature(est.signature);
 
-                      const { data: clientData } = await supabase
-                      .from("clients")
-                      .select("*")
-                      .eq("id", est.client_id)
-                      .single();
-                      setClient(clientData);
+                      setClient(bundle.client);
 
-                      const { data: itemsData } = await supabase
-                      .from("estimate_items")
-                      .select("*")
-                      .eq("estimate_id", id);
-                      setItems(itemsData || []);
-                      const origSum = (itemsData || []).reduce((sum, i) => sum + (i.total || 0), 0);
+                      const itemsData = bundle.items || [];
+                      setItems(itemsData);
+                      const origSum = itemsData.reduce((sum: number, i: any) => sum + (i.total || 0), 0);
                       setOriginalSubtotal(origSum);
 
-                      const { data: cos } = await supabase
-                      .from("change_orders")
-                      .select("*")
-                      .eq("estimate_id", id)
-                      .neq("status", "draft")
-                      .order("created_at", { ascending: false });
-                      setChangeOrders(cos || []);
-                      const approvedSum = (cos || [])
-                      .filter(co => co.status === "approved")
-                      .reduce((sum, co) => sum + (co.total_amount || 0), 0);
+                      const cos = bundle.change_orders || [];
+                      setChangeOrders(cos);
+                      const approvedSum = cos
+                      .filter((co: ChangeOrder) => co.status === "approved")
+                      .reduce((sum: number, co: ChangeOrder) => sum + (co.total_amount || 0), 0);
                       setApprovedTotal(approvedSum);
 
                       const revTotal = origSum + approvedSum;
                       setRevisedTotal(revTotal);
-                      setDepositAmount(revTotal * 0.5);
+                      setDepositAmount(est.deposit_amount > 0 ? est.deposit_amount : revTotal * 0.5);
 
-                      const { data: invoice } = await supabase
-                      .from("invoices")
-                      .select("id")
-                      .eq("estimate_id", id)
-                      .maybeSingle();
-
-                      let paymentList: InvoicePayment[] = [];
-                      let paidSum = 0;
-                      if (invoice) {
-                      const { data: pays } = await supabase
-                      .from("invoice_payments")
-                      .select("*")
-                      .eq("invoice_id", invoice.id)
-                      .order("created_at", { ascending: false });
-                      paymentList = pays || [];
-                      paidSum = paymentList.reduce((sum, p) => sum + p.amount, 0);
-                      }
+                      const paymentList: InvoicePayment[] = bundle.payments || [];
+                      const paidSum = paymentList.reduce((sum, p) => sum + p.amount, 0);
                       setPayments(paymentList);
                       setTotalPaid(paidSum);
                       setRemainingBalance(revTotal - paidSum);
@@ -207,31 +183,11 @@ const [estimate, setEstimate] = useState<any>(null);
                       console.log("Could not track location parameters invisibly.");
                       }
 
-                      if (locationData) {
-                      const currentLocations = est.view_locations || [];
-                      const existingLocation = currentLocations.find(
-                      (loc: any) => loc.city === locationData.city || loc.ip === locationData.ip
-                      );
-                      if (!existingLocation) {
-                      const updatedLocations = [...currentLocations, locationData];
-                      await supabase
-                      .from("estimates")
-                      .update({
-                      view_locations: updatedLocations,
-                      unique_locations: updatedLocations.length,
-                      opened_at: new Date().toISOString(),
-                      opened_count: (est.opened_count || 0) + 1,
-                      opened_device: deviceType,
-                      opened_ip: ip,
-                      })
-                      .eq("id", id);
-                      } else {
-                      await supabase
-                      .from("estimates")
-                      .update({ opened_count: (est.opened_count || 0) + 1 })
-                      .eq("id", id);
-                      }
-                      }
+                      await supabase.rpc("track_public_estimate_view", {
+                      p_estimate_id: id,
+                      p_location: locationData,
+                      p_device: deviceType,
+                      });
                       setTracked(true);
                       } catch (err) {
                       console.error("Tracking error:", err);
@@ -240,10 +196,10 @@ const [estimate, setEstimate] = useState<any>(null);
 
                       // ---- Signature functions ----
                       const saveSignature = async (newSignature: Signature) => {
-                      const { error } = await supabase
-                      .from("estimates")
-                      .update({ signature: newSignature, status: "approved" })
-                      .eq("id", id);
+                      const { error } = await supabase.rpc("sign_public_estimate", {
+                      p_estimate_id: id,
+                      p_signature: newSignature,
+                      });
                       if (!error) {
                       setSigned(true);
                       setSignature(newSignature);
@@ -270,10 +226,9 @@ const [estimate, setEstimate] = useState<any>(null);
 
                       const removeSignature = async () => {
                       try {
-                      const { error } = await supabase
-                      .from("estimates")
-                      .update({ signature: null, status: "pending" })
-                      .eq("id", id);
+                      const { error } = await supabase.rpc("remove_public_estimate_signature", {
+                      p_estimate_id: id,
+                      });
                       if (error) throw error;
                       toast.success("Signature removed", {
                       duration: 3000,
@@ -309,24 +264,10 @@ const [estimate, setEstimate] = useState<any>(null);
                       setShowApproveConfirm(false);
                       setApproving(true);
                       try {
-                      const { error: coError } = await supabase
-                      .from("change_orders")
-                      .update({ status: "approved", approved_at: new Date().toISOString() })
-                      .eq("id", pendingCoId);
+                      const { error: coError } = await supabase.rpc("approve_public_change_order", {
+                      p_change_order_id: pendingCoId,
+                      });
                       if (coError) throw coError;
-
-                      const { data: approvedCos } = await supabase
-                      .from("change_orders")
-                      .select("total_amount")
-                      .eq("estimate_id", id)
-                      .eq("status", "approved");
-                      const newApprovedTotal = (approvedCos || []).reduce((sum, co) => sum + (co.total_amount || 0), 0);
-                      const newRevisedTotal = originalSubtotal + newApprovedTotal;
-
-                      await supabase
-                      .from("estimates")
-                      .update({ total: newRevisedTotal })
-                      .eq("id", id);
 
                       await loadEstimate();
                       toast.success("Change order approved! The total has been updated.", {
@@ -365,10 +306,9 @@ const [estimate, setEstimate] = useState<any>(null);
                       if (!declineCoId) return;
                       setShowDeclineConfirm(false);
                       try {
-                      const { error } = await supabase
-                      .from("change_orders")
-                      .update({ status: "rejected", rejected_at: new Date().toISOString() })
-                      .eq("id", declineCoId);
+                      const { error } = await supabase.rpc("reject_public_change_order", {
+                      p_change_order_id: declineCoId,
+                      });
                       if (error) throw error;
                       toast.success("Change order declined.", {
                       duration: 3000,

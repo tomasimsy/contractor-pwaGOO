@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 
 
@@ -17,11 +18,15 @@ export default function InvoicePage() {
 
   async function convertToInvoice() {
     try {
-      // Load estimate data
+      const companyId = await getCompanyId();
+
+      // Load estimate data — scoped to this company so an id from
+      // another company can't be converted here.
       const { data: estimate, error: estimateError } = await supabase
         .from("estimates")
         .select("*, estimate_items(*), clients(*)")
         .eq("id", id)
+        .eq("company_id", companyId)
         .single();
 
       if (estimateError || !estimate) {
@@ -42,6 +47,7 @@ export default function InvoicePage() {
       const { data: invoice, error: invoiceError } = await supabase
         .from("invoices")
         .insert({
+          company_id: companyId,
           estimate_id: id,
           client_id: estimate.client_id,
           invoice_number: invoiceNumber,
@@ -74,6 +80,7 @@ export default function InvoicePage() {
       if (items && items.length > 0) {
         const invoiceItems = items.map((i) => ({
           invoice_id: invoiceId,
+          company_id: companyId,
           project_name: i.project_name,
           category: i.category,
           name: i.name,

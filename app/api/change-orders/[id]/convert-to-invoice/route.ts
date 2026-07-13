@@ -1,6 +1,7 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { requireCompanyUser } from '@/lib/api/requireCompanyUser';
 
 export async function POST(
   request: Request,
@@ -9,6 +10,9 @@ export async function POST(
   try {
     const { id } = await params;
     const supabase = createRouteHandlerClient({ cookies });
+
+    const auth = await requireCompanyUser(supabase);
+    if (!auth.ok) return auth.response;
 
     // Fetch change order with line items and estimate
     const { data: co, error: coError } = await supabase
@@ -19,6 +23,10 @@ export async function POST(
 
     if (coError || !co) {
       return NextResponse.json({ error: 'Change order not found' }, { status: 404 });
+    }
+
+    if (co.company_id !== auth.companyId) {
+      return NextResponse.json({ error: 'Not authorized to invoice this change order' }, { status: 403 });
     }
 
     if (co.status !== 'approved') {
@@ -40,6 +48,7 @@ export async function POST(
     const { data: invoice, error: invError } = await supabase
       .from('invoices')
       .insert({
+        company_id: auth.companyId,
         client_id: co.estimate.client_id,
         estimate_id: co.estimate_id,
         change_order_id: id,
@@ -59,6 +68,7 @@ export async function POST(
     // Add line items to invoice
     const invoiceItems = co.change_order_line_items.map((item: any) => ({
       invoice_id: invoice.id,
+      company_id: auth.companyId,
       description: item.description,
       quantity: item.quantity,
       unit_price: item.unit_price,
