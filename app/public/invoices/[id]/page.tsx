@@ -8,6 +8,13 @@ import { formatCurrency } from "@/lib/utils/formatting";
 import { Smile, ThumbsUp, FileSignature, BadgeCheck, ShieldCheck } from "lucide-react";
 
 type Signature = { type: "draw" | "type"; value: string; date: string };
+type ChangeOrder = {
+  id: string;
+  change_order_number: string;
+  title: string;
+  status: string;
+  total_amount: number;
+};
 
 export default function PublicInvoicePage() {
   const { id } = useParams();
@@ -15,6 +22,7 @@ export default function PublicInvoicePage() {
   const [client, setClient] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
+  const [changeOrders, setChangeOrders] = useState<ChangeOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [signed, setSigned] = useState(false);
   const [signature, setSignature] = useState<Signature | null>(null);
@@ -26,7 +34,15 @@ export default function PublicInvoicePage() {
   // Routed through get_public_invoice_bundle (a SECURITY DEFINER RPC)
   // instead of direct table reads — this page is reachable with no
   // login, and the tables it used to query directly are no longer
-  // openly readable. See supabase/migrations/20260712235900_*.
+  // openly readable. See supabase/migrations/20260712235900_* and
+  // 20260716000000_fix_public_invoice_change_orders.sql.
+  //
+  // `items` and `change_orders` come from the linked estimate's live
+  // data (estimate_items / change_orders), not the one-time
+  // invoice_items/invoices.total snapshot taken at conversion — same
+  // data source the public Estimate page uses, so a Change Order
+  // approved after the invoice was generated shows up here too
+  // instead of requiring a recalculation step that never existed.
   async function loadInvoice() {
     try {
       const { data: bundle, error } = await supabase.rpc("get_public_invoice_bundle", {
@@ -43,6 +59,7 @@ export default function PublicInvoicePage() {
         setClient(bundle.client);
         setItems(bundle.items || []);
         setPayments(bundle.payments || []);
+        setChangeOrders(bundle.change_orders || []);
       }
     } catch (err) {
       console.error(err);
@@ -83,10 +100,19 @@ export default function PublicInvoicePage() {
     total: items.reduce((sum, i) => sum + (i.total || 0), 0)
   }));
 
-  const subtotal = items.reduce((sum, i) => sum + (i.total || 0), 0);
+  // Same formula as the public Estimate page (originalSubtotal +
+  // approvedTotal) and the internal Invoice page's revisedTotal — no
+  // stored `invoice.total` column is read here, so this always
+  // reflects the latest change-order state instead of a stale copy.
+  const originalSubtotal = items.reduce((sum, i) => sum + (i.total || 0), 0);
+  const approvedChangeOrdersTotal = changeOrders
+    .filter((co) => co.status === "approved")
+    .reduce((sum, co) => sum + (co.total_amount || 0), 0);
+  const revisedTotal = originalSubtotal + approvedChangeOrdersTotal;
+  const depositAmount = invoice?.deposit_amount > 0 ? invoice.deposit_amount : revisedTotal * 0.5;
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
-  const remainingBalance = (invoice?.total || subtotal) - totalPaid;
-  const isPaid = remainingBalance === 0;
+  const remainingBalance = revisedTotal - totalPaid;
+  const isPaid = remainingBalance <= 0;
 
   if (loading) {
     return (
@@ -174,20 +200,65 @@ export default function PublicInvoicePage() {
                 </div>
               ))}
             </div>
-            <div className="mt-3 pt-2 border-t text-right font-semibold">
+            {/* <div className="mt-3 pt-2 border-t text-right font-semibold">
               Project Total: {formatCurrency(project.total)}
-            </div>
+            </div> */}
           </div>
         ))}
+
+        {/* Change Orders — same live data the public Estimate page
+            shows, so a change approved after the invoice was generated
+            is visible here instead of only on the estimate link. */}
+        {changeOrders.length > 0 && (
+          <div className="bg-white rounded-xl p-4 shadow-md">
+            <h3 className="font-semibold text-navy mb-3">Change Orders</h3>
+            <div className="space-y-2">
+              {changeOrders.map((co) => (
+                <div key={co.id} className="flex items-center justify-between text-sm border-b pb-2 last:border-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="truncate">{co.title}</span>
+                    <span
+                      className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${
+                        co.status === "approved"
+                          ? "bg-green-100 text-green-700"
+                          : co.status === "rejected"
+                          ? "bg-red-100 text-red-700"
+                          : "bg-amber-100 text-amber-700"
+                      }`}
+                    >
+                      {co.status}
+                    </span>
+                  </div>
+                  <span className={co.total_amount >= 0 ? "text-green-600" : "text-red-600"}>
+                    {co.total_amount >= 0 ? "+" : "-"}
+                    {formatCurrency(Math.abs(co.total_amount))}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Financial Summary */}
         <div className="bg-white rounded-xl p-4 shadow-md">
           <h3 className="font-semibold text-navy mb-3">Financial Summary</h3>
           <div className="space-y-2">
             <div className="flex justify-between">
-              <span>Subtotal:</span>
-              <span>{formatCurrency(subtotal)}</span>
+              <span>{changeOrders.length > 0 ? "Original Subtotal:" : "Subtotal:"}</span>
+              <span>{formatCurrency(originalSubtotal)}</span>
             </div>
+            {approvedChangeOrdersTotal !== 0 && (
+              <div className="flex justify-between text-blue-600">
+                <span>Approved Change Orders:</span>
+                <span>+{formatCurrency(approvedChangeOrdersTotal)}</span>
+              </div>
+            )}
+            {changeOrders.length > 0 && (
+              <div className="flex justify-between pt-1 border-t font-semibold">
+                <span>Revised Total:</span>
+                <span>{formatCurrency(revisedTotal)}</span>
+              </div>
+            )}
             {invoice?.markup > 0 && (
               <div className="flex justify-between">
                 <span>Markup:</span>
@@ -206,25 +277,24 @@ export default function PublicInvoicePage() {
                 <span>{formatCurrency(invoice.tax)}</span>
               </div>
             )}
-            <div className="flex justify-between pt-2 border-t font-bold">
-              <span>Total Amount:</span>
-              <span className="text-gold">{formatCurrency(invoice?.total || subtotal)}</span>
-            </div>
-            
-            {totalPaid > 0 && (
-              <>
-                <div className="flex justify-between text-green-600">
-                  <span>Amount Paid:</span>
-                  <span>-{formatCurrency(totalPaid)}</span>
-                </div>
-                <div className="flex justify-between font-bold text-lg pt-2 border-t">
-                  <span>Balance Due:</span>
-                  <span className={isPaid ? "text-green-600" : "text-gold"}>
-                    {formatCurrency(remainingBalance)}
-                  </span>
-                </div>
-              </>
+            {signed && (
+              <div className="flex justify-between">
+                <span>Deposit (50% of Revised Total):</span>
+                <span className="text-emerald-600">{formatCurrency(depositAmount)}</span>
+              </div>
             )}
+            {totalPaid > 0 && (
+              <div className="flex justify-between text-green-600">
+                <span>Amount Paid:</span>
+                <span>-{formatCurrency(totalPaid)}</span>
+              </div>
+            )}
+            <div className="flex justify-between font-bold text-lg pt-2 border-t">
+              <span>Balance Due:</span>
+              <span className={isPaid ? "text-green-600" : "text-gold"}>
+                {formatCurrency(remainingBalance)}
+              </span>
+            </div>
           </div>
         </div>
 
