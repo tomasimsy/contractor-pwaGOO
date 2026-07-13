@@ -15,7 +15,7 @@ const navItems = [
   { label: "Estimates", href: "/estimates", icon: ClipboardList },
   { label: "Invoices", href: "/invoices", icon: FileText },
     { label: "Expenses", href: "/expense", icon: ReceiptText },
-  { label: "Settings", href: "/settings", icon: Settings },
+  { label: "Manage", href: "/settings", icon: Settings },
 ];
 
   const handleTripToggle = async () => {

@@ -109,7 +109,6 @@ export default function PublicInvoicePage() {
     .filter((co) => co.status === "approved")
     .reduce((sum, co) => sum + (co.total_amount || 0), 0);
   const revisedTotal = originalSubtotal + approvedChangeOrdersTotal;
-  const depositAmount = invoice?.deposit_amount > 0 ? invoice.deposit_amount : revisedTotal * 0.5;
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
   const remainingBalance = revisedTotal - totalPaid;
   const isPaid = remainingBalance <= 0;
@@ -239,32 +238,20 @@ export default function PublicInvoicePage() {
           </div>
         )}
 
-        {/* Financial Summary */}
+        {/* Financial Summary — condensed to what the customer actually
+            needs here. Change Order line items are already itemized in
+            their own card above, so Subtotal below is just the single
+            revised number (original + approved COs) rather than
+            repeating that breakdown. Markup/Deposit are dropped as
+            informational noise on an invoice already showing what's
+            paid and what's owed. */}
         <div className="bg-white rounded-xl p-4 shadow-md">
           <h3 className="font-semibold text-navy mb-3">Financial Summary</h3>
           <div className="space-y-2">
             <div className="flex justify-between">
-              <span>{changeOrders.length > 0 ? "Original Subtotal:" : "Subtotal:"}</span>
-              <span>{formatCurrency(originalSubtotal)}</span>
+              <span>Subtotal:</span>
+              <span>{formatCurrency(revisedTotal)}</span>
             </div>
-            {approvedChangeOrdersTotal !== 0 && (
-              <div className="flex justify-between text-blue-600">
-                <span>Approved Change Orders:</span>
-                <span>+{formatCurrency(approvedChangeOrdersTotal)}</span>
-              </div>
-            )}
-            {changeOrders.length > 0 && (
-              <div className="flex justify-between pt-1 border-t font-semibold">
-                <span>Revised Total:</span>
-                <span>{formatCurrency(revisedTotal)}</span>
-              </div>
-            )}
-            {invoice?.markup > 0 && (
-              <div className="flex justify-between">
-                <span>Markup:</span>
-                <span>{formatCurrency(invoice.markup)}</span>
-              </div>
-            )}
             {invoice?.discount > 0 && (
               <div className="flex justify-between">
                 <span>Discount:</span>
@@ -275,12 +262,6 @@ export default function PublicInvoicePage() {
               <div className="flex justify-between">
                 <span>Tax:</span>
                 <span>{formatCurrency(invoice.tax)}</span>
-              </div>
-            )}
-            {signed && (
-              <div className="flex justify-between">
-                <span>Deposit (50% of Revised Total):</span>
-                <span className="text-emerald-600">{formatCurrency(depositAmount)}</span>
               </div>
             )}
             {totalPaid > 0 && (
