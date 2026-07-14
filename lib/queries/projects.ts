@@ -102,6 +102,9 @@ export async function getProjectBundle(projectId: string): Promise<ProjectBundle
     { data: estimateSubcontractors, error: estSubError },
     { data: allSubcontractors, error: allSubError },
     { data: salesAgents, error: agentError },
+    { data: mileageTrips, error: mileageError },
+    { data: estimateItems, error: estimateItemsError },
+    { data: changeOrders, error: changeOrdersError },
   ] = await Promise.all([
     supabase
       .from("estimate_expenses")
@@ -149,6 +152,26 @@ export async function getProjectBundle(projectId: string): Promise<ProjectBundle
       .eq("company_id", companyId)
       .is("deleted_at", null)
       .order("name"),
+    supabase
+      .from("mileage_trips")
+      .select("id, estimate_id, distance_miles, reimbursement, created_at")
+      .eq("estimate_id", projectId)
+      .eq("company_id", companyId)
+      .eq("status", "completed")
+      .is("deleted_at", null),
+    supabase
+      .from("estimate_items")
+      .select("id, category, total")
+      .eq("estimate_id", projectId)
+      .eq("company_id", companyId)
+      .is("deleted_at", null),
+    supabase
+      .from("change_orders")
+      .select("id, estimate_id, company_id, change_order_number, title, description, status, total_amount, tax, notes, created_at, approved_at")
+      .eq("estimate_id", projectId)
+      .eq("company_id", companyId)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false }),
   ]);
 
   if (expensesError) throw expensesError;
@@ -158,6 +181,9 @@ export async function getProjectBundle(projectId: string): Promise<ProjectBundle
   if (estSubError) throw estSubError;
   if (allSubError) throw allSubError;
   if (agentError) throw agentError;
+  if (mileageError) throw mileageError;
+  if (estimateItemsError) throw estimateItemsError;
+  if (changeOrdersError) throw changeOrdersError;
 
   const { clients, companies, ...projectFields } = project as any;
 
@@ -178,6 +204,9 @@ export async function getProjectBundle(projectId: string): Promise<ProjectBundle
     })),
     allSubcontractors: allSubcontractors ?? [],
     salesAgents: salesAgents ?? [],
+    mileageTrips: mileageTrips ?? [],
+    estimateItems: estimateItems ?? [],
+    changeOrders: changeOrders ?? [],
   };
 }
 

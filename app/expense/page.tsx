@@ -186,7 +186,19 @@ export default function ProjectExpensePage() {
   const ledger = bundle ? buildLedger(bundle) : [];
   const amountReceived = bundle ? totalAmountPaid(bundle.invoices) : 0;
   const financials = bundle ? summarizeFinancials(bundle.project.total, bundle, amountReceived) : null;
-  const payment = bundle ? derivePaymentStatus(bundle.project.total, amountReceived) : null;
+  // Revised total (original + approved change orders), not the raw
+  // estimate total, once change orders can affect the contract value —
+  // same precedent as app/reports/expenses/[id]/page.tsx.
+  const payment = financials ? derivePaymentStatus(financials.revisedTotal, amountReceived) : null;
+
+  // For Change Order create/edit/submit/approve/reject actions, which
+  // write straight to Supabase (like handleAddEntry) rather than
+  // mutating local state — simplest correct way to reflect their
+  // effect on totals/statuses is a full bundle reload, same reasoning
+  // as handleAddEntry above.
+  const refreshBundle = useCallback(async () => {
+    if (selectedProjectId) await loadBundle(selectedProjectId);
+  }, [selectedProjectId, loadBundle]);
 
   return (
     <div className="max-w-2xl lg:max-w-6xl mx-auto p-3 sm:p-4 lg:p-6 space-y-4 pb-28 lg:pb-10">
@@ -225,6 +237,7 @@ export default function ProjectExpensePage() {
           payment={payment}
           onOpenAddSheet={openAddSheet}
           onDeleteEntry={handleDeleteEntry}
+          onRefresh={refreshBundle}
         />
       )}
 

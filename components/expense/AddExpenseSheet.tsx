@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { X, Camera, Check } from "lucide-react";
 import {
   EXPENSE_CATEGORIES,
@@ -14,6 +14,8 @@ import {
 import { getLastCategory, getLastPaymentMethod, setLastCategory, setLastPaymentMethod } from "@/lib/expense/recent-projects";
 import { formatCurrency } from "@/lib/utils/formatting";
 import { COMPANY_PERCENTAGE_OPTIONS, splitEvenly, splitProfit, type CompanyPercentage } from "@/lib/utils/profitSplit";
+import { getRecentVendors } from "@/lib/queries/expenses";
+import { supabase } from "@/lib/supabase/client";
 
 const SPLIT_TOLERANCE = 0.05; // percentage points — absorbs float rounding, not real mismatches
 
@@ -63,6 +65,67 @@ export default function AddExpenseSheet({
   const [notes, setNotes] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [companyPercentage, setCompanyPercentage] = useState<CompanyPercentage>(30);
+  const [recentVendors, setRecentVendors] = useState<string[]>([]);
+  const [changeOrderId, setChangeOrderId] = useState(""); // "" = original estimate scope
+
+  const approvedChangeOrders = bundle.changeOrders.filter((co) => co.status === "approved");
+
+  // Quick-add: locally-appended rows so the picker updates immediately
+  // without needing the parent to reload the whole project bundle.
+  const [extraSubcontractors, setExtraSubcontractors] = useState<{ id: string; name: string; trade: string | null }[]>([]);
+  const [extraAgents, setExtraAgents] = useState<{ id: string; name: string }[]>([]);
+  const [quickAddSubOpen, setQuickAddSubOpen] = useState(false);
+  const [quickAddSubName, setQuickAddSubName] = useState("");
+  const [quickAddAgentOpen, setQuickAddAgentOpen] = useState(false);
+  const [quickAddAgentName, setQuickAddAgentName] = useState("");
+  const [quickAddSaving, setQuickAddSaving] = useState(false);
+
+  const allSubcontractorOptions = [...bundle.allSubcontractors, ...extraSubcontractors];
+  const allAgentOptions = [...bundle.salesAgents, ...extraAgents];
+
+  async function quickAddSubcontractor() {
+    if (!quickAddSubName.trim() || quickAddSaving) return;
+    setQuickAddSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from("subcontractors")
+        .insert({ name: quickAddSubName.trim(), company_id: bundle.project.company_id })
+        .select("id, name, trade")
+        .single();
+      if (error) throw error;
+      setExtraSubcontractors((prev) => [...prev, data]);
+      setNewSubcontractorId(data.id);
+      setQuickAddSubName("");
+      setQuickAddSubOpen(false);
+    } finally {
+      setQuickAddSaving(false);
+    }
+  }
+
+  async function quickAddAgent() {
+    if (!quickAddAgentName.trim() || quickAddSaving) return;
+    setQuickAddSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from("agents")
+        .insert({ name: quickAddAgentName.trim(), company_id: bundle.project.company_id })
+        .select("id, name")
+        .single();
+      if (error) throw error;
+      setExtraAgents((prev) => [...prev, data]);
+      toggleAgent(data.id);
+      setQuickAddAgentName("");
+      setQuickAddAgentOpen(false);
+    } finally {
+      setQuickAddSaving(false);
+    }
+  }
+
+  useEffect(() => {
+    getRecentVendors(bundle.project.company_id)
+      .then(setRecentVendors)
+      .catch(() => {}); // autocomplete is a nice-to-have, never block the form on it
+  }, [bundle.project.company_id]);
 
   const parsedAmount = Number(amount);
   const parsedTax = Number(tax || 0);
@@ -132,11 +195,12 @@ export default function AddExpenseSheet({
           vendor: vendor || null,
           paidBy: paidBy || null,
           notes: notes || null,
+          changeOrderId: changeOrderId || null,
         });
       } else if (isSubcontractor) {
         let estimateSubcontractorId = assignmentId;
         if (assignmentId === NEW_SUB_OPTION) {
-          const sub = bundle.allSubcontractors.find((s) => s.id === newSubcontractorId);
+          const sub = allSubcontractorOptions.find((s) => s.id === newSubcontractorId);
           if (!sub) return;
           const assigned = await onAssignSubcontractor(sub.id, sub.name, sub.trade);
           estimateSubcontractorId = assigned.estimateSubcontractorId;
@@ -150,6 +214,7 @@ export default function AddExpenseSheet({
           paymentDate: entryDate,
           paymentMethod,
           notes: notes || null,
+          changeOrderId: changeOrderId || null,
         });
       } else {
         // Each selected agent becomes its own agent_payments row — the
@@ -173,6 +238,7 @@ export default function AddExpenseSheet({
             paymentDate: entryDate,
             paymentMethod,
             notes: notes || null,
+            changeOrderId: changeOrderId || null,
           });
         }
       }
@@ -200,7 +266,7 @@ export default function AddExpenseSheet({
         <div className="p-4 space-y-4">
           {/* Amount */}
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Amount</label>
+            <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Amount</label>
             <div className="relative mt-1">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xl font-black text-slate-300">$</span>
               <input
@@ -210,14 +276,14 @@ export default function AddExpenseSheet({
                 value={amount}
                 onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
                 placeholder="0.00"
-                className="w-full h-14 pl-8 pr-3 rounded-xl border border-slate-200 text-2xl font-black text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-800/10 focus:border-slate-300"
+                className="w-full h-14 pl-8 pr-3 rounded-xl border border-slate-200/70 text-2xl font-black text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors"
               />
             </div>
           </div>
 
           {/* Category */}
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Category</label>
+            <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Category</label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mt-1">
               {ALL_CATEGORIES.map((c) => (
                 <button
@@ -236,15 +302,34 @@ export default function AddExpenseSheet({
             </div>
           </div>
 
+          {/* Link to — defaults to the original estimate scope; only
+              approved change orders are selectable, since linking real
+              spend to a not-yet-approved one would misstate financials. */}
+          <div>
+            <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Link To</label>
+            <select
+              value={changeOrderId}
+              onChange={(e) => setChangeOrderId(e.target.value)}
+              className="w-full h-11 mt-1 rounded-xl border border-slate-200/70 px-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors text-sm font-semibold text-slate-800"
+            >
+              <option value="">Original Estimate</option>
+              {approvedChangeOrders.map((co) => (
+                <option key={co.id} value={co.id}>
+                  {co.change_order_number} — {co.title}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Subcontractor picker — assigned-to-this-project subs first,
               with a fallback to assign someone new on the fly. */}
           {isSubcontractor && (
             <div>
-              <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Subcontractor</label>
+              <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Subcontractor</label>
               <select
                 value={assignmentId}
                 onChange={(e) => setAssignmentId(e.target.value)}
-                className="w-full h-11 mt-1 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-800"
+                className="w-full h-11 mt-1 rounded-xl border border-slate-200/70 px-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors text-sm font-semibold text-slate-800"
               >
                 <option value="">Select subcontractor…</option>
                 {bundle.assignedSubcontractors.map((s) => (
@@ -257,33 +342,91 @@ export default function AddExpenseSheet({
               </select>
 
               {assignmentId === NEW_SUB_OPTION && (
-                <select
-                  value={newSubcontractorId}
-                  onChange={(e) => setNewSubcontractorId(e.target.value)}
-                  className="w-full h-11 mt-2 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-800"
-                >
-                  <option value="">Choose from all subcontractors…</option>
-                  {bundle.allSubcontractors.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                      {s.trade ? ` — ${s.trade}` : ""}
-                    </option>
-                  ))}
-                </select>
+                <div className="mt-2">
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={newSubcontractorId}
+                      onChange={(e) => setNewSubcontractorId(e.target.value)}
+                      className="flex-1 h-11 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-800"
+                    >
+                      <option value="">Choose from all subcontractors…</option>
+                      {allSubcontractorOptions.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                          {s.trade ? ` — ${s.trade}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setQuickAddSubOpen((v) => !v)}
+                      className="shrink-0 h-11 px-3 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors"
+                    >
+                      + Add New
+                    </button>
+                  </div>
+                  {quickAddSubOpen && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <input
+                        type="text"
+                        value={quickAddSubName}
+                        onChange={(e) => setQuickAddSubName(e.target.value)}
+                        placeholder="New subcontractor name"
+                        className="flex-1 h-10 rounded-xl border border-slate-200 px-3 text-sm text-slate-800"
+                      />
+                      <button
+                        type="button"
+                        disabled={!quickAddSubName.trim() || quickAddSaving}
+                        onClick={quickAddSubcontractor}
+                        className="shrink-0 h-10 px-3 rounded-xl bg-emerald-600 text-white text-xs font-bold disabled:opacity-30"
+                      >
+                        {quickAddSaving ? "Saving…" : "Save"}
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}
 
           {isAgent && (
             <div>
-              <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                Sales Agents <span className="normal-case font-medium text-slate-300">(select one or more)</span>
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  Sales Agents <span className="normal-case font-medium text-slate-300">(select one or more)</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setQuickAddAgentOpen((v) => !v)}
+                  className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800"
+                >
+                  + Add New
+                </button>
+              </div>
+              {quickAddAgentOpen && (
+                <div className="flex items-center gap-2 mt-1 mb-2">
+                  <input
+                    type="text"
+                    value={quickAddAgentName}
+                    onChange={(e) => setQuickAddAgentName(e.target.value)}
+                    placeholder="New agent name"
+                    className="flex-1 h-10 rounded-xl border border-slate-200 px-3 text-sm text-slate-800"
+                  />
+                  <button
+                    type="button"
+                    disabled={!quickAddAgentName.trim() || quickAddSaving}
+                    onClick={quickAddAgent}
+                    className="shrink-0 h-10 px-3 rounded-xl bg-emerald-600 text-white text-xs font-bold disabled:opacity-30"
+                  >
+                    {quickAddSaving ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              )}
               <div className="mt-1 rounded-xl border border-slate-200 divide-y divide-slate-100 max-h-40 overflow-y-auto">
-                {bundle.salesAgents.length === 0 ? (
+                {allAgentOptions.length === 0 ? (
                   <div className="p-3 text-xs text-slate-400">No sales agents on this company yet.</div>
                 ) : (
-                  bundle.salesAgents.map((a) => {
+                  allAgentOptions.map((a) => {
                     const selected = selectedAgentIds.includes(a.id);
                     return (
                       <button
@@ -305,7 +448,7 @@ export default function AddExpenseSheet({
               {selectedAgentIds.length > 0 && (
                 <div className="mt-2 space-y-2">
                   {selectedAgentIds.map((id) => {
-                    const agent = bundle.salesAgents.find((a) => a.id === id);
+                    const agent = allAgentOptions.find((a) => a.id === id);
                     const pct = agentPercentages[id] ?? 0;
                     const dollars = (parsedAmount * pct) / 100;
                     return (
@@ -365,7 +508,7 @@ export default function AddExpenseSheet({
                   a calculator to help pick the commission amount, not a
                   replacement for typing one in directly above. */}
               <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Profit Split</label>
+                <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Profit Split</label>
                 <div className="grid grid-cols-2 gap-1.5 mt-1.5">
                   {COMPANY_PERCENTAGE_OPTIONS.map((pct) => (
                     <button
@@ -402,7 +545,7 @@ export default function AddExpenseSheet({
           {isExpenseCategory && (
             <>
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
                   Vendor <span className="normal-case font-medium text-slate-300">(optional)</span>
                 </label>
                 <input
@@ -410,13 +553,19 @@ export default function AddExpenseSheet({
                   value={vendor}
                   onChange={(e) => setVendor(e.target.value)}
                   placeholder="e.g. Home Depot"
-                  className="w-full h-11 mt-1 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-800 placeholder:font-normal placeholder:text-slate-400"
+                  list="vendor-suggestions"
+                  className="w-full h-11 mt-1 rounded-xl border border-slate-200/70 px-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors text-sm font-semibold text-slate-800 placeholder:font-normal placeholder:text-slate-400"
                 />
+                <datalist id="vendor-suggestions">
+                  {recentVendors.map((v) => (
+                    <option key={v} value={v} />
+                  ))}
+                </datalist>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
                     Tax <span className="normal-case font-medium text-slate-300">(optional)</span>
                   </label>
                   <input
@@ -425,11 +574,11 @@ export default function AddExpenseSheet({
                     value={tax}
                     onChange={(e) => setTax(e.target.value.replace(/[^0-9.]/g, ""))}
                     placeholder="0.00"
-                    className="w-full h-11 mt-1 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-800 placeholder:font-normal placeholder:text-slate-400"
+                    className="w-full h-11 mt-1 rounded-xl border border-slate-200/70 px-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors text-sm font-semibold text-slate-800 placeholder:font-normal placeholder:text-slate-400"
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
                     Paid By <span className="normal-case font-medium text-slate-300">(optional)</span>
                   </label>
                   <input
@@ -437,7 +586,7 @@ export default function AddExpenseSheet({
                     value={paidBy}
                     onChange={(e) => setPaidBy(e.target.value)}
                     placeholder="Who paid"
-                    className="w-full h-11 mt-1 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-800 placeholder:font-normal placeholder:text-slate-400"
+                    className="w-full h-11 mt-1 rounded-xl border border-slate-200/70 px-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors text-sm font-semibold text-slate-800 placeholder:font-normal placeholder:text-slate-400"
                   />
                 </div>
               </div>
@@ -447,20 +596,20 @@ export default function AddExpenseSheet({
           {/* Date + payment method */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Date</label>
+              <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Date</label>
               <input
                 type="date"
                 value={entryDate}
                 onChange={(e) => setEntryDate(e.target.value)}
-                className="w-full h-11 mt-1 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-800"
+                className="w-full h-11 mt-1 rounded-xl border border-slate-200/70 px-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors text-sm font-semibold text-slate-800"
               />
             </div>
             <div>
-              <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Payment</label>
+              <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Payment</label>
               <select
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value)}
-                className="w-full h-11 mt-1 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-800 capitalize"
+                className="w-full h-11 mt-1 rounded-xl border border-slate-200/70 px-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors text-sm font-semibold text-slate-800 capitalize"
               >
                 {PAYMENT_METHODS.map((m) => (
                   <option key={m} value={m} className="capitalize">
@@ -472,7 +621,7 @@ export default function AddExpenseSheet({
           </div>
 
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+            <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
               Note <span className="normal-case font-medium text-slate-300">(optional)</span>
             </label>
             <input
@@ -480,7 +629,7 @@ export default function AddExpenseSheet({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="What was this for?"
-              className="w-full h-11 mt-1 rounded-xl border border-slate-200 px-3 text-sm text-slate-800 placeholder:text-slate-400"
+              className="w-full h-11 mt-1 rounded-xl border border-slate-200/70 px-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors text-sm text-slate-800 placeholder:text-slate-400"
             />
           </div>
 
@@ -502,7 +651,7 @@ export default function AddExpenseSheet({
             type="button"
             disabled={!isValid || isSaving}
             onClick={handleSubmit}
-            className="w-full h-12 rounded-xl bg-slate-800 text-white text-sm font-bold disabled:opacity-30"
+            className="w-full h-12 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 transition-colors disabled:opacity-30"
           >
             {isSaving ? "Saving…" : "Save Expense"}
           </button>

@@ -75,7 +75,7 @@ export default async function EstimateReportPage({ params }: { params: Params })
   if (subEstIds.length > 0) {
     subPayments = await safeFetch(
       "subcontractor_payments",
-      (q: any) => q.select("id, amount, payment_date, notes, estimate_subcontractor_id")
+      (q: any) => q.select("id, amount, payment_date, notes, estimate_subcontractor_id, change_order_id")
           .in("estimate_subcontractor_id", subEstIds)
           .is("deleted_at", null)
     );
@@ -87,13 +87,14 @@ export default async function EstimateReportPage({ params }: { params: Params })
     paid_at: p.payment_date,
     notes: p.notes,
     subcontractor_name: subNameMap[p.estimate_subcontractor_id] || "Unknown",
+    change_order_id: p.change_order_id ?? null,
   }));
   const totalSubPaid = subPaymentDetails.reduce((sum: number, p: any) => sum + p.amount, 0);
 
   // ---- 4. Agent payments ----
   const agentPayments = await safeFetch(
     "agent_payments",
-    (q: any) => q.select("id, amount, payment_date, notes, agent:agent_id (name)").eq("estimate_id", id).is("deleted_at", null)
+    (q: any) => q.select("id, amount, payment_date, notes, agent:agent_id (name), change_order_id").eq("estimate_id", id).is("deleted_at", null)
   );
   const agentPaymentDetails = agentPayments.map((p: any) => ({
     id: p.id,
@@ -101,13 +102,14 @@ export default async function EstimateReportPage({ params }: { params: Params })
     paid_at: p.payment_date,
     notes: p.notes,
     agent_name: p.agent?.name || "Unknown Agent",
+    change_order_id: p.change_order_id ?? null,
   }));
   const totalAgentPaid = agentPaymentDetails.reduce((sum: number, p: any) => sum + p.amount, 0);
 
   // ---- 5. Other expenses ----
   const expenses = await safeFetch(
     "estimate_expenses",
-    (q: any) => q.select("id, amount, expense_date, description, category").eq("estimate_id", id).is("deleted_at", null)
+    (q: any) => q.select("id, amount, expense_date, description, category, change_order_id").eq("estimate_id", id).is("deleted_at", null)
   );
   const expenseDetails = expenses.map((e: any) => ({
     id: e.id,
@@ -115,6 +117,7 @@ export default async function EstimateReportPage({ params }: { params: Params })
     date: e.expense_date,
     description: e.description,
     category: e.category || "General",
+    change_order_id: e.change_order_id ?? null,
   }));
   const totalOtherExpenses = expenseDetails.reduce((sum: number, e: any) => sum + e.amount, 0);
 
@@ -160,6 +163,30 @@ export default async function EstimateReportPage({ params }: { params: Params })
   const totalExpenses = totalSubPaid + totalAgentPaid + totalOtherExpenses;
   const profit = revisedTotal - totalExpenses;
   const profitMargin = revisedTotal > 0 ? (profit / revisedTotal) * 100 : 0;
+
+  // ---- 9. Subtotals by Change Order — distinguishes original-estimate
+  // spend from spend tied to a specific change order, across all three
+  // expense/payment tables now that each carries an optional change_order_id.
+  const changeOrderNumberById: Record<string, string> = {};
+  changeOrderDetails.forEach((co: any) => {
+    changeOrderNumberById[co.id] = co.change_order_number;
+  });
+  const allEntries = [
+    ...subPaymentDetails.map((p: any) => ({ change_order_id: p.change_order_id, amount: p.amount })),
+    ...agentPaymentDetails.map((p: any) => ({ change_order_id: p.change_order_id, amount: p.amount })),
+    ...expenseDetails.map((e: any) => ({ change_order_id: e.change_order_id, amount: e.amount })),
+  ];
+  const subtotalsByGroup: { label: string; total: number }[] = [];
+  const originalEstimateSpend = allEntries
+    .filter((e) => !e.change_order_id)
+    .reduce((sum, e) => sum + e.amount, 0);
+  subtotalsByGroup.push({ label: "Original Estimate", total: originalEstimateSpend });
+  for (const co of changeOrderDetails) {
+    const total = allEntries
+      .filter((e) => e.change_order_id === co.id)
+      .reduce((sum, e) => sum + e.amount, 0);
+    if (total !== 0) subtotalsByGroup.push({ label: `${co.change_order_number} — ${co.title}`, total });
+  }
 
   // ---- 9. Render ----
   return (
@@ -264,7 +291,14 @@ export default async function EstimateReportPage({ params }: { params: Params })
                 {subPaymentDetails.map((p: any) => (
                   <div key={p.id} className="flex justify-between items-start border-b border-slate-100 py-1.5">
                     <div>
-                      <div className="text-xs font-medium text-slate-800">{p.subcontractor_name}</div>
+                      <div className="text-xs font-medium text-slate-800 flex items-center gap-1.5">
+                        {p.subcontractor_name}
+                        {p.change_order_id && (
+                          <span className="text-[9px] font-mono font-bold text-indigo-600 bg-indigo-50 px-1 py-0.5 rounded">
+                            {changeOrderNumberById[p.change_order_id] || "CO"}
+                          </span>
+                        )}
+                      </div>
                       {p.notes && <div className="text-[10px] text-slate-400 italic">{p.notes}</div>}
                       <div className="text-[10px] text-slate-400">{formatDate(p.paid_at)}</div>
                     </div>
@@ -293,7 +327,14 @@ export default async function EstimateReportPage({ params }: { params: Params })
                 {agentPaymentDetails.map((p: any) => (
                   <div key={p.id} className="flex justify-between items-start border-b border-slate-100 py-1.5">
                     <div>
-                      <div className="text-xs font-medium text-slate-800">{p.agent_name}</div>
+                      <div className="text-xs font-medium text-slate-800 flex items-center gap-1.5">
+                        {p.agent_name}
+                        {p.change_order_id && (
+                          <span className="text-[9px] font-mono font-bold text-indigo-600 bg-indigo-50 px-1 py-0.5 rounded">
+                            {changeOrderNumberById[p.change_order_id] || "CO"}
+                          </span>
+                        )}
+                      </div>
                       {p.notes && <div className="text-[10px] text-slate-400 italic">{p.notes}</div>}
                       <div className="text-[10px] text-slate-400">{formatDate(p.paid_at)}</div>
                     </div>
@@ -322,7 +363,14 @@ export default async function EstimateReportPage({ params }: { params: Params })
                 {expenseDetails.map((e: any) => (
                   <div key={e.id} className="flex justify-between items-start border-b border-slate-100 py-1.5">
                     <div>
-                      <div className="text-xs font-medium text-slate-800">{e.description || e.category}</div>
+                      <div className="text-xs font-medium text-slate-800 flex items-center gap-1.5">
+                        {e.description || e.category}
+                        {e.change_order_id && (
+                          <span className="text-[9px] font-mono font-bold text-indigo-600 bg-indigo-50 px-1 py-0.5 rounded">
+                            {changeOrderNumberById[e.change_order_id] || "CO"}
+                          </span>
+                        )}
+                      </div>
                       <div className="text-[10px] text-slate-400">{e.category} • {formatDate(e.date)}</div>
                     </div>
                     <div className="text-xs font-mono font-bold text-slate-600">{formatCurrency(e.amount)}</div>
@@ -359,6 +407,27 @@ export default async function EstimateReportPage({ params }: { params: Params })
                 <span>Total Payments</span>
                 <span className="text-emerald-600">{formatCurrency(totalPayments)}</span>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Subtotals by Change Order — clearly distinguishes spend tied
+            to the original estimate from spend tied to a specific
+            change order, across subcontractor payments, agent
+            payments, and other expenses combined. */}
+        {subtotalsByGroup.length > 1 && (
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 mb-6">
+            <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2 mb-3">
+              <Receipt size={16} className="text-indigo-500" />
+              Expense Subtotals by Change Order
+            </h3>
+            <div className="space-y-2">
+              {subtotalsByGroup.map((g) => (
+                <div key={g.label} className="flex justify-between items-center border-b border-slate-100 py-1.5 last:border-0">
+                  <span className="text-xs font-medium text-slate-700">{g.label}</span>
+                  <span className="text-xs font-mono font-bold text-slate-800">{formatCurrency(g.total)}</span>
+                </div>
+              ))}
             </div>
           </div>
         )}

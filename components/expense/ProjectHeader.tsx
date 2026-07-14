@@ -7,10 +7,10 @@ export default function ProjectHeader({ bundle }: { bundle: ProjectBundle }) {
   const { project, client } = bundle;
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-3.5">
+    <div className="bg-white rounded-xl border border-slate-200/70 shadow-sm p-3.5">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+          <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
             Estimate #{project.estimate_number ?? "—"}
           </div>
           <div className="text-base font-black text-slate-800 truncate">

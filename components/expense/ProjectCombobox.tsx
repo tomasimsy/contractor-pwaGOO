@@ -35,7 +35,7 @@ export default function ProjectCombobox({
           onFocus={() => setIsOpen(true)}
           onBlur={() => setTimeout(() => setIsOpen(false), 150)}
           placeholder="Search by estimate #, client, or project title"
-          className="w-full h-11 pl-9 pr-9 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-800/10 focus:border-slate-300"
+          className="w-full h-11 pl-9 pr-9 rounded-xl border border-slate-200/70 shadow-sm bg-white text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors"
         />
         {query && (
           <button
@@ -50,7 +50,7 @@ export default function ProjectCombobox({
       </div>
 
       {isOpen && (
-        <div className="absolute z-20 mt-1.5 w-full max-h-80 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+        <div className="absolute z-20 mt-1.5 w-full max-h-80 overflow-y-auto rounded-xl border border-slate-200/70 bg-white shadow-lg">
           {isLoading && results.length === 0 ? (
             <div className="p-3 text-xs text-slate-400">Searching…</div>
           ) : results.length === 0 ? (

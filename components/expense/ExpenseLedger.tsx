@@ -38,7 +38,7 @@ export default function ExpenseLedger({
 
   if (entries.length === 0) {
     return (
-      <div className="bg-white rounded-xl border border-dashed border-slate-200 p-6 text-center">
+      <div className="bg-white rounded-xl border border-dashed border-slate-200/70 shadow-sm p-6 text-center">
         <div className="text-sm font-semibold text-slate-500">{emptyLabel}</div>
         <div className="text-xs text-slate-400 mt-0.5">{emptyHint}</div>
       </div>
@@ -46,7 +46,7 @@ export default function ExpenseLedger({
   }
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
+    <div className="bg-white rounded-xl border border-slate-200/70 shadow-sm divide-y divide-slate-100">
       {entries.map((entry) => {
         const Icon = CATEGORY_ICON[entry.categoryLabel] ?? Receipt;
         const isPendingDelete = pendingDeleteId === entry.id;
@@ -54,7 +54,7 @@ export default function ExpenseLedger({
         return (
           <div
             key={`${entry.source}-${entry.id}`}
-            className={`flex items-center gap-3 p-3 ${onRestore ? "opacity-70" : ""}`}
+            className={`flex items-center gap-3 p-3 transition-colors hover:bg-slate-50 ${onRestore ? "opacity-70" : ""}`}
           >
             <div className="shrink-0 w-9 h-9 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-500">
               <Icon size={15} />
@@ -67,9 +67,16 @@ export default function ExpenseLedger({
                   {formatCurrency(entry.amount)}
                 </span>
               </div>
-              <div className="text-xs text-slate-400 truncate">
-                {entry.categoryLabel} · {formatDate(entry.date)}
-                {entry.paymentMethod ? ` · ${entry.paymentMethod.replace("_", " ")}` : ""}
+              <div className="text-xs text-slate-400 truncate flex items-center gap-1.5">
+                <span className="truncate">
+                  {entry.categoryLabel} · {formatDate(entry.date)}
+                  {entry.paymentMethod ? ` · ${entry.paymentMethod.replace("_", " ")}` : ""}
+                </span>
+                {entry.changeOrderLabel && (
+                  <span className="shrink-0 text-[10px] font-mono font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
+                    {entry.changeOrderLabel}
+                  </span>
+                )}
               </div>
             </div>
 

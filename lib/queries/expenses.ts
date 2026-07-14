@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase/client";
 import type {
   AssignedSubcontractor,
+  BudgetComparison,
   FinancialSummaryData,
   InvoiceRow,
   LedgerEntry,
@@ -32,6 +33,7 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
       vendor: input.vendor,
       paid_by: input.paidBy,
       notes: input.notes,
+      change_order_id: input.changeOrderId,
     });
     if (error) throw error;
     return;
@@ -46,6 +48,7 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
       payment_date: input.paymentDate,
       payment_method: input.paymentMethod,
       notes: input.notes,
+      change_order_id: input.changeOrderId,
     });
     if (error) throw error;
     return;
@@ -60,6 +63,7 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
     payment_date: input.paymentDate,
     payment_method: input.paymentMethod,
     notes: input.notes,
+    change_order_id: input.changeOrderId,
   });
   if (error) throw error;
 }
@@ -166,6 +170,11 @@ export function buildLedger(bundle: ProjectBundle): LedgerEntry[] {
     bundle.assignedSubcontractors.map((s) => [s.estimateSubcontractorId, s.name])
   );
   const agentNameById = new Map(bundle.salesAgents.map((a) => [a.id, a.name]));
+  const changeOrderNumberById = new Map(bundle.changeOrders.map((co) => [co.id, co.change_order_number]));
+  const coFields = (changeOrderId: string | null) => ({
+    changeOrderId,
+    changeOrderLabel: changeOrderId ? changeOrderNumberById.get(changeOrderId) ?? null : null,
+  });
 
   const expenseEntries: LedgerEntry[] = bundle.expenses.map((e) => ({
     id: e.id,
@@ -177,6 +186,7 @@ export function buildLedger(bundle: ProjectBundle): LedgerEntry[] {
     paymentMethod: e.payment_method,
     notes: e.notes ?? e.description,
     hasReceiptFields: true,
+    ...coFields(e.change_order_id),
   }));
 
   const subPaymentEntries: LedgerEntry[] = bundle.subcontractorPayments.map((p) => ({
@@ -189,6 +199,7 @@ export function buildLedger(bundle: ProjectBundle): LedgerEntry[] {
     paymentMethod: p.payment_method,
     notes: p.notes,
     hasReceiptFields: false,
+    ...coFields(p.change_order_id),
   }));
 
   const agentPaymentEntries: LedgerEntry[] = bundle.agentPayments.map((p) => ({
@@ -201,6 +212,7 @@ export function buildLedger(bundle: ProjectBundle): LedgerEntry[] {
     paymentMethod: p.payment_method,
     notes: p.notes,
     hasReceiptFields: false,
+    ...coFields(p.change_order_id),
   }));
 
   return [...expenseEntries, ...subPaymentEntries, ...agentPaymentEntries].sort(
@@ -259,7 +271,7 @@ export function derivePaymentStatus(
  */
 export function summarizeFinancials(
   estimateTotal: number,
-  bundle: Pick<ProjectBundle, "expenses" | "subcontractorPayments" | "agentPayments">,
+  bundle: Pick<ProjectBundle, "expenses" | "subcontractorPayments" | "agentPayments" | "mileageTrips" | "changeOrders">,
   totalPaidByClient = 0
 ): FinancialSummaryData {
   let materialCosts = 0;
@@ -275,6 +287,16 @@ export function summarizeFinancials(
 
   const subcontractorCosts = bundle.subcontractorPayments.reduce((sum, p) => sum + p.amount, 0);
   const agentCommissions = bundle.agentPayments.reduce((sum, p) => sum + p.amount, 0);
+  const mileageCosts = bundle.mileageTrips.reduce((sum, t) => sum + (t.reimbursement || 0), 0);
+
+  // Same "revised total = original + approved change orders" formula
+  // already established in app/reports/expenses/[id]/page.tsx and the
+  // estimate/invoice pages — relocated here so every card on the
+  // Expense page gets it consistently instead of computing it ad hoc.
+  const approvedChangeOrderTotal = bundle.changeOrders
+    .filter((co) => co.status === "approved")
+    .reduce((sum, co) => sum + (co.total_amount || 0), 0);
+  const revisedTotal = estimateTotal + approvedChangeOrderTotal;
 
   return {
     estimateTotal,
@@ -283,6 +305,73 @@ export function summarizeFinancials(
     subcontractorCosts,
     agentCommissions,
     otherExpenses,
+    mileageCosts,
     totalPaid: totalPaidByClient,
+    approvedChangeOrderTotal,
+    revisedTotal,
   };
+}
+
+/**
+ * Budget (from estimate_items, the original line items) vs. actual
+ * (from estimate_expenses) spend per category. Kept separate from
+ * summarizeFinancials since it draws from a different source
+ * (budgeted vs. spent) rather than duplicating its bucketing —
+ * estimate_items.category is stored capitalized ("Material") while
+ * estimate_expenses.category is lowercase, so both are normalized via
+ * toLowerCase() before matching.
+ */
+export function getBudgetComparison(
+  estimateItems: Pick<ProjectBundle["estimateItems"][number], "category" | "total">[],
+  expenses: Pick<ProjectBundle["expenses"][number], "category" | "amount" | "tax">[]
+): BudgetComparison {
+  const result: BudgetComparison = {
+    material: { budget: 0, actual: 0 },
+    labor: { budget: 0, actual: 0 },
+    other: { budget: 0, actual: 0 },
+  };
+
+  for (const item of estimateItems) {
+    const key = item.category?.toLowerCase();
+    const bucket = key === "material" || key === "labor" ? key : "other";
+    result[bucket].budget += item.total || 0;
+  }
+
+  for (const expense of expenses) {
+    const key = expense.category?.toLowerCase();
+    const bucket = key === "material" || key === "labor" ? key : "other";
+    result[bucket].actual += (expense.amount || 0) + (expense.tax ?? 0);
+  }
+
+  return result;
+}
+
+/**
+ * Distinct vendor names from this company's past expenses, most
+ * recent first, for the Add Expense form's autocomplete. Supabase-js
+ * has no native DISTINCT, so this dedupes client-side over a
+ * recency-capped fetch rather than scanning the whole table.
+ */
+export async function getRecentVendors(companyId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("estimate_expenses")
+    .select("vendor")
+    .eq("company_id", companyId)
+    .not("vendor", "is", null)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (error) throw error;
+
+  const seen = new Set<string>();
+  const vendors: string[] = [];
+  for (const row of data ?? []) {
+    const vendor = row.vendor?.trim();
+    if (vendor && !seen.has(vendor)) {
+      seen.add(vendor);
+      vendors.push(vendor);
+      if (vendors.length >= 20) break;
+    }
+  }
+  return vendors;
 }

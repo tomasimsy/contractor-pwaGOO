@@ -1,5 +1,6 @@
 import type { FormCategory } from "@/components/expense/AddExpenseSheet";
 import type { FinancialSummaryData, LedgerEntry, PaymentSummary, ProjectBundle } from "@/lib/types";
+import { getBudgetComparison } from "@/lib/queries/expenses";
 import ProjectHeader from "@/components/expense/ProjectHeader";
 
 import QuickActions from "./QuickActions";
@@ -12,6 +13,7 @@ import PaymentHistoryPanel from "./PaymentHistoryPanel";
 import SubcontractorsPanel from "./SubcontractorsPanel";
 import AgentsPanel from "./AgentsPanel";
 import ReceiptsPanel from "./ReceiptsPanel";
+import ChangeOrdersPanel from "./ChangeOrdersPanel";
 
 export default function DesktopDashboard({
   bundle,
@@ -20,6 +22,7 @@ export default function DesktopDashboard({
   payment,
   onOpenAddSheet,
   onDeleteEntry,
+  onRefresh,
 }: {
   bundle: ProjectBundle;
   ledger: LedgerEntry[];
@@ -27,6 +30,7 @@ export default function DesktopDashboard({
   payment: PaymentSummary;
   onOpenAddSheet: (category?: FormCategory) => void;
   onDeleteEntry: (entry: LedgerEntry) => void;
+  onRefresh: () => Promise<void>;
 }) {
   return (
     <div className="space-y-4 sm:space-y-5">
@@ -40,13 +44,20 @@ export default function DesktopDashboard({
 
       {/* Revenue / Payment / Profit */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-        <RevenueCard contractAmount={financials.estimateTotal} />
+        <RevenueCard
+          estimateTotal={financials.estimateTotal}
+          approvedChangeOrderTotal={financials.approvedChangeOrderTotal}
+          revisedTotal={financials.revisedTotal}
+        />
         <PaymentStatusCard payment={payment} />
         <ProfitCard data={financials} />
       </div>
 
       {/* Project cost */}
-      <CostBreakdownCard data={financials} />
+      <CostBreakdownCard data={financials} budget={getBudgetComparison(bundle.estimateItems, bundle.expenses)} />
+
+      {/* Change Orders */}
+      <ChangeOrdersPanel bundle={bundle} ledger={ledger} onRefresh={onRefresh} />
 
       {/* Expenses / Payment history */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">

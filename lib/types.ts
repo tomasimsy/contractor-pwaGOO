@@ -26,6 +26,7 @@ export type EstimateExpenseRow = {
   receipt_storage_path: string | null;
   receipt_file_name: string | null;
   deleted_at: string | null;
+  change_order_id: string | null;
 };
 
 /** The category values the Add Expense form writes. estimate_expenses
@@ -56,6 +57,7 @@ export type AgentPaymentRow = {
   created_at: string | null;
   company_id: string;
   deleted_at: string | null;
+  change_order_id: string | null;
 };
 
 /** The authoritative source for client payment status — confirmed.
@@ -120,6 +122,7 @@ export type SubcontractorPaymentRow = {
   estimate_id: string | null;
   company_id: string;
   deleted_at: string | null;
+  change_order_id: string | null;
 };
 
 /** Assigns a subcontractor to a project, with the contracted amount
@@ -138,6 +141,46 @@ export type EstimateSubcontractorRow = {
 
 export const PAYMENT_METHODS = ["cash", "check", "card", "bank_transfer", "other"] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+
+/** A completed mileage trip optionally linked to a project via
+ * estimate_id (nullable — association happens after the fact through
+ * MileageCard's per-trip picker, not required at trip creation). Only
+ * the fields the Expense page's cost rollup needs. */
+export type MileageTripRow = {
+  id: string;
+  estimate_id: string | null;
+  distance_miles: number | null;
+  reimbursement: number | null;
+  created_at: string | null;
+};
+
+/** A budgeted line item from the original estimate — only the fields
+ * needed to compare budget vs. actual spend per category. */
+export type EstimateItemRow = {
+  id: string;
+  category: string;
+  total: number;
+};
+
+/** A change order against a project — the table already exists (created/
+ * approved from the Estimate detail page); this is only the subset of
+ * columns the Expense page needs. Status transitions: draft -> pending
+ * -> approved|rejected, plus a terminal 'invoiced' reached only via the
+ * (separately maintained) convert-to-invoice flow. */
+export type ChangeOrderRow = {
+  id: string;
+  estimate_id: string;
+  company_id: string;
+  change_order_number: string;
+  title: string;
+  description: string | null;
+  status: "draft" | "pending" | "approved" | "rejected" | "invoiced";
+  total_amount: number;
+  tax: number;
+  notes: string | null;
+  created_at: string | null;
+  approved_at: string | null;
+};
 
 // ---------------------------------------------------------------------
 // ASSUMED — you haven't confirmed these columns yet. The FK columns
@@ -227,6 +270,9 @@ export type ProjectBundle = {
   assignedSubcontractors: AssignedSubcontractor[];
   allSubcontractors: Pick<SubcontractorRow, "id" | "name" | "trade">[];
   salesAgents: Pick<SalesAgentRow, "id" | "name">[];
+  mileageTrips: MileageTripRow[];
+  estimateItems: EstimateItemRow[];
+  changeOrders: ChangeOrderRow[];
 };
 
 // ---------------------------------------------------------------------
@@ -262,6 +308,8 @@ export type LedgerEntry = {
   paymentMethod: string | null;
   notes: string | null;
   hasReceiptFields: boolean; // only true for `expense` rows
+  changeOrderId: string | null;
+  changeOrderLabel: string | null; // e.g. "CO-3", null when it belongs to the original estimate
 };
 
 // ---------------------------------------------------------------------
@@ -276,7 +324,18 @@ export type FinancialSummaryData = {
   subcontractorCosts: number;
   agentCommissions: number;
   otherExpenses: number;
+  mileageCosts: number;
   totalPaid: number;
+  approvedChangeOrderTotal: number;
+  revisedTotal: number;
+};
+
+/** Budgeted (from estimate_items) vs. actual (from estimate_expenses)
+ * spend per category — see getBudgetComparison in lib/queries/expenses.ts. */
+export type BudgetComparison = {
+  material: { budget: number; actual: number };
+  labor: { budget: number; actual: number };
+  other: { budget: number; actual: number };
 };
 
 export type NewEntryInput =
@@ -292,6 +351,7 @@ export type NewEntryInput =
       vendor: string | null;
       paidBy: string | null;
       notes: string | null;
+      changeOrderId: string | null;
     }
   | {
       kind: "subcontractor_payment";
@@ -302,6 +362,7 @@ export type NewEntryInput =
       paymentDate: string;
       paymentMethod: string | null;
       notes: string | null;
+      changeOrderId: string | null;
     }
   | {
       kind: "agent_payment";
@@ -312,4 +373,5 @@ export type NewEntryInput =
       paymentDate: string;
       paymentMethod: string | null;
       notes: string | null;
+      changeOrderId: string | null;
     };

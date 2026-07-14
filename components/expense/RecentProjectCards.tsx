@@ -16,7 +16,7 @@ export default function RecentProjectCards({
 
   return (
     <div>
-      <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1.5">
+      <div className="flex items-center gap-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">
         <Clock size={11} /> Recent
       </div>
       {/* Horizontal scroll on mobile so 5 cards never wrap or crowd a
@@ -32,7 +32,7 @@ export default function RecentProjectCards({
               className={`shrink-0 w-40 sm:w-auto text-left rounded-xl border p-3 min-h-[64px] active:scale-[0.98] transition ${
                 isSelected
                   ? "bg-slate-800 border-slate-800 text-white"
-                  : "bg-white border-slate-200 text-slate-700 hover:border-slate-300"
+                  : "bg-white border-slate-200/70 text-slate-700 hover:border-slate-300"
               }`}
             >
               <div

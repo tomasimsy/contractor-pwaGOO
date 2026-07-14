@@ -17,7 +17,7 @@ export default function QuickActions({ onOpen }: { onOpen: (category?: FormCateg
             key={action.label}
             type="button"
             onClick={() => onOpen(action.category)}
-            className="flex items-center justify-center gap-1.5 min-h-[44px] sm:h-9 px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800 text-white text-[11px] sm:text-xs font-bold leading-tight text-center hover:bg-slate-700"
+            className="flex items-center justify-center gap-1.5 min-h-[44px] sm:h-9 px-2.5 sm:px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[11px] sm:text-xs font-bold leading-tight text-center hover:bg-emerald-700 transition-colors"
           >
             <Icon size={13} className="shrink-0" /> <span>{action.label}</span>
           </button>
@@ -26,7 +26,7 @@ export default function QuickActions({ onOpen }: { onOpen: (category?: FormCateg
       <button
         type="button"
         onClick={() => onOpen("other")}
-        className="col-span-2 sm:col-auto flex items-center justify-center gap-1.5 min-h-[44px] sm:h-9 px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-[11px] sm:text-xs font-bold hover:bg-slate-50"
+        className="col-span-2 sm:col-auto flex items-center justify-center gap-1.5 min-h-[44px] sm:h-9 px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-200/70 text-slate-600 text-[11px] sm:text-xs font-bold hover:bg-slate-50 transition-colors"
       >
         <Camera size={13} className="shrink-0" /> Upload Receipt
       </button>

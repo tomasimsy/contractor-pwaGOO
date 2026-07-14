@@ -12,9 +12,9 @@ export default function DashboardPanel({
   className?: string;
 }) {
   return (
-    <div className={`bg-white rounded-xl border border-slate-200 p-3.5 sm:p-4 overflow-hidden ${className}`}>
+    <div className={`bg-white rounded-xl border border-slate-200/70 shadow-sm p-3.5 sm:p-4 overflow-hidden ${className}`}>
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-        <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{title}</div>
+        <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">{title}</div>
         {action}
       </div>
       {children}

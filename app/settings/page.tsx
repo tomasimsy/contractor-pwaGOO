@@ -35,6 +35,8 @@ const NAV_GROUPS: {
       { href: "/clients", icon: Users, title: "Clients", subtitle: "Manage client list", tint: "emerald" },
       { href: "/documents", icon: FileText, title: "Company Documents", subtitle: "Insurance, IRS, policies", tint: "indigo" },
       { href: "/settings/team", icon: Users, title: "Team", subtitle: "Manage teammates & invites", tint: "indigo" },
+      { href: "/settings/subcontractors", icon: Users, title: "Subcontractors", subtitle: "Manage subcontractor list", tint: "amber" },
+      { href: "/settings/agents", icon: Percent, title: "Agents", subtitle: "Manage sales agent list", tint: "amber" },
     ],
   },
   {
