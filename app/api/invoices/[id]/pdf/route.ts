@@ -8,9 +8,18 @@ export async function GET(
   try {
     const { id } = await params;
 
+    // Staff-facing "Save as PDF" button, not the public invoice-signing
+    // link — needs the logged-in user's session so RLS
+    // (company_id = current_company_id()) can resolve. The app's client
+    // (lib/supabase/client.ts) stores the session in localStorage, not
+    // cookies, so no cookie-based server client can ever see it here.
+    // Instead the page passes the current access token as a query param,
+    // forwarded as a Bearer header so PostgREST/RLS resolves auth.uid().
+    const token = request.nextUrl.searchParams.get("token");
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      token ? { global: { headers: { Authorization: `Bearer ${token}` } } } : undefined
     );
 
     // ---------- 1. Fetch all data ----------
@@ -59,15 +68,17 @@ export async function GET(
       .is("deleted_at", null)
       .order("created_at", { ascending: false });
 
-    // Signature from estimate
+    // Signature + title from estimate
     let signature = null;
+    let estimateTitle: string | null = null;
     if (invoice.estimate_id) {
       const { data: estimate } = await supabase
         .from("estimates")
-        .select("signature")
+        .select("signature, title")
         .eq("id", invoice.estimate_id)
         .single();
       if (estimate?.signature) signature = estimate.signature;
+      estimateTitle = estimate?.title || null;
     }
 
     // ---------- 2. Calculations ----------
@@ -225,6 +236,7 @@ export async function GET(
               <div>
                 <div class="invoice-title">INVOICE</div>
                 <div class="invoice-number">#${invoice.invoice_number || invoice.id.slice(0, 8)}</div>
+                ${estimateTitle ? `<div class="invoice-number">${estimateTitle}</div>` : ""}
                 <div class="invoice-number">Date: ${formatDate(invoice.created_at)}</div>
                 <div class="invoice-number">Due: ${formatDate(invoice.due_date)}</div>
               </div>

@@ -18,6 +18,7 @@ type EstimateSummary = {
   client_id: string | null;          // <-- added for linking
   client_name: string;
   estimate_number: string;
+  title: string | null;
   status: string;
   created_at: string;
   revised_total: number;
@@ -93,6 +94,7 @@ export default function ExpensesReportPage() {
           .select(`
             id,
             estimate_number,
+            title,
             status,
             created_at,
             total,
@@ -279,6 +281,7 @@ export default function ExpensesReportPage() {
             client_id: clientObj?.id || null,
             client_name: clientObj?.name || "Unassigned",
             estimate_number: est.estimate_number || "N/A",
+            title: est.title || null,
             status: est.status || "unknown",
             created_at: est.created_at || new Date().toISOString(),
             revised_total: revisedTotal,
@@ -312,7 +315,8 @@ export default function ExpensesReportPage() {
     return data.filter((row) => {
       const matchesSearch =
         row.estimate_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        row.client_name.toLowerCase().includes(searchTerm.toLowerCase());
+        row.client_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (row.title || "").toLowerCase().includes(searchTerm.toLowerCase());
       const matchesStatus =
         statusFilter === "all" || row.status === statusFilter;
       return matchesSearch && matchesStatus;
@@ -538,6 +542,7 @@ export default function ExpensesReportPage() {
                       <Link href={`/reports/expenses/${row.id}`} className="hover:text-emerald-600 hover:underline transition-colors">
                         {row.estimate_number}
                       </Link>
+                      {row.title && <div className="font-sans text-[10px] text-slate-400 truncate max-w-[140px]">{row.title}</div>}
                     </td>
                     {/* Client name with link */}
                     <td className="px-4 py-3 font-medium text-slate-700">

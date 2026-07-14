@@ -53,6 +53,7 @@ export default function InvoicePage() {
 
   // Edit Mode State
   const [fabOpen, setFabOpen] = useState(false);
+  const [estimateTitle, setEstimateTitle] = useState<string | null>(null);
 
   useEffect(() => {
     loadInvoice();
@@ -113,6 +114,18 @@ export default function InvoicePage() {
         .eq("invoice_id", id)
         .is("deleted_at", null);
       if (invLines) setInvoiceLineItems(invLines);
+
+      if (inv.estimate_id) {
+        const { data: est } = await supabase
+          .from("estimates")
+          .select("title")
+          .eq("id", inv.estimate_id)
+          .eq("company_id", companyId)
+          .single();
+        setEstimateTitle(est?.title ?? null);
+      } else {
+        setEstimateTitle(null);
+      }
 
       // Original estimate items
       let estimateItemsData: any[] = [];
@@ -346,13 +359,20 @@ export default function InvoicePage() {
                   <p className="text-xs font-bold font-mono text-slate-600 block tracking-tight truncate mt-0.5">
                     #{invoice?.invoice_number || id?.slice(0, 8)}
                   </p>
+                  {estimateTitle && (
+                    <p className="text-[10px] text-slate-400 truncate mt-0.5">{estimateTitle}</p>
+                  )}
                 </div>
                 <div className="shrink-0">
-                  <Link href={`/api/invoices/${id}/pdf`} target="_blank">
-                    <button className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-xl border border-slate-200/60 bg-white shadow-3xs transition-all text-[11px] font-bold flex items-center gap-1">
-                      <FileText size={13} /><span className="hidden sm:inline">PDF</span>
-                    </button>
-                  </Link>
+                  <button
+                    onClick={async () => {
+                      const { data: { session } } = await supabase.auth.getSession();
+                      window.open(`/api/invoices/${id}/pdf?token=${session?.access_token ?? ""}`, "_blank");
+                    }}
+                    className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-xl border border-slate-200/60 bg-white shadow-3xs transition-all text-[11px] font-bold flex items-center gap-1"
+                  >
+                    <FileText size={13} /><span className="hidden sm:inline">PDF</span>
+                  </button>
                 </div>
               </div>
             </div>

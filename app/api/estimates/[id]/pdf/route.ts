@@ -8,9 +8,19 @@ export async function GET(
   try {
     const { id } = await params;
 
+    // This is a staff-facing "Save as PDF" button, not the separate
+    // public estimate-signing link — it needs the logged-in user's
+    // session so RLS (company_id = current_company_id()) can resolve.
+    // The app's client (lib/supabase/client.ts) stores the session in
+    // localStorage, not cookies, so no cookie-based server client
+    // (auth-helpers-nextjs, @supabase/ssr) can ever see it here. Instead
+    // the page passes the current access token as a query param, which
+    // we forward as a Bearer header so PostgREST/RLS resolves auth.uid().
+    const token = request.nextUrl.searchParams.get("token");
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      token ? { global: { headers: { Authorization: `Bearer ${token}` } } } : undefined
     );
 
 const { data: estimate } = await supabase
@@ -487,6 +497,7 @@ const finalDate = estimate.final_signed_at ? formatDate(estimate.final_signed_at
               <div class="estimate-section">
                 <div class="estimate-title">ESTIMATE</div>
                 <div class="estimate-number">#${estimate.estimate_number || estimate.id.slice(0, 8)}</div>
+                ${estimate.title ? `<div class="estimate-date">${estimate.title}</div>` : ""}
                 <div class="estimate-date">Issued: ${formatDate(estimate.created_at)}</div>
                 <div class="estimate-date">Valid Until: ${formatDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString())}</div>
               </div>

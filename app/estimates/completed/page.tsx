@@ -90,6 +90,9 @@ export default function CompletedEstimatesPage() {
                       <div className="font-semibold text-gray-800">
                         {est.clients?.name || "No client"}
                       </div>
+                      {est.title && (
+                        <div className="text-xs font-medium text-gray-600">{est.title}</div>
+                      )}
                       <div className="text-xs text-gray-400">
                         #{est.estimate_number || est.id.slice(0, 8)}
                       </div>

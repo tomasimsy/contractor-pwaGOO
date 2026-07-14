@@ -1509,9 +1509,16 @@ export default function EstimatePage() {
             <button onClick={() => { sendSMSLink(); setFabOpen(false); }} className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors">
               <Send size={12} /> <span>SMS</span>
             </button>
-            <Link href={`/api/estimates/${id}/pdf`} target="_blank" onClick={() => setFabOpen(false)} className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors">
+            <button
+              onClick={async () => {
+                setFabOpen(false);
+                const { data: { session } } = await supabase.auth.getSession();
+                window.open(`/api/estimates/${id}/pdf?token=${session?.access_token ?? ""}`, "_blank");
+              }}
+              className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md hover:bg-emerald-500 transition-colors"
+            >
               <FileText size={12} /> <span>PDF</span>
-            </Link>
+            </button>
             <button
               onClick={() => setShowProgressModal(true)}
               className="flex items-center gap-2 rounded-xl bg-emerald-600 text-white font-bold px-3 py-1.5 text-xs shadow-md border border-slate-100 hover:bg-emerald-500 transition-colors"

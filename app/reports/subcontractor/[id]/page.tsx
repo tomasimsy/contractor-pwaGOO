@@ -10,6 +10,7 @@ import Link from "next/link";
 type PaymentRecord = {
   estimate_id: string;
   estimate_number: string;
+  estimate_title: string | null;
   client_name: string;
   amount: number;
   payment_date: string;
@@ -51,6 +52,7 @@ export default function SubcontractorDetail() {
             estimate_id,
             estimates (
               estimate_number,
+              title,
               created_at,
               client:client_id (name)
             )
@@ -82,6 +84,7 @@ export default function SubcontractorDetail() {
           return {
             estimate_id: link.estimate_id,
             estimate_number: est?.estimate_number || "N/A",
+            estimate_title: est?.title || null,
             client_name: est?.client?.name || "Unassigned",
             amount: total,
             payment_date: est?.created_at || new Date().toISOString(),
@@ -142,6 +145,9 @@ export default function SubcontractorDetail() {
                       <Link href={`/reports/expenses/${p.estimate_id}`} className="hover:text-emerald-600 hover:underline">
                         {p.estimate_number}
                       </Link>
+                      {p.estimate_title && (
+                        <div className="font-sans text-[10px] text-slate-400 truncate max-w-[160px]">{p.estimate_title}</div>
+                      )}
                     </td>
                     <td className="px-4 py-3">{p.client_name}</td>
                     <td className="px-4 py-3 text-slate-500 text-xs">

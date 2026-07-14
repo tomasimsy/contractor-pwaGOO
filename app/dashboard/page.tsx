@@ -60,7 +60,7 @@ const loadDashboard = useCallback(async () => {
       supabase.from("invoices").select("status, remaining_balance"),
       supabase
         .from("estimates")
-        .select("id, created_at, total, estimate_number, clients(name), signature")
+        .select("id, created_at, total, estimate_number, title, clients(name), signature")
         .order("created_at", { ascending: false })
         .eq("is_completed", false)
         .is("deleted_at", null)
@@ -229,6 +229,9 @@ const loadDashboard = useCallback(async () => {
                           <div className="truncate text-sm font-semibold text-slate-800 group-hover:text-emerald-800">
                             {est.clients?.name || "No client"}
                           </div>
+                          {est.title && (
+                            <div className="truncate text-xs text-slate-500">{est.title}</div>
+                          )}
                           <div className="mt-0.5 flex items-center gap-1.5 text-[10px] font-mono text-slate-500">
                             <span>#{est.estimate_number || est.id.slice(0, 8)}</span>
                             <span className="inline-block h-1 w-1 rounded-full bg-slate-300"></span>

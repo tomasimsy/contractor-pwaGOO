@@ -35,11 +35,12 @@ const loadEstimates = useCallback(async () => {
     const { data, error } = await supabase
       .from("estimates")
       .select(`
-        id, 
-        estimate_number, 
-        created_at, 
-        total, 
-        signature, 
+        id,
+        estimate_number,
+        title,
+        created_at,
+        total,
+        signature,
         status,
         description,
         clients (name, phone)
@@ -74,6 +75,7 @@ const loadEstimates = useCallback(async () => {
 const filteredEstimates = estimates.filter((est) => {
   const matchesSearch =
     est.clients?.name?.toLowerCase().includes(search.toLowerCase()) ||
+    est.title?.toLowerCase().includes(search.toLowerCase()) ||
     (est.estimate_number || est.id.slice(0, 8))
       .toString()
       .includes(search);
@@ -335,6 +337,12 @@ const copyLink = (estimate: Estimate) => {
         {status.label}
       </span>
     </div>
+
+    {estimate.title && (
+      <div className="truncate text-[11px] font-semibold text-slate-600 group-hover:text-slate-700 transition-colors normal-case">
+        {estimate.title}
+      </div>
+    )}
 
     {/* Subtitle meta strip */}
     <div className="mt-0.5 flex items-center gap-1.5 text-[10px] font-medium text-slate-400 group-hover:text-slate-600 transition-colors">

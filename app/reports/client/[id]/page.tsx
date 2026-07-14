@@ -10,6 +10,7 @@ import Link from "next/link";
 type EstimateRecord = {
   estimate_id: string;
   estimate_number: string;
+  title: string | null;
   total: number;
   status: string;
   created_at: string;
@@ -61,6 +62,7 @@ export default function ClientDetail() {
           .select(`
             id,
             estimate_number,
+            title,
             total,
             status,
             created_at
@@ -94,6 +96,7 @@ export default function ClientDetail() {
         const records: EstimateRecord[] = (estimatesData || []).map(e => ({
           estimate_id: e.id,
           estimate_number: e.estimate_number || "N/A",
+          title: e.title || null,
           total: e.total || 0,
           status: e.status || "unknown",
           created_at: e.created_at || new Date().toISOString(),
@@ -142,6 +145,7 @@ export default function ClientDetail() {
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
                   <th className="px-4 py-3 text-left font-semibold text-slate-600">Estimate #</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">Title</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-600">Status</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-600">Date</th>
                   <th className="px-4 py-3 text-right font-semibold text-slate-600">Total Amount</th>
@@ -155,6 +159,9 @@ export default function ClientDetail() {
                       <Link href={`/reports/expenses/${e.estimate_id}`} className="hover:text-emerald-600 hover:underline">
                         {e.estimate_number}
                       </Link>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 truncate max-w-[200px]">
+                      {e.title || <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${statusColor(e.status)}`}>

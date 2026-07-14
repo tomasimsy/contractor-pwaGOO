@@ -19,7 +19,7 @@ export default function InvoicesPage() {
         setLoading(true);
         const { data, error } = await supabase
           .from("invoices")
-          .select("id, invoice_number, total, remaining_balance, due_date, created_at, status, clients(name, phone)")
+          .select("id, invoice_number, total, remaining_balance, due_date, created_at, status, clients(name, phone), estimates(title)")
           .order("created_at", { ascending: false });
         if (error) throw error;
         if (data) setInvoices(data);
@@ -206,6 +206,9 @@ export default function InvoicesPage() {
                       {inv.clients?.name || "Untitled Client"}
                     </div>
                   </div>
+                  {inv.estimates?.title && (
+                    <div className="truncate text-[10px] text-slate-500">{inv.estimates.title}</div>
+                  )}
                   <div className="flex items-center gap-1.5 mt-0.5 text-[10px] font-medium text-slate-400 transition-colors group-hover:text-slate-600">
                     <span
                       className={`font-semibold bg-slate-50 px-1 rounded border font-mono text-[9px] transition-colors ${

@@ -27,6 +27,7 @@ export default async function EstimateReportPage({ params }: { params: Params })
     .select(`
       id,
       estimate_number,
+      title,
       status,
       created_at,
       total,
@@ -197,7 +198,10 @@ export default async function EstimateReportPage({ params }: { params: Params })
           <Link href="/reports/expenses" className="p-2 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors">
             <ArrowLeft size={16} />
           </Link>
-          <h1 className="text-xl font-bold text-slate-800">Financial Report – #{estimate.estimate_number}</h1>
+          <div>
+            <h1 className="text-xl font-bold text-slate-800">Financial Report – #{estimate.estimate_number}</h1>
+            {estimate.title && <p className="text-sm text-slate-500">{estimate.title}</p>}
+          </div>
           <span className={`ml-auto text-[10px] font-bold uppercase px-2 py-1 rounded-md ${
             estimate.status === "approved" ? "bg-green-100 text-green-800" :
             estimate.status === "converted" ? "bg-blue-100 text-blue-800" :
