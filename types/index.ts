@@ -7,6 +7,31 @@ export type Client = {
   created_at: string;
 };
 
+export type Company = {
+  id: string;
+  name: string;
+  created_at: string;
+};
+
+export type Profile = {
+  id: string;
+  company_id: string | null;
+  role: "owner" | "member";
+};
+
+export type CompanyInvite = {
+  id: string;
+  token: string;
+  company_id: string;
+  invited_by: string | null;
+  role: "member";
+  status: "pending" | "accepted" | "revoked" | "expired";
+  created_at: string;
+  expires_at: string;
+  accepted_at: string | null;
+  accepted_by: string | null;
+};
+
 export type LineItem = {
   id: string;
   category: "Material" | "Labor" | "Other";
@@ -28,6 +53,7 @@ export type Estimate = {
   id: string;
   client_id: string;
   estimate_number?: string;
+  title?: string | null;
   description: string | null;
   notes: string | null;
   subtotal: number;

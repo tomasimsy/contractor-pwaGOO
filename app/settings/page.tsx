@@ -34,6 +34,7 @@ const NAV_GROUPS: {
       { href: "/estimates/completed", icon: FileText, title: "Completed Estimates", subtitle: "View all archived estimates", tint: "emerald" },
       { href: "/clients", icon: Users, title: "Clients", subtitle: "Manage client list", tint: "emerald" },
       { href: "/documents", icon: FileText, title: "Company Documents", subtitle: "Insurance, IRS, policies", tint: "indigo" },
+      { href: "/settings/team", icon: Users, title: "Team", subtitle: "Manage teammates & invites", tint: "indigo" },
     ],
   },
   {

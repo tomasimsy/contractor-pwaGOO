@@ -105,6 +105,7 @@ export default function EstimatePage() {
   const [depositAmount, setDepositAmount] = useState(0);
   const [totalPaid, setTotalPaid] = useState(0);
   const [remainingBalance, setRemainingBalance] = useState(0);
+  const [editTitle, setEditTitle] = useState("");
 
   const projectsList = useMemo(() => projects.map(p => ({ name: p.name })), [projects]);
 
@@ -265,6 +266,7 @@ export default function EstimatePage() {
       setEstimate(est);
       setEditDescription(est?.description || "");
       setEditNotes(est?.notes || "");
+      setEditTitle(est?.title || "");
       setEditMarkup(est?.markup || 0);
       setEditDiscount(est?.discount || 0);
       setEditTaxRate(est?.tax_rate || 0);
@@ -790,12 +792,30 @@ export default function EstimatePage() {
       const allItems = projects.flatMap((p) => p.items);
       const subtotal = calculateSubtotal(allItems);
       const tax = calculateTax(subtotal, editTaxRate);
-      const total = calculateTotal(subtotal, editMarkup, editDiscount, tax);
+
+      // Same formula as approveChangeOrder/approve_public_change_order —
+      // without this, saving an item edit overwrites `total` with just
+      // the item-based number and silently wipes out any already-
+      // approved change order's contribution.
+      const { data: approvedCOs } = await supabase
+        .from("change_orders")
+        .select("total_amount")
+        .eq("estimate_id", id)
+        .eq("company_id", companyId)
+        .eq("status", "approved")
+        .is("deleted_at", null);
+      const approvedChangeOrdersTotal = (approvedCOs || []).reduce(
+        (sum, co) => sum + (co.total_amount || 0),
+        0
+      );
+
+      const total = calculateTotal(subtotal, editMarkup, editDiscount, tax) + approvedChangeOrdersTotal;
 
       const { error: updateError } = await supabase
         .from("estimates")
         .update({
           client_id: editClientId,
+          title: editTitle || null,     
           description: editDescription || null,
           notes: editNotes || null,
           markup: editMarkup,
@@ -1026,7 +1046,31 @@ export default function EstimatePage() {
           )}
         </div>
       </div>
-
+          <div className="max-w-3xl mx-auto p-4 space-y-4">
+  {/* Title */}
+  {isEditMode ? (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 transition-all duration-200 focus-within:border-green-500 focus-within:ring-2 focus-within:ring-green-500/20">
+      <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider block mb-0.5">
+        Estimate Title <span className="text-red-500">*</span>
+      </label>
+      <input
+        type="text"
+        value={editTitle}
+        onChange={(e) => setEditTitle(e.target.value)}
+        className="w-full text-sm font-medium text-gray-800 placeholder:text-gray-400 focus:outline-none"
+        placeholder="e.g., Roof Repair - 123 Main St"
+        required
+      />
+    </div>
+  ) : (
+    estimate?.title && (
+      <div className="bg-white rounded-xl shadow-xs border border-slate-200/70 p-3 relative overflow-hidden">
+        <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-0.5">Title</span>
+        <p className="text-sm font-semibold text-slate-800">{estimate.title}</p>
+      </div>
+    )
+  )}
+          </div>
       <div className="max-w-3xl mx-auto p-4 space-y-4">
         {/* Project Description Scope */}
         {isEditMode ? (

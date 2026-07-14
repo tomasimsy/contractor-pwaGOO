@@ -41,6 +41,8 @@ export default function CreateEstimate() {
   const [estimateRowCreated, setEstimateRowCreated] = useState(false);
   const [galleryRefresh, setGalleryRefresh] = useState(0);
 
+  const [title, setTitle] = useState("");
+
   // ---- NEW: store company ID after fetching ----
   const [companyId, setCompanyId] = useState<string | null>(null);
 
@@ -291,6 +293,7 @@ export default function CreateEstimate() {
           estimate_number: estimateNumber,
           description: description || null,
           notes: notes || null,
+          title: title || null,     
           subtotal,
           total,
           status: "pending",
@@ -407,6 +410,25 @@ export default function CreateEstimate() {
           />
           </div>
 
+          {/* Title */}
+<div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 transition-all duration-200 focus-within:border-green-500 focus-within:ring-2 focus-within:ring-green-500/20">
+  <div className="flex items-center gap-1 mb-0.5">
+    <label htmlFor="title" className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+      Estimate Title
+    </label>
+    <span className="text-red-500 text-xs">*</span>
+  </div>
+  <input
+    id="title"
+    type="text"
+    value={title}
+    onChange={(e) => setTitle(e.target.value)}
+    className="w-full text-sm font-medium text-gray-800 placeholder:text-gray-400 focus:outline-none"
+    placeholder="Title... Roof Repair - 123 Main St"
+    required
+  />
+</div>
+
           {/* Description */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 transition-all duration-200 focus-within:border-green-500 focus-within:ring-2 focus-within:ring-green-500/20">
             <textarea
@@ -414,7 +436,7 @@ export default function CreateEstimate() {
               onChange={(e) => setDescription(e.target.value)}
               className="w-full min-h-[100px] text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none resize-none capitalize"
               rows={5}
-              placeholder="Brief description of work..."
+              placeholder="Work Description..."
             />
           </div>
 
