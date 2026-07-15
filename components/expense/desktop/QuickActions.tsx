@@ -9,13 +9,13 @@ export default function QuickActions({ onOpen }: { onOpen: (category?: FormCateg
   ];
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    <div className="flex flex-wrap items-center gap-1.5 bg-d">
       {secondary.map((action) => (
         <button
           key={action.label}
           type="button"
           onClick={() => onOpen(action.category)}
-          className="h-8 px-3 rounded-lg text-[13px] text-gray-600 hover:bg-gray-100 transition-colors"
+        className="flex items-center gap-1 h-8 px-3 rounded-lg bg-emerald-600 text-white text-[13px] font-medium hover:bg-emerald-700 transition-colors"
         >
           {action.label}
         </button>
