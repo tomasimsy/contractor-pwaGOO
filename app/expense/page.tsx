@@ -7,6 +7,7 @@ import {
   addEntry,
   assignSubcontractorToProject,
   buildLedger,
+  computePendingPayouts,
   deleteEntry,
   derivePaymentStatus,
   restoreEntry,
@@ -26,6 +27,7 @@ import AddExpenseSheet, { type FormCategory } from "@/components/expense/AddExpe
 import DesktopDashboard from "@/components/expense/desktop/DesktopDashboard";
 import ExpenseLedger from "@/components/expense/ExpenseLedger";
 import DashboardPanel from "@/components/expense/desktop/DashboardPanel";
+import PendingPayoutsBar from "@/components/expense/PendingPayoutsBar";
 
 export default function ProjectExpensePage() {
   const [recentProjects, setRecentProjects] = useState<ProjectSummary[]>([]);
@@ -191,6 +193,13 @@ export default function ProjectExpensePage() {
   // same precedent as app/reports/expenses/[id]/page.tsx.
   const payment = financials ? derivePaymentStatus(financials.revisedTotal, amountReceived) : null;
 
+  // Pending-payout queue only surfaces once the client has actually
+  // started paying (or the project's marked complete) — showing it for
+  // a project with $0 received yet would be noise, not a useful nudge.
+  const projectComplete = ["completed", "complete"].includes((bundle?.project.status || "").toLowerCase());
+  const showPendingPayouts = !!bundle && (amountReceived > 0 || projectComplete);
+  const pendingPayouts = bundle && showPendingPayouts ? computePendingPayouts(bundle) : [];
+
   // For Change Order create/edit/submit/approve/reject actions, which
   // write straight to Supabase (like handleAddEntry) rather than
   // mutating local state — simplest correct way to reflect their
@@ -201,75 +210,82 @@ export default function ProjectExpensePage() {
   }, [selectedProjectId, loadBundle]);
 
   return (
-    <div className="max-w-2xl lg:max-w-6xl mx-auto p-3 sm:p-4 lg:p-6 space-y-4 pb-28 lg:pb-10">
-      <RecentProjectCards
-        projects={recentProjects}
-        selectedProjectId={selectedProjectId}
-        onSelect={(id) => handleSelectProject(id)}
-      />
-
-      <ProjectCombobox onSelect={(project) => handleSelectProject(project.id, project)} />
-
-      {error && (
-        <div className="text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-200 rounded-xl p-3">
-          {error}
+    <div className="min-h-screen bg-gray-50/60">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-28 lg:pb-16">
+        {/* Page header */}
+        <div className="mb-6">
+          <h1 className="text-[22px] font-semibold text-gray-900 tracking-tight">Expenses</h1>
+          <p className="text-[13px] text-gray-500 mt-1">Track costs, payments, and profitability by project.</p>
         </div>
-      )}
 
-      {isLoadingBundle && <div className="text-xs text-slate-400 text-center py-8">Loading project…</div>}
-
-      {!isLoadingBundle && !bundle && !error && (
-        <div className="text-center py-16 text-sm text-slate-400">
-          Search above or pick a recent project to get started.
+        {/* Project switcher — plain, no card */}
+        <div className="space-y-3 pb-6 mb-6">
+          <ProjectCombobox onSelect={(project) => handleSelectProject(project.id, project)} />
+          <RecentProjectCards
+            projects={recentProjects}
+            selectedProjectId={selectedProjectId}
+            onSelect={(id) => handleSelectProject(id)}
+          />
         </div>
-      )}
 
-      {/* Full dashboard at every breakpoint — Revenue, Payment Status,
-          Profit, Cost Breakdown, Expenses, Payment History,
-          Subcontractors, Agents, Receipts are all here on mobile too,
-          just stacked single-column; dense rows scroll horizontally
-          instead of clipping. */}
-      {!isLoadingBundle && bundle && financials && payment && (
-        <DesktopDashboard
-          bundle={bundle}
-          ledger={ledger}
-          financials={financials}
-          payment={payment}
-          onOpenAddSheet={openAddSheet}
-          onDeleteEntry={handleDeleteEntry}
-          onRefresh={refreshBundle}
-        />
-      )}
+        {error && (
+          <div className="text-[13px] text-rose-600 bg-rose-50 rounded-lg p-3.5 mb-6">{error}</div>
+        )}
 
-      {!isLoadingBundle && bundle && (
-        <DashboardPanel
-          title="Archived"
-          action={
-            <button
-              type="button"
-              onClick={toggleShowDeleted}
-              className="text-[11px] font-bold text-slate-500 hover:text-slate-700"
-            >
-              {showDeleted ? "Hide" : "Show deleted"}
-            </button>
-          }
-        >
-          {!showDeleted && (
-            <div className="text-xs text-slate-400">Deleted expenses and payments for this project can be restored here.</div>
-          )}
-          {showDeleted && isLoadingDeleted && (
-            <div className="text-xs text-slate-400 text-center py-4">Loading…</div>
-          )}
-          {showDeleted && !isLoadingDeleted && (
-            <ExpenseLedger
-              entries={deletedLedger}
-              onRestore={handleRestoreEntry}
-              emptyLabel="Nothing deleted"
-              emptyHint="Deleted expenses and payments will show up here."
+        {isLoadingBundle && (
+          <div className="text-[13px] text-gray-400 text-center py-24">Loading project…</div>
+        )}
+
+        {!isLoadingBundle && !bundle && !error && (
+          <div className="text-center py-24">
+            <div className="text-[13px] text-gray-500">No project selected</div>
+            <div className="text-[13px] text-gray-400 mt-1">Search above or pick a recent project to get started.</div>
+          </div>
+        )}
+
+        {!isLoadingBundle && bundle && financials && payment && (
+          <div className="space-y-5">
+            <DesktopDashboard
+              bundle={bundle}
+              ledger={ledger}
+              financials={financials}
+              payment={payment}
+              onOpenAddSheet={openAddSheet}
+              onDeleteEntry={handleDeleteEntry}
+              onRefresh={refreshBundle}
             />
-          )}
-        </DashboardPanel>
-      )}
+
+            <DashboardPanel
+              title="Archived"
+              accent="gray"
+              action={
+                <button
+                  type="button"
+                  onClick={toggleShowDeleted}
+                  className="text-[13px] text-gray-500 hover:text-gray-700"
+                >
+                  {showDeleted ? "Hide" : "Show deleted"}
+                </button>
+              }
+            >
+              {!showDeleted && (
+                <div className="text-[13px] text-gray-400">Deleted expenses and payments for this project can be restored here.</div>
+              )}
+              {showDeleted && isLoadingDeleted && (
+                <div className="text-[13px] text-gray-400 text-center py-6">Loading…</div>
+              )}
+              {showDeleted && !isLoadingDeleted && (
+                <ExpenseLedger
+                  entries={deletedLedger}
+                  onRestore={handleRestoreEntry}
+                  emptyLabel="Nothing deleted"
+                  emptyHint="Deleted expenses and payments will show up here."
+                />
+              )}
+            </DashboardPanel>
+          </div>
+        )}
+      </div>
 
       {isAddSheetOpen && bundle && (
         <AddExpenseSheet
@@ -279,6 +295,10 @@ export default function ProjectExpensePage() {
           onSubmit={handleAddEntry}
           onAssignSubcontractor={handleAssignSubcontractor}
         />
+      )}
+
+      {bundle && pendingPayouts.length > 0 && (
+        <PendingPayoutsBar bundle={bundle} payouts={pendingPayouts} onRefresh={refreshBundle} />
       )}
     </div>
   );

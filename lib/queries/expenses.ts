@@ -1,14 +1,18 @@
 import { supabase } from "@/lib/supabase/client";
 import type {
+  AssignedAgent,
   AssignedSubcontractor,
   BudgetComparison,
   FinancialSummaryData,
   InvoiceRow,
   LedgerEntry,
   NewEntryInput,
+  PayoutStatusValue,
   PaymentStatusValue,
   PaymentSummary,
+  PendingPayout,
   ProjectBundle,
+  SubcontractorPaymentRow,
 } from "@/lib/types";
 
 /**
@@ -58,6 +62,7 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
   const { error } = await supabase.from("agent_payments").insert({
     estimate_id: input.estimateId,
     agent_id: input.agentId,
+    estimate_agent_id: input.estimateAgentId ?? null,
     company_id: input.companyId,
     amount: input.amount,
     payment_date: input.paymentDate,
@@ -68,20 +73,24 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
   if (error) throw error;
 }
 
-/** Assigns a subcontractor to a project (amount defaults to 0 — see
- * note on addEntry) so a payment can then be logged against them.
- * Returns the new estimate_subcontractors row for the picker to use
- * immediately without a refetch. */
+/** Assigns a subcontractor to a project with an expected payout amount
+ * so a payment can then be logged against them. Amount/notes default to
+ * 0/null for the pre-existing quick-add-from-AddExpenseSheet call site,
+ * which doesn't collect a payout amount up front. Returns the new
+ * estimate_subcontractors row for the picker to use immediately without
+ * a refetch. */
 export async function assignSubcontractorToProject(
   estimateId: string,
   companyId: string,
   subcontractorId: string,
   subcontractorName: string,
-  subcontractorTrade: string | null
+  subcontractorTrade: string | null,
+  amount = 0,
+  notes: string | null = null
 ): Promise<AssignedSubcontractor> {
   const { data, error } = await supabase
     .from("estimate_subcontractors")
-    .insert({ estimate_id: estimateId, company_id: companyId, subcontractor_id: subcontractorId, amount: 0 })
+    .insert({ estimate_id: estimateId, company_id: companyId, subcontractor_id: subcontractorId, amount, notes })
     .select("id")
     .single();
   if (error) throw error;
@@ -91,8 +100,219 @@ export async function assignSubcontractorToProject(
     subcontractorId,
     name: subcontractorName,
     trade: subcontractorTrade,
-    contractedAmount: 0,
+    contractedAmount: amount,
+    notes,
   };
+}
+
+/** Agent-side mirror of assignSubcontractorToProject, on the existing
+ * (legacy) estimate_agents table — now wired into the payout workflow. */
+export async function assignAgentToProject(
+  estimateId: string,
+  companyId: string,
+  agentId: string,
+  agentName: string,
+  amount = 0,
+  notes: string | null = null
+): Promise<AssignedAgent> {
+  const { data, error } = await supabase
+    .from("estimate_agents")
+    .insert({ estimate_id: estimateId, company_id: companyId, agent_id: agentId, amount, notes })
+    .select("id")
+    .single();
+  if (error) throw error;
+
+  return {
+    estimateAgentId: data.id,
+    agentId,
+    name: agentName,
+    assignedAmount: amount,
+    notes,
+  };
+}
+
+/** Edits the expected payout amount/notes on an existing assignment —
+ * the amount is never locked, per the payout workflow's "before payment"
+ * step. `table` picks which assignment table to hit; both share the same
+ * editable columns (amount, notes). */
+export async function updateAssignment(
+  table: "estimate_subcontractors" | "estimate_agents",
+  id: string,
+  companyId: string,
+  fields: { amount?: number; notes?: string | null }
+): Promise<void> {
+  const { error } = await supabase.from(table).update(fields).eq("id", id).eq("company_id", companyId);
+  if (error) throw error;
+}
+
+/** Removes an assignment (soft delete via the existing trigger, same as
+ * every other table in this app) — payment history tied to it is kept,
+ * not cascaded, since the FK on *_payments.estimate_*_id is ON DELETE
+ * SET NULL / the row is soft-deleted rather than hard-deleted anyway. */
+export async function removeAssignment(
+  table: "estimate_subcontractors" | "estimate_agents",
+  id: string,
+  companyId: string
+): Promise<void> {
+  const { error } = await supabase.from(table).delete().eq("id", id).eq("company_id", companyId);
+  if (error) throw error;
+}
+
+/** Pending/partial/paid + amounts for one assignment — shared by the
+ * payout queue, the assignment row UI, and the pay confirmation dialog
+ * so the three can never disagree about what's owed. */
+export function computePayoutStatus(
+  assignedAmount: number,
+  paidAmount: number
+): { remainingAmount: number; status: PayoutStatusValue } {
+  const remainingAmount = Math.max(assignedAmount - paidAmount, 0);
+  const status: PayoutStatusValue = paidAmount <= 0 ? "pending" : remainingAmount <= 0.004 ? "paid" : "partial";
+  return { remainingAmount, status };
+}
+
+/** Every subcontractor/agent assignment on this project with money
+ * still owed (or already fully paid, if includeSettled is set) — the
+ * single source of truth behind the pending-payout queue on the
+ * Expense page. Paid-to-date is summed directly from the raw payment
+ * rows (not any denormalized "paid so far" column), same reasoning as
+ * the existing SubcontractorsPanel/AgentsPanel totals. */
+export function computePendingPayouts(
+  bundle: Pick<ProjectBundle, "assignedSubcontractors" | "assignedAgents" | "subcontractorPayments" | "agentPayments">,
+  includeSettled = false
+): PendingPayout[] {
+  const paidBySubAssignment = new Map<string, number>();
+  for (const p of bundle.subcontractorPayments) {
+    if (!p.estimate_subcontractor_id) continue;
+    paidBySubAssignment.set(
+      p.estimate_subcontractor_id,
+      (paidBySubAssignment.get(p.estimate_subcontractor_id) ?? 0) + p.amount
+    );
+  }
+  // Agent payments are matched to an assignment by estimate_agent_id when
+  // present, but that column was added after payments already existed —
+  // and ProjectFinancialsModal.tsx's recordAgentPayment still doesn't set
+  // it. Falling back to a plain agent_id match (every payment here already
+  // belongs to this one project, since bundle.agentPayments is fetched
+  // scoped to a single estimate_id) is exactly what ProjectFinancialsModal
+  // itself does, so both surfaces now agree on what counts as "paid" —
+  // one matching rule, not two payment-tracking systems.
+  const paidByAgentAssignment = new Map<string, number>();
+  for (const p of bundle.agentPayments) {
+    const assignmentId =
+      p.estimate_agent_id ?? bundle.assignedAgents.find((a) => a.agentId === p.agent_id)?.estimateAgentId;
+    if (!assignmentId) continue;
+    paidByAgentAssignment.set(assignmentId, (paidByAgentAssignment.get(assignmentId) ?? 0) + p.amount);
+  }
+
+  const subPayouts: PendingPayout[] = bundle.assignedSubcontractors.map((s) => {
+    const paidAmount = paidBySubAssignment.get(s.estimateSubcontractorId) ?? 0;
+    const { remainingAmount, status } = computePayoutStatus(s.contractedAmount, paidAmount);
+    return {
+      role: "subcontractor",
+      assignmentId: s.estimateSubcontractorId,
+      personId: s.subcontractorId,
+      name: s.name,
+      roleDetail: s.trade,
+      assignedAmount: s.contractedAmount,
+      paidAmount,
+      remainingAmount,
+      status,
+      notes: s.notes,
+    };
+  });
+
+  const agentPayouts: PendingPayout[] = bundle.assignedAgents.map((a) => {
+    const paidAmount = paidByAgentAssignment.get(a.estimateAgentId) ?? 0;
+    const { remainingAmount, status } = computePayoutStatus(a.assignedAmount, paidAmount);
+    return {
+      role: "agent",
+      assignmentId: a.estimateAgentId,
+      personId: a.agentId,
+      name: a.name,
+      roleDetail: null,
+      assignedAmount: a.assignedAmount,
+      paidAmount,
+      remainingAmount,
+      status,
+      notes: a.notes,
+    };
+  });
+
+  return [...subPayouts, ...agentPayouts].filter((p) => includeSettled || p.remainingAmount > 0.004);
+}
+
+/** Company-wide pending-payout total, for the Dashboard widget — same
+ * assigned-minus-paid math as computePendingPayouts, just aggregated
+ * across every project instead of one. Kept as a simple count + total
+ * rather than a per-project breakdown, since Dashboard just needs the
+ * headline number pointing back to the Expense page for detail. */
+export async function getCompanyPendingPayoutsSummary(
+  companyId: string
+): Promise<{ count: number; totalRemaining: number }> {
+  const [
+    { data: subs, error: subsError },
+    { data: agents, error: agentsError },
+    { data: subPayments, error: subPaymentsError },
+    { data: agentPayments, error: agentPaymentsError },
+  ] = await Promise.all([
+    supabase.from("estimate_subcontractors").select("id, amount").eq("company_id", companyId).is("deleted_at", null),
+    supabase.from("estimate_agents").select("id, agent_id, amount, estimate_id").eq("company_id", companyId).is("deleted_at", null),
+    supabase
+      .from("subcontractor_payments")
+      .select("estimate_subcontractor_id, amount")
+      .eq("company_id", companyId)
+      .is("deleted_at", null),
+    supabase
+      .from("agent_payments")
+      .select("estimate_agent_id, agent_id, estimate_id, amount")
+      .eq("company_id", companyId)
+      .is("deleted_at", null),
+  ]);
+  if (subsError) throw subsError;
+  if (agentsError) throw agentsError;
+  if (subPaymentsError) throw subPaymentsError;
+  if (agentPaymentsError) throw agentPaymentsError;
+
+  const paidBySub = new Map<string, number>();
+  for (const p of subPayments ?? []) {
+    if (!p.estimate_subcontractor_id) continue;
+    paidBySub.set(p.estimate_subcontractor_id, (paidBySub.get(p.estimate_subcontractor_id) ?? 0) + p.amount);
+  }
+
+  // Same estimate_agent_id-with-agent_id-fallback matching as
+  // computePendingPayouts — company-wide here, so the fallback also has
+  // to match on estimate_id (an agent can be assigned to more than one
+  // project across the company).
+  const agentAssignmentKey = (agentId: string | null, estimateId: string | null) => `${agentId}::${estimateId}`;
+  const assignmentIdByAgentEstimate = new Map<string, string>();
+  for (const a of agents ?? []) {
+    assignmentIdByAgentEstimate.set(agentAssignmentKey(a.agent_id, a.estimate_id), a.id);
+  }
+  const paidByAgent = new Map<string, number>();
+  for (const p of agentPayments ?? []) {
+    const assignmentId = p.estimate_agent_id ?? assignmentIdByAgentEstimate.get(agentAssignmentKey(p.agent_id, p.estimate_id));
+    if (!assignmentId) continue;
+    paidByAgent.set(assignmentId, (paidByAgent.get(assignmentId) ?? 0) + p.amount);
+  }
+
+  let count = 0;
+  let totalRemaining = 0;
+  for (const s of subs ?? []) {
+    const remaining = Math.max((s.amount ?? 0) - (paidBySub.get(s.id) ?? 0), 0);
+    if (remaining > 0.004) {
+      count++;
+      totalRemaining += remaining;
+    }
+  }
+  for (const a of agents ?? []) {
+    const remaining = Math.max((a.amount ?? 0) - (paidByAgent.get(a.id) ?? 0), 0);
+    if (remaining > 0.004) {
+      count++;
+      totalRemaining += remaining;
+    }
+  }
+
+  return { count, totalRemaining };
 }
 
 /**
@@ -269,9 +489,37 @@ export function derivePaymentStatus(
  * at the call site (see app/expense/page.tsx) — pass a different
  * number in if you wire up something more granular later.
  */
+/**
+ * Committed subcontractor cost, floored at what's actually been paid
+ * per assignment. Needed because the older Add-Expense-sheet flow (and
+ * anything else that logs a subcontractor_payment) can create/leave an
+ * assignment at its default $0 "amount" while still recording real
+ * payments against it — without this floor, profit would understate
+ * cost for exactly the assignments where real money has demonstrably
+ * gone out the door. Single source of truth for both summarizeFinancials
+ * and getProjectFinancialSnapshot below.
+ */
+function getEffectiveSubcontractorCommitted(
+  assignedSubcontractors: Pick<ProjectBundle["assignedSubcontractors"][number], "estimateSubcontractorId" | "contractedAmount">[],
+  subcontractorPayments: Pick<SubcontractorPaymentRow, "estimate_subcontractor_id" | "amount">[]
+): number {
+  const paidByAssignment = new Map<string, number>();
+  for (const p of subcontractorPayments) {
+    if (!p.estimate_subcontractor_id) continue;
+    paidByAssignment.set(p.estimate_subcontractor_id, (paidByAssignment.get(p.estimate_subcontractor_id) ?? 0) + p.amount);
+  }
+  return assignedSubcontractors.reduce(
+    (sum, s) => sum + Math.max(s.contractedAmount, paidByAssignment.get(s.estimateSubcontractorId) ?? 0),
+    0
+  );
+}
+
 export function summarizeFinancials(
   estimateTotal: number,
-  bundle: Pick<ProjectBundle, "expenses" | "subcontractorPayments" | "agentPayments" | "mileageTrips" | "changeOrders">,
+  bundle: Pick<
+    ProjectBundle,
+    "expenses" | "subcontractorPayments" | "agentPayments" | "mileageTrips" | "changeOrders" | "assignedSubcontractors"
+  >,
   totalPaidByClient = 0
 ): FinancialSummaryData {
   let materialCosts = 0;
@@ -285,7 +533,16 @@ export function summarizeFinancials(
     else otherExpenses += total;
   }
 
-  const subcontractorCosts = bundle.subcontractorPayments.reduce((sum, p) => sum + p.amount, 0);
+  // Committed, not paid-to-date: an assigned subcontractor affects
+  // profit the moment they're assigned, even at $0 paid so far — profit
+  // is "what will this cost," not "what has actually left the bank."
+  // Floored at paid-to-date per assignment (getEffectiveSubcontractorCommitted)
+  // so a payment logged against a $0-committed assignment (e.g. via the
+  // Add Expense sheet's older subcontractor-payment flow) still counts.
+  // subcontractorPaidToDate is tracked separately for anything that
+  // still needs the real cash-paid figure (payout status, receipts).
+  const subcontractorCosts = getEffectiveSubcontractorCommitted(bundle.assignedSubcontractors, bundle.subcontractorPayments);
+  const subcontractorPaidToDate = bundle.subcontractorPayments.reduce((sum, p) => sum + p.amount, 0);
   const agentCommissions = bundle.agentPayments.reduce((sum, p) => sum + p.amount, 0);
   const mileageCosts = bundle.mileageTrips.reduce((sum, t) => sum + (t.reimbursement || 0), 0);
 
@@ -303,6 +560,7 @@ export function summarizeFinancials(
     materialCosts,
     laborCosts,
     subcontractorCosts,
+    subcontractorPaidToDate,
     agentCommissions,
     otherExpenses,
     mileageCosts,
@@ -310,6 +568,36 @@ export function summarizeFinancials(
     approvedChangeOrderTotal,
     revisedTotal,
   };
+}
+
+/**
+ * Single source of truth for the "assign a payout" calculation
+ * breakdown shown in AssignPayeeModal (and anywhere else that needs the
+ * same numbers) — revenue minus committed subcontractor cost minus
+ * other expenses = available profit, which agent commission is a
+ * percentage of. Subcontractor commitments use the assigned amount
+ * (not paid-to-date), same reasoning as summarizeFinancials above.
+ */
+export function getProjectFinancialSnapshot(
+  bundle: Pick<
+    ProjectBundle,
+    "assignedSubcontractors" | "subcontractorPayments" | "expenses" | "mileageTrips" | "changeOrders" | "project"
+  >
+) {
+  const approvedChangeOrderTotal = bundle.changeOrders
+    .filter((co) => co.status === "approved")
+    .reduce((sum, co) => sum + (co.total_amount || 0), 0);
+  const revenue = (bundle.project.total || 0) + approvedChangeOrderTotal;
+
+  const subcontractorCommitted = getEffectiveSubcontractorCommitted(bundle.assignedSubcontractors, bundle.subcontractorPayments);
+
+  const otherExpenses =
+    bundle.expenses.reduce((sum, e) => sum + e.amount + (e.tax ?? 0), 0) +
+    bundle.mileageTrips.reduce((sum, t) => sum + (t.reimbursement || 0), 0);
+
+  const availableProfit = revenue - subcontractorCommitted - otherExpenses;
+
+  return { revenue, subcontractorCommitted, otherExpenses, availableProfit };
 }
 
 /**

@@ -9,7 +9,6 @@ import { formatCurrency, formatDate } from "@/lib/utils/formatting";
 import SignaturePad from "@/components/signature/SignaturePad";
 import PaymentModal from "@/components/payments/PaymentModal";
 import Link from "next/link";
-import { useCompanySettings } from "@/lib/hooks/useCompanySettings";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import ProjectFinancialsModal from "@/components/ProjectFinancialsModal";
 import toast from "react-hot-toast";
@@ -32,8 +31,6 @@ export default function InvoicePage() {
   const [savingPayment, setSavingPayment] = useState(false);
   const [locking, setLocking] = useState(false);
   const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null);
-  const { settings } = useCompanySettings();
-
   // Modal states
   const [showFinancialsModal, setShowFinancialsModal] = useState(false);
   const [estimateId, setEstimateId] = useState<string | null>(null);

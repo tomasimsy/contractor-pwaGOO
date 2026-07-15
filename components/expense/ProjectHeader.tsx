@@ -7,36 +7,31 @@ export default function ProjectHeader({ bundle }: { bundle: ProjectBundle }) {
   const { project, client } = bundle;
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200/70 shadow-sm p-3.5">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-            Estimate #{project.estimate_number ?? "—"}
+    <div className="flex items-start justify-between gap-4 flex-wrap">
+      <div className="min-w-0">
+        <div className="text-[13px] text-gray-400">Estimate #{project.estimate_number ?? "—"}</div>
+        <h1 className="text-xl font-semibold text-gray-900 tracking-tight truncate mt-0.5">
+          {project.title || "Untitled Estimate"}
+        </h1>
+        {client && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-[13px] text-gray-500">
+            <span className="inline-flex items-center gap-1.5">
+              <User size={13} className="text-gray-400" />
+              {client.name}
+            </span>
+            {client.phone && (
+              <span className="inline-flex items-center gap-1.5">
+                <Phone size={13} className="text-gray-400" />
+                {client.phone}
+              </span>
+            )}
           </div>
-          <div className="text-base font-black text-slate-800 truncate">
-            {project.title || "Untitled Estimate"}
-          </div>
-        </div>
-        {project.status && (
-          <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide bg-slate-100 text-slate-600 rounded-full px-2 py-1">
-            {project.status}
-          </span>
         )}
       </div>
-
-      {client && (
-        <div className="mt-2 space-y-1">
-          <div className="flex items-center gap-1.5 text-xs text-slate-500">
-            <User size={12} className="shrink-0" />
-            <span className="truncate">{client.name}</span>
-          </div>
-          {client.phone && (
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <Phone size={12} className="shrink-0" />
-              <span className="truncate">{client.phone}</span>
-            </div>
-          )}
-        </div>
+      {project.status && (
+        <span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-gray-500 border border-gray-200 rounded px-2 py-0.5">
+          {project.status}
+        </span>
       )}
     </div>
   );

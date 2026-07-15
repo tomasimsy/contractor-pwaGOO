@@ -100,6 +100,7 @@ export async function getProjectBundle(projectId: string): Promise<ProjectBundle
     { data: agentPayments, error: agentPaymentsError },
     { data: invoices, error: invoicesError },
     { data: estimateSubcontractors, error: estSubError },
+    { data: estimateAgents, error: estAgentError },
     { data: allSubcontractors, error: allSubError },
     { data: salesAgents, error: agentError },
     { data: mileageTrips, error: mileageError },
@@ -136,7 +137,13 @@ export async function getProjectBundle(projectId: string): Promise<ProjectBundle
       .order("issue_date", { ascending: false }),
     supabase
       .from("estimate_subcontractors")
-      .select("id, subcontractor_id, amount, subcontractors(id, name, trade)")
+      .select("id, subcontractor_id, amount, notes, subcontractors(id, name, trade)")
+      .eq("estimate_id", projectId)
+      .eq("company_id", companyId)
+      .is("deleted_at", null),
+    supabase
+      .from("estimate_agents")
+      .select("id, agent_id, amount, notes, agents(id, name)")
       .eq("estimate_id", projectId)
       .eq("company_id", companyId)
       .is("deleted_at", null),
@@ -148,7 +155,7 @@ export async function getProjectBundle(projectId: string): Promise<ProjectBundle
       .order("name"),
     supabase
       .from("agents")
-      .select("id, name")
+      .select("id, name, commission_rate")
       .eq("company_id", companyId)
       .is("deleted_at", null)
       .order("name"),
@@ -179,6 +186,7 @@ export async function getProjectBundle(projectId: string): Promise<ProjectBundle
   if (agentPaymentsError) throw agentPaymentsError;
   if (invoicesError) throw invoicesError;
   if (estSubError) throw estSubError;
+  if (estAgentError) throw estAgentError;
   if (allSubError) throw allSubError;
   if (agentError) throw agentError;
   if (mileageError) throw mileageError;
@@ -201,6 +209,14 @@ export async function getProjectBundle(projectId: string): Promise<ProjectBundle
       name: row.subcontractors?.name ?? "Unknown",
       trade: row.subcontractors?.trade ?? null,
       contractedAmount: row.amount ?? 0,
+      notes: row.notes ?? null,
+    })),
+    assignedAgents: (estimateAgents ?? []).map((row: any) => ({
+      estimateAgentId: row.id,
+      agentId: row.agent_id,
+      name: row.agents?.name ?? "Unknown",
+      assignedAmount: row.amount ?? 0,
+      notes: row.notes ?? null,
     })),
     allSubcontractors: allSubcontractors ?? [],
     salesAgents: salesAgents ?? [],

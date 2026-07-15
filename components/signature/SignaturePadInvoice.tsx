@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Signature } from "@/types";
 import Link from "next/link";
+import { CompanySettings, DEFAULT_COMPANY_SETTINGS } from "@/lib/company";
 
 interface SignaturePadInvoiceProps {
   onSave: (signature: Signature) => void;
@@ -12,6 +13,10 @@ interface SignaturePadInvoiceProps {
   showRemoveButton?: boolean;
   estimateId?: string;
   showDetailedBreakdown?: boolean;
+  // Passed down from the page (public pages load this off the bundle RPC,
+  // not useCompany(), since there's no authenticated session here) —
+  // falls back to generic defaults if the caller doesn't have it yet.
+  company?: CompanySettings;
 }
 
 const BRAND_GREEN = "#009966";
@@ -24,6 +29,7 @@ export default function SignaturePadInvoice({
   showRemoveButton = true,
   estimateId,
   showDetailedBreakdown = true,
+  company = DEFAULT_COMPANY_SETTINGS,
 }: SignaturePadInvoiceProps) {
   const [showModal, setShowModal] = useState(false);
   const [signatureType, setSignatureType] = useState<"draw" | "type">("draw");
@@ -185,21 +191,15 @@ export default function SignaturePadInvoice({
     setShowRemoveConfirm(false);
   };
 
-  // Terms & Conditions Component
+  // Terms & Conditions Component — the company's own text (Settings), split
+  // into lines so it reads the same as the old hardcoded checklist did.
   const TermsAndConditions = () => (
     <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-      {/* <div className="text-xs font-semibold text-gray-700 mb-2">Terms & Conditions</div> */}
       <div className="space-y-1 text-[11px] text-gray-600">
-        <p>✓ Valid for 30 days from date issued</p>
-        <p>✓ 50% deposit required to begin, balance due upon completion</p>
-        <p>✓ Changes must be approved in writing (additional charges may apply)</p>
-        <p>✓ Client must provide safe access to work areas</p>
-        <p>✓ Client responsible for marking underground lines, irrigation, drain lines, low-voltage wires, and hidden utilities</p>
-        <p>✓ Contractor not liable for damage from unmarked underground items</p>
-        <p>✓ Warranty excludes: weather, tree roots, drainage, soil movement, customer neglect, or third-party work</p>
-        <p>✓ NC residential jobs: cancellation rights per state and federal law</p>
-        <p>✓ Schedule may be affected by weather, material delays, or hidden conditions</p>
-        <p>✓ Debris cleanup limited to approved scope of work</p>
+        {company.terms_conditions.split("\n").filter(Boolean).map((line, i) => (
+          <p key={i}>✓ {line}</p>
+        ))}
+        {company.warranty_text && <p>✓ {company.warranty_text}</p>}
         <p className="mt-2 text-[10px] text-gray-400 italic">By signing, you agree to all terms above</p>
       </div>
     </div>

@@ -11,6 +11,8 @@ import FinancialDashboard from "@/components/FinancialDashboard";
 import { Plus, FilePlus, FileText, AlertCircle, LogOut } from "lucide-react";
 import toast from "react-hot-toast";
 import NotificationBell from "@/components/NotificationBell";
+import { getCompanyPendingPayoutsSummary } from "@/lib/queries/expenses";
+import { getCompanyId } from "@/lib/supabase/getCompanyId";
  
 
 //test
@@ -43,6 +45,14 @@ const { addNotification } = useNotifications(); // ✅ top level test
   const [recentEstimates, setRecentEstimates] = useState<any[]>([]);
   const [recentInvoices, setRecentInvoices] = useState<any[]>([]);
   const [overdueInvoices, setOverdueInvoices] = useState<any[]>([]);
+  const [pendingPayouts, setPendingPayouts] = useState<{ count: number; totalRemaining: number } | null>(null);
+
+  useEffect(() => {
+    getCompanyId()
+      .then((companyId) => getCompanyPendingPayoutsSummary(companyId))
+      .then(setPendingPayouts)
+      .catch(() => {});
+  }, []);
 
 const loadDashboard = useCallback(async () => {
   try {
@@ -169,6 +179,21 @@ const loadDashboard = useCallback(async () => {
           <div className="overflow-hidden rounded-2xl border border-emerald-600/20 bg-white shadow-md shadow-emerald-600/5 transition hover:shadow-emerald-600/10">
             <FinancialDashboard />
           </div>
+
+          {/* Pending subcontractor/agent payouts */}
+          {pendingPayouts && pendingPayouts.count > 0 && (
+            <Link href="/expense">
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200/80 bg-amber-50/60 p-4 shadow-sm transition hover:shadow-md active:scale-[0.99]">
+                <div>
+                  <div className="text-sm font-bold text-amber-900">
+                    {pendingPayouts.count} pending payout{pendingPayouts.count === 1 ? "" : "s"}
+                  </div>
+                  <div className="text-xs text-amber-700/80 mt-0.5">Subcontractors &amp; agents still owed money</div>
+                </div>
+                <div className="text-base font-black text-amber-900">{formatCurrency(pendingPayouts.totalRemaining)}</div>
+              </div>
+            </Link>
+          )}
 
           {/* Overdue invoices */}
           {overdueInvoices.length > 0 && (

@@ -1,17 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Trash2, Wrench, HardHat, Users, Percent, Receipt, RotateCcw } from "lucide-react";
+import { Trash2, RotateCcw } from "lucide-react";
 import { formatCurrency } from "@/lib/utils/formatting";
 import type { LedgerEntry } from "@/lib/types";
-
-const CATEGORY_ICON: Record<string, typeof Wrench> = {
-  Material: HardHat,
-  Labor: Wrench,
-  Subcontractor: Users,
-  "Agent Commission": Percent,
-  Other: Receipt,
-};
 
 function formatDate(iso: string): string {
   if (!iso) return "";
@@ -38,81 +30,87 @@ export default function ExpenseLedger({
 
   if (entries.length === 0) {
     return (
-      <div className="bg-white rounded-xl border border-dashed border-slate-200/70 shadow-sm p-6 text-center">
-        <div className="text-sm font-semibold text-slate-500">{emptyLabel}</div>
-        <div className="text-xs text-slate-400 mt-0.5">{emptyHint}</div>
+      <div className="py-10 text-center">
+        <div className="text-sm text-gray-500">{emptyLabel}</div>
+        <div className="text-[13px] text-gray-400 mt-0.5">{emptyHint}</div>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200/70 shadow-sm divide-y divide-slate-100">
-      {entries.map((entry) => {
-        const Icon = CATEGORY_ICON[entry.categoryLabel] ?? Receipt;
-        const isPendingDelete = pendingDeleteId === entry.id;
+    <div>
+      <div className="hidden sm:grid grid-cols-[1fr_auto_auto_auto] gap-4 px-1 pb-2 text-[11px] font-medium uppercase tracking-wide text-gray-400 border-b border-gray-100">
+        <span>Payee</span>
+        <span>Category</span>
+        <span>Date</span>
+        <span className="text-right">Amount</span>
+      </div>
+      <div className="divide-y divide-gray-100">
+        {entries.map((entry) => {
+          const isPendingDelete = pendingDeleteId === entry.id;
 
-        return (
-          <div
-            key={`${entry.source}-${entry.id}`}
-            className={`flex items-center gap-3 p-3 transition-colors hover:bg-slate-50 ${onRestore ? "opacity-70" : ""}`}
-          >
-            <div className="shrink-0 w-9 h-9 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-500">
-              <Icon size={15} />
-            </div>
+          return (
+            <div
+              key={`${entry.source}-${entry.id}`}
+              className={`group grid grid-cols-2 sm:grid-cols-[1fr_auto_auto_auto] items-center gap-2 sm:gap-4 px-1 py-2.5 ${onRestore ? "opacity-60" : ""}`}
+            >
+              <div className="min-w-0 col-span-2 sm:col-span-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="min-w-0 truncate text-[13px] text-gray-900">{entry.payeeLabel}</span>
+                  {entry.changeOrderLabel && (
+                    <span className="shrink-0 text-[11px] text-gray-400">{entry.changeOrderLabel}</span>
+                  )}
+                </div>
+                <div className="text-[13px] text-gray-400 sm:hidden">
+                  {entry.categoryLabel} · {formatDate(entry.date)}
+                </div>
+              </div>
 
-            <div className="min-w-0 flex-1">
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="min-w-0 truncate text-sm font-bold text-slate-800">{entry.payeeLabel}</span>
-                <span className="text-sm font-mono font-bold text-slate-800 shrink-0">
+              <span className="hidden sm:block text-[13px] text-gray-500 whitespace-nowrap">{entry.categoryLabel}</span>
+              <span className="hidden sm:block text-[13px] text-gray-400 whitespace-nowrap">{formatDate(entry.date)}</span>
+
+              <div className="flex items-center justify-end gap-3">
+                <span className="text-[13px] tabular-nums text-gray-900 whitespace-nowrap">
                   {formatCurrency(entry.amount)}
                 </span>
-              </div>
-              <div className="text-xs text-slate-400 truncate flex items-center gap-1.5">
-                <span className="truncate">
-                  {entry.categoryLabel} · {formatDate(entry.date)}
-                  {entry.paymentMethod ? ` · ${entry.paymentMethod.replace("_", " ")}` : ""}
-                </span>
-                {entry.changeOrderLabel && (
-                  <span className="shrink-0 text-[10px] font-mono font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
-                    {entry.changeOrderLabel}
-                  </span>
+
+                {onRestore ? (
+                  <button
+                    type="button"
+                    onClick={() => onRestore(entry)}
+                    className="shrink-0 text-gray-400 hover:text-gray-700 transition-colors"
+                    aria-label="Restore entry"
+                  >
+                    <RotateCcw size={13} />
+                  </button>
+                ) : isPendingDelete ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onDelete?.(entry);
+                      setPendingDeleteId(null);
+                    }}
+                    className="shrink-0 text-[12px] font-medium text-white bg-gray-900 rounded px-2 py-1"
+                  >
+                    Confirm
+                  </button>
+                ) : (
+                  onDelete && (
+                    <button
+                      type="button"
+                      onClick={() => setPendingDeleteId(entry.id)}
+                      className="shrink-0 text-gray-300 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                      aria-label="Delete entry"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )
                 )}
               </div>
             </div>
-
-            {onRestore ? (
-              <button
-                type="button"
-                onClick={() => onRestore(entry)}
-                className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 rounded-lg px-2.5 py-2"
-              >
-                <RotateCcw size={13} />
-                Restore
-              </button>
-            ) : isPendingDelete ? (
-              <button
-                type="button"
-                onClick={() => {
-                  onDelete?.(entry);
-                  setPendingDeleteId(null);
-                }}
-                className="shrink-0 text-[11px] font-bold text-white bg-rose-600 rounded-lg px-2.5 py-2"
-              >
-                Confirm
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setPendingDeleteId(entry.id)}
-                className="shrink-0 p-2 text-slate-300 hover:text-rose-600"
-                aria-label="Delete entry"
-              >
-                <Trash2 size={15} />
-              </button>
-            )}
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }

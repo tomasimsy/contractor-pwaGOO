@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { getCompanyId } from "@/lib/supabase/getCompanyId";
+import { useCompany } from "@/context/CompanyContext";
 import Header from "@/components/ui/Header";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import Link from "next/link";
@@ -100,19 +102,30 @@ function Field({
 // ---------------------------------------------------------------------------
 
 export default function SettingsPage() {
+  const { reload: reloadCompanyContext } = useCompany();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [settingsId, setSettingsId] = useState<string | null>(null);
 
+  const [companyId, setCompanyId] = useState<string | null>(null);
+
   const [settings, setSettings] = useState({
     company_name: "",
+    dba: "",
     company_address: "",
     company_phone: "",
     company_email: "",
     company_website: "",
     tax_id: "",
+    license_number: "",
+    logo_url: "",
     default_deposit_percentage: 50,
+    footer_message: "",
     terms_conditions: "",
+    payment_instructions: "",
+    warranty_text: "",
+    signature_name: "",
+    signature_title: "",
   });
 
   useEffect(() => {
@@ -120,19 +133,34 @@ export default function SettingsPage() {
   }, []);
 
   async function loadSettings() {
-    const { data } = await supabase.from("company_settings").select("*").single();
+    const cid = await getCompanyId();
+    setCompanyId(cid);
+
+    const { data } = await supabase
+      .from("company_settings")
+      .select("*")
+      .eq("company_id", cid)
+      .single();
 
     if (data) {
       setSettingsId(data.id);
       setSettings({
         company_name: data.company_name || "",
+        dba: data.dba || "",
         company_address: data.company_address || "",
         company_phone: data.company_phone || "",
         company_email: data.company_email || "",
         company_website: data.company_website || "",
         tax_id: data.tax_id || "",
+        license_number: data.license_number || "",
+        logo_url: data.logo_url || "",
         default_deposit_percentage: data.default_deposit_percentage || 50,
+        footer_message: data.footer_message || "",
         terms_conditions: data.terms_conditions || "",
+        payment_instructions: data.payment_instructions || "",
+        warranty_text: data.warranty_text || "",
+        signature_name: data.signature_name || "",
+        signature_title: data.signature_title || "",
       });
     }
 
@@ -140,25 +168,26 @@ export default function SettingsPage() {
   }
 
   async function saveSettings() {
-    if (!settingsId) {
-      toast.error("Couldn't find your settings record. Try reloading the page.");
-      return;
-    }
-
     setSaving(true);
 
-    const { error } = await supabase
-      .from("company_settings")
-      .update({
-        ...settings,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", settingsId);
+    // Companies that haven't saved settings yet won't have a row (the
+    // migration only backfilled columns, not rows for every company) —
+    // create one on first save instead of requiring a separate step.
+    const { error } = settingsId
+      ? await supabase
+          .from("company_settings")
+          .update({ ...settings, updated_at: new Date().toISOString() })
+          .eq("id", settingsId)
+      : await supabase
+          .from("company_settings")
+          .insert({ ...settings, company_id: companyId });
 
     if (error) {
       toast.error("Error saving settings: " + error.message);
     } else {
       toast.success("Settings saved");
+      loadSettings();
+      reloadCompanyContext(); // so every other open page picks up the change immediately
     }
 
     setSaving(false);
@@ -234,7 +263,14 @@ export default function SettingsPage() {
                 label="Company name"
                 value={settings.company_name}
                 onChange={(v) => setSettings({ ...settings, company_name: v })}
-                placeholder="One Square Roofing LLC"
+                placeholder="Your Company Name LLC"
+              />
+
+              <Field
+                label="DBA (optional)"
+                value={settings.dba}
+                onChange={(v) => setSettings({ ...settings, dba: v })}
+                placeholder="Doing-business-as name, if different"
               />
 
               <Field
@@ -249,14 +285,14 @@ export default function SettingsPage() {
                   label="Phone"
                   value={settings.company_phone}
                   onChange={(v) => setSettings({ ...settings, company_phone: v })}
-                  placeholder="(704) 303-4112"
+                  placeholder="(555) 555-5555"
                   type="tel"
                 />
                 <Field
                   label="Email"
                   value={settings.company_email}
                   onChange={(v) => setSettings({ ...settings, company_email: v })}
-                  placeholder="hello@osrpros.com"
+                  placeholder="hello@yourcompany.com"
                   type="email"
                 />
               </div>
@@ -265,15 +301,45 @@ export default function SettingsPage() {
                 label="Website"
                 value={settings.company_website}
                 onChange={(v) => setSettings({ ...settings, company_website: v })}
-                placeholder="https://osrpros.com"
+                placeholder="https://yourcompany.com"
               />
 
               <Field
-                label="Tax ID / EIN"
-                value={settings.tax_id}
-                onChange={(v) => setSettings({ ...settings, tax_id: v })}
-                placeholder="XX-XXXXXXX"
+                label="Logo URL"
+                value={settings.logo_url}
+                onChange={(v) => setSettings({ ...settings, logo_url: v })}
+                placeholder="https://.../logo.png"
               />
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field
+                  label="Tax ID / EIN"
+                  value={settings.tax_id}
+                  onChange={(v) => setSettings({ ...settings, tax_id: v })}
+                  placeholder="XX-XXXXXXX"
+                />
+                <Field
+                  label="License Number"
+                  value={settings.license_number}
+                  onChange={(v) => setSettings({ ...settings, license_number: v })}
+                  placeholder="e.g. GC-123456"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field
+                  label="Signature Name"
+                  value={settings.signature_name}
+                  onChange={(v) => setSettings({ ...settings, signature_name: v })}
+                  placeholder="Name shown on signed documents"
+                />
+                <Field
+                  label="Signature Title"
+                  value={settings.signature_title}
+                  onChange={(v) => setSettings({ ...settings, signature_title: v })}
+                  placeholder="e.g. Owner"
+                />
+              </div>
             </div>
           </div>
 
@@ -309,27 +375,63 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* TERMS */}
-          <div className="rounded-xl border border-slate-200/70 bg-white p-4 shadow-sm">
-            <div className="mb-3 flex items-center gap-2">
+          {/* TERMS & DOCUMENT TEXT */}
+          <div className="rounded-xl border border-slate-200/70 bg-white p-4 shadow-sm space-y-4">
+            <div className="flex items-center gap-2">
               <ScrollText size={14} className="text-slate-400" />
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Terms</span>
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Document Text</span>
             </div>
 
-            <textarea
-              value={settings.terms_conditions}
-              onChange={(e) => setSettings({ ...settings, terms_conditions: e.target.value })}
-              rows={5}
-              placeholder="Terms & conditions..."
-              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-slate-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-300/30 transition resize-none"
-            />
+            <div>
+              <span className="mb-1 block text-[11px] font-medium text-slate-500">Terms &amp; Conditions</span>
+              <textarea
+                value={settings.terms_conditions}
+                onChange={(e) => setSettings({ ...settings, terms_conditions: e.target.value })}
+                rows={4}
+                placeholder="Terms & conditions shown on estimates and invoices..."
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-slate-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-300/30 transition resize-none"
+              />
+            </div>
 
-            <div className="mt-2 text-[10px] text-slate-400">Shown on estimates &amp; invoices</div>
+            <div>
+              <span className="mb-1 block text-[11px] font-medium text-slate-500">Payment Instructions</span>
+              <textarea
+                value={settings.payment_instructions}
+                onChange={(e) => setSettings({ ...settings, payment_instructions: e.target.value })}
+                rows={3}
+                placeholder="How and when clients should pay..."
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-slate-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-300/30 transition resize-none"
+              />
+            </div>
+
+            <div>
+              <span className="mb-1 block text-[11px] font-medium text-slate-500">Warranty Information</span>
+              <textarea
+                value={settings.warranty_text}
+                onChange={(e) => setSettings({ ...settings, warranty_text: e.target.value })}
+                rows={3}
+                placeholder="Your warranty coverage and terms..."
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-slate-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-300/30 transition resize-none"
+              />
+            </div>
+
+            <div>
+              <span className="mb-1 block text-[11px] font-medium text-slate-500">Footer Message</span>
+              <input
+                type="text"
+                value={settings.footer_message}
+                onChange={(e) => setSettings({ ...settings, footer_message: e.target.value })}
+                placeholder="Thank you for your business!"
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-slate-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-300/30 transition"
+              />
+            </div>
+
+            <div className="text-[10px] text-slate-400">Shown on estimates, invoices, and PDFs</div>
           </div>
         </div>
 
-        {/* STICKY SAVE BAR */}
-        <div className="fixed bottom-0 left-0 right-0 border-t border-slate-200 bg-white/90 backdrop-blur-sm p-3">
+        {/* STICKY SAVE BAR — sits above BottomNav (z-40, ~64px tall), not underneath it */}
+        <div className="fixed bottom-16 left-0 right-0 z-50 border-t border-slate-200 bg-white/90 backdrop-blur-sm p-3">
           <div className="mx-auto max-w-2xl">
             <button
               onClick={saveSettings}

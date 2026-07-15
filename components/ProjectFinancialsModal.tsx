@@ -164,11 +164,21 @@ export default function ProjectFinancialsModal({
     }
   }, [isOpen, companyId]);
 
-  const totalSubAssigned = assignedSubs.reduce((sum, s) => sum + (s.amount || 0), 0);
+  // Floored at paid-to-date per sub (Math.max) — a subcontractor paid
+  // via the Expense page's older flow can have amount=0 with real
+  // payments already logged against them; profit must reflect the real
+  // committed cost either way. Same reasoning as
+  // getEffectiveSubcontractorCommitted in lib/queries/expenses.ts.
+  const totalSubAssigned = assignedSubs.reduce((sum, s) => sum + Math.max(s.amount || 0, s.paid_amount || 0), 0);
   const totalSubPaid = assignedSubs.reduce((sum, s) => sum + (s.paid_amount || 0), 0);
   const totalSubOwed = totalSubAssigned - totalSubPaid;
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
-  const afterSubcontractorAndExpenses = estimateTotal - totalSubPaid - totalExpenses;
+  // Committed (assigned), not paid-to-date — a subcontractor assigned at
+  // $5,000 with only $2,000 paid so far still reduces profit by $5,000,
+  // the same "committed cost" semantics as summarizeFinancials() on the
+  // Expense page (lib/queries/expenses.ts), so profit matches everywhere
+  // regardless of how much has actually been paid out yet.
+  const afterSubcontractorAndExpenses = estimateTotal - totalSubAssigned - totalExpenses;
   const { companyAmount, agentAmount: remainingForAgents, agentPercentage } = splitProfit(
     afterSubcontractorAndExpenses,
     companyPercentage
@@ -695,6 +705,12 @@ export default function ProjectFinancialsModal({
     const { error } = await supabase.from("agent_payments").insert({
       estimate_id: estimateId,
       agent_id: selectedAgentForPayment.agent_id,
+      // Links this payment to the specific assignment row, same as
+      // subcontractor_payments.estimate_subcontractor_id below — without
+      // this, the Expense page's payout tracking (which joins through
+      // this column) can't see payments recorded from this modal and
+      // shows a stale "pending" status for an agent already paid here.
+      estimate_agent_id: selectedAgentForPayment.id,
       amount: agentPaymentAmount,
       payment_method: agentPaymentMethod,
       payment_date: new Date().toISOString(),
@@ -799,11 +815,11 @@ export default function ProjectFinancialsModal({
 
             <div className="bg-blue-50 -mx-2 px-3 py-2 rounded-lg border border-blue-200">
               <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-blue-800">Subcontractor Paid:</span>
-                <span className="text-sm font-bold text-red-600">-{formatCurrency(totalSubPaid)}</span>
+                <span className="text-sm font-medium text-blue-800">Subcontractor Committed:</span>
+                <span className="text-sm font-bold text-red-600">-{formatCurrency(totalSubAssigned)}</span>
               </div>
               <div className="flex justify-between items-center text-xs text-blue-600 mt-1">
-                <span>Assigned: {formatCurrency(totalSubAssigned)}</span>
+                <span>Paid: {formatCurrency(totalSubPaid)}</span>
                 <span>Owed: {formatCurrency(totalSubOwed)}</span>
               </div>
             </div>

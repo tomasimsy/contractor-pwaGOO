@@ -12,8 +12,17 @@ type PaymentRecord = {
   estimate_number: string;
   estimate_title: string | null;
   client_name: string;
+  assignedAmount: number;
   amount: number;
+  remaining: number;
+  status: "pending" | "partial" | "paid";
   payment_date: string;
+};
+
+const STATUS_STYLE: Record<PaymentRecord["status"], string> = {
+  pending: "bg-slate-100 text-slate-600",
+  partial: "bg-amber-100 text-amber-800",
+  paid: "bg-emerald-100 text-emerald-800",
 };
 
 export default function SubcontractorDetail() {
@@ -50,6 +59,7 @@ export default function SubcontractorDetail() {
           .select(`
             id,
             estimate_id,
+            amount,
             estimates (
               estimate_number,
               title,
@@ -76,17 +86,23 @@ export default function SubcontractorDetail() {
           }
         }
 
-        const records: PaymentRecord[] = (links || []).map(link => {
+        const records: PaymentRecord[] = (links || []).map((link: any) => {
           const est = link.estimates as any;
           const total = allPayments
             .filter(p => p.estimate_subcontractor_id === link.id)
             .reduce((sum, p) => sum + (p.amount || 0), 0);
+          const assignedAmount = link.amount || 0;
+          const remaining = Math.max(assignedAmount - total, 0);
+          const status: PaymentRecord["status"] = total <= 0 ? "pending" : remaining <= 0.004 ? "paid" : "partial";
           return {
             estimate_id: link.estimate_id,
             estimate_number: est?.estimate_number || "N/A",
             estimate_title: est?.title || null,
             client_name: est?.client?.name || "Unassigned",
+            assignedAmount,
             amount: total,
+            remaining,
+            status,
             payment_date: est?.created_at || new Date().toISOString(),
           };
         });
@@ -118,9 +134,17 @@ export default function SubcontractorDetail() {
           </h1>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
-          <div className="text-sm text-slate-500">Total Paid to this Subcontractor</div>
-          <div className="text-2xl font-bold text-rose-600">{formatCurrency(totalPaid)}</div>
+        <div className="grid grid-cols-2 gap-4 mb-6">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <div className="text-sm text-slate-500">Total Paid to this Subcontractor</div>
+            <div className="text-2xl font-bold text-rose-600">{formatCurrency(totalPaid)}</div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <div className="text-sm text-slate-500">Pending Payout</div>
+            <div className="text-2xl font-bold text-amber-600">
+              {formatCurrency(payments.reduce((sum, p) => sum + p.remaining, 0))}
+            </div>
+          </div>
         </div>
 
         {payments.length === 0 ? (
@@ -135,7 +159,8 @@ export default function SubcontractorDetail() {
                   <th className="px-4 py-3 text-left font-semibold text-slate-600">Estimate #</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-600">Client</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-600">Payment Date</th>
-                  <th className="px-4 py-3 text-right font-semibold text-slate-600">Amount</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">Status</th>
+                  <th className="px-4 py-3 text-right font-semibold text-slate-600">Paid / Assigned</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -153,15 +178,20 @@ export default function SubcontractorDetail() {
                     <td className="px-4 py-3 text-slate-500 text-xs">
                       {new Date(p.payment_date).toLocaleDateString()}
                     </td>
+                    <td className="px-4 py-3">
+                      <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${STATUS_STYLE[p.status]}`}>
+                        {p.status}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-right font-mono text-rose-600">
-                      {formatCurrency(p.amount)}
+                      {formatCurrency(p.amount)} / {formatCurrency(p.assignedAmount)}
                     </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot className="bg-slate-50/80 border-t border-slate-300 font-semibold">
                 <tr>
-                  <td colSpan={3} className="px-4 py-3 text-right">Total</td>
+                  <td colSpan={4} className="px-4 py-3 text-right">Total</td>
                   <td className="px-4 py-3 text-right font-mono text-rose-600">{formatCurrency(totalPaid)}</td>
                 </tr>
               </tfoot>

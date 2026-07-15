@@ -58,6 +58,25 @@ export type AgentPaymentRow = {
   company_id: string;
   deleted_at: string | null;
   change_order_id: string | null;
+  // Links this payment to a specific estimate_agents assignment row —
+  // same pattern as subcontractor_payments.estimate_subcontractor_id —
+  // so "assigned vs. paid" can be computed per assignment. Nullable
+  // since payments made before this column existed have no assignment.
+  estimate_agent_id: string | null;
+};
+
+/** Assigns an agent to a project with an expected commission/payout
+ * amount — the agent-side mirror of EstimateSubcontractorRow, on the
+ * pre-existing (legacy) estimate_agents table, now wired into the
+ * payout workflow instead of just the old standalone components. */
+export type EstimateAgentRow = {
+  id: string;
+  estimate_id: string | null;
+  agent_id: string | null;
+  amount: number | null; // assigned/expected payout, default 0
+  notes: string | null;
+  created_at: string | null;
+  company_id: string;
 };
 
 /** The authoritative source for client payment status — confirmed.
@@ -257,6 +276,38 @@ export type AssignedSubcontractor = {
   name: string;
   trade: string | null;
   contractedAmount: number;
+  notes: string | null;
+};
+
+/** The agent-side mirror of AssignedSubcontractor. */
+export type AssignedAgent = {
+  estimateAgentId: string;
+  agentId: string;
+  name: string;
+  assignedAmount: number;
+  notes: string | null;
+};
+
+// ---------------------------------------------------------------------
+// Payout workflow — one normalized shape for "who's owed money on this
+// project," covering both subcontractors and agents, so the pending-
+// payout queue/UI doesn't need to special-case the two roles.
+// ---------------------------------------------------------------------
+
+export const PAYOUT_STATUS_VALUES = ["pending", "partial", "paid"] as const;
+export type PayoutStatusValue = (typeof PAYOUT_STATUS_VALUES)[number];
+
+export type PendingPayout = {
+  role: "subcontractor" | "agent";
+  assignmentId: string; // estimateSubcontractorId or estimateAgentId
+  personId: string; // subcontractorId or agentId
+  name: string;
+  roleDetail: string | null; // trade, for subcontractors
+  assignedAmount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  status: PayoutStatusValue;
+  notes: string | null;
 };
 
 export type ProjectBundle = {
@@ -268,8 +319,9 @@ export type ProjectBundle = {
   agentPayments: AgentPaymentRow[];
   invoices: InvoiceRow[];
   assignedSubcontractors: AssignedSubcontractor[];
+  assignedAgents: AssignedAgent[];
   allSubcontractors: Pick<SubcontractorRow, "id" | "name" | "trade">[];
-  salesAgents: Pick<SalesAgentRow, "id" | "name">[];
+  salesAgents: Pick<SalesAgentRow, "id" | "name" | "commission_rate">[];
   mileageTrips: MileageTripRow[];
   estimateItems: EstimateItemRow[];
   changeOrders: ChangeOrderRow[];
@@ -321,7 +373,11 @@ export type FinancialSummaryData = {
   estimateTotal: number;
   materialCosts: number;
   laborCosts: number;
+  // Committed (assigned) subcontractor cost — affects profit as soon as
+  // a subcontractor is assigned, regardless of how much has actually
+  // been paid out yet. See subcontractorPaidToDate for cash paid so far.
   subcontractorCosts: number;
+  subcontractorPaidToDate: number;
   agentCommissions: number;
   otherExpenses: number;
   mileageCosts: number;
@@ -369,6 +425,11 @@ export type NewEntryInput =
       estimateId: string;
       companyId: string;
       agentId: string;
+      // Links to a specific estimate_agents assignment so payout status
+      // (assigned/paid/remaining) can be computed per assignment —
+      // optional since ad-hoc commission payments with no assignment
+      // are still allowed (same as before this feature).
+      estimateAgentId?: string | null;
       amount: number;
       paymentDate: string;
       paymentMethod: string | null;

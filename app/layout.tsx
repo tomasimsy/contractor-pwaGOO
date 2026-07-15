@@ -13,6 +13,7 @@ import { Toaster } from "react-hot-toast";
 
 import { supabase } from "@/lib/supabase/client";
 import { TripProvider } from '@/components/mileage/context/TripContext';
+import { CompanyProvider } from "@/context/CompanyContext";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -187,20 +188,22 @@ useEffect(() => {
           
           {/* ✅ Wrap everything that needs trip context inside TripProvider */}
           <TripProvider>
-            <div className="w-full min-h-screen relative flex justify-center">
-              <div className="w-full max-w-screen-2xl min-h-screen shadow-xl relative">
-                {checkingAuth && !isPublicPage ? (
-                  <div className="min-h-screen flex items-center justify-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600" />
-                  </div>
-                ) : (
-                  <>
-                    {children}
-                    {showBottomNav && <BottomNav />}
-                  </>
-                )}
+            <CompanyProvider>
+              <div className="w-full min-h-screen relative flex justify-center">
+                <div className="w-full max-w-screen-2xl min-h-screen shadow-xl relative">
+                  {checkingAuth && !isPublicPage ? (
+                    <div className="min-h-screen flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600" />
+                    </div>
+                  ) : (
+                    <>
+                      {children}
+                      {showBottomNav && <BottomNav />}
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
+            </CompanyProvider>
           </TripProvider>
         </NotificationProvider>
       </body>

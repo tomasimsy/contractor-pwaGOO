@@ -23,6 +23,7 @@ export default function AgentDetail() {
   const [agentName, setAgentName] = useState("");
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [totalPaid, setTotalPaid] = useState(0);
+  const [totalAssigned, setTotalAssigned] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -78,6 +79,17 @@ export default function AgentDetail() {
         setPayments(records);
         const total = records.reduce((sum, r) => sum + r.amount, 0);
         setTotalPaid(total);
+
+        // Assigned payout amounts, for a "still owed" summary — same
+        // estimate_agents assignment table the Expense page's payout
+        // workflow now assigns/edits against.
+        const { data: assignments } = await supabase
+          .from("estimate_agents")
+          .select("amount")
+          .eq("agent_id", id)
+          .eq("company_id", companyId)
+          .is("deleted_at", null);
+        setTotalAssigned((assignments || []).reduce((sum, a: any) => sum + (a.amount || 0), 0));
       } catch (err) {
         console.error(err);
       } finally {
@@ -102,9 +114,17 @@ export default function AgentDetail() {
           </h1>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
-          <div className="text-sm text-slate-500">Total Paid to this Agent</div>
-          <div className="text-2xl font-bold text-amber-600">{formatCurrency(totalPaid)}</div>
+        <div className="grid grid-cols-2 gap-4 mb-6">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <div className="text-sm text-slate-500">Total Paid to this Agent</div>
+            <div className="text-2xl font-bold text-amber-600">{formatCurrency(totalPaid)}</div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <div className="text-sm text-slate-500">Pending Payout</div>
+            <div className="text-2xl font-bold text-rose-600">
+              {formatCurrency(Math.max(totalAssigned - totalPaid, 0))}
+            </div>
+          </div>
         </div>
 
         {payments.length === 0 ? (

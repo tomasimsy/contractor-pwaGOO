@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase/client";
 import SignaturePad from "@/components/signature/SignaturePad";
 import { formatCurrency } from "@/lib/utils/formatting";
 import { Smile, ThumbsUp, FileSignature, BadgeCheck, ShieldCheck } from "lucide-react";
+import { CompanySettings, mergeCompanyDefaults } from "@/lib/company";
 
 type Signature = { type: "draw" | "type"; value: string; date: string };
 type ChangeOrder = {
@@ -26,6 +27,7 @@ export default function PublicInvoicePage() {
   const [loading, setLoading] = useState(true);
   const [signed, setSigned] = useState(false);
   const [signature, setSignature] = useState<Signature | null>(null);
+  const [company, setCompany] = useState<CompanySettings>(mergeCompanyDefaults(null));
 
   useEffect(() => {
     loadInvoice();
@@ -60,6 +62,7 @@ export default function PublicInvoicePage() {
         setItems(bundle.items || []);
         setPayments(bundle.payments || []);
         setChangeOrders(bundle.change_orders || []);
+        setCompany(mergeCompanyDefaults(bundle.company));
       }
     } catch (err) {
       console.error(err);
@@ -137,8 +140,8 @@ export default function PublicInvoicePage() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-primary text-white p-4 text-center">
-        <h1 className="text-xl font-bold">One Square Roofing LLC</h1>
-        <p className="text-sm text-gold mt-1">Licensed & Insured</p>
+        <h1 className="text-xl font-bold">{company.company_name}</h1>
+        {company.dba && <p className="text-xs text-gray-300 mt-0.5">DBA {company.dba}</p>}
         <p className="text-xs text-gray-300 mt-2">Invoice #{invoice?.invoice_number || id?.slice(0, 8)}</p>
         <p className="text-xs text-gray-300">Date: {new Date(invoice?.created_at).toLocaleDateString()}</p>
         {invoice?.due_date && (
@@ -342,9 +345,9 @@ export default function PublicInvoicePage() {
 
         {/* Terms & Footer */}
         <div className="text-center text-xs text-gray-400 py-4 border-t border-gray-200">
-          <p>One Square Roof LLC • Charlotte, NC • (704) 303-4112</p>
-          <p className="mt-1">onesquareroof@gmail.com</p>
-          <p className="mt-2">Thank you for your business!</p>
+          <p>{company.company_name} • {company.company_address} • {company.company_phone}</p>
+          <p className="mt-1">{company.company_email}</p>
+          <p className="mt-2">{company.footer_message}</p>
         </div>
       </div>
     </div>

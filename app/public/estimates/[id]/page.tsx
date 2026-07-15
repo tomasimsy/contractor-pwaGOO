@@ -9,6 +9,7 @@ import { Receipt } from "lucide-react";
 import toast from "react-hot-toast";
 import ProgressDisplay from "@/components/progress/ProgressDisplay";
 import { EstimateImageUploader, EstimateImageView } from "@/components/ui/EstimateImages";
+import { CompanySettings, mergeCompanyDefaults } from "@/lib/company";
 
 type Signature = { type: "draw" | "type"; value: string; date: string };
 type ChangeOrder = {
@@ -50,6 +51,7 @@ const id = Array.isArray(paramId) ? paramId[0] : paramId;
 // Core data
 const [estimate, setEstimate] = useState<any>(null);
   const [client, setClient] = useState<any>(null);
+  const [company, setCompany] = useState<CompanySettings>(mergeCompanyDefaults(null));
     const [items, setItems] = useState<any[]>([]);
       const [loading, setLoading] = useState(true);
       const [signed, setSigned] = useState(false);
@@ -126,6 +128,7 @@ const [estimate, setEstimate] = useState<any>(null);
                       if (est.signature) setSignature(est.signature);
 
                       setClient(bundle.client);
+                      setCompany(mergeCompanyDefaults(bundle.company));
 
                       const itemsData = bundle.items || [];
                       setItems(itemsData);
@@ -368,19 +371,11 @@ const [estimate, setEstimate] = useState<any>(null);
                           <div
                             className="bg-white rounded-lg border border-slate-200/60 shadow-sm p-2 grid grid-cols-2 gap-2">
                             <div className="pr-2 space-y-0.5">
-                              <div className="flex items-center gap-1">
-                                <span
-                                  className="bg-slate-950 text-white px-1 py-[2px] rounded text-[8px] font-black tracking-wider">
-                                  OSR
-                                </span>
-                                <span className="text-[11px] font-bold text-slate-900">Pros</span>
-                              </div>
                               <p
                                 className="flex flex-wrap items-center gap-1 text-[9px] font-semibold text-slate-800 leading-tight">
-                                <span>One Square Roofing LLC</span>
-                                <span className="text-slate-400">| Issued: {formatDate(estimate?.created_at)}</span>
-
+                                <span className="text-[11px] font-bold text-slate-900">{company.company_name}</span>
                               </p>
+                              <p className="text-slate-400 text-[9px]">Issued: {formatDate(estimate?.created_at)}</p>
                             </div>
                             <div className="pl-2 space-y-0.5">
                               <h3 className="text-[11px] font-bold text-slate-900 truncate">
@@ -672,7 +667,7 @@ const [estimate, setEstimate] = useState<any>(null);
                           <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm p-4">
                             <SignaturePadInvoice onSave={saveSignature} onRemove={removeSignature}
                               existingSignature={estimate?.signature} buttonText="Sign & Accept" showRemoveButton={true}
-                              estimateId={id} showDetailedBreakdown={false} />
+                              estimateId={id} showDetailedBreakdown={false} company={company} />
                           </div>
 
                           <p className="text-center text-[10px] font-medium text-slate-400 pt-2">
@@ -682,7 +677,7 @@ const [estimate, setEstimate] = useState<any>(null);
                         </div>
 
                         {/* SMS Floating Button */}
-                        <a href={`sms:+17043034112?&body=${encodeURIComponent( `Hi OSR Pros, I have a question regarding
+                        <a href={`sms:${company.company_phone}?&body=${encodeURIComponent( `Hi ${company.company_name}, I have a question regarding
                           Estimate #${estimate?.estimate_number || id?.slice(0, 6)}:` )}`}
                           className="fixed bottom-4 right-4 z-50 flex items-center gap-1.5 bg-slate-950 text-white font-bold text-[11px] px-3.5 py-2.5 rounded-full shadow-lg">
                           <span>💬 Question?</span>

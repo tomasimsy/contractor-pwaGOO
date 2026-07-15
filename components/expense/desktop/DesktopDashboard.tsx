@@ -1,20 +1,26 @@
+"use client";
+
 import type { FormCategory } from "@/components/expense/AddExpenseSheet";
 import type { FinancialSummaryData, LedgerEntry, PaymentSummary, ProjectBundle } from "@/lib/types";
 import { getBudgetComparison } from "@/lib/queries/expenses";
-import ProjectHeader from "@/components/expense/ProjectHeader";
 
-import QuickActions from "./QuickActions";
-import RevenueCard from "./RevenueCard";
-import PaymentStatusCard from "./PaymentStatusCard";
-import ProfitCard from "./ProfitCard";
-import CostBreakdownCard from "./CostBreakdownCard";
+import ProjectSummaryCard from "./ProjectSummaryCard";
+import CustomerPaymentStatusCard from "./CustomerPaymentStatusCard";
+import PendingPayoutsCard from "./PendingPayoutsCard";
+import SubcontractorAssignmentsCard from "./SubcontractorAssignmentsCard";
+import AgentCommissionCard from "./AgentCommissionCard";
+import ChangeOrdersPanel from "./ChangeOrdersPanel";
+import ExpenseSummaryCard from "./ExpenseSummaryCard";
 import ExpenseListPanel from "./ExpenseListPanel";
 import PaymentHistoryPanel from "./PaymentHistoryPanel";
-import SubcontractorsPanel from "./SubcontractorsPanel";
-import AgentsPanel from "./AgentsPanel";
 import ReceiptsPanel from "./ReceiptsPanel";
-import ChangeOrdersPanel from "./ChangeOrdersPanel";
 
+// Single-screen command center, card-based — no tabs, no menus. Every
+// card has one clear purpose (project status, client payment, who's
+// owed money, cost breakdown, records) and they all stay visible in one
+// scroll, in the order someone actually works through them: what's the
+// project, is the client paid, who still needs to be paid, then the
+// supporting records underneath.
 export default function DesktopDashboard({
   bundle,
   ledger,
@@ -32,46 +38,29 @@ export default function DesktopDashboard({
   onDeleteEntry: (entry: LedgerEntry) => void;
   onRefresh: () => Promise<void>;
 }) {
+  const budget = getBudgetComparison(bundle.estimateItems, bundle.expenses);
+
   return (
-    <div className="space-y-4 sm:space-y-5">
-      {/* Header row: project info + quick actions — stacked on mobile, side by side from sm up */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-        <div className="min-w-0 sm:flex-1">
-          <ProjectHeader bundle={bundle} />
-        </div>
-        <QuickActions onOpen={onOpenAddSheet} />
+    <div className="space-y-5">
+      <ProjectSummaryCard bundle={bundle} onOpenAddSheet={onOpenAddSheet} />
+
+      <CustomerPaymentStatusCard financials={financials} payment={payment} />
+
+      <PendingPayoutsCard bundle={bundle} ledger={ledger} onDelete={onDeleteEntry} onRefresh={onRefresh} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <SubcontractorAssignmentsCard bundle={bundle} ledger={ledger} onDelete={onDeleteEntry} onRefresh={onRefresh} />
+        <AgentCommissionCard bundle={bundle} ledger={ledger} onDelete={onDeleteEntry} onRefresh={onRefresh} />
       </div>
 
-      {/* Revenue / Payment / Profit */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-        <RevenueCard
-          estimateTotal={financials.estimateTotal}
-          approvedChangeOrderTotal={financials.approvedChangeOrderTotal}
-          revisedTotal={financials.revisedTotal}
-        />
-        <PaymentStatusCard payment={payment} />
-        <ProfitCard data={financials} />
-      </div>
-
-      {/* Project cost */}
-      <CostBreakdownCard data={financials} budget={getBudgetComparison(bundle.estimateItems, bundle.expenses)} />
-
-      {/* Change Orders */}
       <ChangeOrdersPanel bundle={bundle} ledger={ledger} onRefresh={onRefresh} />
 
-      {/* Expenses / Payment history */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-        <ExpenseListPanel entries={ledger} onDelete={onDeleteEntry} />
-        <PaymentHistoryPanel invoices={bundle.invoices} />
-      </div>
+      <ExpenseSummaryCard financials={financials} budget={budget} />
 
-      {/* Subcontractors / Agents */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-        <SubcontractorsPanel bundle={bundle} ledger={ledger} onDelete={onDeleteEntry} />
-        <AgentsPanel bundle={bundle} ledger={ledger} onDelete={onDeleteEntry} />
-      </div>
+      <ExpenseListPanel entries={ledger} onDelete={onDeleteEntry} />
 
-      {/* Receipts */}
+      <PaymentHistoryPanel invoices={bundle.invoices} />
+
       <ReceiptsPanel expenses={bundle.expenses} />
     </div>
   );

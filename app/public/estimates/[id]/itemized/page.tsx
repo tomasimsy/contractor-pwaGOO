@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils/formatting";
+import { CompanySettings, mergeCompanyDefaults } from "@/lib/company";
 
 type LineItem = {
   id: string;
@@ -30,6 +31,7 @@ export default function PublicItemizedEstimatePage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [signed, setSigned] = useState(false);
+  const [company, setCompany] = useState<CompanySettings>(mergeCompanyDefaults(null));
 
   useEffect(() => {
     loadItemizedData();
@@ -37,31 +39,22 @@ export default function PublicItemizedEstimatePage() {
 
   async function loadItemizedData() {
     try {
-      const { data: est } = await supabase
-        .from("estimates")
-        .select("*")
-        .eq("id", id)
-        .single();
+      // Routed through the same SECURITY DEFINER bundle RPC the main public
+      // estimate page uses — a direct anon table read here would return
+      // nothing once RLS is enforced, and this also gives us company info.
+      const { data: bundle } = await supabase.rpc("get_public_estimate_bundle", {
+        p_estimate_id: id,
+      });
+      const est = bundle?.estimate;
       setEstimate(est);
       setSigned(!!est?.signature);
+      setClient(bundle?.client || null);
+      setCompany(mergeCompanyDefaults(bundle?.company));
 
-      if (est?.client_id) {
-        const { data: c } = await supabase
-          .from("clients")
-          .select("*")
-          .eq("id", est.client_id)
-          .single();
-        setClient(c);
-      }
-
-      const { data: items } = await supabase
-        .from("estimate_items")
-        .select("*")
-        .eq("estimate_id", id)
-        .is("deleted_at", null);
+      const items = bundle?.items || [];
 
       const projectMap: Record<string, Project> = {};
-      items?.forEach((item) => {
+      items.forEach((item: any) => {
         const projectName = item.project_name || "Main Project";
         if (!projectMap[projectName]) {
           projectMap[projectName] = {
@@ -321,8 +314,8 @@ export default function PublicItemizedEstimatePage() {
 
         {/* Footer */}
         <div className="text-center text-xs text-gray-400 pt-4">
-          <p>One Square Roof LLC • Charlotte, NC • (704) 303-4112</p>
-          <p className="mt-1">onesquareroof@gmail.com</p>
+          <p>{company.company_name} • {company.company_address} • {company.company_phone}</p>
+          <p className="mt-1">{company.company_email}</p>
         </div>
       </div>
     </div>

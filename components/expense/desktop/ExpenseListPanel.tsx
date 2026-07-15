@@ -11,7 +11,7 @@ export default function ExpenseListPanel({
 }) {
   const expenseEntries = entries.filter((e) => e.source === "expense");
   return (
-    <DashboardPanel title="Expenses">
+    <DashboardPanel title="Expenses" accent="gray">
       <ExpenseLedger entries={expenseEntries} onDelete={onDelete} />
     </DashboardPanel>
   );

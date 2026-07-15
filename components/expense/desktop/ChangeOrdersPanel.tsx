@@ -18,7 +18,7 @@ import {
 import toast from "react-hot-toast";
 
 const STATUS_STYLE: Record<ChangeOrderRow["status"], string> = {
-  draft: "bg-slate-100 text-slate-600",
+  draft: "bg-gray-100 text-gray-600",
   pending: "bg-amber-100 text-amber-800",
   approved: "bg-emerald-100 text-emerald-800",
   rejected: "bg-rose-100 text-rose-800",
@@ -140,32 +140,33 @@ export default function ChangeOrdersPanel({
   return (
     <DashboardPanel
       title="Change Orders"
+      accent="amber"
       action={
         <button
           type="button"
           onClick={openCreate}
-          className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 rounded-lg px-2.5 py-1.5 hover:bg-emerald-100 transition-colors"
+          className="flex items-center gap-1.5 text-[13px] font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg px-3 py-1.5 transition-colors"
         >
           <Plus size={13} />
           New
         </button>
       }
     >
-      <div className="flex items-center gap-2 mb-3">
+      <div className="flex items-center gap-2 mb-4">
         <div className="relative flex-1">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search title or CO #"
-            className="w-full h-8 pl-8 pr-2 rounded-lg border border-slate-200/70 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors"
+            className="w-full h-8 pl-8 pr-2 rounded-lg border border-gray-200 bg-white text-[13px] focus:outline-none focus:ring-2 focus:ring-gray-900/5 focus:border-gray-300 transition-colors"
           />
         </div>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-          className="h-8 rounded-lg border border-slate-200/70 text-xs px-2 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors capitalize"
+          className="h-8 rounded-lg border border-gray-200 bg-white text-[13px] px-2 focus:outline-none focus:ring-2 focus:ring-gray-900/5 focus:border-gray-300 transition-colors capitalize"
         >
           {STATUS_OPTIONS.map((s) => (
             <option key={s} value={s} className="capitalize">
@@ -176,56 +177,56 @@ export default function ChangeOrdersPanel({
       </div>
 
       {filtered.length === 0 ? (
-        <div className="text-xs text-slate-400 text-center py-6">
+        <div className="text-[13px] text-gray-400 text-center py-8">
           {bundle.changeOrders.length === 0 ? "No change orders yet." : "No change orders match your filters."}
         </div>
       ) : (
-        <div className="divide-y divide-slate-100">
+        <div className="divide-y divide-gray-100">
           {filtered.map((co) => {
             const linked = linkedSubtotal(co.id);
             return (
-              <div key={co.id} className="py-2.5 first:pt-0 last:pb-0">
+              <div key={co.id} className="py-3 first:pt-0 last:pb-0">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[10px] font-mono font-bold text-slate-400">{co.change_order_number}</span>
-                      <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${STATUS_STYLE[co.status]}`}>
+                      <span className="text-xs text-gray-400">{co.change_order_number}</span>
+                      <span className={`text-[11px] font-medium uppercase px-1.5 py-0.5 rounded ${STATUS_STYLE[co.status]}`}>
                         {co.status}
                       </span>
                     </div>
-                    <div className="text-sm font-bold text-slate-800 truncate">{co.title}</div>
+                    <div className="text-[13px] text-gray-900 truncate">{co.title}</div>
                     {linked.count > 0 && (
-                      <div className="text-[11px] text-slate-400">
+                      <div className="text-xs text-gray-400">
                         {linked.count} linked entr{linked.count === 1 ? "y" : "ies"} · {formatCurrency(linked.total)}
                       </div>
                     )}
                   </div>
-                  <span className="shrink-0 text-sm font-mono font-bold text-slate-800">
+                  <span className="shrink-0 text-[13px] tabular-nums text-gray-900">
                     {formatCurrency(co.total_amount)}
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2 mt-1.5">
+                <div className="flex items-center gap-3 mt-2">
                   {co.status === "draft" && (
                     <>
                       <button
                         type="button"
                         onClick={() => openEdit(co)}
-                        className="flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-slate-700"
+                        className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700"
                       >
                         <Pencil size={11} /> Edit
                       </button>
                       <button
                         type="button"
                         onClick={() => handleSubmit(co)}
-                        className="text-[11px] font-bold text-amber-700 hover:text-amber-800"
+                        className="text-xs font-medium text-amber-700 hover:text-amber-800"
                       >
                         Submit for Approval
                       </button>
                       <button
                         type="button"
                         onClick={() => handleDelete(co)}
-                        className="flex items-center gap-1 text-[11px] font-bold text-rose-500 hover:text-rose-600 ml-auto"
+                        className="flex items-center gap-1 text-xs font-medium text-rose-500 hover:text-rose-600 ml-auto"
                       >
                         <Trash2 size={11} /> Delete
                       </button>
@@ -236,14 +237,14 @@ export default function ChangeOrdersPanel({
                       <button
                         type="button"
                         onClick={() => handleApprove(co)}
-                        className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800"
+                        className="text-xs font-medium text-emerald-700 hover:text-emerald-800"
                       >
                         Approve
                       </button>
                       <button
                         type="button"
                         onClick={() => handleReject(co)}
-                        className="text-[11px] font-bold text-rose-600 hover:text-rose-700"
+                        className="text-xs font-medium text-rose-600 hover:text-rose-700"
                       >
                         Reject
                       </button>
@@ -253,7 +254,7 @@ export default function ChangeOrdersPanel({
                     <button
                       type="button"
                       onClick={() => openEdit(co)}
-                      className="flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-slate-700"
+                      className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700"
                     >
                       <Pencil size={11} /> Edit &amp; Resubmit
                     </button>
