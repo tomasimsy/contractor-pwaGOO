@@ -46,7 +46,7 @@ export default function DesktopDashboard({
 
       <CustomerPaymentStatusCard financials={financials} payment={payment} />
 
-      <PendingPayoutsCard bundle={bundle} ledger={ledger} onDelete={onDeleteEntry} onRefresh={onRefresh} />
+      {/* <PendingPayoutsCard bundle={bundle} ledger={ledger} onDelete={onDeleteEntry} onRefresh={onRefresh} /> */}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <SubcontractorAssignmentsCard bundle={bundle} ledger={ledger} onDelete={onDeleteEntry} onRefresh={onRefresh} />
