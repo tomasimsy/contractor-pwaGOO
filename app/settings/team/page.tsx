@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase/client";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import Header from "@/components/ui/Header";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import DesktopShell from "@/components/layout/DesktopShell";
 import Modal from "@/components/ui/Modal";
 import toast from "react-hot-toast";
 import { UserPlus, Copy } from "lucide-react";
@@ -126,10 +127,11 @@ function TeamContent() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50/70">
-      <Header title="Team" backLink="/settings" />
+    <DesktopShell title="Team">
+    <div className="min-h-screen md:min-h-0 bg-slate-50/70 md:bg-transparent">
+      <Header title="Team" backLink="/settings" mdHidden />
 
-      <div className="mx-auto max-w-2xl space-y-5 p-4">
+      <div className="mx-auto max-w-2xl md:max-w-none md:mx-0 space-y-5 p-4 md:p-0">
         {/* Members */}
         <div className="rounded-xl border border-slate-200/70 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between mb-3">
@@ -245,6 +247,7 @@ function TeamContent() {
         )}
       </Modal>
     </div>
+    </DesktopShell>
   );
 }
 

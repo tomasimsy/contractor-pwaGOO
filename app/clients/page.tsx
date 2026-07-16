@@ -9,6 +9,7 @@ import { Client } from "@/types";
 import Header from "@/components/ui/Header";
 import DeleteModal from "@/components/ui/DeleteModal";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import DesktopShell from "@/components/layout/DesktopShell";
 import { Pencil, Trash2 } from "lucide-react";
 
 export default function ClientsPage() {
@@ -58,13 +59,14 @@ export default function ClientsPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-50 pb-24">
-        <Header title="Clients" backLink="/" />
+      <DesktopShell title="Clients">
+      <div className="min-h-screen md:min-h-0 bg-gray-50 md:bg-transparent pb-24 md:pb-0">
+        <Header title="Clients" backLink="/" mdHidden />
 
-        <div className="max-w-4xl mx-auto p-4 space-y-3">
-          {loading && <div className="text-center py-8">Loading...</div>}
+        <div className="max-w-4xl md:max-w-none mx-auto md:mx-0 p-4 md:p-0 space-y-3 md:space-y-0 md:grid md:grid-cols-2 lg:grid-cols-3 md:gap-3">
+          {loading && <div className="text-center py-8 md:col-span-full">Loading...</div>}
           {!loading && clients.length === 0 && (
-            <div className="text-center text-gray-400 py-8">
+            <div className="text-center text-gray-400 py-8 md:col-span-full">
               No clients yet. Create one from the estimate page.
             </div>
           )}
@@ -126,6 +128,7 @@ export default function ClientsPage() {
   deleting={deleting}
 />
       </div>
+      </DesktopShell>
     </ProtectedRoute>
   );
 }

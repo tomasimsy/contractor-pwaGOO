@@ -8,6 +8,7 @@ import { formatCurrency, formatShortDate } from "@/lib/utils/formatting";
 import Header from "@/components/ui/Header";
 import DeleteModal from "@/components/ui/DeleteModal";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import DesktopShell from "@/components/layout/DesktopShell";
 import { Send, Trash2, MessageCircle, Link2, Plus, FilePlus, Eye, Search, ArrowRight } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -188,10 +189,40 @@ const copyLink = (estimate: Estimate) => {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-slate-50/50 pb-28 relative font-sans antialiased">
-        
-        {/* FIXED STICKY HEADER CONTAINER WITH INTEGRATED SEARCH BAR */}
-        <div className="sticky top-0 z-40 border-b border-slate-200/60 bg-white/80 backdrop-blur-md">
+      <DesktopShell
+        title="Estimates"
+        actions={
+          <div className="flex items-center gap-2">
+            <div className="relative w-64">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search active estimates..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full h-8 pl-8 pr-3 rounded-lg border border-gray-200 bg-white text-[13px] focus:outline-none focus:ring-2 focus:ring-gray-900/5 focus:border-gray-300 transition-colors"
+              />
+            </div>
+            <button
+              onClick={() => router.push("/deleted")}
+              className="h-8 px-3 rounded-lg text-[13px] font-medium text-gray-500 hover:bg-gray-100 transition-colors"
+            >
+              Trash
+            </button>
+            <button
+              onClick={() => router.push("/estimates/create")}
+              className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-gray-900 text-white text-[13px] font-medium hover:bg-gray-800 transition-colors"
+            >
+              <Plus size={14} /> New Estimate
+            </button>
+          </div>
+        }
+      >
+      <div className="min-h-screen md:min-h-0 bg-slate-50/50 md:bg-transparent pb-28 md:pb-0 relative font-sans antialiased">
+
+        {/* FIXED STICKY HEADER CONTAINER WITH INTEGRATED SEARCH BAR — hidden
+            at md+, where DesktopShell's title bar + actions above take over. */}
+        <div className="sticky top-0 z-40 border-b border-slate-200/60 bg-white/80 backdrop-blur-md md:hidden">
           <div className="mx-auto max-w-4xl flex items-center justify-between px-4 py-2.5 gap-4">
             <div className="flex items-center gap-3 min-w-0 flex-1 md:flex-initial">
               <button 
@@ -235,7 +266,7 @@ const copyLink = (estimate: Estimate) => {
         </div>
 
         {/* MAIN BODY LAYOUT */}
-        <div className="mx-auto max-w-4xl p-4">
+        <div className="mx-auto max-w-4xl md:max-w-none md:mx-0 p-4 md:p-0">
           
           {/* CONTROL META COMPONENT HEADLINE */}
           <div className="mb-4 flex items-center justify-between">
@@ -483,6 +514,7 @@ const copyLink = (estimate: Estimate) => {
           deleting={deleting}
         />
       </div>
+      </DesktopShell>
     </ProtectedRoute>
   );
 }

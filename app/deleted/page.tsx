@@ -7,6 +7,7 @@ import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import { formatCurrency, formatShortDate } from "@/lib/utils/formatting";
 import Header from "@/components/ui/Header";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import DesktopShell from "@/components/layout/DesktopShell";
 import { Trash2, RotateCcw, AlertTriangle } from "lucide-react";
 
 export default function DeletedEstimatesPage() {
@@ -116,10 +117,11 @@ export default function DeletedEstimatesPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-50 pb-24">
-        <Header title="Trash - Deleted Estimates" backLink="/estimates" />
+      <DesktopShell title="Trash">
+      <div className="min-h-screen md:min-h-0 bg-gray-50 md:bg-transparent pb-24 md:pb-0">
+        <Header title="Trash - Deleted Estimates" backLink="/estimates" mdHidden />
 
-        <div className="max-w-4xl mx-auto p-4">
+        <div className="max-w-4xl md:max-w-none mx-auto md:mx-0 p-4 md:p-0">
           {/* Batch Actions */}
           {deletedEstimates.length > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex justify-between items-center">
@@ -202,6 +204,7 @@ export default function DeletedEstimatesPage() {
           </div>
         </div>
       </div>
+      </DesktopShell>
     </ProtectedRoute>
   );
 }

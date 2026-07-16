@@ -6,7 +6,7 @@ import { LayoutDashboard, FileText, ClipboardList, Settings, Play, Square, Recei
 import { useTrip } from "@/components/mileage/context/TripContext";
 import toast from "react-hot-toast";
 
-export default function BottomNav() {
+export default function BottomNav({ desktopHidden = false }: { desktopHidden?: boolean }) {
   const pathname = usePathname();
   const { start, isTripActive, isSaving, startTrip, endTrip, completeTrip } = useTrip();
 
@@ -58,7 +58,7 @@ const navItems = [
   }
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200/60 bg-white/90 backdrop-blur-md pb-safe">
+    <div className={`fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200/60 bg-white/90 backdrop-blur-md pb-safe ${desktopHidden ? "md:hidden" : ""}`}>
       <div className="mx-auto flex h-16 max-w-xl items-center justify-around px-2">
         {navItems.map((item) => {
           const Icon = item.icon;

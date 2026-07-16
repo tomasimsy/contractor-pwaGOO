@@ -6,6 +6,7 @@ import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import { useCompany } from "@/context/CompanyContext";
 import Header from "@/components/ui/Header";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import DesktopShell from "@/components/layout/DesktopShell";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import {
@@ -206,10 +207,11 @@ export default function SettingsPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-slate-50/70 pb-28">
-        <Header title="Settings" backLink="/" />
+      <DesktopShell title="Settings">
+      <div className="min-h-screen md:min-h-0 bg-slate-50/70 md:bg-transparent pb-28 md:pb-16">
+        <Header title="Settings" backLink="/" mdHidden />
 
-        <div className="mx-auto max-w-2xl space-y-5 p-4">
+        <div className="mx-auto max-w-2xl md:max-w-3xl md:mx-0 space-y-5 p-4 md:p-0">
           <div>
             <div className="text-lg font-bold text-slate-800">Settings</div>
             <div className="text-sm text-slate-500">Manage your company, defaults, and records</div>
@@ -431,7 +433,7 @@ export default function SettingsPage() {
         </div>
 
         {/* STICKY SAVE BAR — sits above BottomNav (z-40, ~64px tall), not underneath it */}
-        <div className="fixed bottom-16 left-0 right-0 z-50 border-t border-slate-200 bg-white/90 backdrop-blur-sm p-3">
+        <div className="fixed bottom-16 md:bottom-0 left-0 right-0 md:left-64 z-50 border-t border-slate-200 bg-white/90 backdrop-blur-sm p-3">
           <div className="mx-auto max-w-2xl">
             <button
               onClick={saveSettings}
@@ -444,6 +446,7 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+      </DesktopShell>
     </ProtectedRoute>
   );
 }

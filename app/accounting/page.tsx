@@ -6,6 +6,7 @@ import Header from '@/components/ui/Header';
 import { supabase } from '@/lib/supabase/client';
 import { formatCurrency } from '@/lib/utils/formatting';
 import { MetricExplanationModal } from '@/components/accounting/MetricExplanationModal';
+import DesktopShell from '@/components/layout/DesktopShell';
 
 import {
   Download,
@@ -411,10 +412,11 @@ export default function AccountingPage() {
   // ---------- Main render ----------
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-slate-50/70 pb-24">
-        <Header title="Accounting" backLink="/" />
+      <DesktopShell title="Accounting">
+      <div className="min-h-screen md:min-h-0 bg-slate-50/70 md:bg-transparent pb-24 md:pb-0">
+        <Header title="Accounting" backLink="/" mdHidden />
 
-        <div className="mx-auto max-w-7xl p-4">
+        <div className="mx-auto max-w-7xl md:max-w-none md:mx-0 p-4 md:p-0">
           {/* Header */}
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-xl font-bold text-slate-800">Financial Summary</h1>
@@ -746,6 +748,7 @@ export default function AccountingPage() {
   isOpen={showExplanation}
   onClose={() => setShowExplanation(false)}
 />
+      </DesktopShell>
     </ProtectedRoute>
   );
 }

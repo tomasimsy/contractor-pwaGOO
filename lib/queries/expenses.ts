@@ -241,22 +241,42 @@ export function computePendingPayouts(
   return [...subPayouts, ...agentPayouts].filter((p) => includeSettled || p.remainingAmount > 0.004);
 }
 
-/** Company-wide pending-payout total, for the Dashboard widget — same
- * assigned-minus-paid math as computePendingPayouts, just aggregated
- * across every project instead of one. Kept as a simple count + total
- * rather than a per-project breakdown, since Dashboard just needs the
- * headline number pointing back to the Expense page for detail. */
-export async function getCompanyPendingPayoutsSummary(
-  companyId: string
-): Promise<{ count: number; totalRemaining: number }> {
+/**
+ * Company-wide pending payouts, one row per subcontractor/agent
+ * assignment still owed money, with the owning project/client attached
+ * — the single source of truth behind both the standalone Pending
+ * Payouts page and the Dashboard alert's count/total, so the two can
+ * never disagree (previously the Dashboard summary re-derived this
+ * same assigned-minus-paid math independently; see
+ * getCompanyPendingPayoutsSummary below, now just a thin wrapper over
+ * this). Same estimate_agent_id-with-agent_id-fallback matching as
+ * computePendingPayouts, extended to also key on estimate_id since an
+ * agent can be assigned to more than one project across the company.
+ */
+export type DetailedPendingPayout = PendingPayout & {
+  estimateId: string;
+  projectTitle: string;
+  estimateNumber: string | null;
+  clientName: string | null;
+};
+
+export async function getCompanyPendingPayoutsDetailed(companyId: string): Promise<DetailedPendingPayout[]> {
   const [
     { data: subs, error: subsError },
     { data: agents, error: agentsError },
     { data: subPayments, error: subPaymentsError },
     { data: agentPayments, error: agentPaymentsError },
   ] = await Promise.all([
-    supabase.from("estimate_subcontractors").select("id, amount").eq("company_id", companyId).is("deleted_at", null),
-    supabase.from("estimate_agents").select("id, agent_id, amount, estimate_id").eq("company_id", companyId).is("deleted_at", null),
+    supabase
+      .from("estimate_subcontractors")
+      .select("id, estimate_id, subcontractor_id, amount, notes, subcontractors(name, trade)")
+      .eq("company_id", companyId)
+      .is("deleted_at", null),
+    supabase
+      .from("estimate_agents")
+      .select("id, estimate_id, agent_id, amount, notes, agents(name)")
+      .eq("company_id", companyId)
+      .is("deleted_at", null),
     supabase
       .from("subcontractor_payments")
       .select("estimate_subcontractor_id, amount")
@@ -273,16 +293,27 @@ export async function getCompanyPendingPayoutsSummary(
   if (subPaymentsError) throw subPaymentsError;
   if (agentPaymentsError) throw agentPaymentsError;
 
+  const estimateIds = Array.from(
+    new Set([...(subs ?? []).map((s) => s.estimate_id), ...(agents ?? []).map((a) => a.estimate_id)])
+  );
+  let estimates: { id: string; title: string | null; estimate_number: string | null; clients: { name: string } | null }[] = [];
+  if (estimateIds.length > 0) {
+    const { data, error } = await supabase
+      .from("estimates")
+      .select("id, title, estimate_number, clients(name)")
+      .in("id", estimateIds)
+      .eq("is_deleted", false);
+    if (error) throw error;
+    estimates = (data ?? []) as any;
+  }
+  const estimateById = new Map(estimates.map((e) => [e.id, e]));
+
   const paidBySub = new Map<string, number>();
   for (const p of subPayments ?? []) {
     if (!p.estimate_subcontractor_id) continue;
     paidBySub.set(p.estimate_subcontractor_id, (paidBySub.get(p.estimate_subcontractor_id) ?? 0) + p.amount);
   }
 
-  // Same estimate_agent_id-with-agent_id-fallback matching as
-  // computePendingPayouts — company-wide here, so the fallback also has
-  // to match on estimate_id (an agent can be assigned to more than one
-  // project across the company).
   const agentAssignmentKey = (agentId: string | null, estimateId: string | null) => `${agentId}::${estimateId}`;
   const assignmentIdByAgentEstimate = new Map<string, string>();
   for (const a of agents ?? []) {
@@ -295,24 +326,64 @@ export async function getCompanyPendingPayoutsSummary(
     paidByAgent.set(assignmentId, (paidByAgent.get(assignmentId) ?? 0) + p.amount);
   }
 
-  let count = 0;
-  let totalRemaining = 0;
-  for (const s of subs ?? []) {
-    const remaining = Math.max((s.amount ?? 0) - (paidBySub.get(s.id) ?? 0), 0);
-    if (remaining > 0.004) {
-      count++;
-      totalRemaining += remaining;
-    }
-  }
-  for (const a of agents ?? []) {
-    const remaining = Math.max((a.amount ?? 0) - (paidByAgent.get(a.id) ?? 0), 0);
-    if (remaining > 0.004) {
-      count++;
-      totalRemaining += remaining;
-    }
-  }
+  const subPayouts: DetailedPendingPayout[] = (subs ?? []).map((s: any) => {
+    const paidAmount = paidBySub.get(s.id) ?? 0;
+    const { remainingAmount, status } = computePayoutStatus(s.amount ?? 0, paidAmount);
+    const est = estimateById.get(s.estimate_id);
+    return {
+      role: "subcontractor",
+      assignmentId: s.id,
+      personId: s.subcontractor_id,
+      name: s.subcontractors?.name ?? "Subcontractor",
+      roleDetail: s.subcontractors?.trade ?? null,
+      assignedAmount: s.amount ?? 0,
+      paidAmount,
+      remainingAmount,
+      status,
+      notes: s.notes ?? null,
+      estimateId: s.estimate_id,
+      projectTitle: est?.title || "Untitled Estimate",
+      estimateNumber: est?.estimate_number ?? null,
+      clientName: est?.clients?.name ?? null,
+    };
+  });
 
-  return { count, totalRemaining };
+  const agentPayouts: DetailedPendingPayout[] = (agents ?? []).map((a: any) => {
+    const paidAmount = paidByAgent.get(a.id) ?? 0;
+    const { remainingAmount, status } = computePayoutStatus(a.amount ?? 0, paidAmount);
+    const est = estimateById.get(a.estimate_id);
+    return {
+      role: "agent",
+      assignmentId: a.id,
+      personId: a.agent_id,
+      name: a.agents?.name ?? "Agent",
+      roleDetail: null,
+      assignedAmount: a.amount ?? 0,
+      paidAmount,
+      remainingAmount,
+      status,
+      notes: a.notes ?? null,
+      estimateId: a.estimate_id,
+      projectTitle: est?.title || "Untitled Estimate",
+      estimateNumber: est?.estimate_number ?? null,
+      clientName: est?.clients?.name ?? null,
+    };
+  });
+
+  return [...subPayouts, ...agentPayouts].filter((p) => p.remainingAmount > 0.004);
+}
+
+/** Company-wide pending-payout count + total, for the Dashboard widget
+ * — now a thin aggregate over getCompanyPendingPayoutsDetailed so the
+ * headline number can never drift from the detailed list it links to. */
+export async function getCompanyPendingPayoutsSummary(
+  companyId: string
+): Promise<{ count: number; totalRemaining: number }> {
+  const payouts = await getCompanyPendingPayoutsDetailed(companyId);
+  return {
+    count: payouts.length,
+    totalRemaining: payouts.reduce((sum, p) => sum + p.remainingAmount, 0),
+  };
 }
 
 /**

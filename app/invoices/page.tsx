@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase/client";
 import { formatCurrency, formatShortDate } from "@/lib/utils/formatting";
 import { ArrowLeft, Search, AlertCircle, Link2, Send, ArrowRight } from "lucide-react";
 import toast from "react-hot-toast";
+import DesktopShell from "@/components/layout/DesktopShell";
 
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -101,9 +102,25 @@ export default function InvoicesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50/40 pb-32 font-sans antialiased text-slate-800">
-      {/* HEADER CONTROLS */}
-      <div className="sticky top-0 z-40 border-b border-slate-200/60 bg-white/80 backdrop-blur-md">
+    <DesktopShell
+      title="Invoices"
+      actions={
+        <div className="relative w-64">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search invoices..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full h-8 pl-8 pr-3 rounded-lg border border-gray-200 bg-white text-[13px] focus:outline-none focus:ring-2 focus:ring-gray-900/5 focus:border-gray-300 transition-colors"
+          />
+        </div>
+      }
+    >
+    <div className="min-h-screen md:min-h-0 bg-slate-50/40 md:bg-transparent pb-32 md:pb-0 font-sans antialiased text-slate-800">
+      {/* HEADER CONTROLS — hidden at md+, where DesktopShell's title bar
+          + search action above take over. */}
+      <div className="sticky top-0 z-40 border-b border-slate-200/60 bg-white/80 backdrop-blur-md md:hidden">
         <div className="mx-auto max-w-xl px-4 py-2.5 flex items-center gap-3">
           <Link href="/dashboard" className="p-1 text-slate-400 hover:text-[#05291e] transition-colors">
             <ArrowLeft size={16} />
@@ -122,7 +139,7 @@ export default function InvoicesPage() {
       </div>
 
       {/* RENDER LISTING */}
-      <div className="mx-auto max-w-xl p-4 space-y-2">
+      <div className="mx-auto max-w-xl md:max-w-none md:mx-0 p-4 md:p-0 space-y-2">
         <div className="flex items-center justify-between mb-3">
           <div className="text-[16px] font-bold uppercase tracking-wider text-emerald-700">
             All Invoices
@@ -298,5 +315,6 @@ export default function InvoicesPage() {
         )}
       </div>
     </div>
+    </DesktopShell>
   );
 }

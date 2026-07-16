@@ -38,6 +38,20 @@ const PUBLIC_ROUTES = [
   const isPublicPage = pathname?.startsWith('/public');
   const isAuthPage = pathname === '/login' || pathname === '/signup';
   const showBottomNav = !isPublicPage && !isAuthPage;
+  // Exact routes wrapped in the shared DesktopShell (sidebar nav) — the
+  // mobile bottom bar only needs to stay for phone-width visitors on
+  // these, since the sidebar already covers navigation at md+. Deliberately
+  // NOT prefix-matched for /estimates, /invoices, /clients: their [id]
+  // detail/edit/create sub-routes aren't shell-wrapped yet, and hiding the
+  // bottom nav there too would leave desktop visitors with no navigation
+  // at all. /settings is prefix-matched because all of its sub-routes
+  // (agents, subcontractors, team) are shell-wrapped.
+  const DESKTOP_SHELL_EXACT_ROUTES = [
+    '/dashboard-v2', '/estimates', '/invoices', '/expense', '/pending-payouts', '/clients',
+    '/documents', '/mileage', '/reports/expenses', '/statement', '/deleted', '/accounting',
+  ];
+  const isDesktopShellRoute =
+    DESKTOP_SHELL_EXACT_ROUTES.includes(pathname || '') || pathname === '/settings' || pathname?.startsWith('/settings/');
 
 useEffect(() => {
   if ("serviceWorker" in navigator) {
@@ -198,7 +212,7 @@ useEffect(() => {
                   ) : (
                     <>
                       {children}
-                      {showBottomNav && <BottomNav />}
+                      {showBottomNav && <BottomNav desktopHidden={isDesktopShellRoute} />}
                     </>
                   )}
                 </div>

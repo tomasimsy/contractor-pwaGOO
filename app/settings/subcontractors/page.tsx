@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase/client";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import Header from "@/components/ui/Header";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import DesktopShell from "@/components/layout/DesktopShell";
 import Modal from "@/components/ui/Modal";
 import DeleteModal from "@/components/ui/DeleteModal";
 import toast from "react-hot-toast";
@@ -132,9 +133,10 @@ function SubcontractorsContent() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50/70">
-      <Header title="Subcontractors" backLink="/settings" />
-      <div className="mx-auto max-w-2xl p-4 space-y-4">
+    <DesktopShell title="Subcontractors">
+    <div className="min-h-screen md:min-h-0 bg-slate-50/70 md:bg-transparent">
+      <Header title="Subcontractors" backLink="/settings" mdHidden />
+      <div className="mx-auto max-w-2xl md:max-w-none md:mx-0 p-4 md:p-0 space-y-4">
         <button
           type="button"
           onClick={openCreate}
@@ -219,6 +221,7 @@ function SubcontractorsContent() {
         deleting={deleting}
       />
     </div>
+    </DesktopShell>
   );
 }
 

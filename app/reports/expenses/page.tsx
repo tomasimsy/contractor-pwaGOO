@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
+import DesktopShell from "@/components/layout/DesktopShell";
 import { formatCurrency } from "@/lib/utils/formatting";
 import {
   ArrowUpDown,
@@ -411,8 +412,9 @@ export default function ExpensesReportPage() {
     );
 
   return (
-    <div className="min-h-screen bg-slate-50/70 p-6">
-      <div className="max-w-7xl mx-auto">
+    <DesktopShell title="Reports">
+    <div className="min-h-screen md:min-h-0 bg-slate-50/70 md:bg-transparent p-6 md:p-0">
+      <div className="max-w-7xl mx-auto md:mx-0 md:max-w-none">
         <h1 className="text-2xl font-bold text-slate-800 mb-6">
           💰 Financial Summary by Estimate
         </h1>
@@ -643,5 +645,6 @@ export default function ExpensesReportPage() {
         </div>
       </div>
     </div>
+    </DesktopShell>
   );
 }

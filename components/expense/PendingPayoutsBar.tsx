@@ -67,7 +67,7 @@ export default function PendingPayoutsBar({
 
   return (
     <>
-      <div className="fixed bottom-16 lg:bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white/95 backdrop-blur-sm shadow-[0_-2px_8px_rgba(0,0,0,0.03)]">
+      <div className="fixed bottom-16 lg:bottom-0 left-0 right-0 md:left-64 z-40 border-t border-gray-200 bg-white/95 backdrop-blur-sm shadow-[0_-2px_8px_rgba(0,0,0,0.03)]">
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-2">
           <div className="flex items-center gap-2 overflow-x-auto">
             <span className="shrink-0 flex items-center gap-1.5 text-xs font-medium text-gray-500 pr-1">

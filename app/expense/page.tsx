@@ -1,6 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { ArrowUpRight } from "lucide-react";
 import toast from "react-hot-toast";
 import { getDeletedEntries, getProjectBundle, getProjectSummaries } from "@/lib/queries/projects";
 import {
@@ -28,8 +31,18 @@ import DesktopDashboard from "@/components/expense/desktop/DesktopDashboard";
 import ExpenseLedger from "@/components/expense/ExpenseLedger";
 import DashboardPanel from "@/components/expense/desktop/DashboardPanel";
 import PendingPayoutsBar from "@/components/expense/PendingPayoutsBar";
+import DesktopShell from "@/components/layout/DesktopShell";
 
 export default function ProjectExpensePage() {
+  return (
+    <Suspense fallback={null}>
+      <ProjectExpenseContent />
+    </Suspense>
+  );
+}
+
+function ProjectExpenseContent() {
+  const searchParams = useSearchParams();
   const [recentProjects, setRecentProjects] = useState<ProjectSummary[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [bundle, setBundle] = useState<ProjectBundle | null>(null);
@@ -46,8 +59,14 @@ export default function ProjectExpensePage() {
     if (recentIds.length > 0) {
       getProjectSummaries(recentIds).then(setRecentProjects).catch(() => {});
     }
+    // A `?project=` param (e.g. from the Pending Payouts page's "View"
+    // link) is an explicit deep-link intent, so it wins over whatever
+    // project this browser last had open.
+    const linkedProjectId = searchParams.get("project");
     const lastSelected = getLastSelectedProjectId();
-    if (lastSelected) setSelectedProjectId(lastSelected);
+    const initialProjectId = linkedProjectId || lastSelected;
+    if (initialProjectId) setSelectedProjectId(initialProjectId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadBundle = useCallback(async (projectId: string) => {
@@ -218,6 +237,7 @@ export default function ProjectExpensePage() {
   }, [selectedProjectId, loadBundle]);
 
   return (
+    <DesktopShell>
     <div className="min-h-screen bg-gray-50/60">
       <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-28 lg:pb-16">
         {/* Page header + project switcher share a row on wide screens so
@@ -227,6 +247,12 @@ export default function ProjectExpensePage() {
           <div className="shrink-0">
             <h1 className="text-[20px] font-semibold text-gray-900 tracking-tight">Expenses</h1>
             <p className="text-[13px] text-gray-500 mt-0.5">Track costs, payments, and profitability by project.</p>
+            <Link
+              href="/pending-payouts"
+              className="inline-flex items-center gap-1 text-[13px] font-medium text-gray-500 hover:text-gray-800 mt-1.5"
+            >
+              View all pending payouts <ArrowUpRight size={12} />
+            </Link>
           </div>
 
           <div className="w-full lg:w-auto lg:min-w-[420px] space-y-2">
@@ -313,5 +339,6 @@ export default function ProjectExpensePage() {
         <PendingPayoutsBar bundle={bundle} payouts={pendingPayouts} onRefresh={refreshBundle} />
       )}
     </div>
+    </DesktopShell>
   );
 }

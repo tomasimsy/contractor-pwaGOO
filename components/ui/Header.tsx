@@ -7,17 +7,22 @@ interface HeaderProps {
 title: string;
 backLink?: string;
 rightAction?: React.ReactNode;
+/** Desktop/tablet pages wrapped in DesktopShell already get an
+ * equivalent title bar next to the sidebar — this hides the mobile
+ * app-bar version at `md:` and up instead of showing both. */
+mdHidden?: boolean;
 }
 
 export default function Header({
 title,
 backLink,
 rightAction,
+mdHidden,
 }: HeaderProps) {
 // No unread count since we're not using a table
 
 return (
-<div className="bg-primary border-b border-gold/20 px-4 py-3 flex items-center sticky top-0 z-10 shadow-md">
+<div className={`bg-primary border-b border-gold/20 px-4 py-3 flex items-center sticky top-0 z-10 shadow-md ${mdHidden ? "md:hidden" : ""}`}>
 
   {/* Left */}
   <div className="w-10 flex justify-start">

@@ -20,6 +20,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import Link from "next/link";
+import DesktopShell from "@/components/layout/DesktopShell";
 
 type FinancialSummary = {
   totalRevenue: number;
@@ -338,9 +339,10 @@ export default function FinancialDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+    <DesktopShell title="Statements">
+    <div className="min-h-screen md:min-h-0 bg-gray-50 md:bg-transparent pb-20 md:pb-0">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-3">
+      <div className="sticky top-0 md:static z-10 bg-white md:bg-transparent border-b border-gray-100 md:border-0 px-4 md:px-0 py-3">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div>
             <h1 className="text-lg font-bold text-gray-800">Financial Dashboard</h1>
@@ -597,5 +599,6 @@ export default function FinancialDashboard() {
         </div>
       </div>
     </div>
+    </DesktopShell>
   );
 }

@@ -15,6 +15,10 @@ export default function ClientLayout({
   const isPublicPage = pathname?.startsWith('/public');
   const isAuthPage = pathname === '/login' || pathname === '/signup';
   const showBottomNav = !isPublicPage && !isAuthPage;
+  // The desktop/tablet dashboard has its own sidebar nav at md+, so the
+  // mobile bottom bar only needs to stay for phone-width visitors there
+  // — every other route's bottom nav is unaffected.
+  const isDesktopDashboard = pathname === '/dashboard-v2';
 
   useEffect(() => {
     if ('serviceWorker' in navigator) {
@@ -31,7 +35,7 @@ export default function ClientLayout({
   return (
     <>
       {children}
-      {showBottomNav && <BottomNav />}
+      {showBottomNav && <BottomNav desktopHidden={isDesktopDashboard} />}
     </>
   );
 }
