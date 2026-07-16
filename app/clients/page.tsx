@@ -10,7 +10,9 @@ import Header from "@/components/ui/Header";
 import DeleteModal from "@/components/ui/DeleteModal";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import DesktopShell from "@/components/layout/DesktopShell";
-import { Pencil, Trash2 } from "lucide-react";
+import ClientDetailPanel from "@/components/clients/ClientDetailPanel";
+import { getClientDetail, type ClientDetail } from "@/lib/queries/clients";
+import { Pencil, Trash2, ChevronDown } from "lucide-react";
 
 export default function ClientsPage() {
   const router = useRouter();
@@ -18,6 +20,28 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: "", name: "" });
   const [deleting, setDeleting] = useState(false);
+  const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
+  const [detailByClient, setDetailByClient] = useState<Record<string, ClientDetail>>({});
+  const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
+
+  // Always refetches on expand (no cache kept across opens) so a
+  // payment/invoice/estimate change made elsewhere while this panel was
+  // closed is never shown stale the next time it's opened.
+  async function toggleClient(client: Client) {
+    if (expandedClientId === client.id) {
+      setExpandedClientId(null);
+      return;
+    }
+    setExpandedClientId(client.id);
+    setLoadingDetailId(client.id);
+    try {
+      const companyId = await getCompanyId();
+      const detail = await getClientDetail(client.id, companyId);
+      setDetailByClient((prev) => ({ ...prev, [client.id]: detail }));
+    } finally {
+      setLoadingDetailId(null);
+    }
+  }
 
   useEffect(() => {
     loadClients();
@@ -70,15 +94,27 @@ export default function ClientsPage() {
               No clients yet. Create one from the estimate page.
             </div>
           )}
-          {clients.map((client) => (
+          {clients.map((client) => {
+            const isExpanded = expandedClientId === client.id;
+            return (
           <div
             key={client.id}
-            className="bg-white rounded-xl p-3.5 shadow-sm hover:shadow-md transition"
+            className={`bg-white rounded-xl p-3.5 shadow-sm hover:shadow-md transition ${isExpanded ? "md:col-span-full" : ""}`}
           >
             <div className="flex justify-between items-start gap-3">
-              <div className="flex-1">
-                <div className="font-semibold text-[15px] text-navy leading-tight">
-                  {client.name}
+              <button
+                type="button"
+                onClick={() => toggleClient(client)}
+                className="flex-1 min-w-0 text-left"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold text-[15px] text-navy leading-tight">
+                    {client.name}
+                  </span>
+                  <ChevronDown
+                    size={14}
+                    className={`text-gray-400 shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                  />
                 </div>
 
                 {client.phone && (
@@ -90,7 +126,7 @@ export default function ClientsPage() {
                 {client.address && (
                   <div className="text-[11px] text-gray-500 leading-tight">📍 {client.address}</div>
                 )}
-              </div>
+              </button>
 
               <div className="flex gap-1.5">
                 <Link
@@ -114,9 +150,13 @@ export default function ClientsPage() {
                 </button>
               </div>
             </div>
-          </div>
 
-          ))}
+            {isExpanded && (
+              <ClientDetailPanel detail={detailByClient[client.id] ?? null} loading={loadingDetailId === client.id} />
+            )}
+          </div>
+            );
+          })}
         </div>
 
         <DeleteModal

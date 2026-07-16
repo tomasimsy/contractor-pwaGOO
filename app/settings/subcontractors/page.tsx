@@ -8,8 +8,10 @@ import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import DesktopShell from "@/components/layout/DesktopShell";
 import Modal from "@/components/ui/Modal";
 import DeleteModal from "@/components/ui/DeleteModal";
+import SubcontractorDetailPanel from "@/components/subcontractors/SubcontractorDetailPanel";
+import { getSubcontractorDetail, type SubcontractorDetail } from "@/lib/queries/subcontractors";
 import toast from "react-hot-toast";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, ChevronDown } from "lucide-react";
 
 type Subcontractor = {
   id: string;
@@ -33,6 +35,28 @@ function SubcontractorsContent() {
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Subcontractor | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [detailById, setDetailById] = useState<Record<string, SubcontractorDetail>>({});
+  const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
+
+  // Always refetches on expand — no stale cache across opens, so a
+  // payment/assignment change made elsewhere (e.g. the Expense page)
+  // while this panel was closed is never shown stale.
+  async function toggleSub(s: Subcontractor) {
+    if (expandedId === s.id) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(s.id);
+    setLoadingDetailId(s.id);
+    try {
+      const companyId = await getCompanyId();
+      const detail = await getSubcontractorDetail(s.id, companyId);
+      setDetailById((prev) => ({ ...prev, [s.id]: detail }));
+    } finally {
+      setLoadingDetailId(null);
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -153,40 +177,57 @@ function SubcontractorsContent() {
           </div>
         ) : (
           <div className="bg-white rounded-xl border border-slate-200/70 shadow-sm divide-y divide-slate-100">
-            {subs.map((s) => (
-              <div key={s.id} className="flex items-center gap-3 p-3.5">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-slate-800 truncate">{s.name}</span>
-                    {!s.is_active && (
-                      <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">
-                        Inactive
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs text-slate-400 truncate">
-                    {[s.trade, s.contact_person, s.phone, s.email].filter(Boolean).join(" · ") || "No details"}
-                  </div>
+            {subs.map((s) => {
+              const isExpanded = expandedId === s.id;
+              return (
+              <div key={s.id} className="p-3.5">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => toggleSub(s)}
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <div className="flex items-center gap-2">
+                      <ChevronDown
+                        size={14}
+                        className={`text-slate-400 shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                      />
+                      <span className="text-sm font-bold text-slate-800 truncate">{s.name}</span>
+                      {!s.is_active && (
+                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">
+                          Inactive
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-slate-400 truncate pl-[22px]">
+                      {[s.trade, s.contact_person, s.phone, s.email].filter(Boolean).join(" · ") || "No details"}
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleActive(s)}
+                    className="shrink-0 text-[11px] font-bold text-slate-500 hover:text-slate-700"
+                  >
+                    {s.is_active ? "Deactivate" : "Activate"}
+                  </button>
+                  <button type="button" onClick={() => openEdit(s)} className="shrink-0 p-2 text-slate-400 hover:text-slate-600">
+                    <Pencil size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteTarget(s)}
+                    className="shrink-0 p-2 text-slate-300 hover:text-rose-600"
+                  >
+                    <Trash2 size={15} />
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => toggleActive(s)}
-                  className="shrink-0 text-[11px] font-bold text-slate-500 hover:text-slate-700"
-                >
-                  {s.is_active ? "Deactivate" : "Activate"}
-                </button>
-                <button type="button" onClick={() => openEdit(s)} className="shrink-0 p-2 text-slate-400 hover:text-slate-600">
-                  <Pencil size={15} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDeleteTarget(s)}
-                  className="shrink-0 p-2 text-slate-300 hover:text-rose-600"
-                >
-                  <Trash2 size={15} />
-                </button>
+
+                {isExpanded && (
+                  <SubcontractorDetailPanel detail={detailById[s.id] ?? null} loading={loadingDetailId === s.id} />
+                )}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
