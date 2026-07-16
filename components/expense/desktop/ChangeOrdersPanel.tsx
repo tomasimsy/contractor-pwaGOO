@@ -145,7 +145,7 @@ export default function ChangeOrdersPanel({
         <button
           type="button"
           onClick={openCreate}
-          className="flex items-center gap-1.5 text-[13px] font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg px-3 py-1.5 transition-colors"
+          className="flex items-center gap-1.5 text-[13px] font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-lg px-3 py-1.5 transition-colors"
         >
           <Plus size={13} />
           New
@@ -177,15 +177,15 @@ export default function ChangeOrdersPanel({
       </div>
 
       {filtered.length === 0 ? (
-        <div className="text-[13px] text-gray-400 text-center py-8">
+        <div className="text-[13px] text-gray-400 text-center py-6">
           {bundle.changeOrders.length === 0 ? "No change orders yet." : "No change orders match your filters."}
         </div>
       ) : (
-        <div className="divide-y divide-gray-100">
+        <div className="divide-y divide-gray-100 max-h-72 overflow-y-auto -mx-1 px-1">
           {filtered.map((co) => {
             const linked = linkedSubtotal(co.id);
             return (
-              <div key={co.id} className="py-3 first:pt-0 last:pb-0">
+              <div key={co.id} className="py-2.5 first:pt-0 last:pb-0">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">

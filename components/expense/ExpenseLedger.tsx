@@ -17,6 +17,7 @@ export default function ExpenseLedger({
   onRestore,
   emptyLabel = "No expenses logged yet",
   emptyHint = 'Tap "Add Expense" to log the first one.',
+  maxHeight,
 }: {
   entries: LedgerEntry[];
   onDelete?: (entry: LedgerEntry) => void;
@@ -25,12 +26,16 @@ export default function ExpenseLedger({
   onRestore?: (entry: LedgerEntry) => void;
   emptyLabel?: string;
   emptyHint?: string;
+  /** When set, the row list scrolls internally (e.g. "420px") instead of
+   * growing the page — the header row stays pinned via sticky, so long
+   * ledgers don't push everything else below the fold. */
+  maxHeight?: string;
 }) {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   if (entries.length === 0) {
     return (
-      <div className="py-10 text-center">
+      <div className="py-8 text-center">
         <div className="text-sm text-gray-500">{emptyLabel}</div>
         <div className="text-[13px] text-gray-400 mt-0.5">{emptyHint}</div>
       </div>
@@ -38,8 +43,8 @@ export default function ExpenseLedger({
   }
 
   return (
-    <div>
-      <div className="hidden sm:grid grid-cols-[1fr_auto_auto_auto] gap-4 px-1 pb-2 text-[11px] font-medium uppercase tracking-wide text-gray-400 border-b border-gray-100">
+    <div className={maxHeight ? "overflow-y-auto -mx-1 px-1" : ""} style={maxHeight ? { maxHeight } : undefined}>
+      <div className="hidden sm:grid grid-cols-[1fr_auto_auto_auto] gap-4 px-1 pb-2 text-[11px] font-medium uppercase tracking-wide text-gray-400 border-b border-gray-100 sticky top-0 bg-white z-10">
         <span>Payee</span>
         <span>Category</span>
         <span>Date</span>
@@ -52,7 +57,7 @@ export default function ExpenseLedger({
           return (
             <div
               key={`${entry.source}-${entry.id}`}
-              className={`group grid grid-cols-2 sm:grid-cols-[1fr_auto_auto_auto] items-center gap-2 sm:gap-4 px-1 py-2.5 ${onRestore ? "opacity-60" : ""}`}
+              className={`group grid grid-cols-2 sm:grid-cols-[1fr_auto_auto_auto] items-center gap-2 sm:gap-4 px-1 py-2 ${onRestore ? "opacity-60" : ""}`}
             >
               <div className="min-w-0 col-span-2 sm:col-span-1">
                 <div className="flex items-center gap-1.5">

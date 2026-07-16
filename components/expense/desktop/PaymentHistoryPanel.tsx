@@ -28,12 +28,12 @@ export default function PaymentHistoryPanel({ invoices }: { invoices: InvoiceRow
       {invoices.length === 0 ? (
         <EmptyState message="No invoices on this project yet." />
       ) : (
-        <div className="divide-y divide-gray-100">
+        <div className="divide-y divide-gray-100 max-h-64 overflow-y-auto -mx-1 px-1">
           {invoices.map((invoice) => {
             const tone = invoiceTone(invoice);
             const Icon = invoice.overdue ? AlertCircle : tone.icon;
             return (
-              <div key={invoice.id} className="py-2.5 first:pt-0 last:pb-0 flex items-center gap-3">
+              <div key={invoice.id} className="py-2 first:pt-0 last:pb-0 flex items-center gap-3">
                 <Icon size={14} className={`shrink-0 ${invoice.overdue ? "text-rose-600" : tone.text}`} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline justify-between gap-2">

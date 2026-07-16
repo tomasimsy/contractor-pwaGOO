@@ -32,7 +32,7 @@ export default function PayoutRow({
   const isExpanded = actions.expandedId === payout.assignmentId;
 
   return (
-    <div className="py-3 first:pt-0 last:pb-0">
+    <div className="py-2.5 first:pt-0 last:pb-0">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -96,7 +96,7 @@ export default function PayoutRow({
               <button
                 type="button"
                 onClick={() => actions.setPayoutModalTarget(payout)}
-                className="text-[13px] font-medium text-white bg-emerald-600 rounded-lg px-3 py-1.5 hover:bg-emerald-700 transition-colors"
+                className="text-[13px] font-medium text-white bg-gray-900 rounded-lg px-3 py-1.5 hover:bg-gray-800 transition-colors"
               >
                 Pay
               </button>

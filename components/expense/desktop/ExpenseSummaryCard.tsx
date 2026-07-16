@@ -67,7 +67,7 @@ export default function ExpenseSummaryCard({
           const overBudget = comparison ? item.value - comparison.budget : 0;
 
           return (
-            <div key={item.label} className="flex items-center justify-between py-2.5 gap-4">
+            <div key={item.label} className="flex items-center justify-between py-2 gap-4">
               <div className="min-w-0">
                 <div className="text-[13px] text-gray-700">{item.label}</div>
                 {comparison && comparison.budget > 0 && (

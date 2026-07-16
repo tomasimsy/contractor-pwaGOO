@@ -12,14 +12,14 @@ export default function ReceiptsPanel({ expenses }: { expenses: EstimateExpenseR
       {withReceipts.length === 0 ? (
         <EmptyState message="No receipts attached yet." />
       ) : (
-        <div className="divide-y divide-gray-100">
+        <div className="divide-y divide-gray-100 max-h-64 overflow-y-auto -mx-1 px-1">
           {withReceipts.map((expense) => (
             <a
               key={expense.id}
               href={expense.receipt_url ?? undefined}
               target="_blank"
               rel="noreferrer"
-              className={`flex items-center gap-2.5 py-2.5 transition-colors ${
+              className={`flex items-center gap-2.5 py-2 transition-colors ${
                 expense.receipt_url ? "hover:text-gray-900 cursor-pointer" : "cursor-default"
               }`}
             >

@@ -43,7 +43,7 @@ export default function CustomerPaymentStatusCard({
 }) {
   return (
     <DashboardPanel title="Customer Payment Status" accent="emerald">
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-6 sm:gap-8">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-6">
         <StatTile
           label="Contract Value"
           value={formatCurrency(financials.revisedTotal)}
@@ -66,7 +66,7 @@ export default function CustomerPaymentStatusCard({
         />
       </div>
 
-      <div className="mt-6">
+      <div className="mt-4">
         <div className="h-1 rounded-full bg-gray-100 overflow-hidden">
           <div className={`h-full ${PAYMENT_BAR[payment.status]}`} style={{ width: `${payment.paymentPercentage}%` }} />
         </div>

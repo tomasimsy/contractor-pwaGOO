@@ -138,14 +138,22 @@ export default function ProjectExpensePage() {
     if (selectedProjectId) await loadBundle(selectedProjectId);
   }
 
-  async function handleAssignSubcontractor(subcontractorId: string, name: string, trade: string | null) {
+  async function handleAssignSubcontractor(
+    subcontractorId: string,
+    name: string,
+    trade: string | null,
+    amount = 0,
+    notes: string | null = null
+  ) {
     if (!bundle) throw new Error("No project selected");
     const assigned = await assignSubcontractorToProject(
       bundle.project.id,
       bundle.project.company_id,
       subcontractorId,
       name,
-      trade
+      trade,
+      amount,
+      notes
     );
     setBundle((prev) => (prev ? { ...prev, assignedSubcontractors: [...prev.assignedSubcontractors, assigned] } : prev));
     return assigned;
@@ -211,25 +219,28 @@ export default function ProjectExpensePage() {
 
   return (
     <div className="min-h-screen bg-gray-50/60">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-28 lg:pb-16">
-        {/* Page header */}
-        <div className="mb-6">
-          <h1 className="text-[22px] font-semibold text-gray-900 tracking-tight">Expenses</h1>
-          <p className="text-[13px] text-gray-500 mt-1">Track costs, payments, and profitability by project.</p>
-        </div>
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-28 lg:pb-16">
+        {/* Page header + project switcher share a row on wide screens so
+            the whole top-of-page controls fit without their own scroll
+            section before the actual dashboard appears. */}
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between mb-5">
+          <div className="shrink-0">
+            <h1 className="text-[20px] font-semibold text-gray-900 tracking-tight">Expenses</h1>
+            <p className="text-[13px] text-gray-500 mt-0.5">Track costs, payments, and profitability by project.</p>
+          </div>
 
-        {/* Project switcher — plain, no card */}
-        <div className="space-y-3 pb-6 mb-6">
-          <ProjectCombobox onSelect={(project) => handleSelectProject(project.id, project)} />
-          <RecentProjectCards
-            projects={recentProjects}
-            selectedProjectId={selectedProjectId}
-            onSelect={(id) => handleSelectProject(id)}
-          />
+          <div className="w-full lg:w-auto lg:min-w-[420px] space-y-2">
+            <ProjectCombobox onSelect={(project) => handleSelectProject(project.id, project)} />
+            <RecentProjectCards
+              projects={recentProjects}
+              selectedProjectId={selectedProjectId}
+              onSelect={(id) => handleSelectProject(id)}
+            />
+          </div>
         </div>
 
         {error && (
-          <div className="text-[13px] text-rose-600 bg-rose-50 rounded-lg p-3.5 mb-6">{error}</div>
+          <div className="text-[13px] text-rose-600 bg-rose-50 rounded-lg p-3.5 mb-5">{error}</div>
         )}
 
         {isLoadingBundle && (
@@ -280,6 +291,7 @@ export default function ProjectExpensePage() {
                   onRestore={handleRestoreEntry}
                   emptyLabel="Nothing deleted"
                   emptyHint="Deleted expenses and payments will show up here."
+                  maxHeight="320px"
                 />
               )}
             </DashboardPanel>

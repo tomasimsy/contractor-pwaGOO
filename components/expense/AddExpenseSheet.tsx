@@ -46,7 +46,9 @@ export default function AddExpenseSheet({
   onAssignSubcontractor: (
     subcontractorId: string,
     name: string,
-    trade: string | null
+    trade: string | null,
+    amount: number,
+    notes: string | null
   ) => Promise<AssignedSubcontractor>;
 }) {
   const [category, setCategory] = useState<FormCategory>(
@@ -60,6 +62,12 @@ export default function AddExpenseSheet({
   const [paidBy, setPaidBy] = useState("");
   const [assignmentId, setAssignmentId] = useState(""); // existing estimate_subcontractor_id, or NEW_SUB_OPTION
   const [newSubcontractorId, setNewSubcontractorId] = useState("");
+  // Same "committed payout amount" + notes fields AssignPayeeModal collects
+  // when assigning a subcontractor to a project — reusing them here (instead
+  // of silently assigning with amount 0) is what keeps both entry points
+  // writing the same estimate_subcontractors row shape.
+  const [newSubAssignAmount, setNewSubAssignAmount] = useState("");
+  const [newSubAssignNotes, setNewSubAssignNotes] = useState("");
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [agentPercentages, setAgentPercentages] = useState<Record<string, number>>({});
   const [notes, setNotes] = useState("");
@@ -202,7 +210,13 @@ export default function AddExpenseSheet({
         if (assignmentId === NEW_SUB_OPTION) {
           const sub = allSubcontractorOptions.find((s) => s.id === newSubcontractorId);
           if (!sub) return;
-          const assigned = await onAssignSubcontractor(sub.id, sub.name, sub.trade);
+          const assigned = await onAssignSubcontractor(
+            sub.id,
+            sub.name,
+            sub.trade,
+            Number(newSubAssignAmount) || 0,
+            newSubAssignNotes.trim() || null
+          );
           estimateSubcontractorId = assigned.estimateSubcontractorId;
         }
         await onSubmit({
@@ -384,6 +398,40 @@ export default function AddExpenseSheet({
                       </button>
                     </div>
                   )}
+
+                  {/* Same "Assigned Payout Amount" / "Notes" fields
+                      AssignPayeeModal collects on assignment — logging a
+                      payment for a not-yet-assigned sub shouldn't create a
+                      weaker assignment (amount $0, no notes) than assigning
+                      them up front does. */}
+                  <div className="mt-2">
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                      Assigned Payout Amount <span className="normal-case font-medium text-slate-300">(optional)</span>
+                    </label>
+                    <div className="relative mt-1">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-300">$</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={newSubAssignAmount}
+                        onChange={(e) => setNewSubAssignAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+                        placeholder="0.00"
+                        className="w-full h-11 pl-7 pr-3 rounded-xl border border-slate-200/70 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors text-sm font-semibold text-slate-800"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-2">
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                      Assignment Notes <span className="normal-case font-medium text-slate-300">(optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={newSubAssignNotes}
+                      onChange={(e) => setNewSubAssignNotes(e.target.value)}
+                      placeholder="Scope of work, terms, etc."
+                      className="w-full h-11 mt-1 rounded-xl border border-slate-200/70 px-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors text-sm text-slate-800 placeholder:text-slate-400"
+                    />
+                  </div>
                 </div>
               )}
             </div>

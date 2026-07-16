@@ -514,11 +514,42 @@ function getEffectiveSubcontractorCommitted(
   );
 }
 
+/**
+ * Agent commissions actually paid, restricted to agents currently
+ * assigned to the project — mirrors getEffectiveSubcontractorCommitted's
+ * "only count currently-assigned rows" scoping. Without this, removing
+ * an agent's assignment (the only way to delete their commission entry
+ * from the Agent Commissions list) orphaned their payment rows: the row
+ * disappeared from the UI with no way to view/manage it, yet its amount
+ * stayed stuck in this total forever since a plain sum over all
+ * agent_payments doesn't know the assignment was removed. Matches
+ * estimate_agent_id, falling back to agent_id — same rule
+ * computePendingPayouts already uses.
+ */
+function getEffectiveAgentPaid(
+  assignedAgents: Pick<ProjectBundle["assignedAgents"][number], "estimateAgentId" | "agentId">[],
+  agentPayments: Pick<ProjectBundle["agentPayments"][number], "estimate_agent_id" | "agent_id" | "amount">[]
+): number {
+  const paidByAssignment = new Map<string, number>();
+  for (const p of agentPayments) {
+    const assignmentId = p.estimate_agent_id ?? assignedAgents.find((a) => a.agentId === p.agent_id)?.estimateAgentId;
+    if (!assignmentId) continue;
+    paidByAssignment.set(assignmentId, (paidByAssignment.get(assignmentId) ?? 0) + p.amount);
+  }
+  return assignedAgents.reduce((sum, a) => sum + (paidByAssignment.get(a.estimateAgentId) ?? 0), 0);
+}
+
 export function summarizeFinancials(
   estimateTotal: number,
   bundle: Pick<
     ProjectBundle,
-    "expenses" | "subcontractorPayments" | "agentPayments" | "mileageTrips" | "changeOrders" | "assignedSubcontractors"
+    | "expenses"
+    | "subcontractorPayments"
+    | "agentPayments"
+    | "mileageTrips"
+    | "changeOrders"
+    | "assignedSubcontractors"
+    | "assignedAgents"
   >,
   totalPaidByClient = 0
 ): FinancialSummaryData {
@@ -543,7 +574,7 @@ export function summarizeFinancials(
   // still needs the real cash-paid figure (payout status, receipts).
   const subcontractorCosts = getEffectiveSubcontractorCommitted(bundle.assignedSubcontractors, bundle.subcontractorPayments);
   const subcontractorPaidToDate = bundle.subcontractorPayments.reduce((sum, p) => sum + p.amount, 0);
-  const agentCommissions = bundle.agentPayments.reduce((sum, p) => sum + p.amount, 0);
+  const agentCommissions = getEffectiveAgentPaid(bundle.assignedAgents, bundle.agentPayments);
   const mileageCosts = bundle.mileageTrips.reduce((sum, t) => sum + (t.reimbursement || 0), 0);
 
   // Same "revised total = original + approved change orders" formula

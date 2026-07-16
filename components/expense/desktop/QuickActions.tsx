@@ -9,23 +9,22 @@ export default function QuickActions({ onOpen }: { onOpen: (category?: FormCateg
   ];
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 bg-d">
+    <div className="flex flex-wrap items-center gap-1.5">
       {secondary.map((action) => (
         <button
           key={action.label}
           type="button"
           onClick={() => onOpen(action.category)}
-        className="flex items-center gap-1 h-8 px-3 rounded-lg bg-emerald-600 text-white text-[13px] font-medium hover:bg-emerald-700 transition-colors"
-        >
+className="flex items-center gap-1 h-8 px-4 rounded-full bg-emerald-600 text-white text-[13px] font-medium hover:bg-emerald-700 transition-colors shadow-sm">
+        
           {action.label}
         </button>
       ))}
       <button
         type="button"
         onClick={() => onOpen("material")}
-        className="flex items-center gap-1 h-8 px-3 rounded-lg bg-emerald-600 text-white text-[13px] font-medium hover:bg-emerald-700 transition-colors"
-      >
-        <Plus size={13} className="shrink-0" /> Add expense
+className="flex items-center gap-1 h-8 px-4 rounded-full bg-emerald-600 text-white text-[13px] font-medium hover:bg-emerald-700 transition-colors shadow-sm">
+          <Plus size={13} className="shrink-0" /> Add expense
       </button>
     </div>
   );

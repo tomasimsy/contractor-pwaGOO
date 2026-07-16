@@ -30,7 +30,7 @@ export default function AgentCommissionCard({
         <button
           type="button"
           onClick={() => actions.setAssignOpen(true)}
-          className="flex items-center gap-1.5 text-[13px] font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg px-3 py-1.5 transition-colors"
+          className="flex items-center gap-1.5 text-[13px] font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-lg px-3 py-1.5 transition-colors"
         >
           <Plus size={13} /> Assign
         </button>
@@ -39,7 +39,7 @@ export default function AgentCommissionCard({
       {agents.length === 0 ? (
         <EmptyState message="No agents assigned to this project yet." />
       ) : (
-        <div className="divide-y divide-gray-100">
+        <div className="divide-y divide-gray-100 max-h-72 overflow-y-auto -mx-1 px-1">
           {agents.map((payout) => (
             <PayoutRow key={payout.assignmentId} payout={payout} actions={actions} onDelete={onDelete} />
           ))}

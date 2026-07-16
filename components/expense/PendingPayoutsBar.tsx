@@ -67,19 +67,22 @@ export default function PendingPayoutsBar({
 
   return (
     <>
-      <div className="fixed bottom-16 left-0 right-0 z-40 border-t border-amber-200/70 bg-amber-50/95 backdrop-blur-sm">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5">
+      <div className="fixed bottom-16 lg:bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white/95 backdrop-blur-sm shadow-[0_-2px_8px_rgba(0,0,0,0.03)]">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-2">
           <div className="flex items-center gap-2 overflow-x-auto">
-            <span className="shrink-0 text-xs font-medium text-amber-700 pr-1">Pending payouts</span>
+            <span className="shrink-0 flex items-center gap-1.5 text-xs font-medium text-gray-500 pr-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              Pending payouts
+            </span>
             {payouts.map((p) => (
               <button
                 key={`${p.role}-${p.assignmentId}`}
                 type="button"
                 onClick={() => setTarget(p)}
-                className="shrink-0 flex items-center gap-1.5 rounded-full bg-white border border-amber-300 text-amber-900 text-[13px] pl-3 pr-2.5 py-1.5 hover:bg-amber-100 transition-colors"
+                className="shrink-0 flex items-center gap-1.5 rounded-full border border-gray-200 text-gray-700 text-[13px] pl-3 pr-2.5 py-1.5 hover:bg-gray-50 transition-colors"
               >
                 Pay {p.name}
-                <span className="font-semibold">{formatCurrency(p.remainingAmount)}</span>
+                <span className="font-semibold text-gray-900">{formatCurrency(p.remainingAmount)}</span>
               </button>
             ))}
           </div>

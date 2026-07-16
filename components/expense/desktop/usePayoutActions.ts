@@ -37,7 +37,19 @@ export function usePayoutActions(
   const payouts = computePendingPayouts(bundle, true); // include settled ones too, for full visibility here
 
   const subIdByPaymentId = new Map(bundle.subcontractorPayments.map((p) => [p.id, p.estimate_subcontractor_id]));
-  const agentAssignmentByPaymentId = new Map(bundle.agentPayments.map((p) => [p.id, p.estimate_agent_id]));
+  // Same estimate_agent_id-with-agent_id-fallback matching as
+  // computePendingPayouts (lib/queries/expenses.ts) — without this
+  // fallback, an agent payment row saved before estimate_agent_id was
+  // set (or by any insert path that omits it) is still counted in
+  // payout totals/paid-amount but invisible in "View payment history",
+  // so it could never be selected for delete from this UI even though
+  // it kept contributing to every total elsewhere.
+  const agentAssignmentByPaymentId = new Map(
+    bundle.agentPayments.map((p) => [
+      p.id,
+      p.estimate_agent_id ?? bundle.assignedAgents.find((a) => a.agentId === p.agent_id)?.estimateAgentId ?? null,
+    ])
+  );
 
   function paymentsFor(payout: PendingPayout): LedgerEntry[] {
     if (payout.role === "subcontractor") {
