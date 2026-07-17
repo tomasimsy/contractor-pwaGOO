@@ -9,6 +9,9 @@ import Header from "@/components/ui/Header";
 import DeleteModal from "@/components/ui/DeleteModal";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import DesktopShell from "@/components/layout/DesktopShell";
+import ProjectFinancialPills from "@/components/shared/ProjectFinancialPills";
+import { getCompanyId } from "@/lib/supabase/getCompanyId";
+import { getCompanyProjectFinancialSummaries, type ProjectFinancialSummary } from "@/lib/queries/expenses";
 import { Send, Trash2, MessageCircle, Link2, Plus, FilePlus, Eye, Search, ArrowRight } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -19,6 +22,14 @@ export default function EstimatesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
     const [filter, setFilter] = useState<"all" | "signed" | "pending">("all");
+  const [financials, setFinancials] = useState<Map<string, ProjectFinancialSummary>>(new Map());
+
+  useEffect(() => {
+    getCompanyId()
+      .then((companyId) => getCompanyProjectFinancialSummaries(companyId))
+      .then(setFinancials)
+      .catch(() => {}); // best-effort — pills just show "--" if this fails
+  }, []);
 
   const [deleteModal, setDeleteModal] = useState({
     isOpen: false,
@@ -383,6 +394,8 @@ const copyLink = (estimate: Estimate) => {
       <span>•</span>
       <span>{formatShortDate(estimate.created_at)}</span>
     </div>
+
+    <ProjectFinancialPills estimateId={estimate.id} summary={financials.get(estimate.id)} />
 
     {/* Optional description */}
     {estimate.description && (

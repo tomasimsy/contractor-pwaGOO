@@ -25,7 +25,7 @@ function StatTile({ label, value, sublabel, valueClass = "" }: { label: string; 
   return (
     <div className="min-w-0">
       <div className="text-[13px] text-gray-400">{label}</div>
-      <div className={`text-2xl font-semibold tracking-tight truncate mt-1.5 ${valueClass || "text-gray-900"}`}>{value}</div>
+      <div className={`text-base lg:text-lg xl:text-xl font-semibold tracking-tight truncate mt-1.5 ${valueClass || "text-gray-900"}`}>{value}</div>
       {sublabel && <div className="text-[13px] text-gray-400 mt-1">{sublabel}</div>}
     </div>
   );

@@ -238,8 +238,8 @@ function ProjectExpenseContent() {
 
   return (
     <DesktopShell>
-    <div className="min-h-screen bg-gray-50/60">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-28 lg:pb-16">
+    <div className="min-h-screen md:min-h-0 bg-gray-50/60">
+      <div className="px-4 pt-6 pb-28 md:px-0 md:pt-0 lg:pb-16">
         {/* Page header + project switcher share a row on wide screens so
             the whole top-of-page controls fit without their own scroll
             section before the actual dashboard appears. */}

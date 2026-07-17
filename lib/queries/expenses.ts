@@ -765,3 +765,173 @@ export async function getRecentVendors(companyId: string): Promise<string[]> {
   }
   return vendors;
 }
+
+/**
+ * Per-project financial glance for the Estimates/Invoices list pages —
+ * one batched fetch instead of an N+1 getProjectBundle() per row.
+ *
+ * Each metric has exactly one source, and none is derived from another:
+ *   - revenue: estimateTotal + approved change orders (same as
+ *     summarizeFinancials()'s revisedTotal). Never touched by anything
+ *     below.
+ *   - expenses: the full cost basis — materials + labor + other
+ *     (estimate_expenses) + subcontractor committed cost
+ *     (getEffectiveSubcontractorCommitted, reused as-is) + agent paid
+ *     cost (getEffectiveAgentPaid, reused as-is). This is exactly
+ *     summarizeFinancials()'s totalProjectCost, just kept per-project
+ *     instead of only for the currently-open one.
+ *   - profit: revenue - expenses. Nothing else.
+ *   - paidOut: read directly from subcontractor_payments/agent_payments
+ *     rows — a pure payment-status figure, restricted to assignments
+ *     that still exist (removing an assignment shouldn't leave its old
+ *     payments permanently inflating this number with no way to see or
+ *     reconcile them — same reasoning getEffectiveAgentPaid already
+ *     applies to the Expense page's Agent Commissions total). It does
+ *     NOT feed into profit — profit only cares what was committed
+ *     (expenses), not what's been paid yet.
+ *   - remainingPayouts: max(assigned - paid, 0) per current assignment,
+ *     the same floor computePayoutStatus() already applies.
+ * `hasX` flags distinguish "genuinely zero" from "nothing recorded yet"
+ * so the UI can show a placeholder instead of a misleading $0.00.
+ */
+export type ProjectFinancialSummary = {
+  revenue: number;
+  expenses: number;
+  hasCostData: boolean;
+  paidOut: number;
+  hasPayouts: boolean;
+  remainingPayouts: number;
+  hasAssignments: boolean;
+  profit: number;
+  marginPercent: number;
+};
+
+export async function getCompanyProjectFinancialSummaries(
+  companyId: string
+): Promise<Map<string, ProjectFinancialSummary>> {
+  const [estimatesRes, changeOrdersRes, expensesRes, subPaymentsRes, agentPaymentsRes, assignedSubsRes, assignedAgentsRes] =
+    await Promise.all([
+      supabase.from("estimates").select("id, total").eq("company_id", companyId).eq("is_deleted", false),
+      supabase.from("change_orders").select("estimate_id, status, total_amount").eq("company_id", companyId).is("deleted_at", null),
+      supabase.from("estimate_expenses").select("estimate_id, amount, tax").eq("company_id", companyId).is("deleted_at", null),
+      supabase
+        .from("subcontractor_payments")
+        .select("estimate_id, estimate_subcontractor_id, amount")
+        .eq("company_id", companyId)
+        .is("deleted_at", null),
+      supabase
+        .from("agent_payments")
+        .select("estimate_id, estimate_agent_id, agent_id, amount")
+        .eq("company_id", companyId)
+        .is("deleted_at", null),
+      supabase.from("estimate_subcontractors").select("id, estimate_id, amount").eq("company_id", companyId).is("deleted_at", null),
+      supabase.from("estimate_agents").select("id, estimate_id, agent_id, amount").eq("company_id", companyId).is("deleted_at", null),
+    ]);
+  if (estimatesRes.error) throw estimatesRes.error;
+  if (changeOrdersRes.error) throw changeOrdersRes.error;
+  if (expensesRes.error) throw expensesRes.error;
+  if (subPaymentsRes.error) throw subPaymentsRes.error;
+  if (agentPaymentsRes.error) throw agentPaymentsRes.error;
+  if (assignedSubsRes.error) throw assignedSubsRes.error;
+  if (assignedAgentsRes.error) throw assignedAgentsRes.error;
+
+  const groupBy = <T extends { estimate_id: string }>(rows: T[]) => {
+    const map = new Map<string, T[]>();
+    for (const row of rows) {
+      const list = map.get(row.estimate_id) ?? [];
+      list.push(row);
+      map.set(row.estimate_id, list);
+    }
+    return map;
+  };
+
+  const changeOrdersByEst = groupBy((changeOrdersRes.data ?? []) as any);
+  const expensesByEst = groupBy((expensesRes.data ?? []) as any);
+  const subPaymentsByEst = groupBy((subPaymentsRes.data ?? []) as any);
+  const agentPaymentsByEst = groupBy((agentPaymentsRes.data ?? []) as any);
+  const assignedSubsByEst = groupBy((assignedSubsRes.data ?? []) as any);
+  const assignedAgentsByEst = groupBy((assignedAgentsRes.data ?? []) as any);
+
+  const summaries = new Map<string, ProjectFinancialSummary>();
+  for (const est of estimatesRes.data ?? []) {
+    const approvedChangeOrderTotal = (changeOrdersByEst.get(est.id) ?? [])
+      .filter((co: any) => co.status === "approved")
+      .reduce((sum: number, co: any) => sum + (co.total_amount || 0), 0);
+    const revenue = (est.total || 0) + approvedChangeOrderTotal;
+
+    const expenseRows = expensesByEst.get(est.id) ?? [];
+    const otherExpenses = expenseRows.reduce((sum: number, e: any) => sum + (e.amount || 0) + (e.tax || 0), 0);
+
+    const assignedSubRows = (assignedSubsByEst.get(est.id) ?? []) as any[];
+    const assignedAgentRows = (assignedAgentsByEst.get(est.id) ?? []) as any[];
+    const subPaymentRows = (subPaymentsByEst.get(est.id) ?? []) as any[];
+    const agentPaymentRows = (agentPaymentsByEst.get(est.id) ?? []) as any[];
+
+    const assignedSubs = assignedSubRows.map((s: any) => ({ estimateSubcontractorId: s.id, contractedAmount: s.amount || 0 }));
+    const assignedAgents = assignedAgentRows.map((a: any) => ({ estimateAgentId: a.id, agentId: a.agent_id }));
+    const subPaymentsForFn = subPaymentRows.map((p: any) => ({ estimate_subcontractor_id: p.estimate_subcontractor_id, amount: p.amount }));
+    const agentPaymentsForFn = agentPaymentRows.map((p: any) => ({
+      estimate_agent_id: p.estimate_agent_id,
+      agent_id: p.agent_id,
+      amount: p.amount,
+    }));
+
+    // Same two functions summarizeFinancials() uses for the Expense
+    // page's cost total — not reimplemented here.
+    const subcontractorCosts = getEffectiveSubcontractorCommitted(assignedSubs, subPaymentsForFn);
+    const agentCosts = getEffectiveAgentPaid(assignedAgents, agentPaymentsForFn);
+    const expenses = otherExpenses + subcontractorCosts + agentCosts;
+    const profit = revenue - expenses;
+    const marginPercent = revenue > 0 ? (profit / revenue) * 100 : 0;
+
+    // Paid Out and Remaining are independent of the above — read straight
+    // from payment rows, restricted to assignments that still exist.
+    const subAssignmentIds = new Set(assignedSubRows.map((s: any) => s.id));
+    const subPaidByAssignment = new Map<string, number>();
+    for (const p of subPaymentRows) {
+      if (!subAssignmentIds.has(p.estimate_subcontractor_id)) continue;
+      subPaidByAssignment.set(p.estimate_subcontractor_id, (subPaidByAssignment.get(p.estimate_subcontractor_id) ?? 0) + p.amount);
+    }
+    const subPaidOut = [...subPaidByAssignment.values()].reduce((sum, v) => sum + v, 0);
+    const subRemaining = assignedSubRows.reduce(
+      (sum: number, s: any) => sum + computePayoutStatus(s.amount || 0, subPaidByAssignment.get(s.id) ?? 0).remainingAmount,
+      0
+    );
+
+    // Restricted to CURRENT agent assignments only — matching
+    // estimate_agent_id (falling back to agent_id) is not enough on its
+    // own, since a payment can carry a real estimate_agent_id pointing
+    // at an assignment that's since been removed. Without checking that
+    // id is still in agentAssignmentIds, an orphaned payment silently
+    // counted toward Paid Out even though it's invisible/unmanageable
+    // from the UI — the same class of bug getEffectiveAgentPaid already
+    // guards against for the Expenses total, just missed here.
+    const agentAssignmentIds = new Set(assignedAgentRows.map((a: any) => a.id));
+    const agentAssignmentIdByAgent = new Map<string, string>(assignedAgentRows.map((a: any) => [a.agent_id, a.id]));
+    const agentPaidByAssignment = new Map<string, number>();
+    for (const p of agentPaymentRows) {
+      const assignmentId = p.estimate_agent_id ?? agentAssignmentIdByAgent.get(p.agent_id);
+      if (!assignmentId || !agentAssignmentIds.has(assignmentId)) continue;
+      agentPaidByAssignment.set(assignmentId, (agentPaidByAssignment.get(assignmentId) ?? 0) + p.amount);
+    }
+    const agentPaidOut = [...agentPaidByAssignment.values()].reduce((sum, v) => sum + v, 0);
+    const agentRemaining = assignedAgentRows.reduce(
+      (sum: number, a: any) => sum + computePayoutStatus(a.amount || 0, agentPaidByAssignment.get(a.id) ?? 0).remainingAmount,
+      0
+    );
+
+    summaries.set(est.id, {
+      revenue,
+      expenses,
+      hasCostData: expenseRows.length > 0 || assignedSubRows.length > 0 || assignedAgentRows.length > 0,
+      paidOut: subPaidOut + agentPaidOut,
+      hasPayouts: subPaidByAssignment.size > 0 || agentPaidByAssignment.size > 0,
+      remainingPayouts: subRemaining + agentRemaining,
+      hasAssignments: assignedSubRows.length > 0 || assignedAgentRows.length > 0,
+      profit,
+      marginPercent,
+    });
+  }
+
+  return summaries;
+}

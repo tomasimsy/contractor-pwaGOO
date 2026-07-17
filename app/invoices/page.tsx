@@ -7,12 +7,16 @@ import { formatCurrency, formatShortDate } from "@/lib/utils/formatting";
 import { ArrowLeft, Search, AlertCircle, Link2, Send, ArrowRight } from "lucide-react";
 import toast from "react-hot-toast";
 import DesktopShell from "@/components/layout/DesktopShell";
+import ProjectFinancialPills from "@/components/shared/ProjectFinancialPills";
+import { getCompanyId } from "@/lib/supabase/getCompanyId";
+import { getCompanyProjectFinancialSummaries, type ProjectFinancialSummary } from "@/lib/queries/expenses";
 
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "paid" | "pending">("all");
+  const [financials, setFinancials] = useState<Map<string, ProjectFinancialSummary>>(new Map());
 
   useEffect(() => {
     async function fetchInvoices() {
@@ -20,7 +24,7 @@ export default function InvoicesPage() {
         setLoading(true);
         const { data, error } = await supabase
           .from("invoices")
-          .select("id, invoice_number, total, remaining_balance, due_date, created_at, status, clients(name, phone), estimates(title)")
+          .select("id, invoice_number, total, remaining_balance, due_date, created_at, status, estimate_id, clients(name, phone), estimates(title)")
           .order("created_at", { ascending: false });
         if (error) throw error;
         if (data) setInvoices(data);
@@ -31,6 +35,13 @@ export default function InvoicesPage() {
       }
     }
     fetchInvoices();
+  }, []);
+
+  useEffect(() => {
+    getCompanyId()
+      .then((companyId) => getCompanyProjectFinancialSummaries(companyId))
+      .then(setFinancials)
+      .catch(() => {}); // best-effort — pills just show "--" if this fails
   }, []);
 
   const filteredInvoices = invoices.filter((inv) => {
@@ -254,6 +265,9 @@ export default function InvoicesPage() {
                       <span className="text-teal-600 font-medium">Closed</span>
                     )}
                   </div>
+                  {inv.estimate_id && (
+                    <ProjectFinancialPills estimateId={inv.estimate_id} summary={financials.get(inv.estimate_id)} />
+                  )}
                 </Link>
 
                 {/* RIGHT COLUMN – amount + badge + buttons inline */}

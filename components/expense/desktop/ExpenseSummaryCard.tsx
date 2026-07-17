@@ -49,11 +49,11 @@ export default function ExpenseSummaryCard({
       <div className="flex items-baseline justify-between gap-4 pb-4 mb-1 border-b border-gray-100">
         <div>
           <div className="text-[13px] text-gray-400">Total Project Cost</div>
-          <div className="text-2xl font-semibold tracking-tight text-gray-900 mt-1.5">{formatCurrency(totalProjectCost)}</div>
+          <div className="text-lg lg:text-xl xl:text-2xl font-semibold tracking-tight text-gray-900 mt-1.5 truncate">{formatCurrency(totalProjectCost)}</div>
         </div>
-        <div className="text-right">
+        <div className="text-right min-w-0">
           <div className="text-[13px] text-gray-400">Est. Profit</div>
-          <div className={`text-2xl font-semibold tracking-tight mt-1.5 ${profitTone(profitPercent)}`}>
+          <div className={`text-lg lg:text-xl xl:text-2xl font-semibold tracking-tight mt-1.5 truncate ${profitTone(profitPercent)}`}>
             {formatCurrency(profit)}
           </div>
           <div className="text-[13px] text-gray-400 mt-1">{profitPercent.toFixed(0)}% margin</div>

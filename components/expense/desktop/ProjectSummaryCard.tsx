@@ -17,7 +17,9 @@ export default function ProjectSummaryCard({
         <div className="min-w-0 flex-1">
           <ProjectHeader bundle={bundle} />
         </div>
-        <QuickActions onOpen={onOpenAddSheet} />
+        <div className="shrink-0 max-w-full lg:max-w-[300px]">
+          <QuickActions onOpen={onOpenAddSheet} />
+        </div>
       </div>
     </DashboardPanel>
   );
