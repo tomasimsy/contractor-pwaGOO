@@ -3,6 +3,7 @@ import type {
   AssignedAgent,
   AssignedSubcontractor,
   BudgetComparison,
+  ExpenseAnalytics,
   FinancialSummaryData,
   InvoiceRow,
   LedgerEntry,
@@ -934,4 +935,169 @@ export async function getCompanyProjectFinancialSummaries(
   }
 
   return summaries;
+}
+
+export type DateRange = "month" | "year" | "all_time";
+
+/** Company-wide expense analytics with optional date filtering.
+ * Groups expenses by vendor and category, aggregates assignments/payouts
+ * across all projects. Used by the Expense Analytics card to show
+ * spending patterns and pending payment totals. */
+export async function getCompanyExpenseAnalytics(
+  companyId: string,
+  dateRange: DateRange = "all_time"
+): Promise<ExpenseAnalytics> {
+  const now = new Date();
+  let dateFilter: string | null = null;
+
+  if (dateRange === "month") {
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    dateFilter = startOfMonth.toISOString();
+  } else if (dateRange === "year") {
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    dateFilter = startOfYear.toISOString();
+  }
+
+  const [
+    { data: expenses, error: expensesError },
+    { data: subAssignments, error: subError },
+    { data: agentAssignments, error: agentError },
+    { data: subPayments, error: subPayError },
+    { data: agentPayments, error: agentPayError },
+    { data: estimates, error: estimatesError },
+  ] = await Promise.all([
+    dateFilter
+      ? supabase
+          .from("estimate_expenses")
+          .select("vendor, category, amount, tax")
+          .eq("company_id", companyId)
+          .is("deleted_at", null)
+          .gte("created_at", dateFilter)
+      : supabase
+          .from("estimate_expenses")
+          .select("vendor, category, amount, tax")
+          .eq("company_id", companyId)
+          .is("deleted_at", null),
+    supabase
+      .from("estimate_subcontractors")
+      .select("id, amount")
+      .eq("company_id", companyId)
+      .is("deleted_at", null),
+    supabase
+      .from("estimate_agents")
+      .select("id, amount")
+      .eq("company_id", companyId)
+      .is("deleted_at", null),
+    supabase
+      .from("subcontractor_payments")
+      .select("estimate_subcontractor_id, amount")
+      .eq("company_id", companyId)
+      .is("deleted_at", null),
+    supabase
+      .from("agent_payments")
+      .select("estimate_agent_id, agent_id, amount")
+      .eq("company_id", companyId)
+      .is("deleted_at", null),
+    supabase
+      .from("estimates")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("is_deleted", false),
+  ]);
+
+  if (expensesError) throw expensesError;
+  if (subError) throw subError;
+  if (agentError) throw agentError;
+  if (subPayError) throw subPayError;
+  if (agentPayError) throw agentPayError;
+  if (estimatesError) throw estimatesError;
+
+  // Group expenses by vendor
+  const vendorMap = new Map<string, { amount: number; count: number }>();
+  for (const exp of expenses ?? []) {
+    const vendor = exp.vendor || "Uncategorized";
+    const total = (exp.amount || 0) + (exp.tax || 0);
+    const existing = vendorMap.get(vendor);
+    vendorMap.set(vendor, {
+      amount: (existing?.amount ?? 0) + total,
+      count: (existing?.count ?? 0) + 1,
+    });
+  }
+
+  // Group expenses by category
+  const categoryMap = new Map<string, { amount: number; count: number }>();
+  for (const exp of expenses ?? []) {
+    const category = exp.category || "other";
+    const total = (exp.amount || 0) + (exp.tax || 0);
+    const existing = categoryMap.get(category);
+    categoryMap.set(category, {
+      amount: (existing?.amount ?? 0) + total,
+      count: (existing?.count ?? 0) + 1,
+    });
+  }
+
+  // Aggregate subcontractor assignments and payments
+  const subPaidByAssignment = new Map<string, number>();
+  for (const p of subPayments ?? []) {
+    if (!p.estimate_subcontractor_id) continue;
+    subPaidByAssignment.set(
+      p.estimate_subcontractor_id,
+      (subPaidByAssignment.get(p.estimate_subcontractor_id) ?? 0) + p.amount
+    );
+  }
+  let totalSubAssigned = 0;
+  for (const sub of subAssignments ?? []) {
+    totalSubAssigned += sub.amount || 0;
+  }
+
+  // Aggregate agent assignments and payments
+  const agentAssignmentIds = new Set((agentAssignments ?? []).map((a: any) => a.id));
+  const agentAssignmentIdByAgentId = new Map<string, string>(
+    (agentAssignments ?? []).map((a: any) => [a.agent_id, a.id])
+  );
+  const agentPaidByAssignment = new Map<string, number>();
+  for (const p of agentPayments ?? []) {
+    const assignmentId = p.estimate_agent_id ?? agentAssignmentIdByAgentId.get(p.agent_id);
+    if (!assignmentId || !agentAssignmentIds.has(assignmentId)) continue;
+    agentPaidByAssignment.set(assignmentId, (agentPaidByAssignment.get(assignmentId) ?? 0) + p.amount);
+  }
+  let totalAgentAssigned = 0;
+  for (const agent of agentAssignments ?? []) {
+    totalAgentAssigned += agent.amount || 0;
+  }
+
+  // Calculate total pending payouts across assignments
+  let totalPending = 0;
+  for (const sub of subAssignments ?? []) {
+    const paid = subPaidByAssignment.get(sub.id) ?? 0;
+    const remaining = Math.max((sub.amount || 0) - paid, 0);
+    totalPending += remaining;
+  }
+  for (const agent of agentAssignments ?? []) {
+    const paid = agentPaidByAssignment.get(agent.id) ?? 0;
+    const remaining = Math.max((agent.amount || 0) - paid, 0);
+    totalPending += remaining;
+  }
+
+  const topVendors = Array.from(vendorMap.entries())
+    .map(([name, data]) => ({ name, ...data }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 5);
+
+  const topCategories = Array.from(categoryMap.entries())
+    .map(([name, data]) => ({ name, ...data }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 5);
+
+  const totalExpenses = Array.from(vendorMap.values()).reduce((sum, v) => sum + v.amount, 0);
+
+  return {
+    topVendors,
+    topCategories,
+    totalExpenses,
+    totalSubcontractorAssigned: totalSubAssigned,
+    totalAgentAssigned: totalAgentAssigned,
+    totalPendingPayouts: totalPending,
+    projectCount: estimates?.length ?? 0,
+  };
 }

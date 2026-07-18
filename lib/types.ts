@@ -436,3 +436,20 @@ export type NewEntryInput =
       notes: string | null;
       changeOrderId: string | null;
     };
+
+// Analytics and reporting types
+export type ExpenseAnalyticsSource = {
+  name: string;
+  amount: number;
+  count: number;
+};
+
+export type ExpenseAnalytics = {
+  topVendors: ExpenseAnalyticsSource[];
+  topCategories: ExpenseAnalyticsSource[];
+  totalExpenses: number;
+  totalSubcontractorAssigned: number;
+  totalAgentAssigned: number;
+  totalPendingPayouts: number;
+  projectCount: number;
+};

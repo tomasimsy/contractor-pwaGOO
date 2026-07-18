@@ -27,7 +27,11 @@ import type { LedgerEntry, NewEntryInput, ProjectBundle, ProjectSummary } from "
 import RecentProjectCards from "@/components/expense/RecentProjectCards";
 import ProjectCombobox from "@/components/expense/ProjectCombobox";
 import AddExpenseSheet, { type FormCategory } from "@/components/expense/AddExpenseSheet";
-import DesktopDashboard from "@/components/expense/desktop/DesktopDashboard";
+import ProjectHealthSnapshot from "@/components/expense/ProjectHealthSnapshot";
+import OutstandingPayables from "@/components/expense/OutstandingPayables";
+import ProjectExpensesSection from "@/components/expense/ProjectExpensesSection";
+import ChangeOrdersSection from "@/components/expense/ChangeOrdersSection";
+import PaymentHistorySection from "@/components/expense/PaymentHistorySection";
 import ExpenseLedger from "@/components/expense/ExpenseLedger";
 import DashboardPanel from "@/components/expense/desktop/DashboardPanel";
 import PendingPayoutsBar from "@/components/expense/PendingPayoutsBar";
@@ -282,16 +286,44 @@ function ProjectExpenseContent() {
 
         {!isLoadingBundle && bundle && financials && payment && (
           <div className="space-y-5">
-            <DesktopDashboard
-              bundle={bundle}
-              ledger={ledger}
+            {/* Layer 1: Project Health Snapshot */}
+            <ProjectHealthSnapshot
+              projectTitle={bundle.project.name || "Project"}
+              estimateNumber={bundle.project.estimate_number}
               financials={financials}
               payment={payment}
-              onOpenAddSheet={openAddSheet}
-              onDeleteEntry={handleDeleteEntry}
-              onRefresh={refreshBundle}
+              projectStatus={bundle.project.status}
+              changeOrderTotal={0}
             />
 
+            {/* Layer 2: Outstanding Payables */}
+            {pendingPayouts.length > 0 && (
+              <OutstandingPayables
+                payouts={pendingPayouts}
+                estimateId={bundle.project.id}
+                onRefresh={refreshBundle}
+              />
+            )}
+
+            {/* Layer 3: Project Expenses & Ledger */}
+            <ProjectExpensesSection
+              financials={financials}
+              ledger={ledger}
+              onAddExpense={() => openAddSheet()}
+            />
+
+            {/* Layer 4: Change Orders */}
+            <ChangeOrdersSection
+              bundle={bundle}
+            />
+
+            {/* Layer 5: Payment History */}
+            <PaymentHistorySection
+              payment={payment}
+              onViewArchived={toggleShowDeleted}
+            />
+
+            {/* Archived Transactions */}
             <DashboardPanel
               title="Archived"
               accent="gray"
