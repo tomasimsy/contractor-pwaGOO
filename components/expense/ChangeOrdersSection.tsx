@@ -31,10 +31,7 @@ export default function ChangeOrdersSection({
         ) : undefined
       }
     >
-      <EmptyState
-        message="No change orders yet."
-        hint="Track scope changes and additional work on this project."
-      />
+      <EmptyState message="No change orders yet. Track scope changes and additional work on this project." />
     </DashboardPanel>
   );
 }
