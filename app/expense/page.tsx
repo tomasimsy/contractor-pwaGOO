@@ -27,13 +27,10 @@ import type { LedgerEntry, NewEntryInput, ProjectBundle, ProjectSummary } from "
 import RecentProjectCards from "@/components/expense/RecentProjectCards";
 import ProjectCombobox from "@/components/expense/ProjectCombobox";
 import AddExpenseSheet, { type FormCategory } from "@/components/expense/AddExpenseSheet";
-import CashStatusBar from "@/components/expense/CashStatusBar";
-import PaymentActionCenter from "@/components/expense/PaymentActionCenter";
-import QuickActionButtons from "@/components/expense/QuickActionButtons";
-import AlertsAndFlags from "@/components/expense/AlertsAndFlags";
-import ActiveProjects from "@/components/expense/ActiveProjects";
+import DesktopDashboard from "@/components/expense/desktop/DesktopDashboard";
 import ExpenseLedger from "@/components/expense/ExpenseLedger";
 import DashboardPanel from "@/components/expense/desktop/DashboardPanel";
+import PendingPayoutsBar from "@/components/expense/PendingPayoutsBar";
 import DesktopShell from "@/components/layout/DesktopShell";
 
 export default function ProjectExpensePage() {
@@ -284,115 +281,47 @@ function ProjectExpenseContent() {
         )}
 
         {!isLoadingBundle && bundle && financials && payment && (
-          <>
-            {/* Mobile-First Layout */}
-            <CashStatusBar financials={financials} payment={payment} atRiskProjectCount={0} />
+          <div className="space-y-5">
+            <DesktopDashboard
+              bundle={bundle}
+              ledger={ledger}
+              financials={financials}
+              payment={payment}
+              onOpenAddSheet={openAddSheet}
+              onDeleteEntry={handleDeleteEntry}
+              onRefresh={refreshBundle}
+            />
 
-            <div className="px-4 md:px-6 space-y-5 py-4 md:py-6">
-              {/* Core Action: Payment Center */}
-              <PaymentActionCenter
-                payouts={pendingPayouts}
-                estimateId={bundle.project.id}
-                onRefresh={refreshBundle}
-              />
-
-              {/* Quick Actions (Mobile Only) */}
-              <QuickActionButtons
-                onAddExpense={() => openAddSheet()}
-                onAssignSubcontractor={() => {
-                  /* TODO: Open assign modal */
-                }}
-              />
-
-              {/* Alerts (Collapsible on Mobile) */}
-              <AlertsAndFlags bundle={bundle} financials={financials} payment={payment} />
-
-              {/* Project Overview */}
-              <ActiveProjects
-                projects={[
-                  {
-                    id: bundle.project.id,
-                    name: bundle.project.title || "Project",
-                    clientName: bundle.client?.name || "Unknown Client",
-                    revenue: financials.revisedTotal,
-                    expenses:
-                      financials.materialCosts +
-                      financials.laborCosts +
-                      financials.subcontractorCosts +
-                      financials.agentCommissions +
-                      financials.otherExpenses +
-                      financials.mileageCosts,
-                    profit:
-                      financials.revisedTotal -
-                      (financials.materialCosts +
-                        financials.laborCosts +
-                        financials.subcontractorCosts +
-                        financials.agentCommissions +
-                        financials.otherExpenses +
-                        financials.mileageCosts),
-                    paymentPercent: payment.paymentPercentage,
-                    status:
-                      payment.paymentPercentage >= 80 ? "green" : payment.paymentPercentage >= 50 ? "yellow" : "red",
-                  },
-                ]}
-              />
-
-              {/* Transaction History */}
-              <DashboardPanel
-                title="Recent Transactions"
-                accent="gray"
-                action={
-                  <button
-                    type="button"
-                    onClick={toggleShowDeleted}
-                    className="text-[13px] text-gray-500 hover:text-gray-700 md:hidden"
-                  >
-                    History
-                  </button>
-                }
-              >
+            <DashboardPanel
+              title="Archived"
+              accent="gray"
+              action={
+                <button
+                  type="button"
+                  onClick={toggleShowDeleted}
+                  className="text-[13px] text-gray-500 hover:text-gray-700"
+                >
+                  {showDeleted ? "Hide" : "Show deleted"}
+                </button>
+              }
+            >
+              {!showDeleted && (
+                <div className="text-[13px] text-gray-400">Deleted expenses and payments for this project can be restored here.</div>
+              )}
+              {showDeleted && isLoadingDeleted && (
+                <div className="text-[13px] text-gray-400 text-center py-6">Loading…</div>
+              )}
+              {showDeleted && !isLoadingDeleted && (
                 <ExpenseLedger
-                  entries={ledger}
-                  emptyLabel="No transactions yet"
-                  emptyHint="Add an expense or payment to get started."
+                  entries={deletedLedger}
+                  onRestore={handleRestoreEntry}
+                  emptyLabel="Nothing deleted"
+                  emptyHint="Deleted expenses and payments will show up here."
                   maxHeight="320px"
                 />
-              </DashboardPanel>
-
-              {/* Archived */}
-              <DashboardPanel
-                title="Archived"
-                accent="gray"
-                action={
-                  <button
-                    type="button"
-                    onClick={toggleShowDeleted}
-                    className="text-[13px] text-gray-500 hover:text-gray-700"
-                  >
-                    {showDeleted ? "Hide" : "Show deleted"}
-                  </button>
-                }
-              >
-                {!showDeleted && (
-                  <div className="text-[13px] text-gray-400">
-                    Deleted expenses and payments for this project can be restored here.
-                  </div>
-                )}
-                {showDeleted && isLoadingDeleted && (
-                  <div className="text-[13px] text-gray-400 text-center py-6">Loading…</div>
-                )}
-                {showDeleted && !isLoadingDeleted && (
-                  <ExpenseLedger
-                    entries={deletedLedger}
-                    onRestore={handleRestoreEntry}
-                    emptyLabel="Nothing deleted"
-                    emptyHint="Deleted expenses and payments will show up here."
-                    maxHeight="320px"
-                  />
-                )}
-              </DashboardPanel>
-            </div>
-          </>
+              )}
+            </DashboardPanel>
+          </div>
         )}
       </div>
 
@@ -406,6 +335,9 @@ function ProjectExpenseContent() {
         />
       )}
 
+      {bundle && pendingPayouts.length > 0 && (
+        <PendingPayoutsBar bundle={bundle} payouts={pendingPayouts} onRefresh={refreshBundle} />
+      )}
     </div>
     </DesktopShell>
   );

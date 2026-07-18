@@ -5,13 +5,13 @@ import type { FinancialSummaryData, LedgerEntry, PaymentSummary, ProjectBundle }
 import { getBudgetComparison } from "@/lib/queries/expenses";
 
 import ProjectSummaryCard from "./ProjectSummaryCard";
-import CustomerPaymentStatusCard from "./CustomerPaymentStatusCard";
+import ProjectActionsBar from "./ProjectActionsBar";
+import CustomerPaymentsCard from "./CustomerPaymentsCard";
 import SubcontractorAssignmentsCard from "./SubcontractorAssignmentsCard";
 import AgentCommissionCard from "./AgentCommissionCard";
 import ChangeOrdersPanel from "./ChangeOrdersPanel";
-import ExpenseSummaryCard from "./ExpenseSummaryCard";
+import ExpandableExpenseSummaryCard from "./ExpandableExpenseSummaryCard";
 import ExpenseListPanel from "./ExpenseListPanel";
-import PaymentHistoryPanel from "./PaymentHistoryPanel";
 import ReceiptsPanel from "./ReceiptsPanel";
 
 // Desktop-first command center: a wide 12-column grid instead of one long
@@ -43,29 +43,43 @@ export default function DesktopDashboard({
   const budget = getBudgetComparison(bundle.estimateItems, bundle.expenses);
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
-      <div className="xl:col-span-8 flex flex-col gap-5 min-w-0">
-        <ProjectSummaryCard bundle={bundle} onOpenAddSheet={onOpenAddSheet} />
+    <div className="flex flex-col gap-5 min-w-0">
+      {/* Action Bar */}
+      <ProjectActionsBar onOpenAddSheet={onOpenAddSheet} />
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <CustomerPaymentStatusCard financials={financials} payment={payment} />
-          <ExpenseSummaryCard financials={financials} budget={budget} />
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
+        <div className="xl:col-span-8 flex flex-col gap-5 min-w-0">
+          {/* Project Summary (data only, no actions) */}
+          <ProjectSummaryCard bundle={bundle} />
+
+          {/* Customer Payments (combined summary + history) */}
+          <CustomerPaymentsCard
+            financials={financials}
+            payment={payment}
+            invoices={bundle.invoices}
+          />
+
+          {/* Expenses with expandable categories */}
+          <ExpandableExpenseSummaryCard
+            financials={financials}
+            ledger={ledger}
+            budget={budget}
+          />
+
+          {/* Transaction Ledger */}
+          <ExpenseListPanel entries={ledger} onDelete={onDeleteEntry} />
         </div>
 
-        <ExpenseListPanel entries={ledger} onDelete={onDeleteEntry} />
-      </div>
+        <div className="xl:col-span-4 flex flex-col gap-5 min-w-0">
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-1 gap-5">
+            <SubcontractorAssignmentsCard bundle={bundle} ledger={ledger} onDelete={onDeleteEntry} onRefresh={onRefresh} />
+            <AgentCommissionCard bundle={bundle} ledger={ledger} onDelete={onDeleteEntry} onRefresh={onRefresh} />
+          </div>
 
-      <div className="xl:col-span-4 flex flex-col gap-5 min-w-0">
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-1 gap-5">
-          <SubcontractorAssignmentsCard bundle={bundle} ledger={ledger} onDelete={onDeleteEntry} onRefresh={onRefresh} />
-          <AgentCommissionCard bundle={bundle} ledger={ledger} onDelete={onDeleteEntry} onRefresh={onRefresh} />
+          <ChangeOrdersPanel bundle={bundle} ledger={ledger} onRefresh={onRefresh} />
+
+          <ReceiptsPanel expenses={bundle.expenses} />
         </div>
-
-        <ChangeOrdersPanel bundle={bundle} ledger={ledger} onRefresh={onRefresh} />
-
-        <PaymentHistoryPanel invoices={bundle.invoices} />
-
-        <ReceiptsPanel expenses={bundle.expenses} />
       </div>
     </div>
   );
