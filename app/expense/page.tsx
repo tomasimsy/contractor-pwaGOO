@@ -17,6 +17,7 @@ import {
   summarizeFinancials,
   totalAmountPaid,
 } from "@/lib/queries/expenses";
+import { generateInvoiceFromEstimate, invoiceExistsForEstimate } from "@/lib/queries/invoices";
 import {
   getLastSelectedProjectId,
   getRecentProjectIds,
@@ -237,6 +238,43 @@ function ProjectExpenseContent() {
     if (selectedProjectId) await loadBundle(selectedProjectId);
   }, [selectedProjectId, loadBundle]);
 
+  // Check if an invoice can be generated for this project
+  const canGenerateInvoice = !!(bundle && bundle.invoices.length === 0);
+
+  async function handleGenerateInvoice() {
+    if (!bundle || !financials) {
+      toast.error("No project selected");
+      return;
+    }
+
+    try {
+      // Check if invoice already exists
+      const exists = await invoiceExistsForEstimate(bundle.project.id);
+      if (exists) {
+        toast.error("An invoice already exists for this project");
+        return;
+      }
+
+      // Generate invoice from estimate + approved change orders
+      const invoiceId = await generateInvoiceFromEstimate({
+        estimateId: bundle.project.id,
+        companyId: bundle.project.company_id,
+        clientId: bundle.client.id,
+        estimateTotal: bundle.project.total,
+        estimateItems: bundle.estimateItems,
+        approvedChangeOrders: bundle.changeOrders.filter(co => co.status === "approved"),
+        revisedTotal: financials.revisedTotal,
+      });
+
+      toast.success("Invoice generated successfully!");
+      // Reload to show the new invoice in the invoices list
+      await refreshBundle();
+    } catch (err: any) {
+      console.error("Failed to generate invoice:", err);
+      toast.error(err?.message || "Failed to generate invoice");
+    }
+  }
+
   return (
     <DesktopShell>
     <div className="min-h-screen bg-gray-50/60">
@@ -291,6 +329,8 @@ function ProjectExpenseContent() {
               onOpenAddSheet={openAddSheet}
               onDeleteEntry={handleDeleteEntry}
               onRefresh={refreshBundle}
+              onGenerateInvoice={handleGenerateInvoice}
+              canGenerateInvoice={canGenerateInvoice}
             />
 
             <DashboardPanel

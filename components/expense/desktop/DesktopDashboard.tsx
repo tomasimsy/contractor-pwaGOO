@@ -32,6 +32,8 @@ export default function DesktopDashboard({
   onOpenAddSheet,
   onDeleteEntry,
   onRefresh,
+  onGenerateInvoice,
+  canGenerateInvoice = false,
 }: {
   bundle: ProjectBundle;
   ledger: LedgerEntry[];
@@ -40,6 +42,8 @@ export default function DesktopDashboard({
   onOpenAddSheet: (category?: FormCategory) => void;
   onDeleteEntry: (entry: LedgerEntry) => void;
   onRefresh: () => Promise<void>;
+  onGenerateInvoice?: () => void;
+  canGenerateInvoice?: boolean;
 }) {
   const budget = getBudgetComparison(bundle.estimateItems, bundle.expenses);
   const budgetAlerts = getBudgetAlerts(budget);
@@ -47,7 +51,7 @@ export default function DesktopDashboard({
   return (
     <div className="flex flex-col gap-5 min-w-0">
       {/* Action Bar */}
-      <ProjectActionsBar onOpenAddSheet={onOpenAddSheet} />
+      <ProjectActionsBar onOpenAddSheet={onOpenAddSheet} onGenerateInvoice={onGenerateInvoice} canGenerateInvoice={canGenerateInvoice} />
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
         <div className="xl:col-span-8 flex flex-col gap-5 min-w-0">
