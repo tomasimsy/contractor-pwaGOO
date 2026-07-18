@@ -27,7 +27,8 @@ import type {
  */
 export async function addEntry(input: NewEntryInput): Promise<void> {
   if (input.kind === "expense") {
-    const { error } = await supabase.from("estimate_expenses").insert({
+    // Insert the expense with paid_by_agent_id if provided
+    const { data, error } = await supabase.from("estimate_expenses").insert({
       estimate_id: input.estimateId,
       company_id: input.companyId,
       category: input.category,
@@ -39,8 +40,27 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
       paid_by: input.paidBy,
       notes: input.notes,
       change_order_id: input.changeOrderId,
-    });
+      paid_by_agent_id: input.paidByAgentId ?? null,
+    }).select("id").single();
     if (error) throw error;
+
+    // If an agent paid for this expense, automatically create a reimbursement record
+    if (input.paidByAgentId && data) {
+      const totalAmount = input.amount + input.tax;
+      const { error: reimburseError } = await supabase.from("agent_payments").insert({
+        estimate_id: input.estimateId,
+        agent_id: input.paidByAgentId,
+        company_id: input.companyId,
+        amount: totalAmount,
+        payment_date: input.expenseDate,
+        payment_method: input.paymentMethod,
+        notes: input.notes,
+        change_order_id: input.changeOrderId,
+        payment_type: 'reimbursement',
+        expense_id: data.id,
+      });
+      if (reimburseError) throw reimburseError;
+    }
     return;
   }
 
@@ -70,6 +90,8 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
     payment_method: input.paymentMethod,
     notes: input.notes,
     change_order_id: input.changeOrderId,
+    payment_type: input.paymentType ?? 'commission',
+    expense_id: input.expenseId ?? null,
   });
   if (error) throw error;
 }

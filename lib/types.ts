@@ -27,6 +27,7 @@ export type EstimateExpenseRow = {
   receipt_file_name: string | null;
   deleted_at: string | null;
   change_order_id: string | null;
+  paid_by_agent_id: string | null; // agent who paid for this expense (creates reimbursement)
 };
 
 /** The category values the Add Expense form writes. estimate_expenses
@@ -63,6 +64,10 @@ export type AgentPaymentRow = {
   // so "assigned vs. paid" can be computed per assignment. Nullable
   // since payments made before this column existed have no assignment.
   estimate_agent_id: string | null;
+  // Type of payment: 'commission' (earned) or 'reimbursement' (expenses paid on behalf of project)
+  payment_type: 'commission' | 'reimbursement';
+  // For reimbursements: links back to the original estimate_expenses row
+  expense_id: string | null;
 };
 
 /** Assigns an agent to a project with an expected commission/payout
@@ -379,6 +384,9 @@ export type FinancialSummaryData = {
   subcontractorCosts: number;
   subcontractorPaidToDate: number;
   agentCommissions: number;
+  // Agent reimbursements — expenses paid by agents on behalf of project
+  // Tracked separately from commissions but included in total agent payout
+  agentReimbursements: number;
   otherExpenses: number;
   mileageCosts: number;
   totalPaid: number;
@@ -408,6 +416,7 @@ export type NewEntryInput =
       paidBy: string | null;
       notes: string | null;
       changeOrderId: string | null;
+      paidByAgentId?: string | null; // agent who paid for this expense (creates reimbursement)
     }
   | {
       kind: "subcontractor_payment";
@@ -435,6 +444,8 @@ export type NewEntryInput =
       paymentMethod: string | null;
       notes: string | null;
       changeOrderId: string | null;
+      paymentType?: 'commission' | 'reimbursement'; // default 'commission'
+      expenseId?: string | null; // for reimbursements: link to the original expense
     };
 
 // Analytics and reporting types
