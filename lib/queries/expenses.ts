@@ -230,9 +230,7 @@ export function computePendingPayouts(
   // scoped to a single estimate_id) is exactly what ProjectFinancialsModal
   // itself does, so both surfaces now agree on what counts as "paid" —
   // one matching rule, not two payment-tracking systems.
-  const paidByAgentAssignment = new Map<string, number>();
   const paidCommissionByAssignment = new Map<string, number>();
-  const paidReimbursementByAssignment = new Map<string, number>();
   const reimbursementAmountByAssignment = new Map<string, number>();
 
   for (const p of bundle.agentPayments) {
@@ -240,13 +238,12 @@ export function computePendingPayouts(
       p.estimate_agent_id ?? bundle.assignedAgents.find((a) => a.agentId === p.agent_id)?.estimateAgentId;
     if (!assignmentId) continue;
 
-    paidByAgentAssignment.set(assignmentId, (paidByAgentAssignment.get(assignmentId) ?? 0) + p.amount);
-
     // Track commission and reimbursement separately
     if (p.payment_type === 'reimbursement') {
-      paidReimbursementByAssignment.set(assignmentId, (paidReimbursementByAssignment.get(assignmentId) ?? 0) + p.amount);
+      // Reimbursements are what agent is owed (money they paid out), not payments made to them
       reimbursementAmountByAssignment.set(assignmentId, (reimbursementAmountByAssignment.get(assignmentId) ?? 0) + p.amount);
     } else {
+      // Only commission payments count as actual payments made to the agent
       paidCommissionByAssignment.set(assignmentId, (paidCommissionByAssignment.get(assignmentId) ?? 0) + p.amount);
     }
   }
@@ -269,14 +266,15 @@ export function computePendingPayouts(
   });
 
   const agentPayouts: PendingPayout[] = bundle.assignedAgents.map((a) => {
-    const paidAmount = paidByAgentAssignment.get(a.estimateAgentId) ?? 0;
     const commissionAmount = a.assignedAmount;
     const reimbursementAmount = reimbursementAmountByAssignment.get(a.estimateAgentId) ?? 0;
     const totalAssignedAmount = commissionAmount + reimbursementAmount;
-    const paidCommission = paidCommissionByAssignment.get(a.estimateAgentId) ?? 0;
-    const paidReimbursement = paidReimbursementByAssignment.get(a.estimateAgentId) ?? 0;
 
-    const { remainingAmount, status } = computePayoutStatus(totalAssignedAmount, paidAmount);
+    // Only count commission payments as paid — reimbursements are what we owe agent, not payments to them
+    const paidCommission = paidCommissionByAssignment.get(a.estimateAgentId) ?? 0;
+    const totalPaidAmount = paidCommission; // Only commission payments count
+
+    const { remainingAmount, status } = computePayoutStatus(totalAssignedAmount, totalPaidAmount);
     return {
       role: "agent",
       assignmentId: a.estimateAgentId,
@@ -284,14 +282,14 @@ export function computePendingPayouts(
       name: a.name,
       roleDetail: null,
       assignedAmount: totalAssignedAmount,
-      paidAmount,
+      paidAmount: totalPaidAmount,
       remainingAmount,
       status,
       notes: a.notes,
       commissionAmount,
       reimbursementAmount,
       paidCommission,
-      paidReimbursement,
+      paidReimbursement: 0, // Reimbursements are never "paid" — they're what's owed
     };
   });
 
@@ -1017,15 +1015,27 @@ export async function getCompanyProjectFinancialSummaries(
     // guards against for the Expenses total, just missed here.
     const agentAssignmentIds = new Set(assignedAgentRows.map((a: any) => a.id));
     const agentAssignmentIdByAgent = new Map<string, string>(assignedAgentRows.map((a: any) => [a.agent_id, a.id]));
-    const agentPaidByAssignment = new Map<string, number>();
+    const agentCommissionPaidByAssignment = new Map<string, number>();
+    const agentReimbursementByAssignment = new Map<string, number>();
     for (const p of agentPaymentRows) {
       const assignmentId = p.estimate_agent_id ?? agentAssignmentIdByAgent.get(p.agent_id);
       if (!assignmentId || !agentAssignmentIds.has(assignmentId)) continue;
-      agentPaidByAssignment.set(assignmentId, (agentPaidByAssignment.get(assignmentId) ?? 0) + p.amount);
+      // Only count commission as paid — reimbursements are what agent is owed, not payments to them
+      if (p.payment_type === 'commission') {
+        agentCommissionPaidByAssignment.set(assignmentId, (agentCommissionPaidByAssignment.get(assignmentId) ?? 0) + p.amount);
+      } else {
+        agentReimbursementByAssignment.set(assignmentId, (agentReimbursementByAssignment.get(assignmentId) ?? 0) + p.amount);
+      }
     }
-    const agentPaidOut = [...agentPaidByAssignment.values()].reduce((sum, v) => sum + v, 0);
+    const agentPaidOut = [...agentCommissionPaidByAssignment.values()].reduce((sum, v) => sum + v, 0);
     const agentRemaining = assignedAgentRows.reduce(
-      (sum: number, a: any) => sum + computePayoutStatus(a.amount || 0, agentPaidByAssignment.get(a.id) ?? 0).remainingAmount,
+      (sum: number, a: any) => {
+        const commission = a.amount || 0;
+        const reimbursement = agentReimbursementByAssignment.get(a.id) ?? 0;
+        const totalOwed = commission + reimbursement;
+        const paidCommission = agentCommissionPaidByAssignment.get(a.id) ?? 0;
+        return sum + computePayoutStatus(totalOwed, paidCommission).remainingAmount;
+      },
       0
     );
 
