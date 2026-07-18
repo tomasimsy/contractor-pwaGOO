@@ -24,7 +24,7 @@ export default function AgentCommissionCard({
 
   return (
     <DashboardPanel
-      title="Agent Commissions"
+      title="Agent Payables"
       accent="blue"
       action={
         <button
@@ -37,7 +37,7 @@ export default function AgentCommissionCard({
       }
     >
       {agents.length === 0 ? (
-        <EmptyState message="No agents assigned to this project yet." />
+        <EmptyState message="No agents with pending payables on this project yet." />
       ) : (
         <div className="divide-y divide-gray-100 max-h-72 overflow-y-auto -mx-1 px-1">
           {agents.map((payout) => (

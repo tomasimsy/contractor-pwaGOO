@@ -46,12 +46,32 @@ export default function PayoutRow({
           </div>
 
           {!isEditing ? (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-500 mt-1">
-              <span>Assigned {formatCurrency(payout.assignedAmount)}</span>
-              <span>Paid {formatCurrency(payout.paidAmount)}</span>
-              <span className={`font-medium ${payout.remainingAmount > 0 ? "text-amber-600" : "text-emerald-600"}`}>
-                {payout.remainingAmount > 0 ? `${formatCurrency(payout.remainingAmount)} remaining` : "Settled"}
-              </span>
+            <div className="mt-1 space-y-1">
+              {payout.role === "agent" && (payout.commissionAmount !== undefined || payout.reimbursementAmount !== undefined) ? (
+                <>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-500">
+                    <span>Commission: {formatCurrency(payout.commissionAmount ?? 0)}</span>
+                    {(payout.reimbursementAmount ?? 0) > 0 && (
+                      <span>Reimbursement: {formatCurrency(payout.reimbursementAmount ?? 0)}</span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-600 font-medium">
+                    <span>Total: {formatCurrency(payout.assignedAmount)}</span>
+                    <span>Paid: {formatCurrency(payout.paidAmount)}</span>
+                    <span className={`${payout.remainingAmount > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                      {payout.remainingAmount > 0 ? `${formatCurrency(payout.remainingAmount)} remaining` : "Settled"}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-500">
+                  <span>Assigned {formatCurrency(payout.assignedAmount)}</span>
+                  <span>Paid {formatCurrency(payout.paidAmount)}</span>
+                  <span className={`font-medium ${payout.remainingAmount > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                    {payout.remainingAmount > 0 ? `${formatCurrency(payout.remainingAmount)} remaining` : "Settled"}
+                  </span>
+                </div>
+              )}
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2 mt-1.5">

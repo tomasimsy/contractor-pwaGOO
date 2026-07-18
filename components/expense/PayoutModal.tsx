@@ -54,7 +54,16 @@ export default function PayoutModal({
         <div className="rounded-xl bg-slate-50 border border-slate-200/70 p-3 space-y-1.5 text-sm">
           <Row label="Role" value={payout.role === "agent" ? "Agent" : payout.roleDetail || "Subcontractor"} />
           <Row label="Project" value={projectLabel} />
-          <Row label="Assigned" value={formatCurrency(payout.assignedAmount)} />
+          {payout.role === "agent" && (payout.commissionAmount !== undefined || payout.reimbursementAmount !== undefined) ? (
+            <>
+              <Row label="Commission" value={formatCurrency(payout.commissionAmount ?? 0)} />
+              {(payout.reimbursementAmount ?? 0) > 0 && (
+                <Row label="Reimbursement" value={formatCurrency(payout.reimbursementAmount ?? 0)} />
+              )}
+            </>
+          ) : (
+            <Row label="Assigned" value={formatCurrency(payout.assignedAmount)} />
+          )}
           <Row label="Already Paid" value={formatCurrency(payout.paidAmount)} />
           <div className="flex items-center justify-between pt-1.5 border-t border-slate-200 font-bold">
             <span className="text-slate-700">Remaining Balance</span>

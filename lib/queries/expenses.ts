@@ -230,11 +230,24 @@ export function computePendingPayouts(
   // itself does, so both surfaces now agree on what counts as "paid" —
   // one matching rule, not two payment-tracking systems.
   const paidByAgentAssignment = new Map<string, number>();
+  const paidCommissionByAssignment = new Map<string, number>();
+  const paidReimbursementByAssignment = new Map<string, number>();
+  const reimbursementAmountByAssignment = new Map<string, number>();
+
   for (const p of bundle.agentPayments) {
     const assignmentId =
       p.estimate_agent_id ?? bundle.assignedAgents.find((a) => a.agentId === p.agent_id)?.estimateAgentId;
     if (!assignmentId) continue;
+
     paidByAgentAssignment.set(assignmentId, (paidByAgentAssignment.get(assignmentId) ?? 0) + p.amount);
+
+    // Track commission and reimbursement separately
+    if (p.payment_type === 'reimbursement') {
+      paidReimbursementByAssignment.set(assignmentId, (paidReimbursementByAssignment.get(assignmentId) ?? 0) + p.amount);
+      reimbursementAmountByAssignment.set(assignmentId, (reimbursementAmountByAssignment.get(assignmentId) ?? 0) + p.amount);
+    } else {
+      paidCommissionByAssignment.set(assignmentId, (paidCommissionByAssignment.get(assignmentId) ?? 0) + p.amount);
+    }
   }
 
   const subPayouts: PendingPayout[] = bundle.assignedSubcontractors.map((s) => {
@@ -256,18 +269,28 @@ export function computePendingPayouts(
 
   const agentPayouts: PendingPayout[] = bundle.assignedAgents.map((a) => {
     const paidAmount = paidByAgentAssignment.get(a.estimateAgentId) ?? 0;
-    const { remainingAmount, status } = computePayoutStatus(a.assignedAmount, paidAmount);
+    const commissionAmount = a.assignedAmount;
+    const reimbursementAmount = reimbursementAmountByAssignment.get(a.estimateAgentId) ?? 0;
+    const totalAssignedAmount = commissionAmount + reimbursementAmount;
+    const paidCommission = paidCommissionByAssignment.get(a.estimateAgentId) ?? 0;
+    const paidReimbursement = paidReimbursementByAssignment.get(a.estimateAgentId) ?? 0;
+
+    const { remainingAmount, status } = computePayoutStatus(totalAssignedAmount, paidAmount);
     return {
       role: "agent",
       assignmentId: a.estimateAgentId,
       personId: a.agentId,
       name: a.name,
       roleDetail: null,
-      assignedAmount: a.assignedAmount,
+      assignedAmount: totalAssignedAmount,
       paidAmount,
       remainingAmount,
       status,
       notes: a.notes,
+      commissionAmount,
+      reimbursementAmount,
+      paidCommission,
+      paidReimbursement,
     };
   });
 
@@ -883,7 +906,7 @@ export async function getCompanyProjectFinancialSummaries(
         .is("deleted_at", null),
       supabase
         .from("agent_payments")
-        .select("estimate_id, estimate_agent_id, agent_id, amount")
+        .select("estimate_id, estimate_agent_id, agent_id, amount, payment_type")
         .eq("company_id", companyId)
         .is("deleted_at", null),
       supabase.from("estimate_subcontractors").select("id, estimate_id, amount").eq("company_id", companyId).is("deleted_at", null),

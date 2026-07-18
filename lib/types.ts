@@ -313,6 +313,11 @@ export type PendingPayout = {
   remainingAmount: number;
   status: PayoutStatusValue;
   notes: string | null;
+  // For agents: breakdown of commission vs reimbursement (optional, only set for agents)
+  commissionAmount?: number;
+  reimbursementAmount?: number;
+  paidCommission?: number;
+  paidReimbursement?: number;
 };
 
 export type ProjectBundle = {
