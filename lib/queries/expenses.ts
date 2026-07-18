@@ -1044,7 +1044,7 @@ export async function getCompanyProjectFinancialSummaries(
       expenses,
       hasCostData: expenseRows.length > 0 || assignedSubRows.length > 0 || assignedAgentRows.length > 0,
       paidOut: subPaidOut + agentPaidOut,
-      hasPayouts: subPaidByAssignment.size > 0 || agentPaidByAssignment.size > 0,
+      hasPayouts: subPaidByAssignment.size > 0 || agentCommissionPaidByAssignment.size > 0,
       remainingPayouts: subRemaining + agentRemaining,
       hasAssignments: assignedSubRows.length > 0 || assignedAgentRows.length > 0,
       profit,
