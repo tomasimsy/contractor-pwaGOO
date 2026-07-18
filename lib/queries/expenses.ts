@@ -483,7 +483,10 @@ export function buildLedger(bundle: ProjectBundle): LedgerEntry[] {
 
   const activeSubcontractorIds = new Set(bundle.assignedSubcontractors.map((s) => s.estimateSubcontractorId));
   const subPaymentEntries: LedgerEntry[] = bundle.subcontractorPayments
-    .filter((p) => p.estimate_subcontractor_id && activeSubcontractorIds.has(p.estimate_subcontractor_id))
+    .filter((p) => {
+      const assignmentId = p.estimate_subcontractor_id;
+      return assignmentId && activeSubcontractorIds.has(assignmentId);
+    })
     .map((p) => ({
       id: p.id,
       source: "subcontractor_payment",
@@ -499,7 +502,10 @@ export function buildLedger(bundle: ProjectBundle): LedgerEntry[] {
 
   const activeAgentIds = new Set(bundle.assignedAgents.map((a) => a.estimateAgentId));
   const agentPaymentEntries: LedgerEntry[] = bundle.agentPayments
-    .filter((p) => p.estimate_agent_id && activeAgentIds.has(p.estimate_agent_id))
+    .filter((p) => {
+      const assignmentId = p.estimate_agent_id ?? bundle.assignedAgents.find((a) => a.agentId === p.agent_id)?.estimateAgentId;
+      return assignmentId && activeAgentIds.has(assignmentId);
+    })
     .map((p) => ({
       id: p.id,
       source: "agent_payment",
