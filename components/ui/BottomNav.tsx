@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, FileText, ClipboardList, Settings, Play, Square, ReceiptText } from "lucide-react";
+import { LayoutDashboard, FileText, ClipboardList, Settings, Play, Square, ReceiptText, TrendingUp } from "lucide-react";
 import { useTrip } from "@/components/mileage/context/TripContext";
 import toast from "react-hot-toast";
 
@@ -14,7 +14,8 @@ const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Estimates", href: "/estimates", icon: ClipboardList },
   { label: "Invoices", href: "/invoices", icon: FileText },
-    { label: "Expenses", href: "/expense", icon: ReceiptText },
+  { label: "Expenses", href: "/expense", icon: ReceiptText },
+  { label: "Analytics", href: "/analytics", icon: TrendingUp },
   { label: "Manage", href: "/settings", icon: Settings },
 ];
 
