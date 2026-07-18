@@ -56,12 +56,15 @@ type AgentPayment = {
   payment_method: string;
   payment_date: string;
   notes?: string;
+  payment_type?: 'commission' | 'reimbursement';
+  expense_id?: string;
 };
 
 type AssignedAgent = {
   id: string;
   amount: number;
   paid_amount: number;
+  reimbursement_amount: number;
   notes: string;
   agent_id: string;
   agents?: Agent;
@@ -183,7 +186,9 @@ export default function ProjectFinancialsModal({
     afterSubcontractorAndExpenses,
     companyPercentage
   );
-  const totalAgentAssigned = assignedAgents.reduce((sum, a) => sum + (a.amount || 0), 0);
+  // Total owed to agents: commission + reimbursements they're owed back
+  const totalAgentAssigned = assignedAgents.reduce((sum, a) => sum + ((a.amount || 0) + (a.reimbursement_amount || 0)), 0);
+  // Total paid to agents: only commission payments count as paid
   const totalAgentPaid = assignedAgents.reduce((sum, a) => sum + (a.paid_amount || 0), 0);
   const remainingToDistribute = remainingForAgents - totalAgentAssigned;
 
@@ -266,8 +271,11 @@ export default function ProjectFinancialsModal({
               .eq("company_id", companyId)
               .is("deleted_at", null)
               .order("payment_date", { ascending: false });
-            const paidAmount = payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
-            return { ...agent, paid_amount: paidAmount, payments: payments || [] };
+            // Only count commission payments as paid, not reimbursements
+            const commissionPayments = payments?.filter(p => p.payment_type !== 'reimbursement') || [];
+            const paidAmount = commissionPayments.reduce((sum, p) => sum + p.amount, 0);
+            const reimbursementAmount = payments?.filter(p => p.payment_type === 'reimbursement').reduce((sum, p) => sum + p.amount, 0) || 0;
+            return { ...agent, paid_amount: paidAmount, reimbursement_amount: reimbursementAmount, payments: payments || [] };
           })
         );
         setAssignedAgents(agentsWithPayments);
@@ -691,7 +699,8 @@ export default function ProjectFinancialsModal({
       alert("Enter valid amount");
       return;
     }
-    const remainingOwed = (selectedAgentForPayment.amount || 0) - (selectedAgentForPayment.paid_amount || 0);
+    const totalOwed = (selectedAgentForPayment.amount || 0) + (selectedAgentForPayment.reimbursement_amount || 0);
+    const remainingOwed = totalOwed - (selectedAgentForPayment.paid_amount || 0);
     if (agentPaymentAmount > remainingOwed) {
       alert(`Cannot pay more than owed (${formatCurrency(remainingOwed)})`);
       return;
@@ -1061,21 +1070,25 @@ export default function ProjectFinancialsModal({
                               </div>
                             ) : (
                               <div className="flex items-center gap-2 mt-1">
-                                <span className="text-sm font-semibold text-green-700">Earns: {formatCurrency(agent.amount || 0)}</span>
+                                <span className="text-sm font-semibold text-green-700">Commission: {formatCurrency(agent.amount || 0)}</span>
                                 <button onClick={() => { setEditingAgent(agent.id); setEditAgentAmount(agent.amount || 0); }} className="text-gray-400 hover:text-blue-500"><Edit2 size={12} /></button>
                               </div>
                             )}
+                            {(agent.reimbursement_amount || 0) > 0 && (
+                              <div className="text-xs text-gray-600 mt-1">Reimbursement: {formatCurrency(agent.reimbursement_amount || 0)}</div>
+                            )}
                             {agent.notes && <div className="text-xs text-gray-400 mt-1">{agent.notes}</div>}
                             <div className="flex items-center gap-2 mt-1">
+                              <span className="text-xs text-gray-500">Total Owed: {formatCurrency((agent.amount || 0) + (agent.reimbursement_amount || 0))}</span>
                               <span className="text-xs text-gray-500">Paid: {formatCurrency(agent.paid_amount || 0)}</span>
                               <button onClick={() => { setSelectedAgentForHistory(agent); setShowAgentPaymentHistory(true); }} className="text-xs text-blue-500 hover:text-blue-600"><Eye size={12} className="inline" /> History</button>
                             </div>
-                            {(agent.amount || 0) > (agent.paid_amount || 0) && (
-                              <div className="text-xs text-amber-600 mt-1">Owed: {formatCurrency((agent.amount || 0) - (agent.paid_amount || 0))}</div>
+                            {((agent.amount || 0) + (agent.reimbursement_amount || 0)) > (agent.paid_amount || 0) && (
+                              <div className="text-xs text-amber-600 mt-1">Remaining: {formatCurrency(((agent.amount || 0) + (agent.reimbursement_amount || 0)) - (agent.paid_amount || 0))}</div>
                             )}
                           </div>
                           <div className="flex gap-1">
-                            <button onClick={() => { setSelectedAgentForPayment(agent); setAgentPaymentAmount((agent.amount || 0) - (agent.paid_amount || 0)); setShowAgentPaymentModal(true); }} className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200">Pay</button>
+                            <button onClick={() => { setSelectedAgentForPayment(agent); setAgentPaymentAmount(((agent.amount || 0) + (agent.reimbursement_amount || 0)) - (agent.paid_amount || 0)); setShowAgentPaymentModal(true); }} className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200">Pay</button>
                             <button onClick={() => removeAgentAssignment(agent.id, agent.agent_id)} className="text-red-500 text-sm px-2">✕</button>
                           </div>
                         </div>
@@ -1172,13 +1185,21 @@ export default function ProjectFinancialsModal({
           <div className="bg-white rounded-xl w-full max-w-md max-h-[80vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b px-5 py-4 flex justify-between items-center"><h3 className="text-lg font-semibold">Payment History - {selectedAgentForHistory.agents?.name}</h3><button onClick={() => setShowAgentPaymentHistory(false)} className="p-1 text-gray-400"><X size={20} /></button></div>
             <div className="p-5 space-y-4">
-              <div className="bg-gray-50 rounded-lg p-3"><div className="flex justify-between text-sm"><span>Total Earned:</span><span className="font-semibold text-green-700">{formatCurrency(selectedAgentForHistory.amount || 0)}</span></div><div className="flex justify-between text-sm mt-1"><span>Total Paid:</span><span className="font-semibold text-blue-600">{formatCurrency(selectedAgentForHistory.paid_amount || 0)}</span></div><div className="flex justify-between text-sm mt-1"><span>Remaining:</span><span className="font-semibold text-amber-600">{formatCurrency((selectedAgentForHistory.amount || 0) - (selectedAgentForHistory.paid_amount || 0))}</span></div></div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <div className="flex justify-between text-sm"><span>Commission:</span><span className="font-semibold text-green-700">{formatCurrency(selectedAgentForHistory.amount || 0)}</span></div>
+                {(selectedAgentForHistory.reimbursement_amount || 0) > 0 && (
+                  <div className="flex justify-between text-sm mt-1"><span>Reimbursement:</span><span className="font-semibold text-amber-700">{formatCurrency(selectedAgentForHistory.reimbursement_amount || 0)}</span></div>
+                )}
+                <div className="flex justify-between text-sm mt-1"><span>Total Owed:</span><span className="font-semibold text-green-700">{formatCurrency((selectedAgentForHistory.amount || 0) + (selectedAgentForHistory.reimbursement_amount || 0))}</span></div>
+                <div className="flex justify-between text-sm mt-1"><span>Total Paid:</span><span className="font-semibold text-blue-600">{formatCurrency(selectedAgentForHistory.paid_amount || 0)}</span></div>
+                <div className="flex justify-between text-sm mt-1"><span>Remaining:</span><span className="font-semibold text-amber-600">{formatCurrency(((selectedAgentForHistory.amount || 0) + (selectedAgentForHistory.reimbursement_amount || 0)) - (selectedAgentForHistory.paid_amount || 0))}</span></div>
+              </div>
               {selectedAgentForHistory.payments?.length === 0 ? <div className="text-center py-8 text-gray-400">No payments</div> : (
                 <div className="space-y-2">
                   {selectedAgentForHistory.payments?.map((payment) => (
                     <div key={payment.id} className="border rounded-lg p-3">
                       <div className="flex justify-between items-start">
-                        <div>{editingAgentPayment === payment.id ? (<div className="flex items-center gap-2"><span>$</span><input type="number" value={editAgentPaymentAmount} onChange={(e) => setEditAgentPaymentAmount(Number(e.target.value))} className="w-28 border rounded p-1 text-sm" step="0.01" autoFocus /><button onClick={() => updateAgentPayment(payment.id, editAgentPaymentAmount, selectedAgentForHistory.agent_id, payment.amount)} className="text-green-600"><Check size={16} /></button><button onClick={() => setEditingAgentPayment(null)} className="text-gray-400"><X size={16} /></button></div>) : (<div className="font-medium">{formatCurrency(payment.amount)}</div>)}<div className="text-xs text-gray-500 mt-1">{payment.payment_method} • {new Date(payment.payment_date).toLocaleDateString()}</div></div>
+                        <div>{editingAgentPayment === payment.id ? (<div className="flex items-center gap-2"><span>$</span><input type="number" value={editAgentPaymentAmount} onChange={(e) => setEditAgentPaymentAmount(Number(e.target.value))} className="w-28 border rounded p-1 text-sm" step="0.01" autoFocus /><button onClick={() => updateAgentPayment(payment.id, editAgentPaymentAmount, selectedAgentForHistory.agent_id, payment.amount)} className="text-green-600"><Check size={16} /></button><button onClick={() => setEditingAgentPayment(null)} className="text-gray-400"><X size={16} /></button></div>) : (<div className="font-medium">{formatCurrency(payment.amount)} <span className="text-xs font-normal text-gray-500">({payment.payment_type === 'reimbursement' ? 'Reimbursement' : 'Commission'})</span></div>)}<div className="text-xs text-gray-500 mt-1">{payment.payment_method} • {new Date(payment.payment_date).toLocaleDateString()}</div></div>
                         {editingAgentPayment !== payment.id && (<div className="flex gap-1"><button onClick={() => { setEditingAgentPayment(payment.id); setEditAgentPaymentAmount(payment.amount); }} className="text-gray-400 hover:text-blue-500"><Edit2 size={14} /></button><button onClick={() => deleteAgentPayment(payment.id, selectedAgentForHistory.agent_id)} className="text-gray-400 hover:text-red-500"><Trash2 size={14} /></button></div>)}
                       </div>
                     </div>
