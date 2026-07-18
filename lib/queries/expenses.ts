@@ -481,31 +481,37 @@ export function buildLedger(bundle: ProjectBundle): LedgerEntry[] {
     ...coFields(e.change_order_id),
   }));
 
-  const subPaymentEntries: LedgerEntry[] = bundle.subcontractorPayments.map((p) => ({
-    id: p.id,
-    source: "subcontractor_payment",
-    categoryLabel: "Subcontractor",
-    amount: p.amount,
-    date: p.payment_date ?? p.created_at ?? "",
-    payeeLabel: (p.estimate_subcontractor_id && subcontractorNameByAssignmentId.get(p.estimate_subcontractor_id)) || "Subcontractor",
-    paymentMethod: p.payment_method,
-    notes: p.notes,
-    hasReceiptFields: false,
-    ...coFields(p.change_order_id),
-  }));
+  const activeSubcontractorIds = new Set(bundle.assignedSubcontractors.map((s) => s.estimateSubcontractorId));
+  const subPaymentEntries: LedgerEntry[] = bundle.subcontractorPayments
+    .filter((p) => p.estimate_subcontractor_id && activeSubcontractorIds.has(p.estimate_subcontractor_id))
+    .map((p) => ({
+      id: p.id,
+      source: "subcontractor_payment",
+      categoryLabel: "Subcontractor",
+      amount: p.amount,
+      date: p.payment_date ?? p.created_at ?? "",
+      payeeLabel: (p.estimate_subcontractor_id && subcontractorNameByAssignmentId.get(p.estimate_subcontractor_id)) || "Subcontractor",
+      paymentMethod: p.payment_method,
+      notes: p.notes,
+      hasReceiptFields: false,
+      ...coFields(p.change_order_id),
+    }));
 
-  const agentPaymentEntries: LedgerEntry[] = bundle.agentPayments.map((p) => ({
-    id: p.id,
-    source: "agent_payment",
-    categoryLabel: "Agent Commission",
-    amount: p.amount,
-    date: p.payment_date ?? p.created_at ?? "",
-    payeeLabel: (p.agent_id && agentNameById.get(p.agent_id)) || "Agent",
-    paymentMethod: p.payment_method,
-    notes: p.notes,
-    hasReceiptFields: false,
-    ...coFields(p.change_order_id),
-  }));
+  const activeAgentIds = new Set(bundle.assignedAgents.map((a) => a.estimateAgentId));
+  const agentPaymentEntries: LedgerEntry[] = bundle.agentPayments
+    .filter((p) => p.estimate_agent_id && activeAgentIds.has(p.estimate_agent_id))
+    .map((p) => ({
+      id: p.id,
+      source: "agent_payment",
+      categoryLabel: "Agent Commission",
+      amount: p.amount,
+      date: p.payment_date ?? p.created_at ?? "",
+      payeeLabel: (p.agent_id && agentNameById.get(p.agent_id)) || "Agent",
+      paymentMethod: p.payment_method,
+      notes: p.notes,
+      hasReceiptFields: false,
+      ...coFields(p.change_order_id),
+    }));
 
   return [...expenseEntries, ...subPaymentEntries, ...agentPaymentEntries].sort(
     (a, b) => (a.date < b.date ? 1 : -1)
