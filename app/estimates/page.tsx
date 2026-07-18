@@ -12,8 +12,10 @@ import DesktopShell from "@/components/layout/DesktopShell";
 import ProjectFinancialPills from "@/components/shared/ProjectFinancialPills";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import { getCompanyProjectFinancialSummaries, type ProjectFinancialSummary } from "@/lib/queries/expenses";
-import { Send, Trash2, MessageCircle, Link2, Plus, FilePlus, Eye, Search, ArrowRight } from "lucide-react";
+import { Send, Trash2, MessageCircle, Link2, Plus, FilePlus, Eye, Search, ArrowRight, Receipt } from "lucide-react";
 import toast from "react-hot-toast";
+import Link from "next/link";
+
 
 export default function EstimatesPage() {
   const router = useRouter();
@@ -375,9 +377,17 @@ const copyLink = (estimate: Estimate) => {
       <div className="truncate text-xs font-bold text-slate-800 group-hover:text-emerald-800 transition-colors tracking-tight">
         {estimate.clients?.name || "No client specified"}
       </div>
+            <span className="font-semibold text-emerald-600 px-1 rounded border border-slate-200 font-mono text-[9px]">
+        #{estimate.estimate_number || estimate.id.slice(0, 8)}
+      </span>
+      <span>•</span>
+                  <span className="font-semibold text-emerald-600 px-1 rounded border border-slate-200 font-mono text-[9px]">
+{formatShortDate(estimate.created_at)}</span>
+
       <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold tracking-wide uppercase ${status.className}`}>
         {status.label}
       </span>
+      
     </div>
 
     {estimate.title && (
@@ -387,22 +397,16 @@ const copyLink = (estimate: Estimate) => {
     )}
 
     {/* Subtitle meta strip */}
-    <div className="mt-0.5 flex items-center gap-1.5 text-[10px] font-medium text-slate-400 group-hover:text-slate-600 transition-colors">
-      <span className="font-semibold text-emerald-600 px-1 rounded border border-slate-200 font-mono text-[9px]">
-        #{estimate.estimate_number || estimate.id.slice(0, 8)}
-      </span>
-      <span>•</span>
-      <span>{formatShortDate(estimate.created_at)}</span>
-    </div>
+ 
 
     <ProjectFinancialPills estimateId={estimate.id} summary={financials.get(estimate.id)} />
 
     {/* Optional description */}
-    {estimate.description && (
+    {/* {estimate.description && (
       <div className="mt-1.5 line-clamp-1 text-[11px] leading-relaxed text-slate-500 group-hover:text-slate-700 transition-colors normal-case">
         {estimate.description}
       </div>
-    )}
+    )} */}
 
     {/* Viewed metrics – optional */}
     {(estimate as any).opened_at && (
@@ -426,34 +430,63 @@ const copyLink = (estimate: Estimate) => {
   </div>
 
   {/* Right panel – amount + action buttons */}
-  <div className="flex shrink-0 flex-col items-end justify-between self-stretch">
-    <div className="text-xs font-bold text-slate-900 group-hover:text-emerald-800 transition-colors tracking-tight">
-      {formatCurrency(estimate.total)}
-    </div>
-    <div className="flex gap-1 mt-2">
-      {/* Copy link button */}
-      <button
-        onClick={(e) => { e.stopPropagation(); copyLink(estimate); }}
-        className="p-1 rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors border border-transparent hover:border-blue-100"
-      >
-        <Link2 size={12} />
-      </button>
-      {/* SMS button */}
-      <button
-        onClick={(e) => { e.stopPropagation(); sendSMSLink(estimate); }}
-        className="p-1 rounded-md text-emerald-800 bg-emerald-100 hover:text-emerald-700 hover:bg-emerald-50 transition-colors border border-transparent hover:border-emerald-100"
-      >
-        <Send size={12} />
-      </button>
-      {/* Delete button */}
-      <button
-        onClick={(e) => { e.stopPropagation(); setDeleteModal({ isOpen: true, id: estimate.id, name: estimate.clients?.name || "this estimate" }); }}
-        className="p-1 rounded-md text-rose-500 bg-rose-100 hover:text-rose-800 hover:bg-rose-50 transition-colors border border-transparent hover:border-rose-100"
-      >
-        <Trash2 size={12} />
-      </button>
-    </div>
+<div className="flex shrink-0 flex-col items-end justify-between self-stretch">
+  <div className="text-xs font-semibold text-slate-900">
+    {formatCurrency(estimate.total)}
   </div>
+
+  <div className="flex items-center gap-1 mt-2">
+    {/* Expense */}
+    <Link
+      href={`/expense?project=${estimate.id}`}
+      onClick={(e) => e.stopPropagation()}
+      className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-colors"
+      title="Expenses"
+    >
+      <Receipt size={12} />
+    </Link>
+
+    {/* Copy */}
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        copyLink(estimate);
+      }}
+      className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+      title="Copy Link"
+    >
+      <Link2 size={12} />
+    </button>
+
+    {/* SMS */}
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        sendSMSLink(estimate);
+      }}
+      className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+      title="Send SMS"
+    >
+      <Send size={12} />
+    </button>
+
+    {/* Delete */}
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        setDeleteModal({
+          isOpen: true,
+          id: estimate.id,
+          name: estimate.clients?.name || "this estimate",
+        });
+      }}
+      className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+      title="Delete"
+    >
+      <Trash2 size={12} />
+    </button>
+  </div>
+</div>
 </div>
               );
             })}

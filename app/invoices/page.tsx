@@ -2,14 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency, formatShortDate } from "@/lib/utils/formatting";
-import { ArrowLeft, Search, AlertCircle, Link2, Send, ArrowRight } from "lucide-react";
+import { ArrowLeft, Search, AlertCircle, Link2, Send, ArrowRight,Receipt } from "lucide-react";
 import toast from "react-hot-toast";
 import DesktopShell from "@/components/layout/DesktopShell";
 import ProjectFinancialPills from "@/components/shared/ProjectFinancialPills";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import { getCompanyProjectFinancialSummaries, type ProjectFinancialSummary } from "@/lib/queries/expenses";
+import invoice from "../estimates/[id]/invoice";
 
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -24,7 +26,7 @@ export default function InvoicesPage() {
         setLoading(true);
         const { data, error } = await supabase
           .from("invoices")
-          .select("id, invoice_number, total, remaining_balance, due_date, created_at, status, estimate_id, clients(name, phone), estimates(title)")
+          .select("id, invoice_number,  total, remaining_balance, due_date, created_at, status, estimate_id, clients(name, phone), estimates(title)")
           .order("created_at", { ascending: false });
         if (error) throw error;
         if (data) setInvoices(data);
@@ -304,22 +306,35 @@ export default function InvoicesPage() {
                       </span>
 
                       {/* Action buttons inline with badge */}
-                      <div className="flex gap-1.5">
-                        <button
-                          onClick={() => copyLink(inv)}
-                          className="p-1 rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors border border-transparent hover:border-blue-100"
-                          title="Copy Link"
-                        >
-                          <Link2 size={12} />
-                        </button>
-                        <button
-                          onClick={() => sendSMSLink(inv)}
-                          className="p-1 rounded-md text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition-colors border border-transparent hover:border-emerald-100"
-                          title="Send SMS"
-                        >
-                          <Send size={12} />
-                        </button>
-                      </div>
+<div className="flex gap-1.5">
+  {/* Expense */}
+  <Link
+    href={`/expense?project=${inv.estimate_id}`}
+    onClick={(e) => e.stopPropagation()}
+    className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-colors"
+    title="Expenses"
+  >
+    <Receipt size={12} />
+  </Link>
+
+  {/* Copy Link */}
+  <button
+    onClick={() => copyLink(inv)}
+    className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+    title="Copy Link"
+  >
+    <Link2 size={12} />
+  </button>
+
+  {/* SMS */}
+  <button
+    onClick={() => sendSMSLink(inv)}
+    className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+    title="Send SMS"
+  >
+    <Send size={12} />
+  </button>
+</div>
                     </div>
                   </div>
                 </div>

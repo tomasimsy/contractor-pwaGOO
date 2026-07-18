@@ -22,7 +22,8 @@ export default function ProjectFinancialPills({
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-      <Pill label="Revenue" value={s ? formatCurrency(s.revenue) : "--"} />
+      {/* <Pill label="Revenue" value={s ? formatCurrency(s.revenue) : "--"} /> */}
+      
       <Pill label="Expenses" value={s?.hasCostData ? formatCurrency(s.expenses) : "--"} />
       <Pill
         label="Profit"
@@ -40,26 +41,23 @@ export default function ProjectFinancialPills({
       {/* Paid Out is a payment-status figure only — read straight from
           subcontractor_payments/agent_payments, never derived from
           revenue/expenses/profit above. */}
-      <Pill label="Paid Out" value={s?.hasPayouts ? formatCurrency(s.paidOut) : "--"} />
-      <Pill
+      {/* <Pill label="Paid Out" value={s?.hasPayouts ? formatCurrency(s.paidOut) : "--"} /> */}
+      {/* <Pill
         label="Remaining"
         value={s?.hasAssignments ? formatCurrency(s.remainingPayouts) : "--"}
         tone={s?.hasAssignments && s.remainingPayouts > 0 ? "amber" : "neutral"}
-      />
+      /> */}
       {s?.hasCostData && (
         <Pill
           label="Margin"
           value={`${s.marginPercent.toFixed(0)}%`}
           tone={s.marginPercent < 0 ? "red" : s.marginPercent > 0 ? "green" : "neutral"}
         />
+
+        
       )}
 
-      <Link
-        href={`/expense?project=${estimateId}`}
-        className="ml-auto flex items-center gap-1 h-6 px-2 rounded-md border border-gray-200 bg-white text-[10px] font-medium text-gray-500 hover:text-gray-800 hover:border-gray-300 transition-colors"
-      >
-        <Receipt size={11} /> Expenses
-      </Link>
+
     </div>
   );
 }
