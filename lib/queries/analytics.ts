@@ -40,10 +40,10 @@ export interface ProfitabilityMetrics {
 export async function getCompanyProfitability(companyId: string): Promise<ProjectProfitability[]> {
   const { data: estimates, error: estimatesError } = await supabase
     .from("estimates")
-    .select("id, estimate_number, title, client_id, total, completed_at, is_deleted, status")
+    .select("id, estimate_number, title, client_id, total, completed_at, is_deleted, status, signature")
     .eq("company_id", companyId)
     .eq("is_deleted", false)
-    .eq("status", "approved");
+    .not("signature", "is", null);
 
   if (estimatesError) throw estimatesError;
 
