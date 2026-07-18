@@ -453,11 +453,21 @@ export async function getCompanyPendingPayoutsSummary(
  * a payment's relationship to its subcontractor/agent/estimate.
  */
 export async function softDeleteExpense(id: string): Promise<void> {
-  const { error } = await supabase
+  const now = new Date().toISOString();
+  // Delete the expense itself
+  const { error: expenseError } = await supabase
     .from("estimate_expenses")
-    .update({ deleted_at: new Date().toISOString() })
+    .update({ deleted_at: now })
     .eq("id", id);
-  if (error) throw error;
+  if (expenseError) throw expenseError;
+
+  // Also cascade-delete any associated reimbursement payment (if expense was paid by agent)
+  const { error: reimbError } = await supabase
+    .from("agent_payments")
+    .update({ deleted_at: now })
+    .eq("expense_id", id)
+    .eq("payment_type", "reimbursement");
+  if (reimbError) throw reimbError;
 }
 
 export async function softDeleteSubcontractorPayment(id: string): Promise<void> {
@@ -477,8 +487,20 @@ export async function softDeleteAgentPayment(id: string): Promise<void> {
 }
 
 export async function restoreExpense(id: string): Promise<void> {
-  const { error } = await supabase.from("estimate_expenses").update({ deleted_at: null }).eq("id", id);
-  if (error) throw error;
+  // Restore the expense itself
+  const { error: expenseError } = await supabase
+    .from("estimate_expenses")
+    .update({ deleted_at: null })
+    .eq("id", id);
+  if (expenseError) throw expenseError;
+
+  // Also restore any associated reimbursement payment (if expense was paid by agent)
+  const { error: reimbError } = await supabase
+    .from("agent_payments")
+    .update({ deleted_at: null })
+    .eq("expense_id", id)
+    .eq("payment_type", "reimbursement");
+  if (reimbError) throw reimbError;
 }
 
 export async function restoreSubcontractorPayment(id: string): Promise<void> {
