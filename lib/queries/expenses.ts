@@ -525,6 +525,9 @@ export function buildLedger(bundle: ProjectBundle): LedgerEntry[] {
   const activeAgentIds = new Set(bundle.assignedAgents.map((a) => a.estimateAgentId));
   const agentPaymentEntries: LedgerEntry[] = bundle.agentPayments
     .filter((p) => {
+      // Only show commission payments in the ledger, not reimbursements
+      // Reimbursements are tracked separately for agent payout calculation
+      if (p.payment_type === 'reimbursement') return false;
       const assignmentId = p.estimate_agent_id ?? bundle.assignedAgents.find((a) => a.agentId === p.agent_id)?.estimateAgentId;
       return assignmentId && activeAgentIds.has(assignmentId);
     })
@@ -634,15 +637,27 @@ function getEffectiveSubcontractorCommitted(
  */
 function getEffectiveAgentPaid(
   assignedAgents: Pick<ProjectBundle["assignedAgents"][number], "estimateAgentId" | "agentId">[],
-  agentPayments: Pick<ProjectBundle["agentPayments"][number], "estimate_agent_id" | "agent_id" | "amount">[]
+  agentPayments: Pick<ProjectBundle["agentPayments"][number], "estimate_agent_id" | "agent_id" | "amount" | "payment_type">[]
 ): number {
   const paidByAssignment = new Map<string, number>();
   for (const p of agentPayments) {
+    // Only count commission payments, not reimbursements
+    if (p.payment_type === 'reimbursement') continue;
     const assignmentId = p.estimate_agent_id ?? assignedAgents.find((a) => a.agentId === p.agent_id)?.estimateAgentId;
     if (!assignmentId) continue;
     paidByAssignment.set(assignmentId, (paidByAssignment.get(assignmentId) ?? 0) + p.amount);
   }
   return assignedAgents.reduce((sum, a) => sum + (paidByAssignment.get(a.estimateAgentId) ?? 0), 0);
+}
+
+/** Sum of all reimbursement payments — expenses paid by agents on behalf of projects.
+ * These are tracked separately from commissions but contribute to total agent payout. */
+function getAgentReimbursements(
+  agentPayments: Pick<ProjectBundle["agentPayments"][number], "amount" | "payment_type">[]
+): number {
+  return agentPayments
+    .filter((p) => p.payment_type === 'reimbursement')
+    .reduce((sum, p) => sum + p.amount, 0);
 }
 
 export function summarizeFinancials(
@@ -681,6 +696,7 @@ export function summarizeFinancials(
   const subcontractorCosts = getEffectiveSubcontractorCommitted(bundle.assignedSubcontractors, bundle.subcontractorPayments);
   const subcontractorPaidToDate = bundle.subcontractorPayments.reduce((sum, p) => sum + p.amount, 0);
   const agentCommissions = getEffectiveAgentPaid(bundle.assignedAgents, bundle.agentPayments);
+  const agentReimbursements = getAgentReimbursements(bundle.agentPayments);
   const mileageCosts = bundle.mileageTrips.reduce((sum, t) => sum + (t.reimbursement || 0), 0);
 
   // Same "revised total = original + approved change orders" formula
@@ -699,6 +715,7 @@ export function summarizeFinancials(
     subcontractorCosts,
     subcontractorPaidToDate,
     agentCommissions,
+    agentReimbursements,
     otherExpenses,
     mileageCosts,
     totalPaid: totalPaidByClient,

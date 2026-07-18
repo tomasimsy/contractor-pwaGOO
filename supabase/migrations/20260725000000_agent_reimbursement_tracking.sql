@@ -3,7 +3,7 @@
 
 -- Add paid_by_agent_id to estimate_expenses to track which agent paid for the expense
 alter table public.estimate_expenses
-  add column if not exists paid_by_agent_id uuid references public.sales_agents(id) on delete set null;
+  add column if not exists paid_by_agent_id uuid references public.agents(id) on delete set null;
 
 -- Add payment_type to agent_payments to distinguish commission from reimbursement
 -- commission: agent commission earned on project
