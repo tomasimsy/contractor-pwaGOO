@@ -82,6 +82,7 @@ export type EstimateAgentRow = {
   notes: string | null;
   created_at: string | null;
   company_id: string;
+  deleted_at: string | null;
 };
 
 /** The authoritative source for client payment status — confirmed.
@@ -161,6 +162,7 @@ export type EstimateSubcontractorRow = {
   notes: string | null;
   created_at: string | null;
   company_id: string;
+  deleted_at: string | null;
 };
 
 export const PAYMENT_METHODS = ["cash", "check", "card", "bank_transfer", "other"] as const;

@@ -54,6 +54,7 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
         .eq("estimate_id", input.estimateId)
         .eq("agent_id", input.paidByAgentId)
         .eq("company_id", input.companyId)
+        .is("deleted_at", null)
         .single();
 
       const { error: reimburseError } = await supabase.from("agent_payments").insert({
