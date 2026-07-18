@@ -409,6 +409,16 @@ export type BudgetComparison = {
   other: { budget: number; actual: number };
 };
 
+/** Budget alert for categories that exceed their allocated budget. */
+export type BudgetAlert = {
+  category: 'material' | 'labor' | 'other';
+  budget: number;
+  actual: number;
+  overageAmount: number;
+  overagePercent: number;
+  isCritical: boolean; // true if over 100%, false if 75-100%
+};
+
 export type NewEntryInput =
   | {
       kind: "expense";

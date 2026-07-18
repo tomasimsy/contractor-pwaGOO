@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabase/client";
 import type {
   AssignedAgent,
   AssignedSubcontractor,
+  BudgetAlert,
   BudgetComparison,
   ExpenseAnalytics,
   FinancialSummaryData,
@@ -840,6 +841,35 @@ export function getBudgetComparison(
   }
 
   return result;
+}
+
+/** Identifies budget categories that are approaching or exceeding their limits.
+ * Returns alerts for categories that are over 75% of budget. */
+export function getBudgetAlerts(comparison: BudgetComparison): BudgetAlert[] {
+  const alerts: BudgetAlert[] = [];
+
+  const categories = ['material', 'labor', 'other'] as const;
+  for (const category of categories) {
+    const data = comparison[category];
+    if (data.budget <= 0) continue; // Skip if no budget allocated
+
+    const overageAmount = Math.max(0, data.actual - data.budget);
+    const overagePercent = (data.actual / data.budget) * 100;
+
+    // Alert if over 75% of budget
+    if (overagePercent >= 75) {
+      alerts.push({
+        category,
+        budget: data.budget,
+        actual: data.actual,
+        overageAmount,
+        overagePercent,
+        isCritical: overagePercent > 100, // Critical if over 100%
+      });
+    }
+  }
+
+  return alerts.sort((a, b) => b.overagePercent - a.overagePercent); // Sort by severity
 }
 
 /**

@@ -2,7 +2,7 @@
 
 import type { FormCategory } from "@/components/expense/AddExpenseSheet";
 import type { FinancialSummaryData, LedgerEntry, PaymentSummary, ProjectBundle } from "@/lib/types";
-import { getBudgetComparison } from "@/lib/queries/expenses";
+import { getBudgetComparison, getBudgetAlerts } from "@/lib/queries/expenses";
 
 import ProjectSummaryCard from "./ProjectSummaryCard";
 import ProjectActionsBar from "./ProjectActionsBar";
@@ -13,6 +13,7 @@ import ChangeOrdersPanel from "./ChangeOrdersPanel";
 import ExpandableExpenseSummaryCard from "./ExpandableExpenseSummaryCard";
 import ExpenseListPanel from "./ExpenseListPanel";
 import ReceiptsPanel from "./ReceiptsPanel";
+import BudgetStatusCard from "./BudgetStatusCard";
 
 // Desktop-first command center: a wide 12-column grid instead of one long
 // single-column stack, so the page reads in two vertical "lanes" at once
@@ -41,6 +42,7 @@ export default function DesktopDashboard({
   onRefresh: () => Promise<void>;
 }) {
   const budget = getBudgetComparison(bundle.estimateItems, bundle.expenses);
+  const budgetAlerts = getBudgetAlerts(budget);
 
   return (
     <div className="flex flex-col gap-5 min-w-0">
@@ -71,6 +73,8 @@ export default function DesktopDashboard({
         </div>
 
         <div className="xl:col-span-4 flex flex-col gap-5 min-w-0">
+          <BudgetStatusCard alerts={budgetAlerts} />
+
           <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-1 gap-5">
             <SubcontractorAssignmentsCard bundle={bundle} ledger={ledger} onDelete={onDeleteEntry} onRefresh={onRefresh} />
             <AgentCommissionCard bundle={bundle} ledger={ledger} onDelete={onDeleteEntry} onRefresh={onRefresh} />
