@@ -47,9 +47,19 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
     // If an agent paid for this expense, automatically create a reimbursement record
     if (input.paidByAgentId && data) {
       const totalAmount = input.amount + input.tax;
+      // Look up the agent's assignment to link the reimbursement to the correct estimate_agent_id
+      const { data: assignment } = await supabase
+        .from("estimate_agents")
+        .select("id")
+        .eq("estimate_id", input.estimateId)
+        .eq("agent_id", input.paidByAgentId)
+        .eq("company_id", input.companyId)
+        .single();
+
       const { error: reimburseError } = await supabase.from("agent_payments").insert({
         estimate_id: input.estimateId,
         agent_id: input.paidByAgentId,
+        estimate_agent_id: assignment?.id ?? null,
         company_id: input.companyId,
         amount: totalAmount,
         payment_date: input.expenseDate,
@@ -926,6 +936,7 @@ export async function getCompanyProjectFinancialSummaries(
       estimate_agent_id: p.estimate_agent_id,
       agent_id: p.agent_id,
       amount: p.amount,
+      payment_type: p.payment_type ?? 'commission',
     }));
 
     // Same two functions summarizeFinancials() uses for the Expense

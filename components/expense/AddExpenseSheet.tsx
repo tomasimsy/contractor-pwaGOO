@@ -60,6 +60,7 @@ export default function AddExpenseSheet({
   const [paymentMethod, setPaymentMethod] = useState(getLastPaymentMethod() || "card");
   const [vendor, setVendor] = useState("");
   const [paidBy, setPaidBy] = useState("");
+  const [paidByAgentId, setPaidByAgentId] = useState("");
   const [assignmentId, setAssignmentId] = useState(""); // existing estimate_subcontractor_id, or NEW_SUB_OPTION
   const [newSubcontractorId, setNewSubcontractorId] = useState("");
   // Same "committed payout amount" + notes fields AssignPayeeModal collects
@@ -204,6 +205,7 @@ export default function AddExpenseSheet({
           paidBy: paidBy || null,
           notes: notes || null,
           changeOrderId: changeOrderId || null,
+          paidByAgentId: paidByAgentId || null,
         });
       } else if (isSubcontractor) {
         let estimateSubcontractorId = assignmentId;
@@ -637,6 +639,24 @@ export default function AddExpenseSheet({
                     className="w-full h-11 mt-1 rounded-xl border border-slate-200/70 px-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors text-sm font-semibold text-slate-800 placeholder:font-normal placeholder:text-slate-400"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  Reimbursement From Agent <span className="normal-case font-medium text-slate-300">(optional)</span>
+                </label>
+                <select
+                  value={paidByAgentId}
+                  onChange={(e) => setPaidByAgentId(e.target.value)}
+                  className="w-full h-11 mt-1 rounded-xl border border-slate-200/70 px-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors text-sm font-semibold text-slate-800"
+                >
+                  <option value="">None</option>
+                  {allAgentOptions.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
               </div>
             </>
           )}
