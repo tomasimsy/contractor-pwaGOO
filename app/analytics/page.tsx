@@ -62,7 +62,7 @@ export default function AnalyticsPage() {
           </div>
 
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Profitability Analytics</h1>
-          <p className="text-gray-600 mb-8">Track revenue, costs, and profit across your projects</p>
+          <p className="text-gray-600 mb-8">Track revenue, costs, and profit across signed projects</p>
 
           {isLoading && (
             <div className="text-center py-12 text-gray-500">Loading analytics...</div>
@@ -138,9 +138,14 @@ export default function AnalyticsPage() {
                       <div key={project.estimateId} className="px-6 py-4">
                         <div className="flex justify-between items-start mb-2">
                           <div>
-                            <p className="font-medium text-gray-900">
-                              {project.projectTitle || "Untitled"}
-                            </p>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-gray-900">
+                                {project.projectTitle || "Untitled"}
+                              </p>
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
+                                Signed
+                              </span>
+                            </div>
                             <p className="text-xs text-gray-500 mt-1">
                               {project.clientName || "No Client"} • Est #{project.estimateNumber}
                             </p>
@@ -211,8 +216,13 @@ export default function AnalyticsPage() {
                       {projects.map((project) => (
                         <tr key={project.estimateId} className="hover:bg-gray-50">
                           <td className="px-6 py-3">
-                            <div className="font-medium text-gray-900">
-                              {project.projectTitle || "Untitled"}
+                            <div className="flex items-center gap-2">
+                              <div className="font-medium text-gray-900">
+                                {project.projectTitle || "Untitled"}
+                              </div>
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
+                                Signed
+                              </span>
                             </div>
                             <div className="text-xs text-gray-500">Est #{project.estimateNumber}</div>
                           </td>

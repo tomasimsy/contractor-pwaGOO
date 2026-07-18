@@ -11,6 +11,7 @@ export interface ProjectProfitability {
   profit: number;
   marginPercent: number;
   completedAt: string | null;
+  status: string | null;
 }
 
 export interface ClientProfitability {
@@ -39,9 +40,10 @@ export interface ProfitabilityMetrics {
 export async function getCompanyProfitability(companyId: string): Promise<ProjectProfitability[]> {
   const { data: estimates, error: estimatesError } = await supabase
     .from("estimates")
-    .select("id, estimate_number, title, client_id, total, completed_at, is_deleted")
+    .select("id, estimate_number, title, client_id, total, completed_at, is_deleted, status")
     .eq("company_id", companyId)
-    .eq("is_deleted", false);
+    .eq("is_deleted", false)
+    .eq("status", "approved");
 
   if (estimatesError) throw estimatesError;
 
@@ -121,6 +123,7 @@ export async function getCompanyProfitability(companyId: string): Promise<Projec
       profit,
       marginPercent,
       completedAt: est.completed_at,
+      status: est.status,
     };
   });
 
