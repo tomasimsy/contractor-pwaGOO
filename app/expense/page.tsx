@@ -189,6 +189,7 @@ function ProjectExpenseContent() {
     });
     try {
       await deleteEntry(entry); // soft delete — row stays, just hidden from here on
+      if (selectedProjectId) await loadBundle(selectedProjectId);
       toast(
         (t) => (
           <span className="flex items-center gap-3 text-sm">
