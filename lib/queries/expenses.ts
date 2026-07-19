@@ -45,41 +45,9 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
     }).select("id").single();
     if (error) throw error;
 
-    // If an agent paid for this expense, track it as Agent Payables (money company owes agent)
-    if (input.paidByAgentId && data) {
-      const totalAmount = input.amount + input.tax;
-      // Look up the agent's assignment to link the payable to the correct estimate_agent_id
-      const { data: assignment, error: assignmentError } = await supabase
-        .from("estimate_agents")
-        .select("id")
-        .eq("estimate_id", input.estimateId)
-        .eq("agent_id", input.paidByAgentId)
-        .eq("company_id", input.companyId)
-        .is("deleted_at", null)
-        .single();
-
-      // Assignment lookup failing doesn't block expense creation, but log it
-      if (assignmentError && assignmentError.code !== 'PGRST116') {
-        console.error("Failed to look up agent assignment:", assignmentError);
-      }
-
-      const { error: payableError } = await supabase.from("agent_payments").insert({
-        estimate_id: input.estimateId,
-        agent_id: input.paidByAgentId,
-        estimate_agent_id: assignment?.id ?? null,
-        company_id: input.companyId,
-        amount: totalAmount,
-        payment_date: input.expenseDate,
-        payment_method: input.paymentMethod,
-        notes: input.notes,
-        change_order_id: input.changeOrderId,
-        reimbursement_from_agent_id: input.paidByAgentId,
-      });
-      // Payable tracking should not fail the entire operation, but log it
-      if (payableError) {
-        console.error("Failed to create agent payable:", payableError);
-      }
-    }
+    // NOTE: When Paid By Agent, the expense record tracks the payable via paid_by_agent_id.
+    // Do NOT create an agent_payment record here - that only happens when company actually pays.
+    // Agent Payables are calculated by querying expenses where paid_by_agent_id is set.
     return;
   }
 
@@ -97,38 +65,8 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
     });
     if (error) throw error;
 
-    // If agent paid for this subcontractor payment, track as Agent Payables
-    if (input.reimbursementFromAgentId) {
-      const { data: assignment, error: assignmentError } = await supabase
-        .from("estimate_agents")
-        .select("id")
-        .eq("estimate_id", input.estimateId)
-        .eq("agent_id", input.reimbursementFromAgentId)
-        .eq("company_id", input.companyId)
-        .is("deleted_at", null)
-        .single();
-
-      if (assignmentError && assignmentError.code !== 'PGRST116') {
-        console.error("Failed to look up agent assignment:", assignmentError);
-      }
-
-      const { error: payableError } = await supabase.from("agent_payments").insert({
-        estimate_id: input.estimateId,
-        agent_id: input.reimbursementFromAgentId,
-        estimate_agent_id: assignment?.id ?? null,
-        company_id: input.companyId,
-        amount: input.amount,
-        payment_date: input.paymentDate,
-        payment_method: input.paymentMethod,
-        notes: input.notes,
-        change_order_id: input.changeOrderId,
-        reimbursement_from_agent_id: input.reimbursementFromAgentId,
-      });
-
-      if (payableError) {
-        console.error("Failed to create agent payable:", payableError);
-      }
-    }
+    // NOTE: reimbursement_from_agent_id on subcontractor_payments tracks the payable.
+    // Do NOT create an agent_payment record - only create it when company actually pays.
     return;
   }
 
@@ -147,25 +85,8 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
   });
   if (error) throw error;
 
-  // If agent paid for this commission (agent funding), track as Agent Payables
-  if (input.reimbursementFromAgentId) {
-    const { error: payableError } = await supabase.from("agent_payments").insert({
-      estimate_id: input.estimateId,
-      agent_id: input.reimbursementFromAgentId,
-      estimate_agent_id: null,
-      company_id: input.companyId,
-      amount: input.amount,
-      payment_date: input.paymentDate,
-      payment_method: input.paymentMethod,
-      notes: input.notes,
-      change_order_id: input.changeOrderId,
-      reimbursement_from_agent_id: input.reimbursementFromAgentId,
-    });
-
-    if (payableError) {
-      console.error("Failed to create agent payable:", payableError);
-    }
-  }
+  // NOTE: reimbursement_from_agent_id on agent_payments tracks what agent owes company.
+  // This field alone does NOT create a separate payable - it just marks the relationship.
 }
 
 /** Assigns a subcontractor to a project with an expected payout amount
