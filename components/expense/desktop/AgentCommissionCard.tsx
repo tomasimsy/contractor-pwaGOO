@@ -1,10 +1,12 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { useState } from "react";
+import { Plus, ChevronDown } from "lucide-react";
 import DashboardPanel, { EmptyState } from "./DashboardPanel";
 import PayoutRow from "./PayoutRow";
 import AssignPayeeModal from "@/components/expense/AssignPayeeModal";
 import PayoutModal from "@/components/expense/PayoutModal";
+import { formatCurrency } from "@/lib/utils/formatting";
 import type { LedgerEntry, ProjectBundle } from "@/lib/types";
 import { usePayoutActions } from "./usePayoutActions";
 
@@ -20,7 +22,19 @@ export default function AgentCommissionCard({
   onRefresh: () => Promise<void>;
 }) {
   const actions = usePayoutActions(bundle, ledger, onDelete, onRefresh);
-  const agents = actions.payouts.filter((p) => p.role === "agent");
+  const agents = actions.payouts.filter((p) => p.role === "agent" && p.remainingAmount > 0);
+  const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
+
+  // Group expenses by agent
+  const expensesByAgent = new Map<string, typeof bundle.expenses>();
+  for (const expense of bundle.expenses) {
+    if (expense.paid_by_agent_id && !expense.deleted_at) {
+      if (!expensesByAgent.has(expense.paid_by_agent_id)) {
+        expensesByAgent.set(expense.paid_by_agent_id, []);
+      }
+      expensesByAgent.get(expense.paid_by_agent_id)!.push(expense);
+    }
+  }
 
   return (
     <DashboardPanel
@@ -39,10 +53,69 @@ export default function AgentCommissionCard({
       {agents.length === 0 ? (
         <EmptyState message="No agents with pending payables on this project yet." />
       ) : (
-        <div className="divide-y divide-gray-100 max-h-72 overflow-y-auto -mx-1 px-1">
-          {agents.map((payout) => (
-            <PayoutRow key={payout.assignmentId} payout={payout} actions={actions} onDelete={onDelete} />
-          ))}
+        <div className="divide-y divide-gray-100 max-h-96 overflow-y-auto -mx-1 px-1">
+          {agents.map((payout) => {
+            const agentExpenses = expensesByAgent.get(payout.personId) ?? [];
+            const isExpanded = expandedAgent === payout.assignmentId;
+
+            return (
+              <div key={payout.assignmentId} className="py-3">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[13px] font-medium text-gray-900">{payout.name}</span>
+                      {agentExpenses.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setExpandedAgent(isExpanded ? null : payout.assignmentId)}
+                          className="text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          <ChevronDown size={16} className={`transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="text-[12px] text-gray-500 mt-1 space-y-0.5">
+                      {payout.commissionAmount !== undefined && payout.commissionAmount > 0 && (
+                        <div>Commission: {formatCurrency(payout.commissionAmount)}</div>
+                      )}
+                      {payout.reimbursementAmount !== undefined && payout.reimbursementAmount > 0 && (
+                        <div>Expenses Paid: {formatCurrency(payout.reimbursementAmount)}</div>
+                      )}
+                      <div className="font-medium text-gray-900 mt-1">
+                        Total Owed: {formatCurrency(payout.remainingAmount)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => actions.setPayoutModalTarget(payout)}
+                    className="shrink-0 text-[12px] font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg px-3 py-1.5 transition-colors ml-3"
+                  >
+                    Pay
+                  </button>
+                </div>
+
+                {isExpanded && agentExpenses.length > 0 && (
+                  <div className="mt-3 ml-2 pl-3 border-l-2 border-gray-200 space-y-2">
+                    <div className="text-[11px] font-medium text-gray-600 uppercase">Expenses Paid by Agent</div>
+                    {agentExpenses.map((expense) => (
+                      <div key={expense.id} className="text-[12px] text-gray-700 space-y-0.5">
+                        <div className="flex justify-between gap-2">
+                          <span className="capitalize">{expense.category}</span>
+                          <span className="font-medium">{formatCurrency(expense.amount + (expense.tax ?? 0))}</span>
+                        </div>
+                        {expense.expense_date && (
+                          <div className="text-[11px] text-gray-500">{new Date(expense.expense_date).toLocaleDateString()}</div>
+                        )}
+                        {expense.vendor && <div className="text-[11px] text-gray-500">{expense.vendor}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

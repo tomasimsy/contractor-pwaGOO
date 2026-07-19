@@ -193,7 +193,15 @@ export function computePayoutStatus(
  * rows (not any denormalized "paid so far" column), same reasoning as
  * the existing SubcontractorsPanel/AgentsPanel totals. */
 export function computePendingPayouts(
-  bundle: Pick<ProjectBundle, "assignedSubcontractors" | "assignedAgents" | "subcontractorPayments" | "agentPayments">,
+  bundle: Pick<
+    ProjectBundle,
+    | "assignedSubcontractors"
+    | "assignedAgents"
+    | "subcontractorPayments"
+    | "agentPayments"
+    | "expenses"
+    | "salesAgents"
+  >,
   includeSettled = false
 ): PendingPayout[] {
   const paidBySubAssignment = new Map<string, number>();
@@ -204,24 +212,26 @@ export function computePendingPayouts(
       (paidBySubAssignment.get(p.estimate_subcontractor_id) ?? 0) + p.amount
     );
   }
-  // Agent payments are matched to an assignment by estimate_agent_id when
-  // present, but that column was added after payments already existed —
-  // and ProjectFinancialsModal.tsx's recordAgentPayment still doesn't set
-  // it. Falling back to a plain agent_id match (every payment here already
-  // belongs to this one project, since bundle.agentPayments is fetched
-  // scoped to a single estimate_id) is exactly what ProjectFinancialsModal
-  // itself does, so both surfaces now agree on what counts as "paid" —
-  // one matching rule, not two payment-tracking systems.
+
   const paidCommissionByAssignment = new Map<string, number>();
-  const reimbursementAmountByAssignment = new Map<string, number>();
 
   for (const p of bundle.agentPayments) {
     const assignmentId =
       p.estimate_agent_id ?? bundle.assignedAgents.find((a) => a.agentId === p.agent_id)?.estimateAgentId;
     if (!assignmentId) continue;
 
-    // All agent payments are commissions (reimbursement_from_agent_id is just a reference, not a type distinction)
     paidCommissionByAssignment.set(assignmentId, (paidCommissionByAssignment.get(assignmentId) ?? 0) + p.amount);
+  }
+
+  // Calculate Agent Payables (expenses where agent paid on behalf of company)
+  const expensePayablesByAgentId = new Map<string, number>();
+  for (const expense of bundle.expenses) {
+    if (expense.paid_by_agent_id && !expense.deleted_at) {
+      expensePayablesByAgentId.set(
+        expense.paid_by_agent_id,
+        (expensePayablesByAgentId.get(expense.paid_by_agent_id) ?? 0) + (expense.amount + (expense.tax ?? 0))
+      );
+    }
   }
 
   const subPayouts: PendingPayout[] = bundle.assignedSubcontractors.map((s) => {
@@ -241,17 +251,23 @@ export function computePendingPayouts(
     };
   });
 
-  const agentPayouts: PendingPayout[] = bundle.assignedAgents.map((a) => {
-    const commissionAmount = a.assignedAmount;
-    const reimbursementAmount = reimbursementAmountByAssignment.get(a.estimateAgentId) ?? 0;
-    const totalAssignedAmount = commissionAmount + reimbursementAmount;
+  // Map to track which agent IDs we've already added to avoid duplicates
+  const agentIdSet = new Set<string>();
 
-    // Only count commission payments as paid — reimbursements are what we owe agent, not payments to them
+  const agentPayouts: PendingPayout[] = [];
+
+  // First, add assigned agents with their commission + expenses
+  for (const a of bundle.assignedAgents) {
+    agentIdSet.add(a.agentId);
+    const commissionAmount = a.assignedAmount;
+    const expensePayableAmount = expensePayablesByAgentId.get(a.agentId) ?? 0;
+    const totalAssignedAmount = commissionAmount + expensePayableAmount;
+
     const paidCommission = paidCommissionByAssignment.get(a.estimateAgentId) ?? 0;
-    const totalPaidAmount = paidCommission; // Only commission payments count
+    const totalPaidAmount = paidCommission;
 
     const { remainingAmount, status } = computePayoutStatus(totalAssignedAmount, totalPaidAmount);
-    return {
+    agentPayouts.push({
       role: "agent",
       assignmentId: a.estimateAgentId,
       personId: a.agentId,
@@ -263,11 +279,42 @@ export function computePendingPayouts(
       status,
       notes: a.notes,
       commissionAmount,
-      reimbursementAmount,
+      reimbursementAmount: expensePayableAmount,
       paidCommission,
-      paidReimbursement: 0, // Reimbursements are never "paid" — they're what's owed
-    };
-  });
+      paidReimbursement: 0,
+    });
+  }
+
+  // Then, add agents with expense payables who are NOT assigned to the project
+  for (const [agentId, expenseAmount] of expensePayablesByAgentId) {
+    if (!agentIdSet.has(agentId)) {
+      agentIdSet.add(agentId);
+      // Look up agent name from salesAgents
+      const agentInfo = bundle.salesAgents.find((a) => a.id === agentId);
+      if (agentInfo) {
+        const totalAssignedAmount = expenseAmount;
+        const totalPaidAmount = 0; // No commission or payments yet for unassigned agents with payables
+        const { remainingAmount, status } = computePayoutStatus(totalAssignedAmount, totalPaidAmount);
+
+        agentPayouts.push({
+          role: "agent",
+          assignmentId: agentId, // Use agent ID as assignment ID for unassigned agents
+          personId: agentId,
+          name: agentInfo.name,
+          roleDetail: null,
+          assignedAmount: totalAssignedAmount,
+          paidAmount: totalPaidAmount,
+          remainingAmount,
+          status,
+          notes: null,
+          commissionAmount: 0,
+          reimbursementAmount: expenseAmount,
+          paidCommission: 0,
+          paidReimbursement: 0,
+        });
+      }
+    }
+  }
 
   return [...subPayouts, ...agentPayouts].filter((p) => includeSettled || p.remainingAmount > 0.004);
 }
