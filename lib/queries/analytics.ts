@@ -36,7 +36,12 @@ export interface ProfitabilityMetrics {
   topClientByRevenue?: ClientProfitability;
 }
 
-/** Get profitability data for all projects in a company */
+/** Get profitability data for all projects in a company
+ * CRITICAL: Uses same calculation logic as Expense page to ensure consistency.
+ * Revenue = original estimate total + approved change orders
+ * Expenses = material + labor + other + subcontractor committed + agent commissions + agent reimbursements + mileage
+ * Subcontractor/Agent costs use committed amounts (max of assigned and paid), matching Expense page behavior
+ */
 export async function getCompanyProfitability(companyId: string): Promise<ProjectProfitability[]> {
   const { data: estimates, error: estimatesError } = await supabase
     .from("estimates")
@@ -52,31 +57,65 @@ export async function getCompanyProfitability(companyId: string): Promise<Projec
     .select("id, name")
     .eq("company_id", companyId);
 
-  const { data: expenses } = await supabase
-    .from("estimate_expenses")
-    .select("estimate_id, amount, tax")
-    .eq("company_id", companyId)
-    .is("deleted_at", null);
+  // Fetch all cost data in parallel
+  const [
+    { data: expenses },
+    { data: subAssignments },
+    { data: subPayments },
+    { data: agentAssignments },
+    { data: agentPayments },
+    { data: mileageTrips },
+    { data: changeOrders },
+  ] = await Promise.all([
+    supabase
+      .from("estimate_expenses")
+      .select("estimate_id, amount, tax")
+      .eq("company_id", companyId)
+      .is("deleted_at", null),
+    supabase
+      .from("estimate_subcontractors")
+      .select("estimate_id, id, amount")
+      .eq("company_id", companyId)
+      .is("deleted_at", null),
+    supabase
+      .from("subcontractor_payments")
+      .select("estimate_id, estimate_subcontractor_id, amount")
+      .eq("company_id", companyId)
+      .is("deleted_at", null),
+    supabase
+      .from("estimate_agents")
+      .select("estimate_id, id, agent_id, amount")
+      .eq("company_id", companyId)
+      .is("deleted_at", null),
+    supabase
+      .from("agent_payments")
+      .select("estimate_id, estimate_agent_id, agent_id, amount, payment_type")
+      .eq("company_id", companyId)
+      .is("deleted_at", null),
+    supabase
+      .from("mileage_trips")
+      .select("estimate_id, reimbursement")
+      .eq("company_id", companyId)
+      .eq("status", "completed")
+      .is("deleted_at", null),
+    supabase
+      .from("change_orders")
+      .select("estimate_id, total_amount")
+      .eq("company_id", companyId)
+      .eq("status", "approved")
+      .is("deleted_at", null),
+  ]);
 
-  const { data: subAssignments } = await supabase
-    .from("estimate_subcontractors")
-    .select("estimate_id, amount")
-    .eq("company_id", companyId)
-    .is("deleted_at", null);
-
-  const { data: agentAssignments } = await supabase
-    .from("estimate_agents")
-    .select("estimate_id, amount")
-    .eq("company_id", companyId)
-    .is("deleted_at", null);
-
-  // Build lookup maps
+  // Build lookup maps - mimic Expense page calculations exactly
   const clientById = new Map(clients?.map(c => [c.id, c.name]) || []);
   const expensesByProject = new Map<string, number>();
   const subCostsByProject = new Map<string, number>();
-  const agentCostsByProject = new Map<string, number>();
+  const agentCommissionsByProject = new Map<string, number>();
+  const agentReimbursementsByProject = new Map<string, number>();
+  const mileageCostsByProject = new Map<string, number>();
+  const changeOrderTotalByProject = new Map<string, number>();
 
-  // Aggregate expenses
+  // Aggregate expenses (material, labor, other)
   if (expenses) {
     for (const exp of expenses) {
       if (!exp.estimate_id) continue;
@@ -85,30 +124,81 @@ export async function getCompanyProfitability(companyId: string): Promise<Projec
     }
   }
 
-  // Aggregate subcontractor costs
-  if (subAssignments) {
+  // Aggregate subcontractor costs using max(assigned, paid) - matches Expense page
+  if (subAssignments && subPayments) {
+    const paidByAssignment = new Map<string, number>();
+    for (const p of subPayments) {
+      if (!p.estimate_subcontractor_id) continue;
+      const current = paidByAssignment.get(p.estimate_subcontractor_id) || 0;
+      paidByAssignment.set(p.estimate_subcontractor_id, current + p.amount);
+    }
+
     for (const sub of subAssignments) {
       if (!sub.estimate_id) continue;
+      // Use max of assigned and paid - committed cost
+      const effectiveCost = Math.max(sub.amount || 0, paidByAssignment.get(sub.id) || 0);
       const current = subCostsByProject.get(sub.estimate_id) || 0;
-      subCostsByProject.set(sub.estimate_id, current + (sub.amount || 0));
+      subCostsByProject.set(sub.estimate_id, current + effectiveCost);
     }
   }
 
-  // Aggregate agent costs
-  if (agentAssignments) {
+  // Aggregate agent costs - only count commissions (not reimbursements) - matches Expense page
+  if (agentAssignments && agentPayments) {
+    const paidByAssignment = new Map<string, number>();
+    for (const p of agentPayments) {
+      if (p.payment_type === 'reimbursement') continue; // Exclude reimbursements from commissions
+      const assignmentId = p.estimate_agent_id ?? agentAssignments.find((a) => a.agent_id === p.agent_id)?.id;
+      if (!assignmentId) continue;
+      const current = paidByAssignment.get(assignmentId) || 0;
+      paidByAssignment.set(assignmentId, current + p.amount);
+    }
+
     for (const agent of agentAssignments) {
       if (!agent.estimate_id) continue;
-      const current = agentCostsByProject.get(agent.estimate_id) || 0;
-      agentCostsByProject.set(agent.estimate_id, current + (agent.amount || 0));
+      const paidAmount = paidByAssignment.get(agent.id) || 0;
+      // Commission: use assigned amount or paid amount, whichever was paid
+      const current = agentCommissionsByProject.get(agent.estimate_id) || 0;
+      agentCommissionsByProject.set(agent.estimate_id, current + paidAmount);
+    }
+
+    // Also aggregate reimbursements separately
+    for (const p of agentPayments) {
+      if (p.payment_type !== 'reimbursement') continue;
+      if (!p.estimate_id) continue;
+      const current = agentReimbursementsByProject.get(p.estimate_id) || 0;
+      agentReimbursementsByProject.set(p.estimate_id, current + p.amount);
     }
   }
 
-  // Build profitability data
+  // Aggregate mileage costs
+  if (mileageTrips) {
+    for (const trip of mileageTrips) {
+      if (!trip.estimate_id) continue;
+      const current = mileageCostsByProject.get(trip.estimate_id) || 0;
+      mileageCostsByProject.set(trip.estimate_id, current + (trip.reimbursement || 0));
+    }
+  }
+
+  // Aggregate approved change orders
+  if (changeOrders) {
+    for (const co of changeOrders) {
+      if (!co.estimate_id) continue;
+      const current = changeOrderTotalByProject.get(co.estimate_id) || 0;
+      changeOrderTotalByProject.set(co.estimate_id, current + (co.total_amount || 0));
+    }
+  }
+
+  // Build profitability data - use revised total (original + approved COs)
   const profitability: ProjectProfitability[] = (estimates || []).map(est => {
-    const revenue = est.total || 0;
+    const approvedCOTotal = changeOrderTotalByProject.get(est.id) || 0;
+    const revenue = (est.total || 0) + approvedCOTotal; // Revised total
+
     const projectExpenses = (expensesByProject.get(est.id) || 0) +
                            (subCostsByProject.get(est.id) || 0) +
-                           (agentCostsByProject.get(est.id) || 0);
+                           (agentCommissionsByProject.get(est.id) || 0) +
+                           (agentReimbursementsByProject.get(est.id) || 0) +
+                           (mileageCostsByProject.get(est.id) || 0);
+
     const profit = revenue - projectExpenses;
     const marginPercent = revenue > 0 ? (profit / revenue) * 100 : 0;
 
