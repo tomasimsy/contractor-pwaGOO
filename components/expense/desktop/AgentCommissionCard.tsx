@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, ChevronDown } from "lucide-react";
+import { Plus, ChevronDown, Trash2 } from "lucide-react";
+import toast from "react-hot-toast";
+import { supabase } from "@/lib/supabase/client";
 import DashboardPanel, { EmptyState } from "./DashboardPanel";
 import PayoutRow from "./PayoutRow";
 import AssignPayeeModal from "@/components/expense/AssignPayeeModal";
@@ -96,21 +98,70 @@ export default function AgentCommissionCard({
                   </button>
                 </div>
 
-                {isExpanded && agentExpenses.length > 0 && (
-                  <div className="mt-3 ml-2 pl-3 border-l-2 border-gray-200 space-y-2">
-                    <div className="text-[11px] font-medium text-gray-600 uppercase">Expenses Paid by Agent</div>
-                    {agentExpenses.map((expense) => (
-                      <div key={expense.id} className="text-[12px] text-gray-700 space-y-0.5">
-                        <div className="flex justify-between gap-2">
-                          <span className="capitalize">{expense.category}</span>
-                          <span className="font-medium">{formatCurrency(expense.amount + (expense.tax ?? 0))}</span>
-                        </div>
-                        {expense.expense_date && (
-                          <div className="text-[11px] text-gray-500">{new Date(expense.expense_date).toLocaleDateString()}</div>
-                        )}
-                        {expense.vendor && <div className="text-[11px] text-gray-500">{expense.vendor}</div>}
+                {isExpanded && (agentExpenses.length > 0 || bundle.agentPayments.some(p => p.agent_id === payout.personId && !p.deleted_at)) && (
+                  <div className="mt-3 ml-2 pl-3 border-l-2 border-gray-200 space-y-3">
+                    {/* Expenses Paid by Agent */}
+                    {agentExpenses.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="text-[11px] font-medium text-gray-600 uppercase">Expenses Paid by Agent</div>
+                        {agentExpenses.map((expense) => (
+                          <div key={expense.id} className="text-[12px] text-gray-700 space-y-0.5">
+                            <div className="flex justify-between gap-2">
+                              <span className="capitalize">{expense.category}</span>
+                              <span className="font-medium">{formatCurrency(expense.amount + (expense.tax ?? 0))}</span>
+                            </div>
+                            {expense.expense_date && (
+                              <div className="text-[11px] text-gray-500">{new Date(expense.expense_date).toLocaleDateString()}</div>
+                            )}
+                            {expense.vendor && <div className="text-[11px] text-gray-500">{expense.vendor}</div>}
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
+
+                    {/* Payment History */}
+                    {bundle.agentPayments.filter(p => p.agent_id === payout.personId && !p.deleted_at).length > 0 && (
+                      <div className="space-y-2">
+                        <div className="text-[11px] font-medium text-gray-600 uppercase">Payment History</div>
+                        <div className="space-y-1">
+                          {bundle.agentPayments
+                            .filter(p => p.agent_id === payout.personId && !p.deleted_at)
+                            .sort((a, b) => new Date(b.payment_date || 0).getTime() - new Date(a.payment_date || 0).getTime())
+                            .map((payment) => (
+                              <div key={payment.id} className="flex items-center justify-between text-[12px] text-gray-700 bg-gray-50 rounded px-2 py-1.5">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium">{formatCurrency(payment.amount)}</span>
+                                    {payment.payment_method && (
+                                      <span className="text-[10px] text-gray-500 capitalize">{payment.payment_method}</span>
+                                    )}
+                                  </div>
+                                  {payment.payment_date && (
+                                    <div className="text-[11px] text-gray-500">{new Date(payment.payment_date).toLocaleDateString()}</div>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (!confirm("Delete this payment?")) return;
+                                    try {
+                                      const { error } = await supabase.from("agent_payments").update({ deleted_at: new Date().toISOString() }).eq("id", payment.id);
+                                      if (error) throw error;
+                                      toast.success("Payment deleted");
+                                      await onRefresh();
+                                    } catch (err) {
+                                      toast.error("Failed to delete payment");
+                                    }
+                                  }}
+                                  className="shrink-0 text-gray-400 hover:text-red-600 transition-colors ml-2 p-1"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
