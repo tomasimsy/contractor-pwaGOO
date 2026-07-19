@@ -1219,3 +1219,93 @@ export async function getCompanyExpenseAnalytics(
     projectCount: estimates?.length ?? 0,
   };
 }
+
+/**
+ * Get all expenses an agent paid on behalf of the company (Agent Payables).
+ * Returns breakdown by expense with category and amount.
+ * Includes only unpaid payables (where no payment record exists yet).
+ */
+export async function getAgentPayables(
+  estimateId: string,
+  companyId: string,
+  agentId: string
+): Promise<Array<{
+  id: string;
+  category: string;
+  amount: number;
+  tax: number;
+  total: number;
+  expenseDate: string | null;
+  description: string | null;
+  isPaid: boolean;
+}>> {
+  // Get all expenses this agent paid for this project
+  const { data: expenses, error } = await supabase
+    .from("estimate_expenses")
+    .select("id, category, amount, tax, expense_date, description")
+    .eq("estimate_id", estimateId)
+    .eq("company_id", companyId)
+    .eq("paid_by_agent_id", agentId)
+    .is("deleted_at", null)
+    .order("expense_date", { ascending: false });
+
+  if (error) throw error;
+
+  // Check which expenses have been reimbursed (have matching agent_payment records)
+  const { data: payments } = await supabase
+    .from("agent_payments")
+    .select("id, notes")
+    .eq("estimate_id", estimateId)
+    .eq("agent_id", agentId)
+    .eq("company_id", companyId)
+    .is("deleted_at", null);
+
+  // Parse expense IDs from payment notes to determine which are paid
+  const paidExpenseIds = new Set<string>();
+  payments?.forEach((p) => {
+    if (p.notes?.includes("Expense:")) {
+      const matches = p.notes.match(/Expense:([a-f0-9-]+)/);
+      if (matches) paidExpenseIds.add(matches[1]);
+    }
+  });
+
+  return (expenses ?? []).map((e) => ({
+    id: e.id,
+    category: e.category,
+    amount: e.amount,
+    tax: e.tax ?? 0,
+    total: e.amount + (e.tax ?? 0),
+    expenseDate: e.expense_date,
+    description: e.description,
+    isPaid: paidExpenseIds.has(e.id),
+  }));
+}
+
+/**
+ * Mark an agent payable as paid by creating an agent_payment record.
+ * This records that the company paid the agent back for this specific expense.
+ */
+export async function payAgentPayable(
+  expenseId: string,
+  estimateId: string,
+  agentId: string,
+  companyId: string,
+  paymentAmount: number,
+  paymentDate: string,
+  paymentMethod: string
+): Promise<void> {
+  const { error } = await supabase.from("agent_payments").insert({
+    estimate_id: estimateId,
+    agent_id: agentId,
+    company_id: companyId,
+    amount: paymentAmount,
+    payment_date: paymentDate,
+    payment_method: paymentMethod,
+    notes: `Reimbursement for expense: ${expenseId}`,
+    change_order_id: null,
+    reimbursement_from_agent_id: null,
+    estimate_agent_id: null,
+  });
+
+  if (error) throw error;
+}
