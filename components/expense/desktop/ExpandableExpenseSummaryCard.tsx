@@ -18,13 +18,15 @@ function profitTone(profitPercent: number) {
   return "text-rose-600";
 }
 
-const CATEGORY_MAPPING: Record<string, string[]> = {
-  Materials: ["material"],
-  Labor: ["labor"],
-  Subcontractors: ["subcontractor_payment"],
-  "Agent Commissions": ["agent_payment"],
-  "Other Expenses": ["other"],
-  Mileage: [],
+// Map display category to ledger entry categoryLabel values
+// Note: ledger entry categoryLabel is what buildLedger sets (e.g., "Material", "Subcontractor", etc.)
+const CATEGORY_LABEL_MAPPING: Record<string, string[]> = {
+  Materials: ["Material"],
+  Labor: ["Labor"],
+  Subcontractors: ["Subcontractor"],
+  "Agent Commissions": ["Agent Commission"],
+  "Other Expenses": ["Other"],
+  Mileage: ["Mileage"],
 };
 
 export default function ExpandableExpenseSummaryCard({
@@ -71,10 +73,9 @@ export default function ExpandableExpenseSummaryCard({
     setExpandedCategories(next);
   }
 
-  function getCategoryDetails(categoryLabel: string): LedgerEntry[] {
-    const sources = CATEGORY_MAPPING[categoryLabel] || [];
-    if (sources.length === 0) return [];
-    return ledger.filter((entry) => sources.includes(entry.source));
+  function getCategoryDetails(displayCategory: string): LedgerEntry[] {
+    const categoryLabels = CATEGORY_LABEL_MAPPING[displayCategory] || [];
+    return ledger.filter((entry) => categoryLabels.includes(entry.categoryLabel));
   }
 
   return (
@@ -106,14 +107,11 @@ export default function ExpandableExpenseSummaryCard({
 
           return (
             <div key={item.label}>
-              {/* Category Header */}
+              {/* Category Header - Always clickable for consistent UX */}
               <button
                 type="button"
                 onClick={() => toggleExpanded(item.label)}
-                disabled={!hasDetails}
-                className={`w-full flex items-center justify-between py-2 gap-4 ${
-                  hasDetails ? "hover:bg-gray-50 cursor-pointer" : "cursor-default"
-                }`}
+                className="w-full flex items-center justify-between py-2 gap-4 hover:bg-gray-50 cursor-pointer"
               >
                 <div className="min-w-0 text-left flex-1">
                   <div className="flex items-center gap-2">
@@ -134,54 +132,75 @@ export default function ExpandableExpenseSummaryCard({
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className="text-[13px] tabular-nums text-gray-900">{formatCurrency(item.value)}</span>
-                  {hasDetails && (isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />)}
+                  <div className="w-4 h-4 flex items-center justify-center">
+                    {hasDetails ? (
+                      isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />
+                    ) : (
+                      <div className="w-4" /> // Placeholder to maintain alignment
+                    )}
+                  </div>
                 </div>
               </button>
 
               {/* Expanded Details */}
-              {isExpanded && hasDetails && (
-                <div className="bg-gray-50 border-t border-gray-100 divide-y divide-gray-100">
-                  {details.map((entry, idx) => {
-                    const isPendingDelete = pendingDeleteId === entry.id;
-                    return (
-                      <div key={`${entry.id}-${idx}`} className="px-4 py-2 flex items-center justify-between gap-2 text-[12px] group">
-                        <div className="min-w-0 flex-1 truncate text-gray-600">
-                          {entry.payeeLabel || entry.categoryLabel}
-                          {entry.changeOrderLabel && (
-                            <span className="text-[10px] text-gray-400 ml-1">{entry.changeOrderLabel}</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="tabular-nums text-gray-900 font-medium whitespace-nowrap">
-                            {formatCurrency(entry.amount)}
-                          </span>
-                          {isPendingDelete ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                onDelete?.(entry);
-                                setPendingDeleteId(null);
-                              }}
-                              className="shrink-0 text-[11px] font-medium text-white bg-gray-900 rounded px-1.5 py-0.5 whitespace-nowrap"
-                            >
-                              Confirm
-                            </button>
-                          ) : (
-                            onDelete && (
-                              <button
-                                type="button"
-                                onClick={() => setPendingDeleteId(entry.id)}
-                                className="shrink-0 text-gray-400 hover:text-rose-600 transition-colors opacity-0 group-hover:opacity-100"
-                                aria-label="Delete entry"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            )
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+              {isExpanded && (
+                <div className="bg-gray-50 border-t border-gray-100">
+                  {hasDetails ? (
+                    <div className="divide-y divide-gray-100">
+                      {details.map((entry, idx) => {
+                        const isPendingDelete = pendingDeleteId === entry.id;
+                        return (
+                          <div key={`${entry.id}-${idx}`} className="px-4 py-2 flex items-center justify-between gap-2 text-[12px] group">
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-gray-600">
+                                {entry.payeeLabel || entry.categoryLabel}
+                              </div>
+                              {entry.date && (
+                                <div className="text-[11px] text-gray-400 mt-0.5">
+                                  {new Date(entry.date).toLocaleDateString()}
+                                </div>
+                              )}
+                              {entry.changeOrderLabel && (
+                                <div className="text-[10px] text-gray-400 mt-0.5">{entry.changeOrderLabel}</div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="tabular-nums text-gray-900 font-medium whitespace-nowrap">
+                                {formatCurrency(entry.amount)}
+                              </span>
+                              {isPendingDelete ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onDelete?.(entry);
+                                    setPendingDeleteId(null);
+                                  }}
+                                  className="shrink-0 text-[11px] font-medium text-white bg-gray-900 rounded px-1.5 py-0.5 whitespace-nowrap"
+                                >
+                                  Confirm
+                                </button>
+                              ) : (
+                                onDelete && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setPendingDeleteId(entry.id)}
+                                    className="shrink-0 text-gray-400 hover:text-rose-600 transition-colors opacity-0 group-hover:opacity-100"
+                                    aria-label="Delete entry"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                )
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="px-4 py-3 text-center text-[13px] text-gray-400">
+                      No {item.label.toLowerCase()} logged
+                    </div>
+                  )}
                 </div>
               )}
             </div>
