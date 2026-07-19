@@ -260,6 +260,18 @@ export default function ExpensesReportPage() {
             (expenseTotals[p.estimate_id] || 0) + (p.amount || 0);
         });
 
+        // ---------- Mileage costs ----------
+        const mileagePayments = await safeFetch(
+          "mileage_trips",
+          (q: any) =>
+            q.select("estimate_id, reimbursement").eq("company_id", companyId).in("estimate_id", activeIds).is("deleted_at", null)
+        );
+        const mileageTotals: Record<string, number> = {};
+        mileagePayments.forEach((m: any) => {
+          mileageTotals[m.estimate_id] =
+            (mileageTotals[m.estimate_id] || 0) + (m.reimbursement || 0);
+        });
+
         // ---------- Payment totals from invoices ----------
         const payTotals: Record<string, number> = {};
         const invoiceCounts: Record<string, number> = {};
@@ -297,7 +309,8 @@ export default function ExpensesReportPage() {
           const subPaid = subTotals[est.id] || 0;
           const agentPaid = agentTotals[est.id] || 0;
           const otherExpenses = expenseTotals[est.id] || 0;
-          const totalExpenses = subPaid + agentPaid + otherExpenses;
+          const mileageExpenses = mileageTotals[est.id] || 0;
+          const totalExpenses = subPaid + agentPaid + otherExpenses + mileageExpenses;
           const paymentsReceived = payTotals[est.id] || 0;
           const remainingBalance = revisedTotal - paymentsReceived;
           const profit = revisedTotal - totalExpenses;
