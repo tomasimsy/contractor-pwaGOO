@@ -646,17 +646,17 @@ export default function AddExpenseSheet({
             </>
           )}
 
-          {/* Reimbursement From Agent — works for all categories */}
+          {/* Paid By — who paid for this expense */}
           <div>
             <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-              Reimbursement From Agent <span className="normal-case font-medium text-slate-300">(optional)</span>
+              Paid By <span className="normal-case font-medium text-slate-300">(who paid for this expense)</span>
             </label>
             <select
               value={paidByAgentId}
               onChange={(e) => setPaidByAgentId(e.target.value)}
               className="w-full h-11 mt-1 rounded-xl border border-slate-200/70 px-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors text-sm font-semibold text-slate-800"
             >
-              <option value="">None</option>
+              <option value="">Company (default)</option>
               {allAgentOptions.map((agent) => (
                 <option key={agent.id} value={agent.id}>
                   {agent.name}

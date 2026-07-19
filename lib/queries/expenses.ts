@@ -45,10 +45,10 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
     }).select("id").single();
     if (error) throw error;
 
-    // If an agent paid for this expense, automatically create a reimbursement record
+    // If an agent paid for this expense, track it as Agent Payables (money company owes agent)
     if (input.paidByAgentId && data) {
       const totalAmount = input.amount + input.tax;
-      // Look up the agent's assignment to link the reimbursement to the correct estimate_agent_id
+      // Look up the agent's assignment to link the payable to the correct estimate_agent_id
       const { data: assignment, error: assignmentError } = await supabase
         .from("estimate_agents")
         .select("id")
@@ -60,10 +60,10 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
 
       // Assignment lookup failing doesn't block expense creation, but log it
       if (assignmentError && assignmentError.code !== 'PGRST116') {
-        console.error("Failed to look up agent assignment for reimbursement:", assignmentError);
+        console.error("Failed to look up agent assignment:", assignmentError);
       }
 
-      const { error: reimburseError } = await supabase.from("agent_payments").insert({
+      const { error: payableError } = await supabase.from("agent_payments").insert({
         estimate_id: input.estimateId,
         agent_id: input.paidByAgentId,
         estimate_agent_id: assignment?.id ?? null,
@@ -73,11 +73,11 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
         payment_method: input.paymentMethod,
         notes: input.notes,
         change_order_id: input.changeOrderId,
-        reimbursement_from_agent_id: null,
+        reimbursement_from_agent_id: input.paidByAgentId,
       });
-      // Reimbursement creation should not fail the entire operation, but log it
-      if (reimburseError) {
-        console.error("Failed to create reimbursement for agent expense:", reimburseError);
+      // Payable tracking should not fail the entire operation, but log it
+      if (payableError) {
+        console.error("Failed to create agent payable:", payableError);
       }
     }
     return;
@@ -97,7 +97,7 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
     });
     if (error) throw error;
 
-    // If agent needs to reimburse this subcontractor payment, create agent payment record
+    // If agent paid for this subcontractor payment, track as Agent Payables
     if (input.reimbursementFromAgentId) {
       const { data: assignment, error: assignmentError } = await supabase
         .from("estimate_agents")
@@ -112,7 +112,7 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
         console.error("Failed to look up agent assignment:", assignmentError);
       }
 
-      const { error: agentPaymentError } = await supabase.from("agent_payments").insert({
+      const { error: payableError } = await supabase.from("agent_payments").insert({
         estimate_id: input.estimateId,
         agent_id: input.reimbursementFromAgentId,
         estimate_agent_id: assignment?.id ?? null,
@@ -125,8 +125,8 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
         reimbursement_from_agent_id: input.reimbursementFromAgentId,
       });
 
-      if (agentPaymentError) {
-        console.error("Failed to create agent payment for reimbursement:", agentPaymentError);
+      if (payableError) {
+        console.error("Failed to create agent payable:", payableError);
       }
     }
     return;
@@ -147,7 +147,7 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
   });
   if (error) throw error;
 
-  // If agent needs to reimburse this commission, also track it as a payable
+  // If agent paid for this commission (agent funding), track as Agent Payables
   if (input.reimbursementFromAgentId) {
     const { error: payableError } = await supabase.from("agent_payments").insert({
       estimate_id: input.estimateId,
