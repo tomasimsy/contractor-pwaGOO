@@ -5,16 +5,18 @@ import QuickActions from "./QuickActions";
 
 export default function ProjectActionsBar({
   onOpenAddSheet,
+  onRecordPayment,
   onGenerateInvoice,
   canGenerateInvoice = false,
 }: {
   onOpenAddSheet: (category?: FormCategory) => void;
+  onRecordPayment?: () => void;
   onGenerateInvoice?: () => void;
   canGenerateInvoice?: boolean;
 }) {
   return (
     <div className="mb-5 -mx-6 px-6 py-3 border-b border-gray-100 bg-gray-50/40">
-      <QuickActions onOpen={onOpenAddSheet} onGenerateInvoice={onGenerateInvoice} canGenerateInvoice={canGenerateInvoice} />
+      <QuickActions onOpen={onOpenAddSheet} onRecordPayment={onRecordPayment} onGenerateInvoice={onGenerateInvoice} canGenerateInvoice={canGenerateInvoice} />
     </div>
   );
 }

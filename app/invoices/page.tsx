@@ -5,10 +5,11 @@ import Link from "next/link";
 
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency, formatShortDate } from "@/lib/utils/formatting";
-import { ArrowLeft, Search, AlertCircle, Link2, Send, ArrowRight,Receipt } from "lucide-react";
+import { ArrowLeft, Search, AlertCircle, Link2, Send, ArrowRight,Receipt, DollarSign } from "lucide-react";
 import toast from "react-hot-toast";
 import DesktopShell from "@/components/layout/DesktopShell";
 import ProjectFinancialPills from "@/components/shared/ProjectFinancialPills";
+import ReceivedPaymentModal from "@/components/payments/ReceivedPaymentModal";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import { getCompanyProjectFinancialSummaries, type ProjectFinancialSummary } from "@/lib/queries/expenses";
 import invoice from "../estimates/[id]/invoice";
@@ -19,6 +20,7 @@ export default function InvoicesPage() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "paid" | "pending">("all");
   const [financials, setFinancials] = useState<Map<string, ProjectFinancialSummary>>(new Map());
+  const [selectedInvoiceForPayment, setSelectedInvoiceForPayment] = useState<any>(null);
 
   useEffect(() => {
     async function fetchInvoices() {
@@ -307,6 +309,17 @@ export default function InvoicesPage() {
 
                       {/* Action buttons inline with badge */}
 <div className="flex gap-1.5">
+  {/* Receive Payment */}
+  {inv.status !== "paid" && (
+    <button
+      onClick={() => setSelectedInvoiceForPayment(inv)}
+      className="flex h-6 w-6 items-center justify-center rounded-md border border-emerald-200 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 transition-colors"
+      title="Receive Payment"
+    >
+      <DollarSign size={12} />
+    </button>
+  )}
+
   {/* Expense */}
   <Link
     href={`/expense?project=${inv.estimate_id}`}
@@ -344,6 +357,36 @@ export default function InvoicesPage() {
         )}
       </div>
     </div>
+
+    {/* Receive Payment Modal */}
+    {selectedInvoiceForPayment && (
+      <ReceivedPaymentModal
+        isOpen={true}
+        onClose={() => setSelectedInvoiceForPayment(null)}
+        invoiceId={selectedInvoiceForPayment.id}
+        invoiceNumber={selectedInvoiceForPayment.invoice_number || selectedInvoiceForPayment.id.slice(0, 8)}
+        clientName={selectedInvoiceForPayment.clients?.name || "Client"}
+        invoiceTotal={selectedInvoiceForPayment.total}
+        remainingBalance={selectedInvoiceForPayment.remaining_balance || selectedInvoiceForPayment.total}
+        onPaymentRecorded={() => {
+          setSelectedInvoiceForPayment(null);
+          // Reload invoices to show updated payment status
+          const fetchInvoices = async () => {
+            try {
+              const { data, error } = await supabase
+                .from("invoices")
+                .select("id, invoice_number, total, remaining_balance, due_date, created_at, status, estimate_id, clients(name, phone), estimates(title)")
+                .order("created_at", { ascending: false });
+              if (error) throw error;
+              if (data) setInvoices(data);
+            } catch (err) {
+              console.error("Error fetching invoices:", err);
+            }
+          };
+          fetchInvoices();
+        }}
+      />
+    )}
     </DesktopShell>
   );
 }

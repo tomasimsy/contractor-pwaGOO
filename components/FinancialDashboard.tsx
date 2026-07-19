@@ -20,7 +20,7 @@ export default function FinancialDashboard() {
       
       {/* 4-COLUMN PREMIUM LIGHT TINT METRIC GRID */}
       <div className="grid grid-cols-2 gap-2.5">
-        
+
         {/* Revenue Card — Soft Minimal Mint/Forest Green Accent */}
         <div className="rounded-xl bg-emerald-50/40 p-3 border border-emerald-100/70">
           <div className="flex items-center justify-between text-emerald-700">
@@ -35,17 +35,31 @@ export default function FinancialDashboard() {
           </div>
         </div>
 
-        {/* Net Profit Card — Complementary Soft Sage Teal Accent */}
+        {/* Gross Profit Card — Soft Gold Accent (before subcontractor commitments) */}
+        <div className="rounded-xl bg-amber-50/30 p-3 border border-amber-100/60">
+          <div className="flex items-center justify-between text-amber-700">
+            <span className="text-[10px] font-semibold uppercase tracking-wider">Gross</span>
+            <TrendingUp size={13} className="text-amber-600" />
+          </div>
+          <div className="text-sm font-semibold text-amber-950 mt-1">
+            {formatCurrency(stats.grossProfit)}
+          </div>
+          <div className="text-[9px] text-amber-600/80 mt-1.5 pt-1.5 border-t border-amber-100/40">
+            Margin: <span className="font-bold">{stats.grossMargin.toFixed(1)}%</span>
+          </div>
+        </div>
+
+        {/* Net Profit Card — Complementary Soft Sage Teal Accent (after all commitments) */}
         <div className="rounded-xl bg-teal-50/30 p-3 border border-teal-100/60">
-          <div className="flex items-center justify-between text-emerald-700">
-            <span className="text-[10px] font-semibold uppercase tracking-wider">Net Profit</span>
+          <div className="flex items-center justify-between text-teal-700">
+            <span className="text-[10px] font-semibold uppercase tracking-wider">Net</span>
             <TrendingUp size={13} className="text-teal-600" />
           </div>
           <div className="text-sm font-semibold text-teal-950 mt-1">
             {formatCurrency(stats.netProfit)}
           </div>
           <div className="text-[9px] text-teal-600/80 mt-1.5 pt-1.5 border-t border-teal-100/40">
-            Margin: <span className="font-bold">{stats.profitMargin.toFixed(1)}%</span>
+            Margin: <span className="font-bold">{stats.netMargin.toFixed(1)}%</span>
           </div>
         </div>
 
@@ -59,21 +73,7 @@ export default function FinancialDashboard() {
             {formatCurrency(stats.totalExpenses)}
           </div>
           <div className="text-[9px] text-slate-400 mt-1.5 pt-1.5 border-t border-slate-200/50 truncate">
-            Subs: <span className="font-medium text-slate-600">{formatCurrency(stats.totalSubcontractorPaid)}</span>
-          </div>
-        </div>
-
-        {/* Pending Payouts Card — Soft Warm Gold/Amber Accent */}
-        <div className="rounded-xl bg-amber-50/40 p-3 border border-amber-100/70">
-          <div className="flex items-center justify-between text-amber-700/80">
-            <span className="text-[10px] font-semibold uppercase tracking-wider">Pending</span>
-            <AlertCircle size={13} className="text-amber-600" />
-          </div>
-          <div className="text-sm font-semibold text-amber-950 mt-1">
-            {formatCurrency(stats.pendingSubPayments + stats.pendingAgentPayments)}
-          </div>
-          <div className="text-[9px] text-amber-600 mt-1.5 pt-1.5 border-t border-amber-100/50 truncate">
-            Subs: <span className="font-medium">{formatCurrency(stats.pendingSubPayments)}</span>
+            Assigned: <span className="font-medium text-slate-600">{formatCurrency(stats.totalSubcontractorAssigned + stats.totalAgentAssigned)}</span>
           </div>
         </div>
       </div>

@@ -1,12 +1,14 @@
-import { Plus, FileText } from "lucide-react";
+import { Plus, FileText, DollarSign } from "lucide-react";
 import type { FormCategory } from "@/components/expense/AddExpenseSheet";
 
 export default function QuickActions({
   onOpen,
+  onRecordPayment,
   onGenerateInvoice,
   canGenerateInvoice = false,
 }: {
   onOpen: (category?: FormCategory) => void;
+  onRecordPayment?: () => void;
   onGenerateInvoice?: () => void;
   canGenerateInvoice?: boolean;
 }) {
@@ -28,6 +30,15 @@ export default function QuickActions({
           {action.label}
         </button>
       ))}
+      {onRecordPayment && (
+        <button
+          type="button"
+          onClick={onRecordPayment}
+          className="flex items-center gap-1 h-8 px-4 rounded-full bg-blue-600 text-white text-[13px] font-medium hover:bg-blue-700 transition-colors shadow-sm"
+        >
+          <DollarSign size={13} className="shrink-0" /> Record Payment
+        </button>
+      )}
       {canGenerateInvoice && onGenerateInvoice && (
         <button
           type="button"

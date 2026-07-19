@@ -8,6 +8,10 @@ import { Invoice, Client, Project, Signature } from "@/types";
 import { formatCurrency, formatDate } from "@/lib/utils/formatting";
 import SignaturePad from "@/components/signature/SignaturePad";
 import PaymentModal from "@/components/payments/PaymentModal";
+import ReceivedPaymentModal from "@/components/payments/ReceivedPaymentModal";
+import PaymentHistoryTable from "@/components/payments/PaymentHistoryTable";
+import PaymentStatusCard from "@/components/payments/PaymentStatusCard";
+import { getInvoicePayments } from "@/lib/queries/customerPayments";
 import Link from "next/link";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import ProjectFinancialsModal from "@/components/ProjectFinancialsModal";
@@ -28,9 +32,11 @@ export default function InvoicePage() {
   const [changeOrders, setChangeOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showReceivedPaymentModal, setShowReceivedPaymentModal] = useState(false);
   const [savingPayment, setSavingPayment] = useState(false);
   const [locking, setLocking] = useState(false);
   const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null);
+  const [invoicePayments, setInvoicePayments] = useState<any[]>([]);
   // Modal states
   const [showFinancialsModal, setShowFinancialsModal] = useState(false);
   const [estimateId, setEstimateId] = useState<string | null>(null);
@@ -568,8 +574,8 @@ export default function InvoicePage() {
 
           {/* Pay Button */}
           {!isLocked && remainingBalance > 0 && (
-            <button onClick={() => setShowPaymentModal(true)} className="w-full rounded-2xl bg-emerald-600 py-3 text-xs font-black uppercase tracking-wider text-white hover:bg-emerald-700 transition shadow-md shadow-emerald-600/10">
-              Record Settlement Payment ({formatCurrency(remainingBalance)})
+            <button onClick={() => setShowReceivedPaymentModal(true)} className="w-full rounded-2xl bg-emerald-600 py-3 text-xs font-black uppercase tracking-wider text-white hover:bg-emerald-700 transition shadow-md shadow-emerald-600/10">
+              💰 Receive Payment ({formatCurrency(remainingBalance)})
             </button>
           )}
 
@@ -583,6 +589,23 @@ export default function InvoicePage() {
         </div>
 
         <PaymentModal isOpen={showPaymentModal} onClose={() => setShowPaymentModal(false)} onSave={recordPayment} remainingBalance={remainingBalance} saving={savingPayment} />
+
+        {/* New Enhanced Received Payment Modal */}
+        {invoice && (
+          <ReceivedPaymentModal
+            isOpen={showReceivedPaymentModal}
+            onClose={() => setShowReceivedPaymentModal(false)}
+            invoiceId={invoice.id}
+            invoiceNumber={invoice.invoice_number || invoice.id.slice(0, 8)}
+            clientName={client?.name || "Client"}
+            invoiceTotal={invoice.total}
+            remainingBalance={remainingBalance}
+            onPaymentRecorded={() => {
+              setShowReceivedPaymentModal(false);
+              refreshInvoice();
+            }}
+          />
+        )}
 
         {/* Secondary Modals – render only when estimateId is available */}
         {showFinancialsModal && estimateId && (

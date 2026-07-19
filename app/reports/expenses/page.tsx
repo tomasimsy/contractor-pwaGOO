@@ -89,6 +89,28 @@ export default function ExpensesReportPage() {
       try {
         setLoading(true);
 
+        // Get user and company_id
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          setError("Please log in to view financial data.");
+          setLoading(false);
+          return;
+        }
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("company_id")
+          .eq("id", user.id)
+          .single();
+
+        if (!profile?.company_id) {
+          setError("Company not found. Please complete your profile setup.");
+          setLoading(false);
+          return;
+        }
+
+        const companyId = profile.company_id;
+
         // 1. Fetch all estimates – include client ID and name
         const { data: estimates, error: estError } = await supabase
           .from("estimates")
@@ -101,6 +123,7 @@ export default function ExpensesReportPage() {
             total,
             client:client_id (id, name)
           `)
+          .eq("company_id", companyId)
           .is("deleted_at", null)
           .order("created_at", { ascending: false });
 
@@ -112,6 +135,7 @@ export default function ExpensesReportPage() {
         const { data: invoices, error: invError } = await supabase
           .from("invoices")
           .select("estimate_id, amount_paid, status, created_at")
+          .eq("company_id", companyId)
           .in("estimate_id", allEstimateIds)
           .in("status", ["paid", "partial"]);
 
@@ -153,6 +177,7 @@ export default function ExpensesReportPage() {
                 subcontractor_id,
                 subcontractors (id, name)
               `)
+              .eq("company_id", companyId)
               .in("estimate_id", activeIds)
         );
 
@@ -176,6 +201,7 @@ export default function ExpensesReportPage() {
             (q: any) =>
               q
                 .select("amount, estimate_subcontractor_id")
+                .eq("company_id", companyId)
                 .in("estimate_subcontractor_id", subLinkIds)
                 .is("deleted_at", null)
           );
@@ -203,6 +229,7 @@ export default function ExpensesReportPage() {
                 amount,
                 agents (id, name)
               `)
+              .eq("company_id", companyId)
               .in("estimate_id", activeIds)
               .is("deleted_at", null)
         );
@@ -225,7 +252,7 @@ export default function ExpensesReportPage() {
         const expensePayments = await safeFetch(
           "estimate_expenses",
           (q: any) =>
-            q.select("estimate_id, amount").in("estimate_id", activeIds).is("deleted_at", null)
+            q.select("estimate_id, amount").eq("company_id", companyId).in("estimate_id", activeIds).is("deleted_at", null)
         );
         const expenseTotals: Record<string, number> = {};
         expensePayments.forEach((p: any) => {
@@ -252,6 +279,7 @@ export default function ExpensesReportPage() {
           (q: any) =>
             q
               .select("estimate_id, total_amount")
+              .eq("company_id", companyId)
               .in("estimate_id", activeIds)
               .eq("status", "approved")
         );

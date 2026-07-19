@@ -136,24 +136,169 @@ export default function AccountingPage() {
       try {
         setLoading(true);
 
-        // 1. Main financial view
-        const { data: rows, error: queryError } = await supabase
-          .from('vw_estimate_financials')
-          .select('*');
+        // Get user and company_id
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          setError("Please log in to view financial data.");
+          setLoading(false);
+          return;
+        }
 
-        if (queryError) throw new Error(queryError.message);
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("company_id")
+          .eq("id", user.id)
+          .single();
 
-        const typedData = (rows || []).map((row: any) => ({
-          ...row,
-          subcontractors: row.subcontractors || [],
-          agents: row.agents || [],
-        })) as EstimateFinancial[];
+        if (!profile?.company_id) {
+          setError("Company not found. Please complete your profile setup.");
+          setLoading(false);
+          return;
+        }
+
+        const companyId = profile.company_id;
+
+        // 1. Fetch all estimates for this company
+        const { data: estimates, error: estError } = await supabase
+          .from('estimates')
+          .select(`
+            id,
+            estimate_number,
+            title,
+            status,
+            created_at,
+            total,
+            client_id,
+            clients (id, name)
+          `)
+          .eq('company_id', companyId)
+          .is('deleted_at', null);
+
+        if (estError) throw new Error(estError.message);
+
+        // Filter to only estimates with at least one paid/partial invoice (matching /reports logic)
+        const { data: invoices } = await supabase
+          .from('invoices')
+          .select('estimate_id, amount_paid, status, created_at')
+          .eq('company_id', companyId)
+          .in('status', ['paid', 'partial']);
+
+        const paidEstimateIds = new Set<string>();
+        const payTotals: Record<string, number> = {};
+        const invoiceCounts: Record<string, number> = {};
+
+        (invoices || []).forEach((inv: any) => {
+          paidEstimateIds.add(inv.estimate_id);
+          payTotals[inv.estimate_id] = (payTotals[inv.estimate_id] || 0) + (inv.amount_paid || 0);
+          invoiceCounts[inv.estimate_id] = (invoiceCounts[inv.estimate_id] || 0) + 1;
+        });
+
+        // Fetch cost data for all estimates
+        const [
+          { data: expenses },
+          { data: subAssignments },
+          { data: subPayments },
+          { data: agentAssignments },
+          { data: agentPayments },
+          { data: changeOrders },
+          { data: mileageTrips },
+        ] = await Promise.all([
+          supabase.from('estimate_expenses').select('estimate_id, amount, tax').eq('company_id', companyId).is('deleted_at', null),
+          supabase.from('estimate_subcontractors').select('estimate_id, id, amount').eq('company_id', companyId).is('deleted_at', null),
+          supabase.from('subcontractor_payments').select('estimate_subcontractor_id, estimate_id, amount').eq('company_id', companyId).is('deleted_at', null),
+          supabase.from('estimate_agents').select('estimate_id, id, agent_id, amount').eq('company_id', companyId).is('deleted_at', null),
+          supabase.from('agent_payments').select('estimate_id, estimate_agent_id, agent_id, amount, payment_type, agents (id, name)').eq('company_id', companyId).is('deleted_at', null),
+          supabase.from('change_orders').select('estimate_id, total_amount').eq('company_id', companyId).eq('status', 'approved').is('deleted_at', null),
+          supabase.from('mileage_trips').select('estimate_id, reimbursement').eq('company_id', companyId).eq('status', 'completed').is('deleted_at', null),
+        ]);
+
+        // Build lookup maps
+        const expensesByEst: Record<string, number> = {};
+        (expenses || []).forEach((e: any) => {
+          expensesByEst[e.estimate_id] = (expensesByEst[e.estimate_id] || 0) + (e.amount || 0) + (e.tax || 0);
+        });
+
+        const paidBySubId: Record<string, number> = {};
+        (subPayments || []).forEach((p: any) => {
+          paidBySubId[p.estimate_subcontractor_id] = (paidBySubId[p.estimate_subcontractor_id] || 0) + p.amount;
+        });
+
+        const subCostsByEst: Record<string, number> = {};
+        (subAssignments || []).forEach((sub: any) => {
+          const committed = Math.max(sub.amount || 0, paidBySubId[sub.id] || 0);
+          subCostsByEst[sub.estimate_id] = (subCostsByEst[sub.estimate_id] || 0) + committed;
+        });
+
+        const agentCommissionsByEst: Record<string, number> = {};
+        const agentReimbursementsByEst: Record<string, number> = {};
+        (agentPayments || []).forEach((p: any) => {
+          if (p.payment_type === 'reimbursement') {
+            agentReimbursementsByEst[p.estimate_id] = (agentReimbursementsByEst[p.estimate_id] || 0) + p.amount;
+          } else {
+            agentCommissionsByEst[p.estimate_id] = (agentCommissionsByEst[p.estimate_id] || 0) + p.amount;
+          }
+        });
+
+        const coTotalsByEst: Record<string, number> = {};
+        (changeOrders || []).forEach((co: any) => {
+          coTotalsByEst[co.estimate_id] = (coTotalsByEst[co.estimate_id] || 0) + (co.total_amount || 0);
+        });
+
+        const mileageTotalsByEst: Record<string, number> = {};
+        (mileageTrips || []).forEach((m: any) => {
+          mileageTotalsByEst[m.estimate_id] = (mileageTotalsByEst[m.estimate_id] || 0) + (m.reimbursement || 0);
+        });
+
+        // Build financial summary for paid estimates only
+        const activeEstimates = (estimates || []).filter((e: any) => paidEstimateIds.has(e.id));
+        const typedData: EstimateFinancial[] = activeEstimates.map((est: any) => {
+          const originalTotal = est.total || 0;
+          const coTotal = coTotalsByEst[est.id] || 0;
+          const revisedTotal = originalTotal + coTotal;
+          const expenseTotal = expensesByEst[est.id] || 0;
+          const subCommitted = subCostsByEst[est.id] || 0;
+          const agentCommissions = agentCommissionsByEst[est.id] || 0;
+          const agentReimbursements = agentReimbursementsByEst[est.id] || 0;
+          const agentPaid = agentCommissions + agentReimbursements;
+          const mileageTotal = mileageTotalsByEst[est.id] || 0;
+
+          const totalExpenses = expenseTotal + subCommitted + agentPaid + mileageTotal;
+          const profit = revisedTotal - totalExpenses;
+          const marginPercent = revisedTotal > 0 ? (profit / revisedTotal) * 100 : 0;
+
+          const clientObj = est.clients as any;
+
+          return {
+            estimate_id: est.id,
+            estimate_number: est.estimate_number || 'N/A',
+            project_title: est.title || null,
+            client_id: clientObj?.id || null,
+            client_name: clientObj?.name || 'Unassigned',
+            status: est.status,
+            created_at: est.created_at,
+            original_total: originalTotal,
+            change_order_total: coTotal,
+            revised_total: revisedTotal,
+            subcontractor_paid: subCommitted,
+            subcontractors: [],
+            agent_paid: agentPaid,
+            agents: [],
+            other_expenses: expenseTotal + mileageTotal,
+            payments_received: payTotals[est.id] || 0,
+            remaining_balance: revisedTotal - (payTotals[est.id] || 0),
+            company_profit: profit,
+            profit_margin: marginPercent,
+            invoice_count: invoiceCounts[est.id] || 0,
+            last_payment_date: null,
+          };
+        });
         setData(typedData);
 
         // 2. Mileage deduction (YTD)
         const { data: mileageRows } = await supabase
           .from('mileage_trips')
           .select('distance_miles')
+          .eq('company_id', companyId)
           .is('deleted_at', null)
           .gte('created_at', new Date(new Date().getFullYear(), 0, 1).toISOString());
 
@@ -164,6 +309,7 @@ export default function AccountingPage() {
         const { data: unsoldEstimates } = await supabase
           .from('estimates')
           .select('id')
+          .eq('company_id', companyId)
           .in('status', ['draft', 'sent', 'rejected'])
           .is('deleted_at', null);
 
@@ -173,6 +319,7 @@ export default function AccountingPage() {
           const { data: unsoldExpenses } = await supabase
             .from('estimate_expenses')
             .select('amount')
+            .eq('company_id', companyId)
             .in('estimate_id', unsoldIds)
             .is('deleted_at', null);
           totalUnsold = unsoldExpenses?.reduce((sum, r) => sum + (r.amount || 0), 0) || 0;
@@ -190,6 +337,7 @@ export default function AccountingPage() {
             due_date,
             clients (name)
           `)
+          .eq('company_id', companyId)
           .is('paid_at', null)
           .is('deleted_at', null)
           .neq('status', 'paid');

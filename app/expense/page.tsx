@@ -28,6 +28,7 @@ import type { LedgerEntry, NewEntryInput, ProjectBundle, ProjectSummary } from "
 import RecentProjectCards from "@/components/expense/RecentProjectCards";
 import ProjectCombobox from "@/components/expense/ProjectCombobox";
 import AddExpenseSheet, { type FormCategory } from "@/components/expense/AddExpenseSheet";
+import CustomerPaymentModal from "@/components/expense/CustomerPaymentModal";
 import DesktopDashboard from "@/components/expense/desktop/DesktopDashboard";
 import ExpenseLedger from "@/components/expense/ExpenseLedger";
 import DashboardPanel from "@/components/expense/desktop/DashboardPanel";
@@ -50,6 +51,7 @@ function ProjectExpenseContent() {
   const [isLoadingBundle, setIsLoadingBundle] = useState(false);
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
   const [addSheetCategory, setAddSheetCategory] = useState<FormCategory | undefined>(undefined);
+  const [isRecordPaymentModalOpen, setIsRecordPaymentModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
   const [deletedLedger, setDeletedLedger] = useState<LedgerEntry[]>([]);
@@ -148,6 +150,14 @@ function ProjectExpenseContent() {
   function openAddSheet(category?: FormCategory) {
     setAddSheetCategory(category);
     setIsAddSheetOpen(true);
+  }
+
+  function openRecordPaymentModal() {
+    setIsRecordPaymentModalOpen(true);
+  }
+
+  async function handlePaymentRecorded() {
+    if (selectedProjectId) await loadBundle(selectedProjectId);
   }
 
   async function handleAddEntry(input: NewEntryInput) {
@@ -335,6 +345,7 @@ function ProjectExpenseContent() {
               financials={financials}
               payment={payment}
               onOpenAddSheet={openAddSheet}
+              onRecordPayment={openRecordPaymentModal}
               onDeleteEntry={handleDeleteEntry}
               onRefresh={refreshBundle}
               onGenerateInvoice={handleGenerateInvoice}
@@ -381,6 +392,15 @@ function ProjectExpenseContent() {
           onClose={() => setIsAddSheetOpen(false)}
           onSubmit={handleAddEntry}
           onAssignSubcontractor={handleAssignSubcontractor}
+        />
+      )}
+
+      {bundle && (
+        <CustomerPaymentModal
+          isOpen={isRecordPaymentModalOpen}
+          onClose={() => setIsRecordPaymentModalOpen(false)}
+          bundle={bundle}
+          onPaymentRecorded={handlePaymentRecorded}
         />
       )}
 

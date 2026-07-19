@@ -133,6 +133,23 @@ export type InvoiceRow = {
   company_id: string;
 };
 
+/** A customer payment received for an invoice — tracks individual payment records
+ * with full details including payment method, reference number, and notes.
+ * Multiple payments can be applied to the same invoice for partial payments.
+ * Soft-deletes are supported (deleted_at field). */
+export type InvoicePaymentRow = {
+  id: string;
+  invoice_id: string;
+  company_id: string;
+  amount: number;
+  method: string; // cash, check, ach, credit_card, zelle, bank_transfer, other
+  payment_date: string; // date of payment
+  reference_number: string | null; // check #, transaction ID, etc.
+  notes: string | null;
+  created_at: string;
+  deleted_at: string | null; // soft delete support
+};
+
 /** A payment against an assignment row in estimate_subcontractors —
  * NOT directly against a subcontractor. To know who was paid you have
  * to join through estimate_subcontractor_id. */

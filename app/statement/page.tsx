@@ -99,12 +99,27 @@ export default function FinancialDashboard() {
       }
       const startDateStr = startDate.toISOString();
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
         setError("Please log in to view financial data.");
         setLoading(false);
         return;
       }
+
+      // Get company_id from profile
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("company_id")
+        .eq("id", user.id)
+        .single();
+
+      if (!profile?.company_id) {
+        setError("Company not found. Please complete your profile setup.");
+        setLoading(false);
+        return;
+      }
+
+      const companyId = profile.company_id;
 
       const [
         estimatesRes,
@@ -114,12 +129,12 @@ export default function FinancialDashboard() {
         estAgentsRes,
         expensesRes
       ] = await Promise.all([
-        supabase.from("estimates").select("id, total, status, completed_at, estimate_number").in("status", ["completed", "converted"]).gte("completed_at", startDateStr),
-        supabase.from("subcontractor_payments").select(`amount, created_at, estimate_subcontractors(subcontractors(name))`).is("deleted_at", null).gte("created_at", startDateStr),
-        supabase.from("estimate_subcontractors").select("amount, paid_amount").is("deleted_at", null),
-        supabase.from("agent_payments").select(`amount, payment_date, agents(name), estimates(estimate_number)`).is("deleted_at", null).gte("payment_date", startDateStr),
-        supabase.from("estimate_agents").select("amount, paid_amount").is("deleted_at", null),
-        supabase.from("estimate_expenses").select("amount, category, description, expense_date").is("deleted_at", null).gte("expense_date", startDateStr)
+        supabase.from("estimates").select("id, total, status, created_at, estimate_number").eq("company_id", companyId).is("deleted_at", null).in("status", ["completed", "converted"]).gte("created_at", startDateStr),
+        supabase.from("subcontractor_payments").select(`amount, created_at, estimate_subcontractors(subcontractors(name))`).eq("company_id", companyId).is("deleted_at", null).gte("created_at", startDateStr),
+        supabase.from("estimate_subcontractors").select("amount, paid_amount").eq("company_id", companyId).is("deleted_at", null),
+        supabase.from("agent_payments").select(`amount, payment_date, agents(name), estimates(estimate_number)`).eq("company_id", companyId).is("deleted_at", null).gte("payment_date", startDateStr),
+        supabase.from("estimate_agents").select("amount, paid_amount").eq("company_id", companyId).is("deleted_at", null),
+        supabase.from("estimate_expenses").select("amount, category, description, expense_date").eq("company_id", companyId).is("deleted_at", null).gte("expense_date", startDateStr)
       ]);
 
       if (estimatesRes.error) throw new Error(`Estimates error: ${estimatesRes.error.message}`);
@@ -234,10 +249,10 @@ export default function FinancialDashboard() {
       // Monthly trends (unchanged)
       const monthlyData = new Map<string, { revenue: number; expenses: number }>();
       const formatOptions: Intl.DateTimeFormatOptions = { month: 'short', year: 'numeric' };
-      
+
       estimates.forEach(est => {
-        if (est.completed_at) {
-          const month = new Date(est.completed_at).toLocaleDateString('en-US', formatOptions);
+        if (est.created_at) {
+          const month = new Date(est.created_at).toLocaleDateString('en-US', formatOptions);
           const existing = monthlyData.get(month) || { revenue: 0, expenses: 0 };
           existing.revenue += est.total || 0;
           monthlyData.set(month, existing);

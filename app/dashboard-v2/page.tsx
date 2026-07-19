@@ -82,7 +82,7 @@ export default function DashboardV2() {
                 icon={TrendingUp}
                 tone="teal"
                 value={formatCurrency(financials.netProfit)}
-                sublabel={`Margin: ${financials.profitMargin.toFixed(1)}%`}
+                sublabel={`Margin: ${financials.netMargin.toFixed(1)}%`}
                 loading={financialsLoading}
               />
               <StatCard

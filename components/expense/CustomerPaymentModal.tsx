@@ -1,0 +1,236 @@
+"use client";
+
+import { useState } from "react";
+import toast from "react-hot-toast";
+import { X } from "lucide-react";
+import { recordCustomerPayment } from "@/lib/queries/customerPayments";
+import { formatCurrency } from "@/lib/utils/formatting";
+import type { ProjectBundle } from "@/lib/types";
+
+export default function CustomerPaymentModal({
+  isOpen,
+  onClose,
+  bundle,
+  onPaymentRecorded,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  bundle: ProjectBundle;
+  onPaymentRecorded?: () => void;
+}) {
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>("");
+  const [amount, setAmount] = useState("");
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split("T")[0]);
+  const [paymentMethod, setPaymentMethod] = useState("bank_transfer");
+  const [referenceNumber, setReferenceNumber] = useState("");
+  const [notes, setNotes] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  if (!isOpen) return null;
+
+  const invoices = bundle.invoices || [];
+  const selectedInvoice = invoices.find((inv) => inv.id === selectedInvoiceId);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (!selectedInvoiceId || !amount) {
+      toast.error("Please select an invoice and enter an amount");
+      return;
+    }
+
+    if (selectedInvoice && parseFloat(amount) > selectedInvoice.total) {
+      toast.error(`Amount cannot exceed invoice total of ${formatCurrency(selectedInvoice.total)}`);
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const { data: { user } } = await (await import("@/lib/supabase/client")).supabase.auth.getUser();
+      if (!user) {
+        toast.error("Not authenticated");
+        return;
+      }
+
+      const { data: profile } = await (await import("@/lib/supabase/client")).supabase
+        .from("profiles")
+        .select("company_id")
+        .eq("id", user.id)
+        .single();
+
+      if (!profile?.company_id) {
+        toast.error("Company not found");
+        return;
+      }
+
+      await recordCustomerPayment({
+        invoiceId: selectedInvoiceId,
+        companyId: profile.company_id,
+        amount: parseFloat(amount),
+        paymentMethod,
+        paymentDate,
+        referenceNumber: referenceNumber || undefined,
+        notes: notes || undefined,
+      });
+
+      toast.success(
+        `Payment of ${formatCurrency(parseFloat(amount))} recorded for invoice #${selectedInvoice?.invoice_number}`
+      );
+      handleClose();
+      onPaymentRecorded?.();
+    } catch (err: any) {
+      console.error("Failed to record payment:", err);
+      if (err.message?.includes("payment_date") || err.message?.includes("reference_number")) {
+        toast.error("Database migration required. Please see CUSTOMER_PAYMENTS_SETUP.md for instructions.", {
+          duration: 5000,
+        });
+      } else {
+        toast.error(err.message || "Failed to record payment");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  function handleClose() {
+    setSelectedInvoiceId("");
+    setAmount("");
+    setPaymentDate(new Date().toISOString().split("T")[0]);
+    setPaymentMethod("bank_transfer");
+    setReferenceNumber("");
+    setNotes("");
+    onClose();
+  }
+
+  const paymentMethods = [
+    { value: "bank_transfer", label: "Bank Transfer" },
+    { value: "check", label: "Check" },
+    { value: "credit_card", label: "Credit Card" },
+    { value: "cash", label: "Cash" },
+    { value: "zelle", label: "Zelle" },
+    { value: "wire", label: "Wire Transfer" },
+    { value: "ach", label: "ACH" },
+    { value: "other", label: "Other" },
+  ];
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-lg max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-5 border-b border-gray-200 sticky top-0 bg-white">
+          <h2 className="text-lg font-semibold text-gray-900">💰 Receive Payment</h2>
+          <button
+            onClick={handleClose}
+            className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X size={18} className="text-gray-400" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {/* Invoice Selection */}
+          <div>
+            <label className="block text-[13px] font-medium text-gray-700 mb-2">Invoice *</label>
+            <select
+              value={selectedInvoiceId}
+              onChange={(e) => {
+                setSelectedInvoiceId(e.target.value);
+                const invoice = invoices.find((inv) => inv.id === e.target.value);
+                if (invoice) {
+                  setAmount(invoice.remaining_balance.toString());
+                }
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            >
+              <option value="">Select an invoice...</option>
+              {invoices.map((invoice) => (
+                <option key={invoice.id} value={invoice.id}>
+                  {invoice.invoice_number} • {formatCurrency(invoice.total)} (Balance:{" "}
+                  {formatCurrency(invoice.remaining_balance)})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Amount */}
+          <div>
+            <label className="block text-[13px] font-medium text-gray-700 mb-2">Amount *</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0.00"
+                className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              />
+            </div>
+          </div>
+
+          {/* Payment Date */}
+          <div>
+            <label className="block text-[13px] font-medium text-gray-700 mb-2">Payment Date</label>
+            <input
+              type="date"
+              value={paymentDate}
+              onChange={(e) => setPaymentDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Payment Method */}
+          <div>
+            <label className="block text-[13px] font-medium text-gray-700 mb-2">Payment Method</label>
+            <select
+              value={paymentMethod}
+              onChange={(e) => setPaymentMethod(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {paymentMethods.map((method) => (
+                <option key={method.value} value={method.value}>
+                  {method.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Reference Number */}
+          <div>
+            <label className="block text-[13px] font-medium text-gray-700 mb-2">Reference Number</label>
+            <input
+              type="text"
+              value={referenceNumber}
+              onChange={(e) => setReferenceNumber(e.target.value)}
+              placeholder="e.g., Check #, Transaction ID"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="block text-[13px] font-medium text-gray-700 mb-2">Notes</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Optional notes about this payment..."
+              rows={2}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            />
+          </div>
+
+          {/* Submit Button */}
+          <button
+            type="submit"
+            disabled={isSubmitting || !selectedInvoiceId || !amount}
+            className="w-full py-2.5 rounded-lg bg-blue-600 text-white text-[13px] font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {isSubmitting ? "Recording..." : "Record Payment"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
