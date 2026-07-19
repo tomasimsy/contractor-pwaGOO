@@ -465,6 +465,7 @@ export type NewEntryInput =
       paymentMethod: string | null;
       notes: string | null;
       changeOrderId: string | null;
+      paymentType?: 'payment' | 'reimbursement'; // default 'payment'
     }
   | {
       kind: "agent_payment";

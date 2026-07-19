@@ -94,6 +94,7 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
       payment_method: input.paymentMethod,
       notes: input.notes,
       change_order_id: input.changeOrderId,
+      payment_type: input.paymentType ?? 'payment',
     });
     if (error) throw error;
     return;
