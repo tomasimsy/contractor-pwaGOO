@@ -22,7 +22,7 @@ export default function AgentCommissionCard({
   onRefresh: () => Promise<void>;
 }) {
   const actions = usePayoutActions(bundle, ledger, onDelete, onRefresh);
-  const agents = actions.payouts.filter((p) => p.role === "agent" && p.remainingAmount > 0);
+  const agents = actions.payouts.filter((p) => p.role === "agent");
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
 
   // Group expenses by agent
