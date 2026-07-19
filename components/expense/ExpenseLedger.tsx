@@ -104,7 +104,7 @@ export default function ExpenseLedger({
                     <button
                       type="button"
                       onClick={() => setPendingDeleteId(entry.id)}
-                      className="shrink-0 text-gray-300 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="shrink-0 text-gray-400 hover:text-rose-600 transition-colors"
                       aria-label="Delete entry"
                     >
                       <Trash2 size={13} />
