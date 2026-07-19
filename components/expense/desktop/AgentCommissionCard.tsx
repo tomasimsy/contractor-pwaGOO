@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, ChevronDown, Trash2 } from "lucide-react";
+import { Plus, ChevronDown, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { supabase } from "@/lib/supabase/client";
 import DashboardPanel, { EmptyState } from "./DashboardPanel";
@@ -75,6 +75,14 @@ export default function AgentCommissionCard({
                           <ChevronDown size={16} className={`transition-transform ${isExpanded ? "rotate-180" : ""}`} />
                         </button>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => actions.handleRemove(payout)}
+                        className="text-gray-400 hover:text-red-600 transition-colors"
+                        title="Remove agent from payables"
+                      >
+                        <X size={16} />
+                      </button>
                     </div>
                     <div className="text-[12px] text-gray-500 mt-1 space-y-0.5">
                       {payout.commissionAmount !== undefined && payout.commissionAmount > 0 && (
