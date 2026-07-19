@@ -64,10 +64,8 @@ export type AgentPaymentRow = {
   // so "assigned vs. paid" can be computed per assignment. Nullable
   // since payments made before this column existed have no assignment.
   estimate_agent_id: string | null;
-  // Type of payment: 'commission' (earned) or 'reimbursement' (expenses paid on behalf of project)
-  payment_type: 'commission' | 'reimbursement';
-  // For reimbursements: links back to the original estimate_expenses row
-  expense_id: string | null;
+  // Optional: another agent responsible for reimbursing this agent commission
+  reimbursement_from_agent_id: string | null;
 };
 
 /** Assigns an agent to a project with an expected commission/payout
@@ -165,6 +163,8 @@ export type SubcontractorPaymentRow = {
   company_id: string;
   deleted_at: string | null;
   change_order_id: string | null;
+  // Optional: an agent responsible for reimbursing this subcontractor
+  reimbursement_from_agent_id: string | null;
 };
 
 /** Assigns a subcontractor to a project, with the contracted amount
@@ -465,7 +465,7 @@ export type NewEntryInput =
       paymentMethod: string | null;
       notes: string | null;
       changeOrderId: string | null;
-      paymentType?: 'payment' | 'reimbursement'; // default 'payment'
+      reimbursementFromAgentId?: string | null; // optional: agent responsible for reimbursing this payment
     }
   | {
       kind: "agent_payment";
@@ -482,8 +482,7 @@ export type NewEntryInput =
       paymentMethod: string | null;
       notes: string | null;
       changeOrderId: string | null;
-      paymentType?: 'commission' | 'reimbursement'; // default 'commission'
-      expenseId?: string | null; // for reimbursements: link to the original expense
+      reimbursementFromAgentId?: string | null; // optional: agent responsible for reimbursing this commission
     };
 
 // Analytics and reporting types

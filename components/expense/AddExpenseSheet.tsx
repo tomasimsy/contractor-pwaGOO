@@ -22,17 +22,12 @@ const SPLIT_TOLERANCE = 0.05; // percentage points — absorbs float rounding, n
 export type FormCategory =
   | EstimateExpenseCategory
   | "subcontractor"
-  | "subcontractor_reimbursement"
-  | "agent_commission"
-  | "agent_reimbursement";
-
+  | "agent_commission";
 
 const ALL_CATEGORIES: { value: FormCategory; label: string }[] = [
   ...EXPENSE_CATEGORIES.map((c) => ({ value: c, label: EXPENSE_CATEGORY_LABEL[c] })),
   { value: "subcontractor", label: "Subcontractor Payment" },
-  { value: "subcontractor_reimbursement", label: "Subcontractor Reimbursement" },
   { value: "agent_commission", label: "Agent Commission" },
-  { value: "agent_reimbursement", label: "Agent Reimbursement" },
 ];
 
 const NEW_SUB_OPTION = "__new__";
@@ -92,6 +87,8 @@ export default function AddExpenseSheet({
   const [quickAddAgentOpen, setQuickAddAgentOpen] = useState(false);
   const [quickAddAgentName, setQuickAddAgentName] = useState("");
   const [quickAddSaving, setQuickAddSaving] = useState(false);
+  const [subReimbursementAgentId, setSubReimbursementAgentId] = useState(""); // agent responsible for reimbursing subcontractor
+  const [agentReimbursementAgentId, setAgentReimbursementAgentId] = useState(""); // agent responsible for reimbursing another agent
 
   const allSubcontractorOptions = [...bundle.allSubcontractors, ...extraSubcontractors];
   const allAgentOptions = [...bundle.salesAgents, ...extraAgents];
@@ -142,11 +139,9 @@ export default function AddExpenseSheet({
 
   const parsedAmount = Number(amount);
   const parsedTax = Number(tax || 0);
-  const isSubcontractor = category === "subcontractor" || category === "subcontractor_reimbursement";
-  const isAgent = category === "agent_commission" || category === "agent_reimbursement";
+  const isSubcontractor = category === "subcontractor";
+  const isAgent = category === "agent_commission";
   const isExpenseCategory = !isSubcontractor && !isAgent;
-  const isSubcontractorReimbursement = category === "subcontractor_reimbursement";
-  const isAgentReimbursement = category === "agent_reimbursement";
 
   // Same net-after-costs formula ProjectFinancialsModal uses, applied to
   // whatever's already loaded in the bundle — no extra fetch needed.
@@ -222,13 +217,12 @@ export default function AddExpenseSheet({
             sub.id,
             sub.name,
             sub.trade,
-            isSubcontractorReimbursement ? 0 : Number(newSubAssignAmount) || 0, // reimbursements don't affect initial assignment amount
+            Number(newSubAssignAmount) || 0,
             newSubAssignNotes.trim() || null
           );
           estimateSubcontractorId = assigned.estimateSubcontractorId;
         }
 
-        // Reimbursements and payments use the same table but with a payment type
         await onSubmit({
           kind: "subcontractor_payment",
           estimateId: bundle.project.id,
@@ -239,7 +233,7 @@ export default function AddExpenseSheet({
           paymentMethod,
           notes: notes || null,
           changeOrderId: changeOrderId || null,
-          paymentType: isSubcontractorReimbursement ? "reimbursement" : "payment",
+          reimbursementFromAgentId: subReimbursementAgentId || null,
         });
       } else {
         // Each selected agent becomes its own agent_payments row — the
@@ -264,7 +258,7 @@ export default function AddExpenseSheet({
             paymentMethod,
             notes: notes || null,
             changeOrderId: changeOrderId || null,
-            paymentType: isAgentReimbursement ? "reimbursement" : "commission",
+            reimbursementFromAgentId: agentReimbursementAgentId || null,
           });
         }
       }
@@ -446,6 +440,24 @@ export default function AddExpenseSheet({
                   </div>
                 </div>
               )}
+
+              <div>
+                <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  Reimbursement From Agent <span className="normal-case font-medium text-slate-300">(optional)</span>
+                </label>
+                <select
+                  value={subReimbursementAgentId}
+                  onChange={(e) => setSubReimbursementAgentId(e.target.value)}
+                  className="w-full h-11 mt-1 rounded-xl border border-slate-200/70 px-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors text-sm font-semibold text-slate-800"
+                >
+                  <option value="">None</option>
+                  {allAgentOptions.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           )}
 
@@ -598,6 +610,24 @@ export default function AddExpenseSheet({
                 >
                   Use this amount
                 </button>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  Reimbursement From Agent <span className="normal-case font-medium text-slate-300">(optional)</span>
+                </label>
+                <select
+                  value={agentReimbursementAgentId}
+                  onChange={(e) => setAgentReimbursementAgentId(e.target.value)}
+                  className="w-full h-11 mt-1 rounded-xl border border-slate-200/70 px-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors text-sm font-semibold text-slate-800"
+                >
+                  <option value="">None</option>
+                  {allAgentOptions.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           )}
