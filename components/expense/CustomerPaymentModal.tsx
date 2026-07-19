@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { X } from "lucide-react";
 import { recordCustomerPayment } from "@/lib/queries/customerPayments";
@@ -18,7 +18,11 @@ export default function CustomerPaymentModal({
   bundle: ProjectBundle;
   onPaymentRecorded?: () => void;
 }) {
-  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>("");
+  const invoices = bundle.invoices || [];
+
+  // Auto-select invoice if only one exists, otherwise empty
+  const defaultInvoiceId = invoices.length === 1 ? invoices[0].id : "";
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState(defaultInvoiceId);
   const [amount, setAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split("T")[0]);
   const [paymentMethod, setPaymentMethod] = useState("bank_transfer");
@@ -26,9 +30,18 @@ export default function CustomerPaymentModal({
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Auto-fill amount when invoice is selected
+  useEffect(() => {
+    if (selectedInvoiceId) {
+      const invoice = invoices.find((inv) => inv.id === selectedInvoiceId);
+      if (invoice) {
+        setAmount(invoice.remaining_balance.toString());
+      }
+    }
+  }, [selectedInvoiceId, invoices]);
+
   if (!isOpen) return null;
 
-  const invoices = bundle.invoices || [];
   const selectedInvoice = invoices.find((inv) => inv.id === selectedInvoiceId);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -93,7 +106,7 @@ export default function CustomerPaymentModal({
   }
 
   function handleClose() {
-    setSelectedInvoiceId("");
+    setSelectedInvoiceId(defaultInvoiceId);
     setAmount("");
     setPaymentDate(new Date().toISOString().split("T")[0]);
     setPaymentMethod("bank_transfer");
@@ -127,30 +140,65 @@ export default function CustomerPaymentModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          {/* Invoice Selection */}
-          <div>
-            <label className="block text-[13px] font-medium text-gray-700 mb-2">Invoice *</label>
-            <select
-              value={selectedInvoiceId}
-              onChange={(e) => {
-                setSelectedInvoiceId(e.target.value);
-                const invoice = invoices.find((inv) => inv.id === e.target.value);
-                if (invoice) {
-                  setAmount(invoice.remaining_balance.toString());
-                }
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            >
-              <option value="">Select an invoice...</option>
-              {invoices.map((invoice) => (
-                <option key={invoice.id} value={invoice.id}>
-                  {invoice.invoice_number} • {formatCurrency(invoice.total)} (Balance:{" "}
-                  {formatCurrency(invoice.remaining_balance)})
-                </option>
-              ))}
-            </select>
+          {/* Project Context Summary */}
+          <div className="bg-blue-50 rounded-lg p-3.5 space-y-2 border border-blue-200">
+            <div className="text-xs font-medium text-blue-900 uppercase tracking-wide">Project Context</div>
+
+            <div className="text-[13px]">
+              <div className="text-gray-600">Project:</div>
+              <div className="font-medium text-gray-900">{bundle.project.title}</div>
+            </div>
+
+            <div className="text-[13px]">
+              <div className="text-gray-600">Client:</div>
+              <div className="font-medium text-gray-900">{bundle.client.name}</div>
+            </div>
+
+            {selectedInvoice && (
+              <>
+                <div className="pt-2 border-t border-blue-200 space-y-1.5">
+                  <div className="text-[13px] font-medium text-gray-900">
+                    Invoice #{selectedInvoice.invoice_number}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[12px]">
+                    <div>
+                      <div className="text-gray-600">Total:</div>
+                      <div className="font-medium text-gray-900">{formatCurrency(selectedInvoice.total)}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-600">Received:</div>
+                      <div className="font-medium text-emerald-600">{formatCurrency(selectedInvoice.amount_paid)}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-600">Remaining:</div>
+                      <div className="font-medium text-amber-600">{formatCurrency(selectedInvoice.remaining_balance)}</div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
+
+          {/* Invoice Selection - Only show if multiple invoices */}
+          {invoices.length > 1 && (
+            <div>
+              <label className="block text-[13px] font-medium text-gray-700 mb-2">Invoice *</label>
+              <select
+                value={selectedInvoiceId}
+                onChange={(e) => setSelectedInvoiceId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              >
+                <option value="">Select an invoice...</option>
+                {invoices.map((invoice) => (
+                  <option key={invoice.id} value={invoice.id}>
+                    {invoice.invoice_number} • {formatCurrency(invoice.total)} (Balance:{" "}
+                    {formatCurrency(invoice.remaining_balance)})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Amount */}
           <div>
