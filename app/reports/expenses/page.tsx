@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import DesktopShell from "@/components/layout/DesktopShell";
@@ -11,6 +11,7 @@ import {
   ArrowDown,
   Search,
   Filter,
+  RefreshCw,
 } from "lucide-react";
 
 // ---------- Types ----------
@@ -84,32 +85,31 @@ export default function ExpensesReportPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
   // ---------- Data fetching ----------
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
 
-        // Get user and company_id
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          setError("Please log in to view financial data.");
-          setLoading(false);
-          return;
-        }
+      // Get user and company_id
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setError("Please log in to view financial data.");
+        setLoading(false);
+        return;
+      }
 
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("company_id")
-          .eq("id", user.id)
-          .single();
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("company_id")
+        .eq("id", user.id)
+        .single();
 
-        if (!profile?.company_id) {
-          setError("Company not found. Please complete your profile setup.");
-          setLoading(false);
-          return;
-        }
+      if (!profile?.company_id) {
+        setError("Company not found. Please complete your profile setup.");
+        setLoading(false);
+        return;
+      }
 
-        const companyId = profile.company_id;
+      const companyId = profile.company_id;
 
         // 1. Fetch all estimates – include client ID and name
         const { data: estimates, error: estError } = await supabase
@@ -347,10 +347,21 @@ export default function ExpensesReportPage() {
       } finally {
         setLoading(false);
       }
-    };
+    }, []);
 
+  // Fetch data on mount
+  useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
+
+  // Auto-refresh when page comes into focus
+  useEffect(() => {
+    const handleFocus = () => {
+      fetchData();
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [fetchData]);
 
   // ---------- Filtering, sorting, totals ----------
   const filteredData = useMemo(() => {
@@ -456,9 +467,18 @@ export default function ExpensesReportPage() {
     <DesktopShell title="Reports">
     <div className="min-h-screen md:min-h-0 bg-slate-50/70 md:bg-transparent p-6 md:p-0">
       <div className="max-w-7xl mx-auto md:mx-0 md:max-w-none">
-        <h1 className="text-2xl font-bold text-slate-800 mb-6">
-          💰 Financial Summary by Estimate
-        </h1>
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-bold text-slate-800">
+            💰 Financial Summary by Estimate
+          </h1>
+          <button
+            onClick={fetchData}
+            className="p-2 text-slate-400 hover:text-slate-600 transition-colors"
+            title="Refresh data"
+          >
+            <RefreshCw size={20} />
+          </button>
+        </div>
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
