@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase/client";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import type { AgentPaymentRow, EstimateExpenseRow, ProjectBundle, ProjectSummary, SubcontractorPaymentRow } from "@/lib/types";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 
 const SEARCH_LIMIT = 15;
 

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils/formatting";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 import { 
   TrendingUp, 
   TrendingDown, 

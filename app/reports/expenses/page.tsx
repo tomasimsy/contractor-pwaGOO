@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 import DesktopShell from "@/components/layout/DesktopShell";
 import { formatCurrency } from "@/lib/utils/formatting";
 import {

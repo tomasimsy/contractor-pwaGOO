@@ -3,6 +3,7 @@
 import { useState } from "react";
 import toast from "react-hot-toast";
 import { supabase } from "@/lib/supabase/client";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 import { X } from "lucide-react";
 import type { ProjectBundle } from "@/lib/types";
 

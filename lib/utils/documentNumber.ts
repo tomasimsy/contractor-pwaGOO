@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 
 // Simple counter (resets when server restarts - fine for now)
 let counter = 0;

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { getCompanyPendingPayoutsSummary } from "@/lib/queries/expenses";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
+import { filterActive } from "@/lib/queries/softDeleteFilter";
 
 export interface DashboardOverviewStats {
   estimates: number;
@@ -51,25 +52,33 @@ export function useDashboardOverview() {
       const todayString = new Date().toISOString().split("T")[0];
 
       const [estimatesRes, invoicesRes, recentEstRes, recentInvRes, overdueRes] = await Promise.all([
-        supabase.from("estimates").select("signature, status"),
-        supabase.from("invoices").select("status, remaining_balance"),
-        supabase
-          .from("estimates")
-          .select("id, created_at, total, estimate_number, title, clients(name), signature")
-          .order("created_at", { ascending: false })
-          .eq("is_completed", false)
-          .is("deleted_at", null)
-          .limit(10), // fetch 10 to have enough for sorting
-        supabase
-          .from("invoices")
-          .select("id, created_at, total, invoice_number, clients(name), status")
-          .order("created_at", { ascending: false })
-          .limit(5),
-        supabase
-          .from("invoices")
-          .select("id, invoice_number, total, remaining_balance, due_date, clients(name)")
-          .lt("due_date", todayString)
-          .neq("status", "paid"),
+        filterActive(supabase.from("estimates").select("signature, status"), "estimates"),
+        filterActive(supabase.from("invoices").select("status, remaining_balance"), "invoices"),
+        filterActive(
+          supabase
+            .from("estimates")
+            .select("id, created_at, total, estimate_number, title, clients(name), signature")
+            .order("created_at", { ascending: false })
+            .eq("is_completed", false)
+            .limit(10),
+          "estimates"
+        ),
+        filterActive(
+          supabase
+            .from("invoices")
+            .select("id, created_at, total, invoice_number, clients(name), status")
+            .order("created_at", { ascending: false })
+            .limit(5),
+          "invoices"
+        ),
+        filterActive(
+          supabase
+            .from("invoices")
+            .select("id, invoice_number, total, remaining_balance, due_date, clients(name)")
+            .lt("due_date", todayString)
+            .neq("status", "paid"),
+          "invoices"
+        ),
       ]);
 
       const nextStats: DashboardOverviewStats = {

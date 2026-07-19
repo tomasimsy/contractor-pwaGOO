@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils/formatting";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 import { Plus, Eye, Edit2, Trash2, Send, CheckCircle, XCircle, FileText } from "lucide-react";
 import ChangeOrderForm from "@/components/changeOrder/ChangeOrderForm";
 import SignaturePad from "../signature/SignaturePad";

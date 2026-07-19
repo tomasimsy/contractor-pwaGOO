@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import Header from '@/components/ui/Header';
 import { supabase } from '@/lib/supabase/client';
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 import { formatCurrency } from '@/lib/utils/formatting';
 import { MetricExplanationModal } from '@/components/accounting/MetricExplanationModal';
 import DesktopShell from '@/components/layout/DesktopShell';
@@ -177,11 +178,14 @@ export default function AccountingPage() {
         if (estError) throw new Error(estError.message);
 
         // Filter to only estimates with at least one paid/partial invoice (matching /reports logic)
-        const { data: invoices } = await supabase
-          .from('invoices')
-          .select('estimate_id, amount_paid, status, created_at')
-          .eq('company_id', companyId)
-          .in('status', ['paid', 'partial']);
+        const { data: invoices } = await filterActive(
+          supabase
+            .from('invoices')
+            .select('estimate_id, amount_paid, status, created_at')
+            .eq('company_id', companyId)
+            .in('status', ['paid', 'partial']),
+          'invoices'
+        );
 
         const paidEstimateIds = new Set<string>();
         const payTotals: Record<string, number> = {};

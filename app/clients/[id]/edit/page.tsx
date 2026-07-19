@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 import Header from "@/components/ui/Header";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 

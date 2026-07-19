@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 
 import { supabase } from "@/lib/supabase/client";
+import { filterActive } from "@/lib/queries/softDeleteFilter";
 import { formatCurrency, formatShortDate } from "@/lib/utils/formatting";
 import { ArrowLeft, Search, AlertCircle, Link2, Send, ArrowRight,Receipt, DollarSign } from "lucide-react";
 import toast from "react-hot-toast";
@@ -26,10 +27,13 @@ export default function InvoicesPage() {
     async function fetchInvoices() {
       try {
         setLoading(true);
-        const { data, error } = await supabase
-          .from("invoices")
-          .select("id, invoice_number,  total, remaining_balance, due_date, created_at, status, estimate_id, clients(name, phone), estimates(title)")
-          .order("created_at", { ascending: false });
+        const { data, error } = await filterActive(
+          supabase
+            .from("invoices")
+            .select("id, invoice_number,  total, remaining_balance, due_date, created_at, status, estimate_id, clients(name, phone), estimates(title)")
+            .order("created_at", { ascending: false }),
+          "invoices"
+        );
         if (error) throw error;
         if (data) setInvoices(data);
       } catch (err) {

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 import { Client } from "@/types";
 import Header from "@/components/ui/Header";
 import DeleteModal from "@/components/ui/DeleteModal";

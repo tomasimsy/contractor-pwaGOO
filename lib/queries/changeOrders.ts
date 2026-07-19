@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase/client";
 import type { ChangeOrderRow } from "@/lib/types";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 
 /**
  * Change Order CRUD for the Expense page. Mirrors the business rules

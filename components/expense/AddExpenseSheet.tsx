@@ -16,6 +16,7 @@ import { formatCurrency } from "@/lib/utils/formatting";
 import { COMPANY_PERCENTAGE_OPTIONS, splitEvenly, splitProfit, type CompanyPercentage } from "@/lib/utils/profitSplit";
 import { getRecentVendors } from "@/lib/queries/expenses";
 import { supabase } from "@/lib/supabase/client";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 
 const SPLIT_TOLERANCE = 0.05; // percentage points — absorbs float rounding, not real mismatches
 

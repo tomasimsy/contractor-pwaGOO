@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase/client";
 import type { ProjectBundle } from "@/lib/types";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 
 export interface GenerateInvoiceInput {
   estimateId: string;

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 import { Invoice, Client, Project, Signature } from "@/types";
 import { formatCurrency, formatDate } from "@/lib/utils/formatting";
 import SignaturePad from "@/components/signature/SignaturePad";

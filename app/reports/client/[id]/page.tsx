@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import { formatCurrency } from "@/lib/utils/formatting";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 import Link from "next/link";
 
 type EstimateRecord = {

@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 import { Estimate, Client, Project, LineItem, Signature } from "@/types";
 import { formatCurrency } from "@/lib/utils/formatting";
 import { calculateSubtotal, calculateTax, calculateTotal } from "@/lib/utils/calculations";

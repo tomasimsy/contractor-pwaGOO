@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency, formatDate } from "@/lib/utils/formatting";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, DollarSign, Users, Receipt, FileText, TrendingUp } from "lucide-react";

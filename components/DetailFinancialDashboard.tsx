@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils/formatting";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 import { DollarSign, TrendingUp, TrendingDown, Calendar, Wallet, Users, Receipt, CheckCircle, AlertCircle } from "lucide-react";
 
 type FinancialStats = {

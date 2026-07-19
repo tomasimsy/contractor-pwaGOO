@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 import { Client } from "@/types";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
 

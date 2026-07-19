@@ -3,6 +3,7 @@ import { Trip, TripStatus, TripInput } from "./types";
 import { isOnline, generateId } from "./utils";
 import { supabase } from "@/lib/supabase";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 
 export function useOfflineSync(userId: string | null) {
 

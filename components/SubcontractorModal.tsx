@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils/formatting";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 import { X, Trash2, Edit2, Check, DollarSign, AlertCircle } from "lucide-react";
 
 type Subcontractor = {

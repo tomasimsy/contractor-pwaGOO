@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import { formatCurrency, formatShortDate } from "@/lib/utils/formatting";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 import Header from "@/components/ui/Header";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import DesktopShell from "@/components/layout/DesktopShell";

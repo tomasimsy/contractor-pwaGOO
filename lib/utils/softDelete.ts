@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 
 export const softDeleteEstimate = async (id: string) => {
   const { error } = await supabase

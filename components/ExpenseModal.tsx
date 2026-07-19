@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils/formatting";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 import { X, Trash2 } from "lucide-react";
 import { getCompanyId } from "@/lib/supabase/getCompanyId"; // 👈 import
 import { softDeleteExpense } from "@/lib/queries/expenses";

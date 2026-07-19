@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Plus, ChevronDown, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { supabase } from "@/lib/supabase/client";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 import DashboardPanel, { EmptyState } from "./DashboardPanel";
 import PayoutRow from "./PayoutRow";
 import AssignPayeeModal from "@/components/expense/AssignPayeeModal";

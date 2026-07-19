@@ -3,6 +3,7 @@
 // import { useEffect, useState } from "react";
 // import { useRouter } from "next/navigation";
 // import { supabase } from "@/lib/supabase/client";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 // import { Invoice } from "@/types";
 // import { formatCurrency, formatShortDate } from "@/lib/utils/formatting";
 // import Header from "@/components/ui/Header";

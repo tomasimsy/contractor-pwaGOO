@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase/client";
 import { computePayoutStatus } from "@/lib/queries/expenses";
 import type { PayoutStatusValue } from "@/lib/types";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 
 export type SubcontractorAssignmentDetail = {
   assignmentId: string; // estimate_subcontractors.id

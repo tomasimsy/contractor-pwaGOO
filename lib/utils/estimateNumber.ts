@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 
 export const generateEstimateNumber = async () => {
   const currentYear = new Date().getFullYear();

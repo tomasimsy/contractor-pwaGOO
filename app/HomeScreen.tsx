@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { filterActive } from "@/lib/queries/softDeleteFilter";
 
 export default function Home() {
   const [recentEstimates, setRecentEstimates] = useState<any[]>([]);
@@ -22,25 +23,31 @@ export default function Home() {
 
   async function loadDashboardData() {
     // Load recent estimates
-    const { data: estimates } = await supabase
-      .from("estimates")
-      .select(`
-        id,
-        created_at,
-        total,
-        description,
-        status,
-        signature,
-        clients (name)
-      `)
-      .order("created_at", { ascending: false })
-      .limit(5);
+    const { data: estimates } = await filterActive(
+      supabase
+        .from("estimates")
+        .select(`
+          id,
+          created_at,
+          total,
+          description,
+          status,
+          signature,
+          clients (name)
+        `)
+        .order("created_at", { ascending: false })
+        .limit(5),
+      "estimates"
+    );
 
     if (estimates) {
       setRecentEstimates(estimates);
-      
+
       // Calculate stats
-      const allEstimates = await supabase.from("estimates").select("status, signature");
+      const allEstimates = await filterActive(
+        supabase.from("estimates").select("status, signature"),
+        "estimates"
+      );
       if (allEstimates.data) {
         const total = allEstimates.data.length;
         const pending = allEstimates.data.filter(e => e.status === "pending" && !e.signature).length;
@@ -50,25 +57,31 @@ export default function Home() {
     }
 
     // Load recent invoices
-    const { data: invoices } = await supabase
-      .from("invoices")
-      .select(`
-        id,
-        created_at,
-        total,
-        invoice_number,
-        status,
-        signature,
-        clients (name)
-      `)
-      .order("created_at", { ascending: false })
-      .limit(5);
+    const { data: invoices } = await filterActive(
+      supabase
+        .from("invoices")
+        .select(`
+          id,
+          created_at,
+          total,
+          invoice_number,
+          status,
+          signature,
+          clients (name)
+        `)
+        .order("created_at", { ascending: false })
+        .limit(5),
+      "invoices"
+    );
 
     if (invoices) {
       setRecentInvoices(invoices);
-      
+
       // Calculate invoice stats
-      const allInvoices = await supabase.from("invoices").select("status");
+      const allInvoices = await filterActive(
+        supabase.from("invoices").select("status"),
+        "invoices"
+      );
       if (allInvoices.data) {
         const total = allInvoices.data.length;
         const paid = allInvoices.data.filter(i => i.status === "paid").length;

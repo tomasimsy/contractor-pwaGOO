@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { filterActive } from '@/lib/queries/softDeleteFilter';
 import { useNotifications } from "@/context/NotificationContext";
 
 const LAST_CHECK_KEY = "notification_last_check";
