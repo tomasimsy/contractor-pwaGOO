@@ -120,12 +120,12 @@ export default function AgentCommissionCard({
                     )}
 
                     {/* Payment History */}
-                    {bundle.agentPayments.filter(p => p.agent_id === payout.personId && !p.deleted_at).length > 0 && (
+                    {bundle.agentPayments.filter(p => p.agent_id === payout.personId && p.estimate_id === bundle.project.id && !p.deleted_at).length > 0 && (
                       <div className="space-y-2">
                         <div className="text-[11px] font-medium text-gray-600 uppercase">Payment History</div>
                         <div className="space-y-1">
                           {bundle.agentPayments
-                            .filter(p => p.agent_id === payout.personId && !p.deleted_at)
+                            .filter(p => p.agent_id === payout.personId && p.estimate_id === bundle.project.id && !p.deleted_at)
                             .sort((a, b) => new Date(b.payment_date || 0).getTime() - new Date(a.payment_date || 0).getTime())
                             .map((payment) => (
                               <div key={payment.id} className="flex items-center justify-between text-[12px] text-gray-700 bg-gray-50 rounded px-2 py-1.5">
