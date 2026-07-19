@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { FormCategory } from "@/components/expense/AddExpenseSheet";
-import type { FinancialSummaryData, LedgerEntry, PaymentSummary, ProjectBundle } from "@/lib/types";
+import type { FinancialSummaryData, LedgerEntry, PaymentSummary, ProjectBundle, InvoicePaymentRow } from "@/lib/types";
 import { getBudgetComparison, getBudgetAlerts } from "@/lib/queries/expenses";
+import { getInvoicePayments } from "@/lib/queries/customerPayments";
 
 import ProjectSummaryCard from "./ProjectSummaryCard";
 import ProjectActionsBar from "./ProjectActionsBar";
@@ -30,6 +32,7 @@ export default function DesktopDashboard({
   financials,
   payment,
   onOpenAddSheet,
+  onRecordPayment,
   onDeleteEntry,
   onRefresh,
   onGenerateInvoice,
@@ -40,18 +43,43 @@ export default function DesktopDashboard({
   financials: FinancialSummaryData;
   payment: PaymentSummary;
   onOpenAddSheet: (category?: FormCategory) => void;
+  onRecordPayment?: () => void;
   onDeleteEntry: (entry: LedgerEntry) => void;
   onRefresh: () => Promise<void>;
   onGenerateInvoice?: () => void;
   canGenerateInvoice?: boolean;
 }) {
+  const [payments, setPayments] = useState<InvoicePaymentRow[]>([]);
+
+  useEffect(() => {
+    if (bundle.invoices.length === 0) {
+      setPayments([]);
+      return;
+    }
+
+    async function loadPayments() {
+      try {
+        const allPayments: InvoicePaymentRow[] = [];
+        for (const invoice of bundle.invoices) {
+          const invoicePayments = await getInvoicePayments(invoice.id);
+          allPayments.push(...invoicePayments.filter(p => !p.deleted_at));
+        }
+        setPayments(allPayments);
+      } catch (err) {
+        console.error("Failed to load customer payments:", err);
+      }
+    }
+
+    loadPayments();
+  }, [bundle.invoices]);
+
   const budget = getBudgetComparison(bundle.estimateItems, bundle.expenses);
   const budgetAlerts = getBudgetAlerts(budget);
 
   return (
     <div className="flex flex-col gap-5 min-w-0">
       {/* Action Bar */}
-      <ProjectActionsBar onOpenAddSheet={onOpenAddSheet} onGenerateInvoice={onGenerateInvoice} canGenerateInvoice={canGenerateInvoice} />
+      <ProjectActionsBar onOpenAddSheet={onOpenAddSheet} onRecordPayment={onRecordPayment} onGenerateInvoice={onGenerateInvoice} canGenerateInvoice={canGenerateInvoice} />
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
         <div className="xl:col-span-8 flex flex-col gap-5 min-w-0">
@@ -63,6 +91,8 @@ export default function DesktopDashboard({
             financials={financials}
             payment={payment}
             invoices={bundle.invoices}
+            payments={payments}
+            onPaymentDeleted={onRefresh}
           />
 
           {/* Expenses with expandable categories */}

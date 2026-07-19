@@ -1,8 +1,11 @@
 "use client";
 
-import { CheckCircle2, Clock, AlertCircle } from "lucide-react";
+import { useState } from "react";
+import { CheckCircle2, Clock, AlertCircle, Trash2 } from "lucide-react";
+import toast from "react-hot-toast";
 import { formatCurrency } from "@/lib/utils/formatting";
-import type { FinancialSummaryData, InvoiceRow, PaymentSummary } from "@/lib/types";
+import { deleteCustomerPayment } from "@/lib/queries/customerPayments";
+import type { FinancialSummaryData, InvoiceRow, PaymentSummary, InvoicePaymentRow } from "@/lib/types";
 import DashboardPanel from "./DashboardPanel";
 
 const PAYMENT_LABEL: Record<PaymentSummary["status"], string> = {
@@ -34,15 +37,49 @@ function invoiceStatus(invoice: InvoiceRow) {
   return { label: "Partial", icon: Clock, text: "text-blue-600" };
 }
 
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  bank_transfer: "Bank Transfer",
+  check: "Check",
+  credit_card: "Credit Card",
+  cash: "Cash",
+  zelle: "Zelle",
+  wire: "Wire Transfer",
+  ach: "ACH",
+  other: "Other",
+};
+
 export default function CustomerPaymentsCard({
   financials,
   payment,
   invoices,
+  payments = [],
+  onPaymentDeleted,
 }: {
   financials: FinancialSummaryData;
   payment: PaymentSummary;
   invoices: InvoiceRow[];
+  payments?: InvoicePaymentRow[];
+  onPaymentDeleted?: () => void;
 }) {
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  async function handleDeletePayment(paymentId: string, amount: number) {
+    if (!window.confirm(`Delete payment of ${formatCurrency(amount)}?`)) {
+      return;
+    }
+
+    setDeletingId(paymentId);
+    try {
+      await deleteCustomerPayment(paymentId);
+      toast.success("Payment deleted");
+      onPaymentDeleted?.();
+    } catch (err: any) {
+      console.error("Failed to delete payment:", err);
+      toast.error(err.message || "Failed to delete payment");
+    } finally {
+      setDeletingId(null);
+    }
+  }
   return (
     <DashboardPanel title="Customer Payments" accent="emerald">
       {/* Summary Section */}
@@ -90,12 +127,12 @@ export default function CustomerPaymentsCard({
         </div>
       </div>
 
-      {/* Payment History */}
+      {/* Invoices Summary */}
       {invoices.length === 0 ? (
         <div className="text-[13px] text-gray-400 text-center py-4">No invoices on this project yet.</div>
       ) : (
-        <div className="space-y-2 max-h-48 overflow-y-auto">
-          <div className="text-[12px] font-semibold text-gray-600 uppercase tracking-wide mb-2">Payment History</div>
+        <div className="space-y-2 max-h-48 overflow-y-auto pb-4 mb-4 border-b border-gray-100">
+          <div className="text-[12px] font-semibold text-gray-600 uppercase tracking-wide mb-2">Invoices</div>
           {invoices.map((invoice) => {
             const status = invoiceStatus(invoice);
             const Icon = invoice.overdue ? AlertCircle : status.icon;
@@ -125,6 +162,54 @@ export default function CustomerPaymentsCard({
           })}
         </div>
       )}
+
+      {/* Payment History with Delete */}
+      <div>
+        <div className="text-[12px] font-semibold text-gray-600 uppercase tracking-wide mb-2">Payment Records</div>
+        {payments.length === 0 ? (
+          <div className="text-[13px] text-gray-400 text-center py-4">No payments recorded yet</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="border-b border-gray-200">
+                  <th className="text-left px-2 py-1.5 font-medium text-gray-700">Date</th>
+                  <th className="text-left px-2 py-1.5 font-medium text-gray-700">Method</th>
+                  <th className="text-right px-2 py-1.5 font-medium text-gray-700">Amount</th>
+                  <th className="text-center px-2 py-1.5 font-medium text-gray-700">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payments.map((p) => (
+                  <tr key={p.id} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="px-2 py-1.5 text-gray-900">
+                      {p.payment_date ? new Date(p.payment_date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "-"}
+                    </td>
+                    <td className="px-2 py-1.5 text-gray-600">
+                      <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        {PAYMENT_METHOD_LABELS[p.method] || p.method}
+                      </span>
+                    </td>
+                    <td className="px-2 py-1.5 text-right font-medium text-gray-900">
+                      {formatCurrency(p.amount)}
+                    </td>
+                    <td className="px-2 py-1.5 text-center">
+                      <button
+                        onClick={() => handleDeletePayment(p.id, p.amount)}
+                        disabled={deletingId === p.id}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-rose-600 hover:bg-rose-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-[10px]"
+                        title="Delete payment"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </DashboardPanel>
   );
 }
