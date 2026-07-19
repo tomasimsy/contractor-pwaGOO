@@ -13,7 +13,6 @@ import SubcontractorAssignmentsCard from "./SubcontractorAssignmentsCard";
 import AgentCommissionCard from "./AgentCommissionCard";
 import ChangeOrdersPanel from "./ChangeOrdersPanel";
 import ExpandableExpenseSummaryCard from "./ExpandableExpenseSummaryCard";
-import ExpenseListPanel from "./ExpenseListPanel";
 import ReceiptsPanel from "./ReceiptsPanel";
 import BudgetStatusCard from "./BudgetStatusCard";
 
@@ -95,15 +94,13 @@ export default function DesktopDashboard({
             onPaymentDeleted={onRefresh}
           />
 
-          {/* Expenses with expandable categories */}
+          {/* Expenses with expandable categories and delete actions */}
           <ExpandableExpenseSummaryCard
             financials={financials}
             ledger={ledger}
             budget={budget}
+            onDelete={onDeleteEntry}
           />
-
-          {/* Transaction Ledger */}
-          <ExpenseListPanel entries={ledger} onDelete={onDeleteEntry} />
         </div>
 
         <div className="xl:col-span-4 flex flex-col gap-5 min-w-0">

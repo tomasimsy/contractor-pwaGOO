@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils/formatting";
 import type { BudgetComparison, FinancialSummaryData, LedgerEntry } from "@/lib/types";
 import DashboardPanel from "./DashboardPanel";
@@ -31,12 +31,15 @@ export default function ExpandableExpenseSummaryCard({
   financials,
   ledger,
   budget,
+  onDelete,
 }: {
   financials: FinancialSummaryData;
   ledger: LedgerEntry[];
   budget?: BudgetComparison;
+  onDelete?: (entry: LedgerEntry) => void;
 }) {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const totalProjectCost =
     financials.materialCosts +
@@ -138,16 +141,47 @@ export default function ExpandableExpenseSummaryCard({
               {/* Expanded Details */}
               {isExpanded && hasDetails && (
                 <div className="bg-gray-50 border-t border-gray-100 divide-y divide-gray-100">
-                  {details.map((entry, idx) => (
-                    <div key={`${entry.id}-${idx}`} className="px-4 py-2 flex items-center justify-between gap-2 text-[12px]">
-                      <div className="min-w-0 flex-1 truncate text-gray-600">
-                        {entry.payeeLabel || entry.categoryLabel}
+                  {details.map((entry, idx) => {
+                    const isPendingDelete = pendingDeleteId === entry.id;
+                    return (
+                      <div key={`${entry.id}-${idx}`} className="px-4 py-2 flex items-center justify-between gap-2 text-[12px] group">
+                        <div className="min-w-0 flex-1 truncate text-gray-600">
+                          {entry.payeeLabel || entry.categoryLabel}
+                          {entry.changeOrderLabel && (
+                            <span className="text-[10px] text-gray-400 ml-1">{entry.changeOrderLabel}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="tabular-nums text-gray-900 font-medium whitespace-nowrap">
+                            {formatCurrency(entry.amount)}
+                          </span>
+                          {isPendingDelete ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onDelete?.(entry);
+                                setPendingDeleteId(null);
+                              }}
+                              className="shrink-0 text-[11px] font-medium text-white bg-gray-900 rounded px-1.5 py-0.5 whitespace-nowrap"
+                            >
+                              Confirm
+                            </button>
+                          ) : (
+                            onDelete && (
+                              <button
+                                type="button"
+                                onClick={() => setPendingDeleteId(entry.id)}
+                                className="shrink-0 text-gray-400 hover:text-rose-600 transition-colors opacity-0 group-hover:opacity-100"
+                                aria-label="Delete entry"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )
+                          )}
+                        </div>
                       </div>
-                      <span className="shrink-0 tabular-nums text-gray-900 font-medium">
-                        {formatCurrency(entry.amount)}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
