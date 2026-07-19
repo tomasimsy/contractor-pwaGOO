@@ -399,6 +399,9 @@ export type FinancialSummaryData = {
   totalPaid: number;
   approvedChangeOrderTotal: number;
   revisedTotal: number;
+  // Single source of truth for profit calculation: revisedTotal - all costs
+  profit: number;
+  marginPercent: number;
 };
 
 /** Budgeted (from estimate_items) vs. actual (from estimate_expenses)

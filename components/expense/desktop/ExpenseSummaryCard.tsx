@@ -32,8 +32,9 @@ export default function ExpenseSummaryCard({
     financials.agentCommissions +
     financials.otherExpenses +
     financials.mileageCosts;
-  const profit = financials.revisedTotal - totalProjectCost;
-  const profitPercent = financials.revisedTotal > 0 ? (profit / financials.revisedTotal) * 100 : 0;
+  // Use profit from financials - single source of truth
+  const profit = financials.profit;
+  const profitPercent = financials.marginPercent;
 
   const costLines = [
     { label: "Materials", value: financials.materialCosts },

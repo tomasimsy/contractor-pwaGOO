@@ -175,7 +175,15 @@ function ProjectExpenseContent() {
       amount,
       notes
     );
+    // Update local state immediately for responsive UI feedback
     setBundle((prev) => (prev ? { ...prev, assignedSubcontractors: [...prev.assignedSubcontractors, assigned] } : prev));
+    // Reload bundle in background to ensure all dependent calculations (profit,
+    // available payout amount, etc.) recalculate with the new assignment.
+    // Subcontractors affect profit calculations the moment they're assigned.
+    // Don't await this so the form response is immediate.
+    if (selectedProjectId) {
+      loadBundle(selectedProjectId).catch((err) => console.error("Failed to refresh bundle after assignment:", err));
+    }
     return assigned;
   }
 

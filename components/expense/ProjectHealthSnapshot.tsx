@@ -26,8 +26,9 @@ export default function ProjectHealthSnapshot({
     financials.otherExpenses +
     financials.mileageCosts;
 
-  const profit = financials.revisedTotal - totalCost;
-  const marginPercent = financials.revisedTotal > 0 ? (profit / financials.revisedTotal) * 100 : 0;
+  // Use profit from financials - single source of truth
+  const profit = financials.profit;
+  const marginPercent = financials.marginPercent;
 
   const marginColor =
     marginPercent >= 20 ? "text-emerald-600" : marginPercent >= 10 ? "text-amber-600" : "text-rose-600";

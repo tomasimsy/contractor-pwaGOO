@@ -20,7 +20,8 @@ export default function CashStatusBar({
     financials.otherExpenses +
     financials.mileageCosts;
 
-  const profit = financials.revisedTotal - totalExpenses;
+  // Use profit from financials - single source of truth
+  const profit = financials.profit;
 
   // Pending payouts = assigned but not yet fully paid
   const pendingPayouts = financials.subcontractorCosts - financials.subcontractorPaidToDate;

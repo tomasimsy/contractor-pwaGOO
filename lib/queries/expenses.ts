@@ -49,7 +49,7 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
     if (input.paidByAgentId && data) {
       const totalAmount = input.amount + input.tax;
       // Look up the agent's assignment to link the reimbursement to the correct estimate_agent_id
-      const { data: assignment } = await supabase
+      const { data: assignment, error: assignmentError } = await supabase
         .from("estimate_agents")
         .select("id")
         .eq("estimate_id", input.estimateId)
@@ -57,6 +57,11 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
         .eq("company_id", input.companyId)
         .is("deleted_at", null)
         .single();
+
+      // Assignment lookup failing doesn't block expense creation, but log it
+      if (assignmentError && assignmentError.code !== 'PGRST116') {
+        console.error("Failed to look up agent assignment for reimbursement:", assignmentError);
+      }
 
       const { error: reimburseError } = await supabase.from("agent_payments").insert({
         estimate_id: input.estimateId,
@@ -71,7 +76,10 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
         payment_type: 'reimbursement',
         expense_id: data.id,
       });
-      if (reimburseError) throw reimburseError;
+      // Reimbursement creation should not fail the entire operation, but log it
+      if (reimburseError) {
+        console.error("Failed to create reimbursement for agent expense:", reimburseError);
+      }
     }
     return;
   }
@@ -763,6 +771,14 @@ export function summarizeFinancials(
     .reduce((sum, co) => sum + (co.total_amount || 0), 0);
   const revisedTotal = estimateTotal + approvedChangeOrderTotal;
 
+  // Single source of truth for profit: revenue minus all committed costs
+  // Subcontractor and agent costs use committed amounts (not paid-to-date)
+  // so profit reflects what will actually leave the bank, not just what
+  // has already been spent.
+  const totalCosts = materialCosts + laborCosts + subcontractorCosts + agentCommissions + agentReimbursements + otherExpenses + mileageCosts;
+  const profit = revisedTotal - totalCosts;
+  const marginPercent = revisedTotal > 0 ? (profit / revisedTotal) * 100 : 0;
+
   return {
     estimateTotal,
     materialCosts,
@@ -776,6 +792,8 @@ export function summarizeFinancials(
     totalPaid: totalPaidByClient,
     approvedChangeOrderTotal,
     revisedTotal,
+    profit,
+    marginPercent,
   };
 }
 

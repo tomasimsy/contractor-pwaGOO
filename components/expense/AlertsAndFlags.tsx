@@ -17,16 +17,9 @@ export default function AlertsAndFlags({
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
-  // Calculate margin
-  const totalExpenses =
-    financials.materialCosts +
-    financials.laborCosts +
-    financials.subcontractorCosts +
-    financials.agentCommissions +
-    financials.otherExpenses +
-    financials.mileageCosts;
-  const profit = financials.revisedTotal - totalExpenses;
-  const marginPercent = financials.revisedTotal > 0 ? (profit / financials.revisedTotal) * 100 : 0;
+  // Use profit from financials - single source of truth
+  const profit = financials.profit;
+  const marginPercent = financials.marginPercent;
 
   const alerts: Array<{
     type: "risk" | "overdue" | "expense";
