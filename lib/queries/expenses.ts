@@ -251,14 +251,7 @@ export function computePendingPayouts(
     };
   });
 
-  // Map to track which agent IDs we've already added to avoid duplicates
-  const agentIdSet = new Set<string>();
-
-  const agentPayouts: PendingPayout[] = [];
-
-  // First, add assigned agents with their commission + expenses
-  for (const a of bundle.assignedAgents) {
-    agentIdSet.add(a.agentId);
+  const agentPayouts: PendingPayout[] = bundle.assignedAgents.map((a) => {
     const commissionAmount = a.assignedAmount;
     const expensePayableAmount = expensePayablesByAgentId.get(a.agentId) ?? 0;
     const totalAssignedAmount = commissionAmount + expensePayableAmount;
@@ -267,7 +260,7 @@ export function computePendingPayouts(
     const totalPaidAmount = paidCommission;
 
     const { remainingAmount, status } = computePayoutStatus(totalAssignedAmount, totalPaidAmount);
-    agentPayouts.push({
+    return {
       role: "agent",
       assignmentId: a.estimateAgentId,
       personId: a.agentId,
@@ -282,39 +275,8 @@ export function computePendingPayouts(
       reimbursementAmount: expensePayableAmount,
       paidCommission,
       paidReimbursement: 0,
-    });
-  }
-
-  // Then, add agents with expense payables who are NOT assigned to the project
-  for (const [agentId, expenseAmount] of expensePayablesByAgentId) {
-    if (!agentIdSet.has(agentId)) {
-      agentIdSet.add(agentId);
-      // Look up agent name from salesAgents
-      const agentInfo = bundle.salesAgents.find((a) => a.id === agentId);
-      if (agentInfo) {
-        const totalAssignedAmount = expenseAmount;
-        const totalPaidAmount = 0; // No commission or payments yet for unassigned agents with payables
-        const { remainingAmount, status } = computePayoutStatus(totalAssignedAmount, totalPaidAmount);
-
-        agentPayouts.push({
-          role: "agent",
-          assignmentId: agentId, // Use agent ID as assignment ID for unassigned agents
-          personId: agentId,
-          name: agentInfo.name,
-          roleDetail: null,
-          assignedAmount: totalAssignedAmount,
-          paidAmount: totalPaidAmount,
-          remainingAmount,
-          status,
-          notes: null,
-          commissionAmount: 0,
-          reimbursementAmount: expenseAmount,
-          paidCommission: 0,
-          paidReimbursement: 0,
-        });
-      }
-    }
-  }
+    };
+  });
 
   return [...subPayouts, ...agentPayouts].filter((p) => includeSettled || p.remainingAmount > 0.004);
 }
