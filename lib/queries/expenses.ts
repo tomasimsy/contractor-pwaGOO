@@ -96,6 +96,39 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
       reimbursement_from_agent_id: input.reimbursementFromAgentId ?? null,
     });
     if (error) throw error;
+
+    // If agent needs to reimburse this subcontractor payment, create agent payment record
+    if (input.reimbursementFromAgentId) {
+      const { data: assignment, error: assignmentError } = await supabase
+        .from("estimate_agents")
+        .select("id")
+        .eq("estimate_id", input.estimateId)
+        .eq("agent_id", input.reimbursementFromAgentId)
+        .eq("company_id", input.companyId)
+        .is("deleted_at", null)
+        .single();
+
+      if (assignmentError && assignmentError.code !== 'PGRST116') {
+        console.error("Failed to look up agent assignment:", assignmentError);
+      }
+
+      const { error: agentPaymentError } = await supabase.from("agent_payments").insert({
+        estimate_id: input.estimateId,
+        agent_id: input.reimbursementFromAgentId,
+        estimate_agent_id: assignment?.id ?? null,
+        company_id: input.companyId,
+        amount: input.amount,
+        payment_date: input.paymentDate,
+        payment_method: input.paymentMethod,
+        notes: input.notes,
+        change_order_id: input.changeOrderId,
+        reimbursement_from_agent_id: input.reimbursementFromAgentId,
+      });
+
+      if (agentPaymentError) {
+        console.error("Failed to create agent payment for reimbursement:", agentPaymentError);
+      }
+    }
     return;
   }
 
@@ -113,6 +146,26 @@ export async function addEntry(input: NewEntryInput): Promise<void> {
     reimbursement_from_agent_id: input.reimbursementFromAgentId ?? null,
   });
   if (error) throw error;
+
+  // If agent needs to reimburse this commission, also track it as a payable
+  if (input.reimbursementFromAgentId) {
+    const { error: payableError } = await supabase.from("agent_payments").insert({
+      estimate_id: input.estimateId,
+      agent_id: input.reimbursementFromAgentId,
+      estimate_agent_id: null,
+      company_id: input.companyId,
+      amount: input.amount,
+      payment_date: input.paymentDate,
+      payment_method: input.paymentMethod,
+      notes: input.notes,
+      change_order_id: input.changeOrderId,
+      reimbursement_from_agent_id: input.reimbursementFromAgentId,
+    });
+
+    if (payableError) {
+      console.error("Failed to create agent payable:", payableError);
+    }
+  }
 }
 
 /** Assigns a subcontractor to a project with an expected payout amount
