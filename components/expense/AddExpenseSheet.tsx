@@ -87,8 +87,6 @@ export default function AddExpenseSheet({
   const [quickAddAgentOpen, setQuickAddAgentOpen] = useState(false);
   const [quickAddAgentName, setQuickAddAgentName] = useState("");
   const [quickAddSaving, setQuickAddSaving] = useState(false);
-  const [subReimbursementAgentId, setSubReimbursementAgentId] = useState(""); // agent responsible for reimbursing subcontractor
-  const [agentReimbursementAgentId, setAgentReimbursementAgentId] = useState(""); // agent responsible for reimbursing another agent
 
   const allSubcontractorOptions = [...bundle.allSubcontractors, ...extraSubcontractors];
   const allAgentOptions = [...bundle.salesAgents, ...extraAgents];
@@ -233,7 +231,7 @@ export default function AddExpenseSheet({
           paymentMethod,
           notes: notes || null,
           changeOrderId: changeOrderId || null,
-          reimbursementFromAgentId: subReimbursementAgentId || null,
+          reimbursementFromAgentId: paidByAgentId || null,
         });
       } else {
         // Each selected agent becomes its own agent_payments row — the
@@ -258,7 +256,7 @@ export default function AddExpenseSheet({
             paymentMethod,
             notes: notes || null,
             changeOrderId: changeOrderId || null,
-            reimbursementFromAgentId: agentReimbursementAgentId || null,
+            reimbursementFromAgentId: paidByAgentId || null,
           });
         }
       }
@@ -440,24 +438,6 @@ export default function AddExpenseSheet({
                   </div>
                 </div>
               )}
-
-              <div>
-                <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                  Reimbursement From Agent <span className="normal-case font-medium text-slate-300">(optional)</span>
-                </label>
-                <select
-                  value={subReimbursementAgentId}
-                  onChange={(e) => setSubReimbursementAgentId(e.target.value)}
-                  className="w-full h-11 mt-1 rounded-xl border border-slate-200/70 px-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors text-sm font-semibold text-slate-800"
-                >
-                  <option value="">None</option>
-                  {allAgentOptions.map((agent) => (
-                    <option key={agent.id} value={agent.id}>
-                      {agent.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
           )}
 
@@ -612,23 +592,6 @@ export default function AddExpenseSheet({
                 </button>
               </div>
 
-              <div>
-                <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                  Reimbursement From Agent <span className="normal-case font-medium text-slate-300">(optional)</span>
-                </label>
-                <select
-                  value={agentReimbursementAgentId}
-                  onChange={(e) => setAgentReimbursementAgentId(e.target.value)}
-                  className="w-full h-11 mt-1 rounded-xl border border-slate-200/70 px-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors text-sm font-semibold text-slate-800"
-                >
-                  <option value="">None</option>
-                  {allAgentOptions.map((agent) => (
-                    <option key={agent.id} value={agent.id}>
-                      {agent.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
           )}
 
@@ -680,26 +643,27 @@ export default function AddExpenseSheet({
                   />
                 </div>
               </div>
-
-              <div>
-                <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                  Reimbursement From Agent <span className="normal-case font-medium text-slate-300">(optional)</span>
-                </label>
-                <select
-                  value={paidByAgentId}
-                  onChange={(e) => setPaidByAgentId(e.target.value)}
-                  className="w-full h-11 mt-1 rounded-xl border border-slate-200/70 px-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors text-sm font-semibold text-slate-800"
-                >
-                  <option value="">None</option>
-                  {allAgentOptions.map((agent) => (
-                    <option key={agent.id} value={agent.id}>
-                      {agent.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </>
           )}
+
+          {/* Reimbursement From Agent — works for all categories */}
+          <div>
+            <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+              Reimbursement From Agent <span className="normal-case font-medium text-slate-300">(optional)</span>
+            </label>
+            <select
+              value={paidByAgentId}
+              onChange={(e) => setPaidByAgentId(e.target.value)}
+              className="w-full h-11 mt-1 rounded-xl border border-slate-200/70 px-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-slate-300 transition-colors text-sm font-semibold text-slate-800"
+            >
+              <option value="">None</option>
+              {allAgentOptions.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
           {/* Date + payment method */}
           <div className="grid grid-cols-2 gap-3">
