@@ -55,6 +55,8 @@ export default function InvoicesPage() {
               .eq("status", "approved")
               .is("deleted_at", null);
 
+            console.log(`[Invoices] Fetched ${cos?.length || 0} approved change orders from ${estimateIds.length} estimates`);
+
             if (cos) {
               cos.forEach((co: any) => {
                 if (!changeOrdersMap.has(co.estimate_id)) {
@@ -70,6 +72,9 @@ export default function InvoicesPage() {
             const approvedCOTotal = changeOrdersMap.get(inv.estimate_id)?.reduce((sum: number, co: any) => sum + (co.total_amount || 0), 0) || 0;
             const revisedTotal = inv.total + approvedCOTotal;
             const revisedRemainingBalance = (inv.remaining_balance || inv.total) + approvedCOTotal;
+            if (approvedCOTotal > 0) {
+              console.log(`[Invoices] ${inv.invoice_number}: base=$${inv.total}, co=$${approvedCOTotal}, revised=$${revisedTotal}, remaining=$${revisedRemainingBalance}`);
+            }
             return {
               ...inv,
               revisedTotal,
