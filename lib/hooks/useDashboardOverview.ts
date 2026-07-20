@@ -60,16 +60,35 @@ export function useDashboardOverview() {
       const financials = await calculateCompanyFinancials(companyId, new Date(thirtyDaysAgo), new Date());
 
       // Fetch recent data separately
-      const [recentEstRes, recentInvRes, overdueRes] = await Promise.all([
-        filterActive(
-          supabase
-            .from("estimates")
-            .select("id, created_at, total, estimate_number, title, clients(name), signature")
-            .order("created_at", { ascending: false })
-            .eq("is_completed", false)
-            .limit(10),
-          "estimates"
-        ),
+      const recentEstRes = await filterActive(
+        supabase
+          .from("estimates")
+          .select("id, created_at, total, estimate_number, title, clients(name), signature")
+          .order("created_at", { ascending: false })
+          .eq("is_completed", false)
+          .limit(10),
+        "estimates"
+      );
+
+      // Fetch invoices - count all active invoices for the company
+      const [invCountRes, paidCountRes, pendingCountRes, recentInvDataRes, overdueDataRes] = await Promise.all([
+        supabase
+          .from("invoices")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("is_deleted", false),
+        supabase
+          .from("invoices")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("is_deleted", false)
+          .eq("status", "paid"),
+        supabase
+          .from("invoices")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("is_deleted", false)
+          .neq("status", "paid"),
         filterActive(
           supabase
             .from("invoices")
@@ -88,14 +107,20 @@ export function useDashboardOverview() {
         ),
       ]);
 
+      const invoiceCount = invCountRes.count || 0;
+      const paidCount = paidCountRes.count || 0;
+      const pendingCount = pendingCountRes.count || 0;
+      const recentInvRes = recentInvDataRes;
+      const overdueRes = overdueDataRes;
+
       // Use unified engine stats
       const nextStats: DashboardOverviewStats = {
         estimates: financials.completedProjects + financials.convertedProjects,
         signed: financials.convertedProjects,
         converted: financials.convertedProjects,
-        invoices: Math.ceil(financials.totalInvoiced / 100), // Placeholder: actual count would need separate query
-        paid: 0, // Would need separate query for true count
-        pending: Math.ceil(financials.totalOutstanding / 100), // Placeholder
+        invoices: invoiceCount,
+        paid: paidCount,
+        pending: pendingCount,
       };
 
       setStats(nextStats);

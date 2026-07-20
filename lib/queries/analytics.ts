@@ -1,290 +1,229 @@
 import { supabase } from "@/lib/supabase/client";
-import { filterActive } from '@/lib/queries/softDeleteFilter';
+import { calculateCompanyFinancials, calculateProjectFinancials } from "@/lib/queries/financialCalculations";
+import { getProjectBundle } from "@/lib/queries/projects";
 
-export interface ProjectProfitability {
-  estimateId: string;
-  estimateNumber: string | null;
-  projectTitle: string | null;
-  clientId: string | null;
-  clientName: string | null;
-  revenue: number;
-  expenses: number;
-  profit: number;
-  marginPercent: number;
-  completedAt: string | null;
-  status: string | null;
+/**
+ * UNIFIED ANALYTICS SYSTEM
+ * All calculations derive from the shared financial calculation engine.
+ * NO duplicate formulas. Single source of truth.
+ */
+
+export interface CompanyFinancialAnalytics {
+  totalRevenue: number;
+  paymentsReceived: number;
+  accountsReceivable: number;
+  totalExpenses: number;
+  subcontractorCosts: number;
+  agentCosts: number;
+  grossProfit: number;
+  netProfit: number;
+  profitMargin: number;
+
+  completedProjects: number;
+  convertedProjects: number;
+  draftProjects: number;
+
+  totalInvoices: number;
+  paidInvoices: number;
+  pendingInvoices: number;
+  overdueInvoices: number;
 }
 
-export interface ClientProfitability {
+export interface ProjectAnalytics {
+  estimateId: string;
+  estimateNumber: string | null;
+  title: string | null;
+  clientId: string | null;
+  clientName: string | null;
+  status: string | null;
+
+  contractAmount: number;
+  approvedChangeOrders: number;
+  revisedTotal: number;
+  amountCollected: number;
+  remainingBalance: number;
+
+  expenses: number;
+  subcontractorCosts: number;
+  agentCosts: number;
+  mileageCosts: number;
+  totalCosts: number;
+
+  profit: number;
+  profitMargin: number;
+}
+
+export interface ClientAnalytics {
   clientId: string;
   clientName: string;
   projectCount: number;
   totalRevenue: number;
+  totalCollected: number;
+  totalOutstanding: number;
   totalExpenses: number;
   totalProfit: number;
-  avgMarginPercent: number;
+  profitMargin: number;
 }
 
-export interface ProfitabilityMetrics {
-  totalProjects: number;
-  completedProjects: number;
-  totalRevenue: number;
-  totalExpenses: number;
-  totalProfit: number;
-  avgMarginPercent: number;
-  mostProfitableProject?: ProjectProfitability;
-  leastProfitableProject?: ProjectProfitability;
-  topClientByRevenue?: ClientProfitability;
-}
-
-/** Get profitability data for all projects in a company
- * CRITICAL: Uses same calculation logic as Expense page to ensure consistency.
- * Revenue = original estimate total + approved change orders
- * Expenses = material + labor + other + subcontractor committed + agent commissions + agent reimbursements + mileage
- * Subcontractor/Agent costs use committed amounts (max of assigned and paid), matching Expense page behavior
+/**
+ * Get comprehensive company-level financial analytics.
+ * Uses unified calculation engine for all numbers.
  */
-export async function getCompanyProfitability(companyId: string): Promise<ProjectProfitability[]> {
-  const { data: estimates, error: estimatesError } = await supabase
+export async function getCompanyAnalytics(
+  companyId: string,
+  startDate: Date,
+  endDate: Date
+): Promise<CompanyFinancialAnalytics> {
+  const financials = await calculateCompanyFinancials(companyId, startDate, endDate);
+
+  // Get invoice counts
+  const [invoicesRes, paidRes, overdueRes] = await Promise.all([
+    supabase
+      .from("invoices")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", companyId)
+      .eq("is_deleted", false),
+    supabase
+      .from("invoices")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", companyId)
+      .eq("is_deleted", false)
+      .eq("status", "paid"),
+    supabase
+      .from("invoices")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", companyId)
+      .eq("is_deleted", false)
+      .lt("due_date", new Date().toISOString().split("T")[0])
+      .neq("status", "paid"),
+  ]);
+
+  const totalInvoices = invoicesRes.count || 0;
+  const paidInvoices = paidRes.count || 0;
+  const pendingInvoices = (invoicesRes.count || 0) - (paidRes.count || 0);
+  const overdueInvoices = overdueRes.count || 0;
+
+  return {
+    totalRevenue: financials.totalRevenue,
+    paymentsReceived: financials.totalRevenue - financials.totalOutstanding,
+    accountsReceivable: financials.totalOutstanding,
+    totalExpenses: financials.totalExpenses,
+    subcontractorCosts: financials.subcontractorPaid,
+    agentCosts: financials.agentPaid,
+    grossProfit: financials.netProfit,
+    netProfit: financials.netProfit,
+    profitMargin: financials.profitMargin,
+    completedProjects: financials.completedProjects,
+    convertedProjects: financials.convertedProjects,
+    draftProjects: 0,
+    totalInvoices,
+    paidInvoices,
+    pendingInvoices,
+    overdueInvoices,
+  };
+}
+
+/**
+ * Get per-project profitability analytics for all projects.
+ * Uses unified calculation engine for all numbers.
+ */
+export async function getProjectAnalytics(companyId: string): Promise<ProjectAnalytics[]> {
+  // Get all signed estimates for the company
+  const { data: estimates } = await supabase
     .from("estimates")
-    .select("id, estimate_number, title, client_id, total, completed_at, is_deleted, status, signature")
+    .select("id, estimate_number, title, client_id, total, status")
     .eq("company_id", companyId)
     .eq("is_deleted", false)
     .not("signature", "is", null);
 
-  if (estimatesError) throw estimatesError;
+  if (!estimates || estimates.length === 0) return [];
 
+  // Get client names
   const { data: clients } = await supabase
     .from("clients")
     .select("id, name")
     .eq("company_id", companyId);
 
-  // Fetch all cost data in parallel
-  const [
-    { data: expenses },
-    { data: subAssignments },
-    { data: subPayments },
-    { data: agentAssignments },
-    { data: agentPayments },
-    { data: mileageTrips },
-    { data: changeOrders },
-  ] = await Promise.all([
-    supabase
-      .from("estimate_expenses")
-      .select("estimate_id, amount, tax")
-      .eq("company_id", companyId)
-      .is("deleted_at", null),
-    supabase
-      .from("estimate_subcontractors")
-      .select("estimate_id, id, amount")
-      .eq("company_id", companyId)
-      .is("deleted_at", null),
-    supabase
-      .from("subcontractor_payments")
-      .select("estimate_id, estimate_subcontractor_id, amount")
-      .eq("company_id", companyId)
-      .is("deleted_at", null),
-    supabase
-      .from("estimate_agents")
-      .select("estimate_id, id, agent_id, amount")
-      .eq("company_id", companyId)
-      .is("deleted_at", null),
-    supabase
-      .from("agent_payments")
-      .select("estimate_id, estimate_agent_id, agent_id, amount, payment_type")
-      .eq("company_id", companyId)
-      .is("deleted_at", null),
-    supabase
-      .from("mileage_trips")
-      .select("estimate_id, reimbursement")
-      .eq("company_id", companyId)
-      .eq("status", "completed")
-      .is("deleted_at", null),
-    supabase
-      .from("change_orders")
-      .select("estimate_id, total_amount")
-      .eq("company_id", companyId)
-      .eq("status", "approved")
-      .is("deleted_at", null),
-  ]);
-
-  // Build lookup maps - mimic Expense page calculations exactly
   const clientById = new Map(clients?.map(c => [c.id, c.name]) || []);
-  const expensesByProject = new Map<string, number>();
-  const subCostsByProject = new Map<string, number>();
-  const agentCommissionsByProject = new Map<string, number>();
-  const agentReimbursementsByProject = new Map<string, number>();
-  const mileageCostsByProject = new Map<string, number>();
-  const changeOrderTotalByProject = new Map<string, number>();
 
-  // Aggregate expenses (material, labor, other)
-  if (expenses) {
-    for (const exp of expenses) {
-      if (!exp.estimate_id) continue;
-      const current = expensesByProject.get(exp.estimate_id) || 0;
-      expensesByProject.set(exp.estimate_id, current + (exp.amount || 0) + (exp.tax || 0));
+  // Calculate financials for each project
+  const projects: ProjectAnalytics[] = [];
+  for (const est of estimates) {
+    try {
+      const bundle = await getProjectBundle(est.id);
+      const projectFinancials = calculateProjectFinancials(bundle);
+
+      projects.push({
+        estimateId: est.id,
+        estimateNumber: est.estimate_number,
+        title: est.title,
+        clientId: est.client_id,
+        clientName: est.client_id ? clientById.get(est.client_id) || null : null,
+        status: est.status,
+
+        contractAmount: projectFinancials.originalEstimateTotal,
+        approvedChangeOrders: projectFinancials.approvedChangeOrderTotal,
+        revisedTotal: projectFinancials.revisedTotal,
+        amountCollected: projectFinancials.amountPaid,
+        remainingBalance: projectFinancials.remainingBalance,
+
+        expenses: projectFinancials.expenseItems,
+        subcontractorCosts: projectFinancials.subcontractorCosts,
+        agentCosts: projectFinancials.agentCosts,
+        mileageCosts: projectFinancials.mileageCosts,
+        totalCosts: projectFinancials.totalExpenses,
+
+        profit: projectFinancials.netProfit,
+        profitMargin: projectFinancials.profitMargin,
+      });
+    } catch (err) {
+      console.error(`Failed to calculate financials for estimate ${est.id}:`, err);
+      continue;
     }
   }
 
-  // Aggregate subcontractor costs using max(assigned, paid) - matches Expense page
-  if (subAssignments && subPayments) {
-    const paidByAssignment = new Map<string, number>();
-    for (const p of subPayments) {
-      if (!p.estimate_subcontractor_id) continue;
-      const current = paidByAssignment.get(p.estimate_subcontractor_id) || 0;
-      paidByAssignment.set(p.estimate_subcontractor_id, current + p.amount);
-    }
-
-    for (const sub of subAssignments) {
-      if (!sub.estimate_id) continue;
-      // Use max of assigned and paid - committed cost
-      const effectiveCost = Math.max(sub.amount || 0, paidByAssignment.get(sub.id) || 0);
-      const current = subCostsByProject.get(sub.estimate_id) || 0;
-      subCostsByProject.set(sub.estimate_id, current + effectiveCost);
-    }
-  }
-
-  // Aggregate agent costs - only count commissions (not reimbursements) - matches Expense page
-  if (agentAssignments && agentPayments) {
-    const paidByAssignment = new Map<string, number>();
-    for (const p of agentPayments) {
-      if (p.payment_type === 'reimbursement') continue; // Exclude reimbursements from commissions
-      const assignmentId = p.estimate_agent_id ?? agentAssignments.find((a) => a.agent_id === p.agent_id)?.id;
-      if (!assignmentId) continue;
-      const current = paidByAssignment.get(assignmentId) || 0;
-      paidByAssignment.set(assignmentId, current + p.amount);
-    }
-
-    for (const agent of agentAssignments) {
-      if (!agent.estimate_id) continue;
-      const paidAmount = paidByAssignment.get(agent.id) || 0;
-      // Commission: use assigned amount or paid amount, whichever was paid
-      const current = agentCommissionsByProject.get(agent.estimate_id) || 0;
-      agentCommissionsByProject.set(agent.estimate_id, current + paidAmount);
-    }
-
-    // Also aggregate reimbursements separately
-    for (const p of agentPayments) {
-      if (p.payment_type !== 'reimbursement') continue;
-      if (!p.estimate_id) continue;
-      const current = agentReimbursementsByProject.get(p.estimate_id) || 0;
-      agentReimbursementsByProject.set(p.estimate_id, current + p.amount);
-    }
-  }
-
-  // Aggregate mileage costs
-  if (mileageTrips) {
-    for (const trip of mileageTrips) {
-      if (!trip.estimate_id) continue;
-      const current = mileageCostsByProject.get(trip.estimate_id) || 0;
-      mileageCostsByProject.set(trip.estimate_id, current + (trip.reimbursement || 0));
-    }
-  }
-
-  // Aggregate approved change orders
-  if (changeOrders) {
-    for (const co of changeOrders) {
-      if (!co.estimate_id) continue;
-      const current = changeOrderTotalByProject.get(co.estimate_id) || 0;
-      changeOrderTotalByProject.set(co.estimate_id, current + (co.total_amount || 0));
-    }
-  }
-
-  // Build profitability data - use revised total (original + approved COs)
-  const profitability: ProjectProfitability[] = (estimates || []).map(est => {
-    const approvedCOTotal = changeOrderTotalByProject.get(est.id) || 0;
-    const revenue = (est.total || 0) + approvedCOTotal; // Revised total
-
-    const projectExpenses = (expensesByProject.get(est.id) || 0) +
-                           (subCostsByProject.get(est.id) || 0) +
-                           (agentCommissionsByProject.get(est.id) || 0) +
-                           (agentReimbursementsByProject.get(est.id) || 0) +
-                           (mileageCostsByProject.get(est.id) || 0);
-
-    const profit = revenue - projectExpenses;
-    const marginPercent = revenue > 0 ? (profit / revenue) * 100 : 0;
-
-    return {
-      estimateId: est.id,
-      estimateNumber: est.estimate_number,
-      projectTitle: est.title,
-      clientId: est.client_id,
-      clientName: est.client_id ? clientById.get(est.client_id) : null,
-      revenue,
-      expenses: projectExpenses,
-      profit,
-      marginPercent,
-      completedAt: est.completed_at,
-      status: est.status,
-    };
-  });
-
-  return profitability.sort((a, b) => b.profit - a.profit);
+  return projects.sort((a, b) => b.profit - a.profit);
 }
 
-/** Get client-level profitability summary */
-export async function getClientProfitability(companyId: string): Promise<ClientProfitability[]> {
-  const projects = await getCompanyProfitability(companyId);
+/**
+ * Get client-level financial analytics.
+ * Aggregates project-level data from unified calculation engine.
+ */
+export async function getClientAnalytics(companyId: string): Promise<ClientAnalytics[]> {
+  const projects = await getProjectAnalytics(companyId);
 
   // Group by client
-  const clientMap = new Map<string, { name: string; projects: ProjectProfitability[] }>();
-
+  const clientMap = new Map<string, ProjectAnalytics[]>();
   for (const proj of projects) {
     const key = proj.clientId || "unknown";
-    const name = proj.clientName || "Unknown Client";
-
     if (!clientMap.has(key)) {
-      clientMap.set(key, { name, projects: [] });
+      clientMap.set(key, []);
     }
-    clientMap.get(key)!.projects.push(proj);
+    clientMap.get(key)!.push(proj);
   }
 
-  // Calculate aggregates
-  const summary: ClientProfitability[] = Array.from(clientMap.values()).map(({ name, projects }) => {
-    const totalRevenue = projects.reduce((sum, p) => sum + p.revenue, 0);
-    const totalExpenses = projects.reduce((sum, p) => sum + p.expenses, 0);
-    const totalProfit = projects.reduce((sum, p) => sum + p.profit, 0);
-    const avgMarginPercent = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+  // Aggregate metrics
+  const analytics: ClientAnalytics[] = Array.from(clientMap.entries()).map(([clientId, clientProjects]) => {
+    const clientName = clientProjects[0]?.clientName || "Unknown";
+    const totalRevenue = clientProjects.reduce((sum, p) => sum + p.revisedTotal, 0);
+    const totalCollected = clientProjects.reduce((sum, p) => sum + p.amountCollected, 0);
+    const totalOutstanding = clientProjects.reduce((sum, p) => sum + p.remainingBalance, 0);
+    const totalExpenses = clientProjects.reduce((sum, p) => sum + p.totalCosts, 0);
+    const totalProfit = clientProjects.reduce((sum, p) => sum + p.profit, 0);
+    const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 
     return {
-      clientId: projects[0]?.clientName === name ? projects[0]?.estimateId : "unknown", // Use estimate ID as proxy
-      clientName: name,
-      projectCount: projects.length,
+      clientId,
+      clientName,
+      projectCount: clientProjects.length,
       totalRevenue,
+      totalCollected,
+      totalOutstanding,
       totalExpenses,
       totalProfit,
-      avgMarginPercent,
+      profitMargin,
     };
   });
 
-  return summary.sort((a, b) => b.totalProfit - a.totalProfit);
-}
-
-/** Get company-wide profitability metrics */
-export async function getProfitabilityMetrics(companyId: string): Promise<ProfitabilityMetrics> {
-  const projects = await getCompanyProfitability(companyId);
-
-  const totalRevenue = projects.reduce((sum, p) => sum + p.revenue, 0);
-  const totalExpenses = projects.reduce((sum, p) => sum + p.expenses, 0);
-  const totalProfit = projects.reduce((sum, p) => sum + p.profit, 0);
-  const avgMarginPercent = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
-
-  const completedProjects = projects.filter(p => p.completedAt).length;
-  const mostProfitable = projects[0];
-  const leastProfitable = projects[projects.length - 1];
-
-  // Get top client
-  const clients = await getClientProfitability(companyId);
-  const topClient = clients[0];
-
-  return {
-    totalProjects: projects.length,
-    completedProjects,
-    totalRevenue,
-    totalExpenses,
-    totalProfit,
-    avgMarginPercent,
-    mostProfitableProject: mostProfitable,
-    leastProfitableProject: leastProfitable,
-    topClientByRevenue: topClient,
-  };
+  return analytics.sort((a, b) => b.totalProfit - a.totalProfit);
 }

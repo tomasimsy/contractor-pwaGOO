@@ -50,8 +50,8 @@ export default function Home() {
       );
       if (allEstimates.data) {
         const total = allEstimates.data.length;
-        const pending = allEstimates.data.filter(e => e.status === "pending" && !e.signature).length;
-        const signed = allEstimates.data.filter(e => e.signature).length;
+        const pending = allEstimates.data.filter((e: any) => e.status === "pending" && !e.signature).length;
+        const signed = allEstimates.data.filter((e: any) => e.signature).length;
         setStats(prev => ({ ...prev, totalEstimates: total, pendingEstimates: pending, signedEstimates: signed }));
       }
     }
@@ -84,8 +84,8 @@ export default function Home() {
       );
       if (allInvoices.data) {
         const total = allInvoices.data.length;
-        const paid = allInvoices.data.filter(i => i.status === "paid").length;
-        const pending = allInvoices.data.filter(i => i.status !== "paid").length;
+        const paid = allInvoices.data.filter((i: any) => i.status === "paid").length;
+        const pending = allInvoices.data.filter((i: any) => i.status !== "paid").length;
         setStats(prev => ({ ...prev, totalInvoices: total, paidInvoices: paid, pendingInvoices: pending }));
       }
     }

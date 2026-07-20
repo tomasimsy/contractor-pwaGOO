@@ -281,35 +281,53 @@ export default function InvoicesPage() {
                 {/* RIGHT COLUMN – amount + badge + buttons inline */}
                 <div className="flex shrink-0 flex-col items-end justify-between self-stretch">
                   <div className="flex flex-col items-end">
-                    <div
-                      className={`text-xs font-bold tracking-tight transition-colors ${
-                        itemOverdue ? "text-rose-700" : "text-slate-900 group-hover:text-emerald-800"
-                      }`}
-                    >
-                      {formatCurrency(inv.remaining_balance || inv.total)}
-                    </div>
-
-                    {/* Badge and action buttons – now on the same row */}
-                    <div className="flex items-center gap-2 mt-1">
-                      <span
-                        className={`inline-block text-[9px] font-bold uppercase px-1.5 py-0.5 rounded tracking-wider border transition-colors ${
-                          inv.status === "paid"
-                            ? "bg-teal-100/50 text-teal-700 border-teal-200/50"
-                            : inv.status === "partial"
-                            ? "bg-blue-100/50 text-blue-700 border-blue-200/60 group-hover:bg-emerald-100 group-hover:text-emerald-700 group-hover:border-emerald-200"
-                            : itemOverdue
-                            ? "bg-rose-100/60 text-rose-700 border-rose-200 group-hover:bg-emerald-100 group-hover:text-emerald-700 group-hover:border-emerald-200"
-                            : "bg-amber-100/50 text-amber-700 border-amber-200/60 group-hover:bg-emerald-100 group-hover:text-emerald-700 group-hover:border-emerald-200"
+                    <div className="flex flex-col items-end gap-0.5">
+                      <div
+                        className={`text-xs font-bold tracking-tight transition-colors ${
+                          itemOverdue ? "text-rose-700" : "text-slate-900 group-hover:text-emerald-800"
                         }`}
                       >
                         {inv.status === "paid"
-                          ? "Paid"
-                          : inv.status === "partial"
-                          ? "Partial"
-                          : itemOverdue
-                          ? "Overdue"
-                          : "Pending"}
-                      </span>
+                          ? formatCurrency(inv.total)
+                          : formatCurrency(inv.remaining_balance || inv.total)}
+                      </div>
+
+                      {/* Payment progress for partial invoices */}
+                      {inv.status === "partial" && (
+                        <div className="text-[9px] text-slate-500">
+                          {formatCurrency((inv.total || 0) - (inv.remaining_balance || 0))} of {formatCurrency(inv.total)} paid
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Badge and action buttons – now on the same row */}
+                    <div className="flex items-center gap-2 mt-1.5">
+                      {(() => {
+                        const amountPaid = inv.amount_paid || 0;
+                        const total = inv.total || 0;
+                        let statusLabel = "";
+                        let statusColor = "";
+
+                        if (amountPaid >= total) {
+                          statusLabel = "Fully Paid";
+                          statusColor = "bg-teal-100/50 text-teal-700 border-teal-200/50";
+                        } else if (amountPaid > 0) {
+                          statusLabel = "Partially Paid";
+                          statusColor = "bg-blue-100/50 text-blue-700 border-blue-200/60 group-hover:bg-emerald-100 group-hover:text-emerald-700 group-hover:border-emerald-200";
+                        } else if (itemOverdue) {
+                          statusLabel = "Overdue";
+                          statusColor = "bg-rose-100/60 text-rose-700 border-rose-200 group-hover:bg-emerald-100 group-hover:text-emerald-700 group-hover:border-emerald-200";
+                        } else {
+                          statusLabel = "Pending";
+                          statusColor = "bg-amber-100/50 text-amber-700 border-amber-200/60 group-hover:bg-emerald-100 group-hover:text-emerald-700 group-hover:border-emerald-200";
+                        }
+
+                        return (
+                          <span className={`inline-block text-[9px] font-bold uppercase px-1.5 py-0.5 rounded tracking-wider border transition-colors ${statusColor}`}>
+                            {statusLabel}
+                          </span>
+                        );
+                      })()}
 
                       {/* Action buttons inline with badge */}
 <div className="flex gap-1.5">
@@ -317,10 +335,11 @@ export default function InvoicesPage() {
   {inv.status !== "paid" && (
     <button
       onClick={() => setSelectedInvoiceForPayment(inv)}
-      className="flex h-6 w-6 items-center justify-center rounded-md border border-emerald-200 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 transition-colors"
+      className="flex h-6 px-2 items-center justify-center gap-1 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition-colors text-[11px] font-semibold whitespace-nowrap"
       title="Receive Payment"
     >
       <DollarSign size={12} />
+      <span>Receive</span>
     </button>
   )}
 
@@ -375,19 +394,22 @@ export default function InvoicesPage() {
         onPaymentRecorded={() => {
           setSelectedInvoiceForPayment(null);
           // Reload invoices to show updated payment status
-          const fetchInvoices = async () => {
+          // Add small delay to ensure database trigger has completed
+          setTimeout(async () => {
             try {
-              const { data, error } = await supabase
-                .from("invoices")
-                .select("id, invoice_number, total, remaining_balance, due_date, created_at, status, estimate_id, clients(name, phone), estimates(title)")
-                .order("created_at", { ascending: false });
+              const { data, error } = await filterActive(
+                supabase
+                  .from("invoices")
+                  .select("id, invoice_number, total, remaining_balance, due_date, created_at, status, estimate_id, clients(name, phone), estimates(title)")
+                  .order("created_at", { ascending: false }),
+                "invoices"
+              );
               if (error) throw error;
               if (data) setInvoices(data);
             } catch (err) {
               console.error("Error fetching invoices:", err);
             }
-          };
-          fetchInvoices();
+          }, 300);
         }}
       />
     )}

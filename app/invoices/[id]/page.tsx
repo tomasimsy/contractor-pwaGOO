@@ -21,6 +21,7 @@ import { calculateProjectFinancials } from "@/lib/queries/financialCalculations"
 import { getProjectBundle } from "@/lib/queries/projects";
 
 import { Trash2, Lock, Unlock, AlertCircle, ArrowLeft, FileText, Receipt, DollarSign } from "lucide-react";
+import { deleteCustomerPayment } from "@/lib/queries/customerPayments";
 
 export default function InvoicePage() {
   const router = useRouter();
@@ -287,21 +288,8 @@ export default function InvoicePage() {
     if (!confirm(`Delete payment of ${formatCurrency(paymentToDelete.amount)}?`)) return;
     setDeletingPaymentId(paymentId);
     try {
-      const { error: deleteError } = await supabase.from("invoice_payments").delete().eq("id", paymentId);
-      if (deleteError) throw deleteError;
-      const remainingPayments = payments.filter(p => p.id !== paymentId);
-      const newTotalPaid = remainingPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
-      const newRemaining = revisedTotal - newTotalPaid;
-      const newStatus = newRemaining <= 0 ? "paid" : newRemaining === revisedTotal ? "pending" : "partial";
-      const { error: updateError } = await supabase.from("invoices").update({
-        amount_paid: newTotalPaid,
-        remaining_balance: newRemaining,
-        status: newStatus,
-        paid_at: newRemaining <= 0 ? new Date().toISOString() : null,
-      }).eq("id", id);
-      if (updateError) {
-        throw new Error(`Payment deleted, but invoice totals failed to update: ${updateError.message}`);
-      }
+      // Use soft delete which triggers automatic invoice update via database trigger
+      await deleteCustomerPayment(paymentId);
       await loadInvoice();
       toast.success("Payment deleted");
     } catch (err) {

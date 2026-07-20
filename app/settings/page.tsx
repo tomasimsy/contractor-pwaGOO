@@ -45,9 +45,7 @@ const NAV_GROUPS: {
   {
     label: "Money & Reporting",
     items: [
-      { href: "/reports/expenses", icon: Receipt, title: "Reports", subtitle: "View account statements", tint: "emerald" },
-      { href: "/statement", icon: Receipt, title: "Statements", subtitle: "View account statements", tint: "emerald" },
-      { href: "/accounting", icon: FileText, title: "Accounting", subtitle: "Job costs & profitability", tint: "indigo" },
+      { href: "/analytics", icon: Receipt, title: "Financial Analytics", subtitle: "Unified reporting & insights", tint: "emerald" },
       { href: "/mileage", icon: Car, title: "Track Mileage", tint: "amber" },
     ],
   },

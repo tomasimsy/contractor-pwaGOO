@@ -266,6 +266,61 @@ export type SalesAgentRow = {
  * search/display), and no single `estimate_total` (using `total`,
  * the post-markup/discount/tax figure). Soft-delete is tracked via
  * `is_deleted` / `deleted_at` — queries filter these out. */
+export type EstimateStatus =
+  | "draft"
+  | "sent"
+  | "viewed"
+  | "approved"
+  | "converted_to_invoice"
+  | "project_in_progress"
+  | "completed"
+  | "archived"
+  | "cancelled";
+
+export const ESTIMATE_STATUSES: EstimateStatus[] = [
+  "draft",
+  "sent",
+  "viewed",
+  "approved",
+  "converted_to_invoice",
+  "project_in_progress",
+  "completed",
+  "archived",
+  "cancelled",
+];
+
+export const ESTIMATE_STATUS_LABELS: Record<EstimateStatus, string> = {
+  draft: "Draft",
+  sent: "Sent",
+  viewed: "Viewed",
+  approved: "Approved",
+  converted_to_invoice: "Converted to Invoice",
+  project_in_progress: "In Progress",
+  completed: "Completed",
+  archived: "Archived",
+  cancelled: "Cancelled",
+};
+
+// Active statuses shown in main estimates view
+export const ACTIVE_ESTIMATE_STATUSES: EstimateStatus[] = [
+  "draft",
+  "sent",
+  "viewed",
+  "approved",
+  "project_in_progress",
+];
+
+// Completed statuses shown separately
+export const COMPLETED_ESTIMATE_STATUSES: EstimateStatus[] = [
+  "completed",
+];
+
+// Archived/historical statuses
+export const ARCHIVED_ESTIMATE_STATUSES: EstimateStatus[] = [
+  "archived",
+  "cancelled",
+];
+
 export type EstimateRow = {
   id: string;
   company_id: string;
@@ -273,7 +328,8 @@ export type EstimateRow = {
   estimate_number: string | null;
   title: string | null;
   description: string | null;
-  status: string | null; // default 'pending'
+  status: EstimateStatus; // lifecycle status (replaces old_status)
+  old_status: string | null; // legacy status field for backwards compatibility
   total: number;
   deposit: number;
   deposit_amount: number;
@@ -282,6 +338,8 @@ export type EstimateRow = {
   payment_status: string | null; // default 'pending' — only deposit_paid/deposit_amount are read today, see summarizeFinancials
   is_deleted: boolean;
   created_at: string;
+  signature: string | null; // added for tracking signed estimates
+  is_completed: boolean; // added for tracking completed projects
 };
 
 export type ProjectSummary = {

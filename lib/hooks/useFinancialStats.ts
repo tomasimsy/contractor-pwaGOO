@@ -83,17 +83,44 @@ export function useFinancialStats() {
       // Get estimate counts
       const { data: estimates } = await supabase
         .from("estimates")
-        .select("id")
+        .select("id, signature")
         .eq("company_id", companyId)
         .eq("is_deleted", false);
 
+      const signedCount = estimates?.filter(e => e.signature).length || 0;
+
+      // Get invoice counts
+      const [invoiceCountRes, paidInvoicesRes, pendingInvoicesRes] = await Promise.all([
+        supabase
+          .from("invoices")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("is_deleted", false),
+        supabase
+          .from("invoices")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("is_deleted", false)
+          .eq("status", "paid"),
+        supabase
+          .from("invoices")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("is_deleted", false)
+          .neq("status", "paid"),
+      ]);
+
+      const invoiceCount = invoiceCountRes.count || 0;
+      const paidCount = paidInvoicesRes.count || 0;
+      const pendingCount = pendingInvoicesRes.count || 0;
+
       setStats({
         estimates: estimates?.length || 0,
-        invoices: 0, // would need separate query
-        signed: 0,
+        invoices: invoiceCount,
+        signed: signedCount,
         converted: financials.convertedProjects,
-        paid: 0,
-        pending: 0,
+        paid: paidCount,
+        pending: pendingCount,
         totalRevenue: financials.totalRevenue,
         monthlyRevenue: monthlyFinancials.totalRevenue,
         totalSubcontractorPaid: financials.subcontractorPaid,

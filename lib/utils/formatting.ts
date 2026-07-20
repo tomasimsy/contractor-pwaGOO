@@ -33,3 +33,8 @@ export const formatShortDate = (date: string | null | undefined): string => {
     return "Invalid date";
   }
 };
+
+export const formatPercentage = (value: number | null | undefined): string => {
+  const num = Number(value || 0);
+  return `${num.toFixed(1)}%`;
+};

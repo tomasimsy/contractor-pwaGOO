@@ -48,7 +48,7 @@ const PUBLIC_ROUTES = [
   // (agents, subcontractors, team) are shell-wrapped.
   const DESKTOP_SHELL_EXACT_ROUTES = [
     '/dashboard-v2', '/estimates', '/invoices', '/expense', '/pending-payouts', '/clients',
-    '/documents', '/mileage', '/reports/expenses', '/statement', '/deleted', '/accounting',
+    '/documents', '/mileage', '/analytics', '/deleted',
   ];
   const isDesktopShellRoute =
     DESKTOP_SHELL_EXACT_ROUTES.includes(pathname || '') || pathname === '/settings' || pathname?.startsWith('/settings/');

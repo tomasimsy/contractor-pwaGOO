@@ -79,6 +79,9 @@ export async function recordCustomerPayment(input: RecordPaymentInput): Promise<
   }
   if (!data) throw new Error("Failed to record payment");
 
+  // Invoice totals and status are automatically updated by database trigger:
+  // trg_update_invoice_payment_totals in 20260725000000_customer_payments_enhancements.sql
+
   return data.id;
 }
 

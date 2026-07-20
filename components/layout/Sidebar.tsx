@@ -13,12 +13,11 @@ import {
   UserPlus,
   FolderOpen,
   Car,
-  BarChart3,
-  FileBarChart,
-  Calculator,
+  Activity,
   Settings,
   Trash2,
   LogOut,
+  TrendingUp,
 } from "lucide-react";
 
 // Every existing route in the app's nav surfaces (BottomNav's top-level
@@ -42,10 +41,12 @@ const FEATURES = [
   { href: "/mileage", label: "Mileage", icon: Car },
 ];
 
+const COMPLIANCE = [
+  { href: "/tax", label: "Tax & Compliance", icon: TrendingUp },
+];
+
 const GENERAL = [
-  { href: "/reports/expenses", label: "Reports", icon: FileBarChart },
-  { href: "/statement", label: "Statements", icon: BarChart3 },
-  { href: "/accounting", label: "Accounting", icon: Calculator },
+  { href: "/analytics", label: "Analytics", icon: Activity },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/deleted", label: "Trash", icon: Trash2 },
 ];
@@ -89,6 +90,7 @@ export default function Sidebar({ onLogout }: { onLogout: () => void }) {
       <div className="flex-1 overflow-y-auto px-3 py-5 space-y-6">
         <NavGroup title="Main Menu" items={MAIN_MENU} pathname={pathname} />
         <NavGroup title="Features" items={FEATURES} pathname={pathname} />
+        <NavGroup title="Compliance" items={COMPLIANCE} pathname={pathname} />
         <NavGroup title="General" items={GENERAL} pathname={pathname} />
       </div>
 

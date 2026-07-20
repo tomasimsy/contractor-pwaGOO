@@ -44,8 +44,9 @@ begin
       else 'partial'
     end,
     status = case
+      when total_paid = 0 then 'pending'
       when total_paid >= invoice_total then 'paid'
-      else status
+      else 'partial'
     end,
     paid_at = case
       when total_paid >= invoice_total then now()
