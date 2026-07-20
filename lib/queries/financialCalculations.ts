@@ -338,7 +338,7 @@ export async function calculateCompanyFinancials(
   const estimates = estimatesRes.data || [];
   const estimateIds = estimates.map((e) => e.id);
 
-  // Fetch all data in parallel, filtering by estimate IDs for assignments
+  // Fetch all data in parallel, filtering by estimate IDs for assignments AND payments
   const [
     subPaymentsRes,
     estSubsRes,
@@ -348,13 +348,15 @@ export async function calculateCompanyFinancials(
     mileageRes,
     invoicesRes,
   ] = await Promise.all([
-    supabase
-      .from("subcontractor_payments")
-      .select("amount, created_at")
-      .eq("company_id", companyId)
-      .is("deleted_at", null)
-      .gte("created_at", startDateStr)
-      .lte("created_at", endDateStr),
+    // CRITICAL FIX: Only fetch payments for the estimates we're calculating
+    estimateIds.length > 0
+      ? supabase
+          .from("subcontractor_payments")
+          .select("amount, created_at")
+          .eq("company_id", companyId)
+          .is("deleted_at", null)
+          .in("estimate_id", estimateIds)
+      : Promise.resolve({ data: [] }),
 
     // CRITICAL FIX: Only fetch assignments for estimates in the date range
     estimateIds.length > 0
@@ -366,13 +368,15 @@ export async function calculateCompanyFinancials(
           .in("estimate_id", estimateIds)
       : Promise.resolve({ data: [] }),
 
-    supabase
-      .from("agent_payments")
-      .select("amount, payment_date")
-      .eq("company_id", companyId)
-      .is("deleted_at", null)
-      .gte("payment_date", startDateStr)
-      .lte("payment_date", endDateStr),
+    // CRITICAL FIX: Only fetch payments for the estimates we're calculating
+    estimateIds.length > 0
+      ? supabase
+          .from("agent_payments")
+          .select("amount, payment_date")
+          .eq("company_id", companyId)
+          .is("deleted_at", null)
+          .in("estimate_id", estimateIds)
+      : Promise.resolve({ data: [] }),
 
     // CRITICAL FIX: Only fetch assignments for estimates in the date range
     estimateIds.length > 0
@@ -384,21 +388,25 @@ export async function calculateCompanyFinancials(
           .in("estimate_id", estimateIds)
       : Promise.resolve({ data: [] }),
 
-    supabase
-      .from("estimate_expenses")
-      .select("amount")
-      .eq("company_id", companyId)
-      .is("deleted_at", null)
-      .gte("expense_date", startDateStr)
-      .lte("expense_date", endDateStr),
+    // CRITICAL FIX: Only fetch expenses for the estimates we're calculating
+    estimateIds.length > 0
+      ? supabase
+          .from("estimate_expenses")
+          .select("amount")
+          .eq("company_id", companyId)
+          .is("deleted_at", null)
+          .in("estimate_id", estimateIds)
+      : Promise.resolve({ data: [] }),
 
-    supabase
-      .from("mileage_trips")
-      .select("reimbursement")
-      .eq("company_id", companyId)
-      .is("deleted_at", null)
-      .gte("trip_date", startDateStr)
-      .lte("trip_date", endDateStr),
+    // CRITICAL FIX: Only fetch mileage for the estimates we're calculating
+    estimateIds.length > 0
+      ? supabase
+          .from("mileage_trips")
+          .select("reimbursement")
+          .eq("company_id", companyId)
+          .is("deleted_at", null)
+          .in("estimate_id", estimateIds)
+      : Promise.resolve({ data: [] }),
 
     supabase
       .from("invoices")
