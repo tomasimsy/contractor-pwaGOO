@@ -180,6 +180,7 @@ export default function ExpensesReportPage() {
               `)
               .eq("company_id", companyId)
               .in("estimate_id", activeIds)
+              .is("deleted_at", null)
         );
 
         const subMap: Record<string, { id: string; name: string }[]> = {};
@@ -295,6 +296,7 @@ export default function ExpensesReportPage() {
               .eq("company_id", companyId)
               .in("estimate_id", activeIds)
               .eq("status", "approved")
+              .is("deleted_at", null)
         );
         const coTotals: Record<string, number> = {};
         changeOrders.forEach((co: any) => {
