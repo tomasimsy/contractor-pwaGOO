@@ -65,11 +65,17 @@ export default function InvoicesPage() {
             }
           }
 
-          // Calculate revised totals and store for modal display
-          const invoicesWithRevised = data.map((inv: any) => ({
-            ...inv,
-            revisedTotal: inv.total + (changeOrdersMap.get(inv.estimate_id)?.reduce((sum: number, co: any) => sum + (co.total_amount || 0), 0) || 0)
-          }));
+          // Calculate revised totals and remaining balance including approved change orders
+          const invoicesWithRevised = data.map((inv: any) => {
+            const approvedCOTotal = changeOrdersMap.get(inv.estimate_id)?.reduce((sum: number, co: any) => sum + (co.total_amount || 0), 0) || 0;
+            const revisedTotal = inv.total + approvedCOTotal;
+            const revisedRemainingBalance = (inv.remaining_balance || inv.total) + approvedCOTotal;
+            return {
+              ...inv,
+              revisedTotal,
+              revisedRemainingBalance
+            };
+          });
 
           setInvoices(invoicesWithRevised);
         }
@@ -495,7 +501,7 @@ export default function InvoicesPage() {
         invoiceNumber={selectedInvoiceForPayment.invoice_number || selectedInvoiceForPayment.id.slice(0, 8)}
         clientName={selectedInvoiceForPayment.clients?.name || "Client"}
         invoiceTotal={selectedInvoiceForPayment.revisedTotal || selectedInvoiceForPayment.total}
-        remainingBalance={selectedInvoiceForPayment.remaining_balance || selectedInvoiceForPayment.total}
+        remainingBalance={selectedInvoiceForPayment.revisedRemainingBalance || selectedInvoiceForPayment.remaining_balance || selectedInvoiceForPayment.total}
         onPaymentRecorded={() => {
           setSelectedInvoiceForPayment(null);
           // Reload invoices to show updated payment status

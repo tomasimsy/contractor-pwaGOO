@@ -59,6 +59,7 @@ function ProjectExpenseContent() {
     invoiceTotal: number;
     remainingBalance: number;
     revisedTotal: number;
+    revisedRemainingBalance: number;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
@@ -170,6 +171,7 @@ function ProjectExpenseContent() {
         .filter(co => co.status === 'approved')
         .reduce((sum, co) => sum + (co.total_amount || 0), 0);
       const revisedTotal = invoice.total + approvedChangeOrdersTotal;
+      const revisedRemainingBalance = (invoice.remaining_balance || 0) + approvedChangeOrdersTotal;
 
       setSelectedInvoiceForPayment({
         invoiceId: invoice.id,
@@ -178,6 +180,7 @@ function ProjectExpenseContent() {
         invoiceTotal: revisedTotal,
         remainingBalance: invoice.remaining_balance,
         revisedTotal: revisedTotal,
+        revisedRemainingBalance: revisedRemainingBalance,
       });
     }
     setIsRecordPaymentModalOpen(true);
@@ -433,7 +436,7 @@ function ProjectExpenseContent() {
           invoiceNumber={selectedInvoiceForPayment.invoiceNumber}
           clientName={selectedInvoiceForPayment.clientName}
           invoiceTotal={selectedInvoiceForPayment.revisedTotal}
-          remainingBalance={selectedInvoiceForPayment.remainingBalance}
+          remainingBalance={selectedInvoiceForPayment.revisedRemainingBalance}
           onPaymentRecorded={handlePaymentRecorded}
         />
       )}
