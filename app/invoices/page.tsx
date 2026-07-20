@@ -6,13 +6,16 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import { filterActive } from "@/lib/queries/softDeleteFilter";
 import { formatCurrency, formatShortDate } from "@/lib/utils/formatting";
-import { ArrowLeft, Search, AlertCircle, Link2, Send, ArrowRight,Receipt, DollarSign } from "lucide-react";
+import { ArrowLeft, Search, AlertCircle, Link2, Send, ArrowRight,Receipt, DollarSign, Plus } from "lucide-react";
 import toast from "react-hot-toast";
 import DesktopShell from "@/components/layout/DesktopShell";
 import ProjectFinancialPills from "@/components/shared/ProjectFinancialPills";
 import ReceivedPaymentModal from "@/components/payments/ReceivedPaymentModal";
+import AddExpenseSheet, { type FormCategory } from "@/components/expense/AddExpenseSheet";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
-import { getCompanyProjectFinancialSummaries, type ProjectFinancialSummary } from "@/lib/queries/expenses";
+import { getCompanyProjectFinancialSummaries, type ProjectFinancialSummary, addEntry, assignSubcontractorToProject } from "@/lib/queries/expenses";
+import { getProjectBundle } from "@/lib/queries/projects";
+import type { ProjectBundle, NewEntryInput } from "@/lib/types";
 import invoice from "../estimates/[id]/invoice";
 
 export default function InvoicesPage() {
@@ -22,6 +25,10 @@ export default function InvoicesPage() {
   const [filter, setFilter] = useState<"all" | "paid" | "pending">("all");
   const [financials, setFinancials] = useState<Map<string, ProjectFinancialSummary>>(new Map());
   const [selectedInvoiceForPayment, setSelectedInvoiceForPayment] = useState<any>(null);
+  const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
+  const [addSheetCategory, setAddSheetCategory] = useState<FormCategory | undefined>(undefined);
+  const [expenseBundle, setExpenseBundle] = useState<ProjectBundle | null>(null);
+  const [selectedEstimateId, setSelectedEstimateId] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchInvoices() {
@@ -109,6 +116,76 @@ export default function InvoicesPage() {
     window.location.href = `sms:${phoneNumber}?body=${message}`;
   };
 
+  const handleOpenAddExpense = async (invoice: any) => {
+    if (!invoice.estimate_id) {
+      toast.error("This invoice is not linked to an estimate.", {
+        duration: 3000,
+        position: "top-center",
+      });
+      return;
+    }
+    try {
+      const bundle = await getProjectBundle(invoice.estimate_id);
+      setExpenseBundle(bundle);
+      setSelectedEstimateId(invoice.estimate_id);
+      setIsAddSheetOpen(true);
+    } catch (err) {
+      console.error("Error loading bundle:", err);
+      toast.error("Failed to load project data.", {
+        duration: 3000,
+        position: "top-center",
+      });
+    }
+  };
+
+  const handleAddEntry = async (input: NewEntryInput) => {
+    try {
+      await addEntry(input);
+      toast.success("Expense added successfully!", {
+        duration: 3000,
+        position: "top-center",
+      });
+      setIsAddSheetOpen(false);
+      setExpenseBundle(null);
+      setSelectedEstimateId(null);
+    } catch (err) {
+      console.error("Error adding entry:", err);
+      toast.error("Failed to add expense.", {
+        duration: 3000,
+        position: "top-center",
+      });
+    }
+  };
+
+  const handleAssignSubcontractor = async (
+    subcontractorId: string,
+    name: string,
+    trade: string | null,
+    amount: number,
+    notes: string | null
+  ) => {
+    if (!expenseBundle) throw new Error("No project selected");
+    const assigned = await assignSubcontractorToProject(
+      expenseBundle.project.id,
+      expenseBundle.project.company_id,
+      subcontractorId,
+      name,
+      trade,
+      amount,
+      notes
+    );
+    // Update local state immediately for responsive UI feedback
+    setExpenseBundle((prev) =>
+      prev ? { ...prev, assignedSubcontractors: [...prev.assignedSubcontractors, assigned] } : prev
+    );
+    // Reload bundle in background to ensure all dependent calculations update
+    if (selectedEstimateId) {
+      getProjectBundle(selectedEstimateId)
+        .then(setExpenseBundle)
+        .catch((err) => console.error("Failed to refresh bundle after assignment:", err));
+    }
+    return assigned;
+  };
 
   if (loading) {
     return (
@@ -274,7 +351,9 @@ export default function InvoicesPage() {
                     )}
                   </div>
                   {inv.estimate_id && (
-                    <ProjectFinancialPills estimateId={inv.estimate_id} summary={financials.get(inv.estimate_id)} />
+                    <div className="hidden md:block">
+                      <ProjectFinancialPills estimateId={inv.estimate_id} summary={financials.get(inv.estimate_id)} />
+                    </div>
                   )}
                 </Link>
 
@@ -346,12 +425,22 @@ export default function InvoicesPage() {
     </button>
   )}
 
+  {/* Quick Add Expense */}
+  <button
+    onClick={() => handleOpenAddExpense(inv)}
+    className="flex h-6 px-2 items-center justify-center gap-1 rounded-md border border-slate-200 text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors text-[11px] font-semibold"
+    title="Quick Add Expense"
+  >
+    <Plus size={12} />
+    <span>Expense</span>
+  </button>
+
   {/* Expense */}
   <Link
     href={`/expense?project=${inv.estimate_id}`}
     onClick={(e) => e.stopPropagation()}
     className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-colors"
-    title="Expenses"
+    title="View All Expenses"
   >
     <Receipt size={12} />
   </Link>
@@ -414,6 +503,21 @@ export default function InvoicesPage() {
             }
           }, 300);
         }}
+      />
+    )}
+
+    {/* Add Expense Sheet Modal */}
+    {isAddSheetOpen && expenseBundle && (
+      <AddExpenseSheet
+        bundle={expenseBundle}
+        initialCategory={addSheetCategory}
+        onClose={() => {
+          setIsAddSheetOpen(false);
+          setExpenseBundle(null);
+          setSelectedEstimateId(null);
+        }}
+        onSubmit={handleAddEntry}
+        onAssignSubcontractor={handleAssignSubcontractor}
       />
     )}
     </DesktopShell>
