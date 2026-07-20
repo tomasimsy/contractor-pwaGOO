@@ -36,28 +36,11 @@ export default function RevenueSummaryReport() {
             subtitle: "Detailed breakdown of all business income",
             sections: [
               {
-                title: "Service Revenue",
-                items: [
-                  {
-                    label: "Base Estimate Amounts",
-                    value: financials.totalRevenue,
-                  },
-                  {
-                    label: "Change Order Revenue",
-                    value: 0, // Would come from change orders calculation
-                  },
-                ],
-                subtotal: {
-                  label: "Total Gross Revenue",
-                  value: financials.totalRevenue,
-                },
-              },
-              {
-                title: "Collections Status",
+                title: "Cash Collections",
                 items: [
                   {
                     label: "Payments Received",
-                    value: financials.totalPaid,
+                    value: financials.totalRevenue,
                     bold: true,
                     highlight: true,
                   },
@@ -69,8 +52,30 @@ export default function RevenueSummaryReport() {
                   },
                 ],
                 subtotal: {
-                  label: "Total Revenue (Cash Basis)",
-                  value: financials.totalPaid,
+                  label: "Total Invoiced",
+                  value: financials.totalInvoiced,
+                },
+              },
+              {
+                title: "Collection Status",
+                items: [
+                  {
+                    label: "Total Invoiced (for period)",
+                    value: financials.totalInvoiced,
+                  },
+                  {
+                    label: "Payments Received (for period)",
+                    value: financials.totalRevenue,
+                  },
+                  {
+                    label: "Collection Rate",
+                    value: financials.totalInvoiced > 0 ? Math.round((financials.totalRevenue / financials.totalInvoiced) * 100) : 0,
+                    format: "percent",
+                  },
+                ],
+                subtotal: {
+                  label: "Outstanding (Not Yet Paid)",
+                  value: financials.totalOutstanding,
                 },
               },
             ],

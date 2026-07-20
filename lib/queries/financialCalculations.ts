@@ -371,6 +371,7 @@ export async function calculateCompanyFinancials(
     expensesRes,
     mileageRes,
     invoicesRes,
+    invoicePaymentsRes,
   ] = await Promise.all([
     // CRITICAL FIX: Payments link via estimate_subcontractor_id, not estimate_id
     estSubIds.length > 0
@@ -412,15 +413,21 @@ export async function calculateCompanyFinancials(
           .in("estimate_id", estimateIds)
       : Promise.resolve({ data: [] }),
 
-    // CRITICAL FIX: Only fetch invoices for the estimates we're calculating
-    estimateIds.length > 0
-      ? supabase
-          .from("invoices")
-          .select("total, amount_paid, status")
-          .eq("company_id", companyId)
-          .eq("is_deleted", false)
-          .in("estimate_id", estimateIds)
-      : Promise.resolve({ data: [] }),
+    // Fetch ALL invoices for date-range reporting
+    supabase
+      .from("invoices")
+      .select("total, amount_paid, status")
+      .eq("company_id", companyId)
+      .eq("is_deleted", false)
+      .gte("created_at", startDateStr)
+      .lte("created_at", endDateStr),
+
+    // Fetch ALL invoice payments (lifetime, no date filter) for revenue calculation
+    supabase
+      .from("invoice_payments")
+      .select("amount")
+      .eq("company_id", companyId)
+      .is("deleted_at", null),
   ]);
 
   // Extract data
@@ -429,6 +436,7 @@ export async function calculateCompanyFinancials(
   const expenses = expensesRes.data || [];
   const mileage = mileageRes.data || [];
   const invoices = invoicesRes.data || [];
+  const invoicePayments = invoicePaymentsRes.data || [];
 
   // DEBUG LOGGING
   console.log(`[calculateCompanyFinancials] DEBUG for company ${companyId}:`);
@@ -443,9 +451,12 @@ export async function calculateCompanyFinancials(
   console.log(`  Mileage: ${mileage.length}`, mileage);
   console.log(`  Invoices: ${invoices.length}`, invoices);
   console.log(`  Invoice details:`, invoices.map(inv => ({ total: inv.total, amount_paid: inv.amount_paid, status: inv.status })));
+  console.log(`  Invoice Payments (lifetime): ${invoicePayments.length}`, invoicePayments);
 
   // Calculate totals
-  const totalRevenue = estimates.reduce((sum, e) => sum + (e.total || 0), 0);
+  // REVENUE = Actual payments received within date range (for tax/period reporting)
+  const totalPaidInRange = invoices.reduce((sum, i) => sum + (i.amount_paid || 0), 0);
+  const totalRevenue = totalPaidInRange;
   const completedProjects = estimates.filter(
     (e) => e.status === "completed"
   ).length;

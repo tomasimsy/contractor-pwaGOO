@@ -421,19 +421,19 @@ export default function InvoicesPage() {
                       </button>
 
                       {/* Expense link */}
-                      <Link
-                        href={`/expense?project=${inv.estimate_id}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-colors"
-                        title="View All Expenses"
-                      >
-                        <Receipt size={12} />
-                      </Link>
+                  <Link
+                    href={`/expense?project=${inv.estimate_id}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-green-600 hover:text-green-700 hover:bg-green-50 transition-colors"
+                    title="View All Expenses"
+                  >
+                    <Receipt size={12} />
+                  </Link>
 
                       {/* Copy Link */}
                       <button
                         onClick={() => copyLink(inv)}
-                        className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                        className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-green-600 hover:text-green-700 hover:bg-green-50 transition-colors"
                         title="Copy Link"
                       >
                         <Link2 size={12} />
@@ -442,7 +442,7 @@ export default function InvoicesPage() {
                       {/* SMS */}
                       <button
                         onClick={() => sendSMSLink(inv)}
-                        className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+                        className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-green-600 hover:text-green-700 hover:bg-green-50 transition-colors"
                         title="Send SMS"
                       >
                         <Send size={12} />

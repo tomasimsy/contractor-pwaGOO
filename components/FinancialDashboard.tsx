@@ -31,7 +31,7 @@ export default function FinancialDashboard() {
             {formatCurrency(stats.totalRevenue)}
           </div>
           <div className="text-[9px] text-emerald-600/80 mt-1.5 pt-1.5 border-t border-emerald-100/50">
-            Month: <span className="font-semibold">{formatCurrency(stats.monthlyRevenue)}</span>
+            Payments Received (Lifetime)
           </div>
         </div>
 

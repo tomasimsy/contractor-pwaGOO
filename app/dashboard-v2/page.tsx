@@ -7,6 +7,7 @@ import { formatCurrency, formatShortDate } from "@/lib/utils/formatting";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import NotificationBell from "@/components/NotificationBell";
 import Sidebar from "@/components/layout/Sidebar";
+import PaymentStatusDisplay from "@/components/dashboard/PaymentStatusDisplay";
 import { useDashboardOverview } from "@/lib/hooks/useDashboardOverview";
 import { useFinancialStats } from "@/lib/hooks/useFinancialStats";
 import {
@@ -70,11 +71,11 @@ export default function DashboardV2() {
                 FinancialDashboard widget, same useFinancialStats() hook. */}
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
               <StatCard
-                label="Revenue"
+                label="Revenue (Payments Received)"
                 icon={DollarSign}
                 tone="emerald"
                 value={formatCurrency(financials.totalRevenue)}
-                sublabel={`Month: ${formatCurrency(financials.monthlyRevenue)}`}
+                sublabel={`Lifetime total payments received`}
                 loading={financialsLoading}
               />
               <StatCard
@@ -131,20 +132,48 @@ export default function DashboardV2() {
                     <EmptyRow label="No estimates yet" />
                   ) : (
                     <div className="divide-y divide-gray-100 -mx-1">
-                      {recentEstimates.map((est) => (
-                        <Link key={est.id} href={`/estimates/${est.id}`} className="flex items-center justify-between gap-3 px-1 py-2.5 hover:bg-gray-50 rounded-lg transition-colors">
-                          <div className="min-w-0">
-                            <div className="text-[13px] font-medium text-gray-800 truncate">{est.clients?.name || "No client"}</div>
-                            <div className="text-xs text-gray-400 mt-0.5">
-                              #{est.estimate_number || est.id.slice(0, 8)} · {formatShortDate(est.created_at)}
+                      {recentEstimates.map((est) => {
+                        // Get payment info from related invoice
+                        const invoice = est.invoices?.[0];
+                        const amountPaid = invoice?.amount_paid || 0;
+                        const remainingBalance = invoice?.remaining_balance || est.total;
+
+                        return (
+                          <div key={est.id} className="flex items-center justify-between gap-3 px-1 py-2.5 hover:bg-gray-50 rounded-lg transition-colors group">
+                            <Link href={`/estimates/${est.id}`} className="min-w-0 flex-1">
+                              <div className="text-[13px] font-medium text-gray-800 truncate">{est.clients?.name || "No client"}</div>
+                              <div className="text-xs text-gray-400 mt-0.5">
+                                #{est.estimate_number || est.id.slice(0, 8)} · {formatShortDate(est.created_at)}
+                              </div>
+                              {invoice && (
+                                <div className="mt-1">
+                                  <PaymentStatusDisplay
+                                    total={est.total}
+                                    amountPaid={amountPaid}
+                                    remainingBalance={remainingBalance}
+                                    isLocked={invoice.is_locked}
+                                    status={invoice.status}
+                                  />
+                                </div>
+                              )}
+                            </Link>
+                            <div className="text-right shrink-0 flex items-center gap-2">
+                              <Link
+                                href={`/expense?project=${est.id}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                                title="View Expenses"
+                              >
+                                <Receipt size={12} />
+                              </Link>
+                              <div>
+                                <div className="text-[13px] font-semibold text-gray-900">{formatCurrency(est.total)}</div>
+                                <StatusBadge good={!!est.signature} goodLabel="Signed" badLabel="Draft" />
+                              </div>
                             </div>
                           </div>
-                          <div className="text-right shrink-0">
-                            <div className="text-[13px] font-semibold text-gray-900">{formatCurrency(est.total)}</div>
-                            <StatusBadge good={!!est.signature} goodLabel="Signed" badLabel="Draft" />
-                          </div>
-                        </Link>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </Panel>
@@ -156,18 +185,39 @@ export default function DashboardV2() {
                   ) : (
                     <div className="divide-y divide-gray-100 -mx-1">
                       {recentInvoices.map((inv) => (
-                        <Link key={inv.id} href={`/invoices/${inv.id}`} className="flex items-center justify-between gap-3 px-1 py-2.5 hover:bg-gray-50 rounded-lg transition-colors">
-                          <div className="min-w-0">
+                        <div key={inv.id} className="flex items-center justify-between gap-3 px-1 py-2.5 hover:bg-gray-50 rounded-lg transition-colors group">
+                          <Link href={`/invoices/${inv.id}`} className="min-w-0 flex-1">
                             <div className="text-[13px] font-medium text-gray-800 truncate">{inv.clients?.name || "No client"}</div>
                             <div className="text-xs text-gray-400 mt-0.5">
                               #{inv.invoice_number} · {formatShortDate(inv.created_at)}
                             </div>
+                            <div className="mt-1">
+                              <PaymentStatusDisplay
+                                total={inv.total}
+                                amountPaid={inv.amount_paid || 0}
+                                remainingBalance={inv.remaining_balance || inv.total}
+                                isLocked={inv.is_locked}
+                                status={inv.status}
+                              />
+                            </div>
+                          </Link>
+                          <div className="text-right shrink-0 flex items-center gap-2">
+                            {inv.estimate_id && (
+                              <Link
+                                href={`/expense?project=${inv.estimate_id}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                                title="View Expenses"
+                              >
+                                <Receipt size={12} />
+                              </Link>
+                            )}
+                            <div>
+                              <div className="text-[13px] font-semibold text-gray-900">{formatCurrency(inv.total)}</div>
+                              <StatusBadge good={inv.status === "paid"} goodLabel="Paid" badLabel="Open" />
+                            </div>
                           </div>
-                          <div className="text-right shrink-0">
-                            <div className="text-[13px] font-semibold text-gray-900">{formatCurrency(inv.total)}</div>
-                            <StatusBadge good={inv.status === "paid"} goodLabel="Paid" badLabel="Open" />
-                          </div>
-                        </Link>
+                        </div>
                       ))}
                     </div>
                   )}
@@ -217,7 +267,7 @@ export default function DashboardV2() {
                   )}
                 </Panel>
 
-                <Panel title="Quick Actions">
+                <Panel title="Quick Actions" className="space-y-2 bg-gray-50/60 border-gray-200/70">
                   <div className="grid grid-cols-1 gap-2">
                     <Link href="/estimates/create" className="flex items-center gap-2 h-9 px-3 rounded-lg border border-gray-200 text-[13px] font-medium text-gray-600 hover:bg-gray-50 transition-colors">
                       <FilePlus size={14} className="text-gray-400" /> New Estimate

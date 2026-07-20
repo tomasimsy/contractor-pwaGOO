@@ -439,7 +439,7 @@ export default function EstimatesPage() {
                         <Link
                           href={`/expense?project=${estimate.id}`}
                           onClick={(e) => e.stopPropagation()}
-                          className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-colors"
+                        className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-green-600 hover:text-green-700 hover:bg-green-50 transition-colors"
                           title="Expenses"
                         >
                           <Receipt size={12} />
@@ -450,7 +450,7 @@ export default function EstimatesPage() {
                             e.stopPropagation();
                             copyLink(estimate);
                           }}
-                          className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                          className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-green-600 hover:text-green-700 hover:bg-green-50 transition-colors"
                           title="Copy Link"
                         >
                           <Link2 size={12} />
@@ -461,7 +461,7 @@ export default function EstimatesPage() {
                             e.stopPropagation();
                             sendSMSLink(estimate);
                           }}
-                          className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+                        className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-green-600 hover:text-green-700 hover:bg-green-50 transition-colors"
                           title="Send SMS"
                         >
                           <Send size={12} />
@@ -485,8 +485,7 @@ export default function EstimatesPage() {
                             e.stopPropagation();
                             openDeleteModal(estimate);
                           }}
-                          className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                          title={deleteModal.hasHistory ? "Cannot delete - archive instead" : "Delete"}
+className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-red-600 hover:text-red-700 hover:bg-slate-50 transition-colors"                          title={deleteModal.hasHistory ? "Cannot delete - archive instead" : "Delete"}
                         >
                           <Trash2 size={12} />
                         </button>

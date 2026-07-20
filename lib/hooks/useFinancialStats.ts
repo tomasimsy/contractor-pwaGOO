@@ -25,7 +25,9 @@ export type FinancialStats = {
   pendingSubPayments: number;
   pendingAgentPayments: number;
   totalRevenue: number;
+  totalInvoiced: number;
   monthlyRevenue: number;
+  totalCollected: number;
   overdueInvoices: number;
 };
 
@@ -34,7 +36,7 @@ const EMPTY_STATS: FinancialStats = {
   grossProfit: 0, netProfit: 0, monthlyProfit: 0, grossMargin: 0, netMargin: 0,
   totalExpenses: 0, totalSubcontractorPaid: 0, totalAgentPaid: 0,
   totalSubcontractorAssigned: 0, totalAgentAssigned: 0,
-  pendingSubPayments: 0, pendingAgentPayments: 0, totalRevenue: 0, monthlyRevenue: 0, overdueInvoices: 0,
+  pendingSubPayments: 0, pendingAgentPayments: 0, totalRevenue: 0, totalInvoiced: 0, monthlyRevenue: 0, totalCollected: 0, overdueInvoices: 0,
 };
 
 /**
@@ -114,6 +116,15 @@ export function useFinancialStats() {
       const paidCount = paidInvoicesRes.count || 0;
       const pendingCount = pendingInvoicesRes.count || 0;
 
+      // Get lifetime revenue (all payments ever received) and collected
+      const { data: allPaymentsData } = await supabase
+        .from("invoice_payments")
+        .select("amount")
+        .eq("company_id", companyId)
+        .is("deleted_at", null);
+
+      const lifetimeRevenue = allPaymentsData?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0;
+
       setStats({
         estimates: estimates?.length || 0,
         invoices: invoiceCount,
@@ -121,8 +132,10 @@ export function useFinancialStats() {
         converted: financials.convertedProjects,
         paid: paidCount,
         pending: pendingCount,
-        totalRevenue: financials.totalRevenue,
+        totalRevenue: lifetimeRevenue,
+        totalInvoiced: financials.totalInvoiced,
         monthlyRevenue: monthlyFinancials.totalRevenue,
+        totalCollected: lifetimeRevenue,
         totalSubcontractorPaid: financials.subcontractorPaid,
         totalSubcontractorAssigned: 0, // would need separate query
         totalAgentPaid: financials.agentPaid,

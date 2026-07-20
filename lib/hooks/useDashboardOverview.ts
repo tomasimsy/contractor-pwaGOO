@@ -63,7 +63,7 @@ export function useDashboardOverview() {
       const recentEstRes = await filterActive(
         supabase
           .from("estimates")
-          .select("id, created_at, total, estimate_number, title, clients(name), signature")
+          .select("id, created_at, total, estimate_number, title, clients(name), signature, invoices(id, amount_paid, remaining_balance, is_locked, status)")
           .order("created_at", { ascending: false })
           .eq("is_completed", false)
           .limit(10),
@@ -92,7 +92,7 @@ export function useDashboardOverview() {
         filterActive(
           supabase
             .from("invoices")
-            .select("id, created_at, total, invoice_number, clients(name), status")
+            .select("id, created_at, total, invoice_number, amount_paid, remaining_balance, is_locked, clients(name), status")
             .order("created_at", { ascending: false })
             .limit(5),
           "invoices"
