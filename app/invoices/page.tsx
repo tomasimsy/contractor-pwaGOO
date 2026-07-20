@@ -296,7 +296,7 @@ export default function InvoicesPage() {
             return (
               <div
                 key={inv.id}
-                className={`group rounded-xl border p-3.5 py-2.5 shadow-2xs transition-all duration-150 capitalize flex flex-col md:flex-row md:items-start gap-3 ${
+                className={`group rounded-xl border p-2.5 py-1.5 shadow-2xs transition-all duration-150 capitalize flex flex-col md:flex-row md:items-start gap-2 ${
                   isEven ? "bg-white" : "bg-slate-50/60"
                 } hover:bg-emerald-50 hover:border-emerald-200 ${
                   itemOverdue ? "border-rose-200" : "border-slate-200/70"
@@ -309,47 +309,56 @@ export default function InvoicesPage() {
 
                 {/* Left column */}
                 <Link href={`/invoices/${inv.id}`} className="min-w-0 flex-1 block">
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     {itemOverdue && <AlertCircle size={12} className="text-rose-500 shrink-0" />}
-                    <div
-                      className={`truncate text-xs font-bold tracking-tight transition-colors ${
-                        itemOverdue ? "text-rose-950" : "text-slate-800 group-hover:text-emerald-800"
-                      }`}
-                    >
+                    <div className="truncate text-xs font-bold text-slate-800 group-hover:text-emerald-800 transition-colors tracking-tight">
                       {inv.clients?.name || "Untitled Client"}
                     </div>
-                  </div>
-                  {inv.estimates?.title && (
-                    <div className="truncate text-[10px] text-slate-500 md:block">{inv.estimates.title}</div>
-                  )}
-                  <div className="flex items-center gap-1.5 mt-0.5 text-[10px] font-medium text-slate-400 transition-colors group-hover:text-slate-600">
-                    <span
-                      className={`font-semibold bg-slate-50 px-1 rounded border font-mono text-[9px] transition-colors ${
-                        itemOverdue
-                          ? "text-rose-600 border-rose-200/60 bg-rose-50 group-hover:bg-emerald-100 group-hover:border-emerald-200 group-hover:text-emerald-700"
-                          : "text-slate-600 border-slate-200 group-hover:bg-emerald-100 group-hover:border-emerald-200 group-hover:text-emerald-700"
-                      }`}
-                    >
+                    <span className="font-semibold text-emerald-600 px-1 rounded border border-slate-200 font-mono text-[9px]">
                       #{inv.invoice_number}
                     </span>
-                    <span className="hidden md:inline">•</span>
-                    <span className="hidden md:inline">{formatShortDate(inv.created_at)}</span>
+                    <span>•</span>
+                    <span className="font-semibold text-emerald-600 px-1 rounded border border-slate-200 font-mono text-[9px]">
+                      {formatShortDate(inv.created_at)}
+                    </span>
+
+                    {(() => {
+                      const amountPaid = inv.amount_paid || 0;
+                      const total = inv.total || 0;
+                      let statusLabel = "";
+                      let statusColor = "";
+
+                      if (inv.is_locked) {
+                        statusLabel = "Closed";
+                        statusColor = "bg-slate-100/50 text-slate-600 border-slate-200/60";
+                      } else if (amountPaid >= total) {
+                        statusLabel = "Fully Paid";
+                        statusColor = "bg-teal-100/50 text-teal-700 border-teal-200/50";
+                      } else if (amountPaid > 0) {
+                        statusLabel = "Partially Paid";
+                        statusColor = "bg-blue-100/50 text-blue-700 border-blue-200/60";
+                      } else if (itemOverdue) {
+                        statusLabel = "Overdue";
+                        statusColor = "bg-rose-100/60 text-rose-700 border-rose-200";
+                      } else {
+                        statusLabel = "Pending";
+                        statusColor = "bg-amber-100/50 text-amber-700 border-amber-200/60";
+                      }
+
+                      return (
+                        <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold tracking-wide uppercase ${statusColor}`}>
+                          {statusLabel}
+                        </span>
+                      );
+                    })()}
                   </div>
-                  <div className="text-[9px] font-medium mt-1 hidden md:block">
-                    {inv.status !== "paid" ? (
-                      <span
-                        className={
-                          itemOverdue
-                            ? "text-rose-500 font-bold"
-                            : "text-slate-400 group-hover:text-slate-600 transition-colors"
-                        }
-                      >
-                        Due {formatShortDate(inv.due_date)}
-                      </span>
-                    ) : (
-                      <span className="text-teal-600 font-medium">Closed</span>
-                    )}
-                  </div>
+
+                  {inv.estimates?.title && (
+                    <div className="truncate text-[11px] font-semibold text-slate-600 group-hover:text-slate-700 transition-colors normal-case mt-1">
+                      {inv.estimates.title}
+                    </div>
+                  )}
+
                   {inv.estimate_id && (
                     <div className="hidden md:block">
                       <ProjectFinancialPills estimateId={inv.estimate_id} summary={financials.get(inv.estimate_id)} />
@@ -357,8 +366,8 @@ export default function InvoicesPage() {
                   )}
                 </Link>
 
-                {/* RIGHT COLUMN – amount + badge + buttons */}
-                <div className="flex w-full md:w-auto shrink-0 md:flex-col md:items-end md:justify-between md:self-stretch items-center justify-between">
+                {/* RIGHT COLUMN – amount + buttons */}
+                <div className="flex w-full md:w-auto shrink-0 md:flex-col md:items-end md:justify-between md:self-stretch items-center justify-between gap-2">
                   {/* Amount section */}
                   <div className="flex flex-col items-end">
                     <div className="flex flex-col items-end gap-0.5">
@@ -387,40 +396,8 @@ export default function InvoicesPage() {
                     </div>
                   </div>
 
-                  {/* Status badge and action buttons */}
-                  <div className="flex flex-col items-end gap-1.5 md:mt-1.5">
-                    {(() => {
-                      const amountPaid = inv.amount_paid || 0;
-                      const total = inv.total || 0;
-                      let statusLabel = "";
-                      let statusColor = "";
-
-                      if (inv.is_locked) {
-                        statusLabel = "Closed";
-                        statusColor = "bg-slate-100/50 text-slate-600 border-slate-200/60";
-                      } else if (amountPaid >= total) {
-                        statusLabel = "Fully Paid";
-                        statusColor = "bg-teal-100/50 text-teal-700 border-teal-200/50";
-                      } else if (amountPaid > 0) {
-                        statusLabel = "Partially Paid";
-                        statusColor = "bg-blue-100/50 text-blue-700 border-blue-200/60 group-hover:bg-emerald-100 group-hover:text-emerald-700 group-hover:border-emerald-200";
-                      } else if (itemOverdue) {
-                        statusLabel = "Overdue";
-                        statusColor = "bg-rose-100/60 text-rose-700 border-rose-200 group-hover:bg-emerald-100 group-hover:text-emerald-700 group-hover:border-emerald-200";
-                      } else {
-                        statusLabel = "Pending";
-                        statusColor = "bg-amber-100/50 text-amber-700 border-amber-200/60 group-hover:bg-emerald-100 group-hover:text-emerald-700 group-hover:border-emerald-200";
-                      }
-
-                      return (
-                        <span className={`inline-block text-[9px] font-bold uppercase px-1.5 py-0.5 rounded tracking-wider border transition-colors ${statusColor}`}>
-                          {statusLabel}
-                        </span>
-                      );
-                    })()}
-
-                    {/* Action buttons – all visible on mobile */}
-                    <div className="flex flex-wrap gap-1.5 md:flex-nowrap justify-end">
+                  {/* Action buttons */}
+                  <div className="flex flex-wrap gap-1.5 md:flex-nowrap justify-end">
                       {/* Receive Payment */}
                       {inv.status !== "paid" && (
                         <button
@@ -436,7 +413,7 @@ export default function InvoicesPage() {
                       {/* Quick Add Expense */}
                       <button
                         onClick={() => handleOpenAddExpense(inv)}
-                        className="flex h-6 px-2 items-center justify-center gap-1 rounded-md border border-slate-200 text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors text-[11px] font-semibold"
+                          className="flex h-6 px-2 items-center justify-center gap-1 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition-colors text-[11px] font-semibold whitespace-nowrap"
                         title="Quick Add Expense"
                       >
                         <Plus size={12} />
@@ -471,7 +448,6 @@ export default function InvoicesPage() {
                         <Send size={12} />
                       </button>
                     </div>
-                  </div>
                 </div>
               </div>
             );

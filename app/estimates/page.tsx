@@ -389,7 +389,7 @@ export default function EstimatesPage() {
                 return (
                   <div
                     key={estimate.id}
-                    className={`group rounded-xl border-l-4 border-emerald-500 px-3.5 py-2.5 shadow-2xs transition-all duration-150 flex items-start gap-3 ${
+                    className={`group rounded-xl border-l-4 border-emerald-500 p-2.5 py-1.5 shadow-2xs transition-all duration-150 flex items-start gap-2 ${
                       index % 2 === 0 ? "bg-white" : "bg-slate-50/60"
                     } hover:bg-emerald-50 hover:border-emerald-200`}
                   >
@@ -424,7 +424,9 @@ export default function EstimatesPage() {
                         </div>
                       )}
 
-                      <ProjectFinancialPills estimateId={estimate.id} summary={financials.get(estimate.id)} />
+                      <div className="hidden md:block">
+                        <ProjectFinancialPills estimateId={estimate.id} summary={financials.get(estimate.id)} />
+                      </div>
                     </div>
 
                     {/* Action Buttons */}
