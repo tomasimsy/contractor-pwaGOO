@@ -17,6 +17,8 @@ import Link from "next/link";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import ProjectFinancialsModal from "@/components/ProjectFinancialsModal";
 import toast from "react-hot-toast";
+import { calculateProjectFinancials } from "@/lib/queries/financialCalculations";
+import { getProjectBundle } from "@/lib/queries/projects";
 
 import { Trash2, Lock, Unlock, AlertCircle, ArrowLeft, FileText, Receipt, DollarSign } from "lucide-react";
 
@@ -133,34 +135,7 @@ export default function InvoicePage() {
         setEstimateTitle(null);
       }
 
-      // Original estimate items
-      let estimateItemsData: any[] = [];
-      if (inv.estimate_id) {
-        const { data: estLines } = await supabase
-          .from("estimate_items")
-          .select("*")
-          .eq("estimate_id", inv.estimate_id)
-          .is("deleted_at", null);
-        estimateItemsData = estLines || [];
-        setEstimateItems(estimateItemsData);
-      }
-
-      // Approved change orders
-      let changeOrdersData: any[] = [];
-      let approvedTotal = 0;
-      if (inv.estimate_id) {
-        const { data: cos } = await supabase
-          .from("change_orders")
-          .select("*")
-          .eq("estimate_id", inv.estimate_id)
-          .eq("status", "approved")
-          .is("deleted_at", null);
-        changeOrdersData = cos || [];
-        setChangeOrders(changeOrdersData);
-        approvedTotal = changeOrdersData.reduce((sum, co) => sum + (co.total_amount || 0), 0);
-      }
-
-      // Payments
+      // Fetch payments
       const { data: pays } = await supabase
         .from("invoice_payments")
         .select("*")
@@ -169,29 +144,51 @@ export default function InvoicePage() {
         .order("created_at", { ascending: false });
       const paymentsData = pays || [];
       setPayments(paymentsData);
-      const totalPaidSum = paymentsData.reduce((sum, p) => sum + (p.amount || 0), 0);
 
-      // ---------- Core calculations (same as PDF) ----------
-      const originalSum = estimateItemsData.reduce((sum, i) => sum + (i.total || 0), 0);
-      const revTotal = originalSum + approvedTotal;
-      const remaining = revTotal - totalPaidSum;
-      // Use the invoice's actual configured deposit if one was set;
-      // only fall back to the 50% convention when no deposit was
-      // configured at all, instead of assuming every project is 50%.
-      const deposit = inv.deposit_amount > 0 ? inv.deposit_amount : revTotal * 0.5;
-      const fullyPaid = remaining <= 0;
-      const overdue = inv.due_date && !fullyPaid && remaining > 0 && new Date(inv.due_date) < new Date();
+      // Use unified engine for all financial calculations
+      if (inv.estimate_id) {
+        try {
+          const bundle = await getProjectBundle(inv.estimate_id);
+          const financials = calculateProjectFinancials(bundle);
 
-      setOriginalSubtotal(originalSum);
-      setApprovedChangeTotal(approvedTotal);
-      setRevisedTotal(revTotal);
-      setTotalPaid(totalPaidSum);
-      setRemainingBalance(remaining);
-      setDepositAmount(deposit);
-      setIsFullyPaid(fullyPaid);
-      setIsOverdue(overdue);
-      setCanLock(fullyPaid && !inv.is_locked);
-      setCanUnlock(inv.is_locked === true);
+          setEstimateItems(bundle.estimateItems || []);
+          setChangeOrders(bundle.changeOrders || []);
+          setOriginalSubtotal(financials.originalEstimateTotal);
+          setApprovedChangeTotal(financials.approvedChangeOrderTotal);
+          setRevisedTotal(financials.revisedTotal);
+          setTotalPaid(financials.amountPaid);
+          setRemainingBalance(financials.remainingBalance);
+
+          // Use the invoice's actual configured deposit if one was set
+          const deposit = inv.deposit_amount > 0 ? inv.deposit_amount : financials.revisedTotal * 0.5;
+          setDepositAmount(deposit);
+
+          const fullyPaid = financials.remainingBalance <= 0;
+          const overdue = inv.due_date && !fullyPaid && financials.remainingBalance > 0 && new Date(inv.due_date) < new Date();
+          setIsFullyPaid(fullyPaid);
+          setIsOverdue(overdue);
+          setCanLock(fullyPaid && !inv.is_locked);
+          setCanUnlock(inv.is_locked === true);
+        } catch (err) {
+          console.error("Error calculating financials:", err);
+          // Fallback if bundle fetch fails
+          setEstimateItems([]);
+          setChangeOrders([]);
+        }
+      } else {
+        // Invoice with no estimate - use invoice total
+        setOriginalSubtotal(inv.total || 0);
+        setApprovedChangeTotal(0);
+        setRevisedTotal(inv.total || 0);
+        setTotalPaid(paymentsData.reduce((sum, p) => sum + (p.amount || 0), 0));
+        const remaining = (inv.total || 0) - (paymentsData.reduce((sum, p) => sum + (p.amount || 0), 0));
+        setRemainingBalance(remaining);
+        setDepositAmount(inv.deposit_amount > 0 ? inv.deposit_amount : (inv.total || 0) * 0.5);
+        setIsFullyPaid(remaining <= 0);
+        setIsOverdue(inv.due_date && remaining > 0 && new Date(inv.due_date) < new Date());
+        setCanLock(remaining <= 0 && !inv.is_locked);
+        setCanUnlock(inv.is_locked === true);
+      }
     } catch (err) {
       console.error(err);
       toast.error("Error loading invoice data");
