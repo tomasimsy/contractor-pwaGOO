@@ -83,7 +83,8 @@ export default function ClientDetail() {
             .select("estimate_id, amount_paid")
             .in("estimate_id", estimateIds)
             .eq("company_id", companyId)
-            .in("status", ["paid", "partial"]);
+            .in("status", ["paid", "partial"])
+            .eq("is_deleted", false);
           if (!invError && inv) {
             invoiceData = inv;
           }
