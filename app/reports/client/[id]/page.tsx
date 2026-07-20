@@ -7,6 +7,7 @@ import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import { formatCurrency } from "@/lib/utils/formatting";
 import { filterActive } from '@/lib/queries/softDeleteFilter';
 import Link from "next/link";
+import { calculateClientFinancials } from "@/lib/queries/financialCalculations";
 
 type EstimateRecord = {
   estimate_id: string;
@@ -44,70 +45,72 @@ export default function ClientDetail() {
     const fetchData = async () => {
       try {
         const companyId = await getCompanyId();
-        if (!companyId) throw new Error("Company not found");
+      if (!companyId) throw new Error("Company not found");
 
-        // Get client name
-        const { data: client, error: clientError } = await supabase
-          .from("clients")
-          .select("name")
-          .eq("id", id)
+      // Get client name
+      const { data: client, error: clientError } = await supabase
+        .from("clients")
+        .select("name")
+        .eq("id", id)
+        .eq("company_id", companyId)
+        .is("deleted_at", null)
+        .single();
+      if (clientError) throw clientError;
+      setClientName(client?.name || "Client");
+
+      // Use unified engine for client financials
+      const clientFinancials = await calculateClientFinancials(id, companyId);
+
+      // Get all estimates for this client (for display)
+      const { data: estimatesData, error: estError } = await supabase
+        .from("estimates")
+        .select(`
+          id,
+          estimate_number,
+          title,
+          total,
+          status,
+          created_at
+        `)
+        .eq("client_id", id)
+        .eq("company_id", companyId)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false });
+
+      if (estError) throw estError;
+
+      const estimateIds = estimatesData?.map(e => e.id) || [];
+      let invoiceData: any[] = [];
+      if (estimateIds.length) {
+        const { data: inv, error: invError } = await supabase
+          .from("invoices")
+          .select("estimate_id, amount_paid")
+          .in("estimate_id", estimateIds)
           .eq("company_id", companyId)
-          .is("deleted_at", null)
-          .single();
-        if (clientError) throw clientError;
-        setClientName(client?.name || "Client");
-
-        // Get all estimates for this client
-        const { data: estimatesData, error: estError } = await supabase
-          .from("estimates")
-          .select(`
-            id,
-            estimate_number,
-            title,
-            total,
-            status,
-            created_at
-          `)
-          .eq("client_id", id)
-          .eq("company_id", companyId)
-          .is("deleted_at", null)
-          .order("created_at", { ascending: false });
-
-        if (estError) throw estError;
-
-        const estimateIds = estimatesData?.map(e => e.id) || [];
-        let invoiceData: any[] = [];
-        if (estimateIds.length) {
-          const { data: inv, error: invError } = await supabase
-            .from("invoices")
-            .select("estimate_id, amount_paid")
-            .in("estimate_id", estimateIds)
-            .eq("company_id", companyId)
-            .in("status", ["paid", "partial"])
-            .eq("is_deleted", false);
-          if (!invError && inv) {
-            invoiceData = inv;
-          }
+          .in("status", ["paid", "partial"])
+          .eq("is_deleted", false);
+        if (!invError && inv) {
+          invoiceData = inv;
         }
+      }
 
-        const paymentTotals: Record<string, number> = {};
-        invoiceData.forEach(inv => {
-          paymentTotals[inv.estimate_id] = (paymentTotals[inv.estimate_id] || 0) + (inv.amount_paid || 0);
-        });
+      const paymentTotals: Record<string, number> = {};
+      invoiceData.forEach(inv => {
+        paymentTotals[inv.estimate_id] = (paymentTotals[inv.estimate_id] || 0) + (inv.amount_paid || 0);
+      });
 
-        const records: EstimateRecord[] = (estimatesData || []).map(e => ({
-          estimate_id: e.id,
-          estimate_number: e.estimate_number || "N/A",
-          title: e.title || null,
-          total: e.total || 0,
-          status: e.status || "unknown",
-          created_at: e.created_at || new Date().toISOString(),
-          payments_received: paymentTotals[e.id] || 0,
-        }));
+      const records: EstimateRecord[] = (estimatesData || []).map(e => ({
+        estimate_id: e.id,
+        estimate_number: e.estimate_number || "N/A",
+        title: e.title || null,
+        total: e.total || 0,
+        status: e.status || "unknown",
+        created_at: e.created_at || new Date().toISOString(),
+        payments_received: paymentTotals[e.id] || 0,
+      }));
 
-        setEstimates(records);
-        const total = records.reduce((sum, r) => sum + r.payments_received, 0);
-        setTotalPaid(total);
+      setEstimates(records);
+      setTotalPaid(clientFinancials.totalPaid);
       } catch (err) {
         console.error(err);
       } finally {
