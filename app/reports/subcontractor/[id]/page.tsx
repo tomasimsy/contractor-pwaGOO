@@ -7,6 +7,7 @@ import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import { formatCurrency } from "@/lib/utils/formatting";
 import { filterActive } from '@/lib/queries/softDeleteFilter';
 import Link from "next/link";
+import { calculateSubcontractorFinancials } from "@/lib/queries/financialCalculations";
 
 type PaymentRecord = {
   estimate_id: string;
@@ -54,7 +55,11 @@ export default function SubcontractorDetail() {
         if (subError) throw subError;
         setSubcontractorName(sub?.name || "Subcontractor");
 
-        // Get all estimate_subcontractor links
+        // Use unified engine to get subcontractor financial data
+        const subFinancials = await calculateSubcontractorFinancials(id, companyId);
+        setTotalPaid(subFinancials.totalPaid);
+
+        // Get all estimate_subcontractor links for detailed view
         const { data: links, error: linkError } = await supabase
           .from("estimate_subcontractors")
           .select(`
@@ -109,8 +114,6 @@ export default function SubcontractorDetail() {
         });
 
         setPayments(records);
-        const total = records.reduce((sum, r) => sum + r.amount, 0);
-        setTotalPaid(total);
       } catch (err) {
         console.error(err);
       } finally {
