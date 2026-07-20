@@ -6,6 +6,8 @@ import Header from '@/components/ui/Header';
 import { supabase } from '@/lib/supabase/client';
 import { filterActive } from '@/lib/queries/softDeleteFilter';
 import { formatCurrency } from '@/lib/utils/formatting';
+import { calculateProjectFinancials, calculateCompanyFinancials } from '@/lib/queries/financialCalculations';
+import { getProjectBundle } from '@/lib/queries/projects';
 import { MetricExplanationModal } from '@/components/accounting/MetricExplanationModal';
 import DesktopShell from '@/components/layout/DesktopShell';
 
@@ -159,155 +161,78 @@ export default function AccountingPage() {
 
         const companyId = profile.company_id;
 
-        // 1. Fetch all estimates for this company
-        const { data: estimates, error: estError } = await supabase
+        // Use unified calculation engine for all financials
+        // 1. Fetch estimates with paid invoices
+        const { data: estimates } = await supabase
           .from('estimates')
-          .select(`
-            id,
-            estimate_number,
-            title,
-            status,
-            created_at,
-            total,
-            client_id,
-            clients (id, name)
-          `)
+          .select('id, estimate_number, title, status, created_at, client_id, clients(id, name)')
           .eq('company_id', companyId)
-          .is('deleted_at', null);
+          .eq('is_deleted', false);
 
-        if (estError) throw new Error(estError.message);
+        if (!estimates) throw new Error('Failed to load estimates');
 
-        // Filter to only estimates with at least one paid/partial invoice (matching /reports logic)
-        const { data: invoices } = await filterActive(
-          supabase
-            .from('invoices')
-            .select('estimate_id, amount_paid, status, created_at')
-            .eq('company_id', companyId)
-            .in('status', ['paid', 'partial']),
-          'invoices'
-        );
+        // Get only estimates with paid/partial invoices
+        const { data: invoices } = await supabase
+          .from('invoices')
+          .select('estimate_id, total, amount_paid, status')
+          .eq('company_id', companyId)
+          .eq('is_deleted', false)
+          .in('status', ['paid', 'partial']);
 
-        const paidEstimateIds = new Set<string>();
-        const payTotals: Record<string, number> = {};
-        const invoiceCounts: Record<string, number> = {};
+        const paidEstimateIds = new Set(invoices?.map(inv => inv.estimate_id) || []);
+        const paidEstimates = estimates.filter(e => paidEstimateIds.has(e.id));
 
-        (invoices || []).forEach((inv: any) => {
-          paidEstimateIds.add(inv.estimate_id);
-          payTotals[inv.estimate_id] = (payTotals[inv.estimate_id] || 0) + (inv.amount_paid || 0);
-          invoiceCounts[inv.estimate_id] = (invoiceCounts[inv.estimate_id] || 0) + 1;
-        });
+        // Calculate financials for each project using unified engine
+        const typedData: EstimateFinancial[] = [];
 
-        // Fetch cost data for all estimates
-        const [
-          { data: expenses },
-          { data: subAssignments },
-          { data: subPayments },
-          { data: agentAssignments },
-          { data: agentPayments },
-          { data: changeOrders },
-          { data: mileageTrips },
-        ] = await Promise.all([
-          supabase.from('estimate_expenses').select('estimate_id, amount, tax').eq('company_id', companyId).is('deleted_at', null),
-          supabase.from('estimate_subcontractors').select('estimate_id, id, amount').eq('company_id', companyId).is('deleted_at', null),
-          supabase.from('subcontractor_payments').select('estimate_subcontractor_id, estimate_id, amount').eq('company_id', companyId).is('deleted_at', null),
-          supabase.from('estimate_agents').select('estimate_id, id, agent_id, amount').eq('company_id', companyId).is('deleted_at', null),
-          supabase.from('agent_payments').select('estimate_id, estimate_agent_id, agent_id, amount, payment_type, agents (id, name)').eq('company_id', companyId).is('deleted_at', null),
-          supabase.from('change_orders').select('estimate_id, total_amount').eq('company_id', companyId).eq('status', 'approved').is('deleted_at', null),
-          supabase.from('mileage_trips').select('estimate_id, reimbursement').eq('company_id', companyId).eq('status', 'completed').is('deleted_at', null),
-        ]);
+        for (const est of paidEstimates) {
+          try {
+            // Fetch complete project bundle for accurate calculations
+            const bundle = await getProjectBundle(est.id);
 
-        // Build lookup maps
-        const expensesByEst: Record<string, number> = {};
-        (expenses || []).forEach((e: any) => {
-          expensesByEst[e.estimate_id] = (expensesByEst[e.estimate_id] || 0) + (e.amount || 0) + (e.tax || 0);
-        });
+            // Use unified calculation engine
+            const financials = calculateProjectFinancials(bundle);
 
-        const paidBySubId: Record<string, number> = {};
-        (subPayments || []).forEach((p: any) => {
-          paidBySubId[p.estimate_subcontractor_id] = (paidBySubId[p.estimate_subcontractor_id] || 0) + p.amount;
-        });
+            // Get invoice details for this project
+            const projInvoices = invoices?.filter(inv => inv.estimate_id === est.id) || [];
 
-        const subCostsByEst: Record<string, number> = {};
-        (subAssignments || []).forEach((sub: any) => {
-          const committed = Math.max(sub.amount || 0, paidBySubId[sub.id] || 0);
-          subCostsByEst[sub.estimate_id] = (subCostsByEst[sub.estimate_id] || 0) + committed;
-        });
+            const clientObj = est.clients as any;
 
-        const agentCommissionsByEst: Record<string, number> = {};
-        const agentReimbursementsByEst: Record<string, number> = {};
-        (agentPayments || []).forEach((p: any) => {
-          if (p.payment_type === 'reimbursement') {
-            agentReimbursementsByEst[p.estimate_id] = (agentReimbursementsByEst[p.estimate_id] || 0) + p.amount;
-          } else {
-            agentCommissionsByEst[p.estimate_id] = (agentCommissionsByEst[p.estimate_id] || 0) + p.amount;
+            typedData.push({
+              estimate_id: est.id,
+              estimate_number: est.estimate_number || 'N/A',
+              client_id: clientObj?.id || null,
+              client_name: clientObj?.name || 'Unassigned',
+              status: est.status,
+              created_at: est.created_at,
+              original_total: financials.originalEstimateTotal,
+              change_order_total: financials.approvedChangeOrderTotal,
+              revised_total: financials.revisedTotal,
+              subcontractor_paid: financials.subcontractorCosts,
+              subcontractors: [],
+              agent_paid: financials.agentCosts,
+              agents: [],
+              other_expenses: financials.expenseItems + financials.mileageCosts,
+              payments_received: financials.amountPaid,
+              remaining_balance: financials.remainingBalance,
+              company_profit: financials.netProfit,
+              profit_margin: financials.profitMargin,
+              invoice_count: projInvoices.length,
+              last_payment_date: null,
+            });
+          } catch (err) {
+            console.warn(`Failed to calculate financials for estimate ${est.id}:`, err);
           }
-        });
+        }
 
-        const coTotalsByEst: Record<string, number> = {};
-        (changeOrders || []).forEach((co: any) => {
-          coTotalsByEst[co.estimate_id] = (coTotalsByEst[co.estimate_id] || 0) + (co.total_amount || 0);
-        });
-
-        const mileageTotalsByEst: Record<string, number> = {};
-        (mileageTrips || []).forEach((m: any) => {
-          mileageTotalsByEst[m.estimate_id] = (mileageTotalsByEst[m.estimate_id] || 0) + (m.reimbursement || 0);
-        });
-
-        // Build financial summary for paid estimates only
-        const activeEstimates = (estimates || []).filter((e: any) => paidEstimateIds.has(e.id));
-        const typedData: EstimateFinancial[] = activeEstimates.map((est: any) => {
-          const originalTotal = est.total || 0;
-          const coTotal = coTotalsByEst[est.id] || 0;
-          const revisedTotal = originalTotal + coTotal;
-          const expenseTotal = expensesByEst[est.id] || 0;
-          const subCommitted = subCostsByEst[est.id] || 0;
-          const agentCommissions = agentCommissionsByEst[est.id] || 0;
-          const agentReimbursements = agentReimbursementsByEst[est.id] || 0;
-          const agentPaid = agentCommissions + agentReimbursements;
-          const mileageTotal = mileageTotalsByEst[est.id] || 0;
-
-          const totalExpenses = expenseTotal + subCommitted + agentPaid + mileageTotal;
-          const profit = revisedTotal - totalExpenses;
-          const marginPercent = revisedTotal > 0 ? (profit / revisedTotal) * 100 : 0;
-
-          const clientObj = est.clients as any;
-
-          return {
-            estimate_id: est.id,
-            estimate_number: est.estimate_number || 'N/A',
-            project_title: est.title || null,
-            client_id: clientObj?.id || null,
-            client_name: clientObj?.name || 'Unassigned',
-            status: est.status,
-            created_at: est.created_at,
-            original_total: originalTotal,
-            change_order_total: coTotal,
-            revised_total: revisedTotal,
-            subcontractor_paid: subCommitted,
-            subcontractors: [],
-            agent_paid: agentPaid,
-            agents: [],
-            other_expenses: expenseTotal + mileageTotal,
-            payments_received: payTotals[est.id] || 0,
-            remaining_balance: revisedTotal - (payTotals[est.id] || 0),
-            company_profit: profit,
-            profit_margin: marginPercent,
-            invoice_count: invoiceCounts[est.id] || 0,
-            last_payment_date: null,
-          };
-        });
         setData(typedData);
 
-        // 2. Mileage deduction (YTD)
-        const { data: mileageRows } = await supabase
-          .from('mileage_trips')
-          .select('distance_miles')
-          .eq('company_id', companyId)
-          .is('deleted_at', null)
-          .gte('created_at', new Date(new Date().getFullYear(), 0, 1).toISOString());
-
-        const totalMiles = mileageRows?.reduce((sum, r) => sum + (r.distance_miles || 0), 0) || 0;
-        setMileageDeduction(totalMiles * 0.655);
+        // 2. Mileage deduction (YTD) - from unified financial calculations
+        const yearStart = new Date(new Date().getFullYear(), 0, 1);
+        const companyFinancials = await calculateCompanyFinancials(companyId, yearStart, new Date());
+        // Note: Mileage costs are now in companyFinancials.mileageCosts
+        // Standard IRS deduction rate: $0.655/mile (2024)
+        setMileageDeduction(companyFinancials.mileageCosts);
 
         // 3. Unsold costs (estimates with status draft, sent, rejected)
         const { data: unsoldEstimates } = await supabase
@@ -317,20 +242,22 @@ export default function AccountingPage() {
           .in('status', ['draft', 'sent', 'rejected'])
           .is('deleted_at', null);
 
-        const unsoldIds = unsoldEstimates?.map(e => e.id) || [];
         let totalUnsold = 0;
-        if (unsoldIds.length > 0) {
-          const { data: unsoldExpenses } = await supabase
-            .from('estimate_expenses')
-            .select('amount')
-            .eq('company_id', companyId)
-            .in('estimate_id', unsoldIds)
-            .is('deleted_at', null);
-          totalUnsold = unsoldExpenses?.reduce((sum, r) => sum + (r.amount || 0), 0) || 0;
+        if (unsoldEstimates && unsoldEstimates.length > 0) {
+          // Use unified engine for unsold estimate costs too
+          for (const unsoldEst of unsoldEstimates) {
+            try {
+              const bundle = await getProjectBundle(unsoldEst.id);
+              const financials = calculateProjectFinancials(bundle);
+              totalUnsold += financials.totalExpenses;
+            } catch (err) {
+              console.warn(`Failed to calculate unsold costs for ${unsoldEst.id}:`, err);
+            }
+          }
         }
         setUnsoldCosts(totalUnsold);
 
-        // 4. Open invoices (not paid)
+        // 4. Open invoices (not paid) - exclude deleted
         const { data: openInvRows } = await supabase
           .from('invoices')
           .select(`
@@ -342,8 +269,7 @@ export default function AccountingPage() {
             clients (name)
           `)
           .eq('company_id', companyId)
-          .is('paid_at', null)
-          .is('deleted_at', null)
+          .eq('is_deleted', false)
           .neq('status', 'paid');
 
         const formatted = (openInvRows || []).map((inv: any) => ({
