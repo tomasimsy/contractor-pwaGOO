@@ -65,7 +65,8 @@ export async function getProjectSummaries(ids: string[]): Promise<ProjectSummary
   const { data, error } = await supabase
     .from("estimates")
     .select("id, estimate_number, title, status, clients(name)")
-    .in("id", ids);
+    .in("id", ids)
+    .eq("is_deleted", false);
 
   if (error) throw error;
   const byId = new Map((data ?? []).map((row) => [row.id, toProjectSummary(row)]));
