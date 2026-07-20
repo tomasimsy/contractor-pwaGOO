@@ -416,6 +416,19 @@ export async function calculateCompanyFinancials(
   const mileage = mileageRes.data || [];
   const invoices = invoicesRes.data || [];
 
+  // DEBUG LOGGING
+  console.log(`[calculateCompanyFinancials] DEBUG for company ${companyId}:`);
+  console.log(`  Date range: ${startDateStr} to ${endDateStr}`);
+  console.log(`  Estimates (completed/converted only): ${estimates.length}`, estimates);
+  console.log(`  EstimateIds being used: ${estimateIds.length}`, estimateIds);
+  console.log(`  Subcontractor Payments: ${subPayments.length}`, subPayments);
+  console.log(`  EstSubs (for completed/converted estimates): ${estSubs.length}`, estSubs);
+  console.log(`  Agent Payments: ${agentPayments.length}`, agentPayments);
+  console.log(`  EstAgents (for completed/converted estimates): ${estAgents.length}`, estAgents);
+  console.log(`  Expenses: ${expenses.length}`, expenses);
+  console.log(`  Mileage: ${mileage.length}`, mileage);
+  console.log(`  Invoices: ${invoices.length}`, invoices);
+
   // Calculate totals
   const totalRevenue = estimates.reduce((sum, e) => sum + (e.total || 0), 0);
   const completedProjects = estimates.filter(
