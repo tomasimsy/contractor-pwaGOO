@@ -412,11 +412,15 @@ export async function calculateCompanyFinancials(
           .in("estimate_id", estimateIds)
       : Promise.resolve({ data: [] }),
 
-    supabase
-      .from("invoices")
-      .select("total, amount_paid, status")
-      .eq("company_id", companyId)
-      .eq("is_deleted", false),
+    // CRITICAL FIX: Only fetch invoices for the estimates we're calculating
+    estimateIds.length > 0
+      ? supabase
+          .from("invoices")
+          .select("total, amount_paid, status")
+          .eq("company_id", companyId)
+          .eq("is_deleted", false)
+          .in("estimate_id", estimateIds)
+      : Promise.resolve({ data: [] }),
   ]);
 
   // Extract data
