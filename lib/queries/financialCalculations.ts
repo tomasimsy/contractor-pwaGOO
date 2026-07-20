@@ -420,28 +420,28 @@ export async function calculateCompanyFinancials(
     0
   );
 
-  const estSubMap = new Map(
-    estSubs.map((s) => [s.id, { assigned: s.amount || 0, paid: 0 }])
-  );
-  subPayments.forEach((p) => {
-    // Note: We'd need payment details to track per-assignment
-    // For now, use the simplified calculation
-  });
-  const outstandingSubcontractor = estSubs.reduce(
+  // CRITICAL: Use committed costs (max of assigned vs paid) to match project-level logic
+  const subcontractorAssigned = estSubs.reduce(
     (sum, s) => sum + (s.amount || 0),
     0
   );
+  const subcontractorCommitted = Math.max(subcontractorAssigned, subcontractorPaid);
+  const outstandingSubcontractor = Math.max(
+    0,
+    subcontractorAssigned - subcontractorPaid
+  );
 
   const agentPaid = agentPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
-  const outstandingAgent = estAgents.reduce(
-    (sum, a) => sum + (a.amount || 0),
-    0
-  );
+  const agentAssigned = estAgents.reduce((sum, a) => sum + (a.amount || 0), 0);
+  const agentCommitted = Math.max(agentAssigned, agentPaid);
+  const outstandingAgent = Math.max(0, agentAssigned - agentPaid);
 
   const expenseItems = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
   const mileageCosts = mileage.reduce((sum, m) => sum + (m.reimbursement || 0), 0);
 
-  const totalExpenses = expenseItems + mileageCosts + subcontractorPaid + agentPaid;
+  // Use committed costs, not just paid - CRITICAL for consistency with project-level calculations
+  const totalExpenses =
+    expenseItems + mileageCosts + subcontractorCommitted + agentCommitted;
 
   const netProfit = totalRevenue - totalExpenses;
   const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
