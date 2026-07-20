@@ -325,9 +325,21 @@ export async function calculateCompanyFinancials(
   const startDateStr = startDate.toISOString();
   const endDateStr = endDate.toISOString();
 
-  // Fetch all data in parallel
+  // Fetch estimates first to get the date range
+  const estimatesRes = await supabase
+    .from("estimates")
+    .select("id, total, status, created_at")
+    .eq("company_id", companyId)
+    .eq("is_deleted", false)
+    .in("status", ["completed", "converted"])
+    .gte("created_at", startDateStr)
+    .lte("created_at", endDateStr);
+
+  const estimates = estimatesRes.data || [];
+  const estimateIds = estimates.map((e) => e.id);
+
+  // Fetch all data in parallel, filtering by estimate IDs for assignments
   const [
-    estimatesRes,
     subPaymentsRes,
     estSubsRes,
     agentPaymentsRes,
@@ -337,15 +349,6 @@ export async function calculateCompanyFinancials(
     invoicesRes,
   ] = await Promise.all([
     supabase
-      .from("estimates")
-      .select("id, total, status, created_at")
-      .eq("company_id", companyId)
-      .eq("is_deleted", false)
-      .in("status", ["completed", "converted"])
-      .gte("created_at", startDateStr)
-      .lte("created_at", endDateStr),
-
-    supabase
       .from("subcontractor_payments")
       .select("amount, created_at")
       .eq("company_id", companyId)
@@ -353,11 +356,15 @@ export async function calculateCompanyFinancials(
       .gte("created_at", startDateStr)
       .lte("created_at", endDateStr),
 
-    supabase
-      .from("estimate_subcontractors")
-      .select("id, amount")
-      .eq("company_id", companyId)
-      .is("deleted_at", null),
+    // CRITICAL FIX: Only fetch assignments for estimates in the date range
+    estimateIds.length > 0
+      ? supabase
+          .from("estimate_subcontractors")
+          .select("id, amount")
+          .eq("company_id", companyId)
+          .is("deleted_at", null)
+          .in("estimate_id", estimateIds)
+      : Promise.resolve({ data: [] }),
 
     supabase
       .from("agent_payments")
@@ -367,11 +374,15 @@ export async function calculateCompanyFinancials(
       .gte("payment_date", startDateStr)
       .lte("payment_date", endDateStr),
 
-    supabase
-      .from("estimate_agents")
-      .select("id, amount")
-      .eq("company_id", companyId)
-      .is("deleted_at", null),
+    // CRITICAL FIX: Only fetch assignments for estimates in the date range
+    estimateIds.length > 0
+      ? supabase
+          .from("estimate_agents")
+          .select("id, amount")
+          .eq("company_id", companyId)
+          .is("deleted_at", null)
+          .in("estimate_id", estimateIds)
+      : Promise.resolve({ data: [] }),
 
     supabase
       .from("estimate_expenses")
@@ -397,7 +408,6 @@ export async function calculateCompanyFinancials(
   ]);
 
   // Extract data
-  const estimates = estimatesRes.data || [];
   const subPayments = subPaymentsRes.data || [];
   const estSubs = estSubsRes.data || [];
   const agentPayments = agentPaymentsRes.data || [];
