@@ -296,14 +296,14 @@ export default function InvoicesPage() {
             return (
               <div
                 key={inv.id}
-                className={`group rounded-xl border p-3.5 py-2.5 shadow-2xs transition-all duration-150 capitalize flex items-start gap-3 ${
+                className={`group rounded-xl border p-3.5 py-2.5 shadow-2xs transition-all duration-150 capitalize flex flex-col md:flex-row md:items-start gap-3 ${
                   isEven ? "bg-white" : "bg-slate-50/60"
                 } hover:bg-emerald-50 hover:border-emerald-200 ${
                   itemOverdue ? "border-rose-200" : "border-slate-200/70"
                 }`}
               >
-                {/* Arrow */}
-                <div className="flex h-full items-center text-emerald-500 group-hover:text-emerald-700 transition-colors">
+                {/* Arrow – hidden on mobile */}
+                <div className="hidden md:flex h-full items-center text-emerald-500 group-hover:text-emerald-700 transition-colors">
                   <ArrowRight size={14} className="shrink-0" />
                 </div>
 
@@ -320,7 +320,7 @@ export default function InvoicesPage() {
                     </div>
                   </div>
                   {inv.estimates?.title && (
-                    <div className="truncate text-[10px] text-slate-500">{inv.estimates.title}</div>
+                    <div className="truncate text-[10px] text-slate-500 md:block">{inv.estimates.title}</div>
                   )}
                   <div className="flex items-center gap-1.5 mt-0.5 text-[10px] font-medium text-slate-400 transition-colors group-hover:text-slate-600">
                     <span
@@ -332,10 +332,10 @@ export default function InvoicesPage() {
                     >
                       #{inv.invoice_number}
                     </span>
-                    <span>•</span>
-                    <span>{formatShortDate(inv.created_at)}</span>
+                    <span className="hidden md:inline">•</span>
+                    <span className="hidden md:inline">{formatShortDate(inv.created_at)}</span>
                   </div>
-                  <div className="text-[9px] font-medium mt-1">
+                  <div className="text-[9px] font-medium mt-1 hidden md:block">
                     {inv.status !== "paid" ? (
                       <span
                         className={
@@ -357,10 +357,17 @@ export default function InvoicesPage() {
                   )}
                 </Link>
 
-                {/* RIGHT COLUMN – amount + badge + buttons inline */}
-                <div className="flex shrink-0 flex-col items-end justify-between self-stretch">
+                {/* RIGHT COLUMN – amount + badge + buttons */}
+                <div className="flex w-full md:w-auto shrink-0 md:flex-col md:items-end md:justify-between md:self-stretch items-center justify-between">
+                  {/* Amount section */}
                   <div className="flex flex-col items-end">
                     <div className="flex flex-col items-end gap-0.5">
+                      {/* Original estimate amount */}
+                      <div className="text-[9px] text-slate-500 font-medium">
+                        Est: {formatCurrency(inv.total)}
+                      </div>
+
+                      {/* Current amount due/paid */}
                       <div
                         className={`text-xs font-bold tracking-tight transition-colors ${
                           itemOverdue ? "text-rose-700" : "text-slate-900 group-hover:text-emerald-800"
@@ -371,98 +378,98 @@ export default function InvoicesPage() {
                           : formatCurrency(inv.remaining_balance || inv.total)}
                       </div>
 
-                      {/* Payment progress for partial invoices */}
+                      {/* Payment progress for partial invoices – mobile only */}
                       {inv.status === "partial" && (
-                        <div className="text-[9px] text-slate-500">
-                          {formatCurrency((inv.total || 0) - (inv.remaining_balance || 0))} of {formatCurrency(inv.total)} paid
+                        <div className="text-[9px] text-slate-500 md:hidden">
+                          {formatCurrency((inv.total || 0) - (inv.remaining_balance || 0))} paid
                         </div>
                       )}
                     </div>
+                  </div>
 
-                    {/* Badge and action buttons – now on the same row */}
-                    <div className="flex items-center gap-2 mt-1.5">
-                      {(() => {
-                        const amountPaid = inv.amount_paid || 0;
-                        const total = inv.total || 0;
-                        let statusLabel = "";
-                        let statusColor = "";
+                  {/* Status badge and action buttons */}
+                  <div className="flex flex-col items-end gap-1.5 md:mt-1.5">
+                    {(() => {
+                      const amountPaid = inv.amount_paid || 0;
+                      const total = inv.total || 0;
+                      let statusLabel = "";
+                      let statusColor = "";
 
-                        if (inv.is_locked) {
-                          statusLabel = "Closed";
-                          statusColor = "bg-slate-100/50 text-slate-600 border-slate-200/60";
-                        } else if (amountPaid >= total) {
-                          statusLabel = "Fully Paid";
-                          statusColor = "bg-teal-100/50 text-teal-700 border-teal-200/50";
-                        } else if (amountPaid > 0) {
-                          statusLabel = "Partially Paid";
-                          statusColor = "bg-blue-100/50 text-blue-700 border-blue-200/60 group-hover:bg-emerald-100 group-hover:text-emerald-700 group-hover:border-emerald-200";
-                        } else if (itemOverdue) {
-                          statusLabel = "Overdue";
-                          statusColor = "bg-rose-100/60 text-rose-700 border-rose-200 group-hover:bg-emerald-100 group-hover:text-emerald-700 group-hover:border-emerald-200";
-                        } else {
-                          statusLabel = "Pending";
-                          statusColor = "bg-amber-100/50 text-amber-700 border-amber-200/60 group-hover:bg-emerald-100 group-hover:text-emerald-700 group-hover:border-emerald-200";
-                        }
+                      if (inv.is_locked) {
+                        statusLabel = "Closed";
+                        statusColor = "bg-slate-100/50 text-slate-600 border-slate-200/60";
+                      } else if (amountPaid >= total) {
+                        statusLabel = "Fully Paid";
+                        statusColor = "bg-teal-100/50 text-teal-700 border-teal-200/50";
+                      } else if (amountPaid > 0) {
+                        statusLabel = "Partially Paid";
+                        statusColor = "bg-blue-100/50 text-blue-700 border-blue-200/60 group-hover:bg-emerald-100 group-hover:text-emerald-700 group-hover:border-emerald-200";
+                      } else if (itemOverdue) {
+                        statusLabel = "Overdue";
+                        statusColor = "bg-rose-100/60 text-rose-700 border-rose-200 group-hover:bg-emerald-100 group-hover:text-emerald-700 group-hover:border-emerald-200";
+                      } else {
+                        statusLabel = "Pending";
+                        statusColor = "bg-amber-100/50 text-amber-700 border-amber-200/60 group-hover:bg-emerald-100 group-hover:text-emerald-700 group-hover:border-emerald-200";
+                      }
 
-                        return (
-                          <span className={`inline-block text-[9px] font-bold uppercase px-1.5 py-0.5 rounded tracking-wider border transition-colors ${statusColor}`}>
-                            {statusLabel}
-                          </span>
-                        );
-                      })()}
+                      return (
+                        <span className={`inline-block text-[9px] font-bold uppercase px-1.5 py-0.5 rounded tracking-wider border transition-colors ${statusColor}`}>
+                          {statusLabel}
+                        </span>
+                      );
+                    })()}
 
-                      {/* Action buttons inline with badge */}
-<div className="flex gap-1.5">
-  {/* Receive Payment */}
-  {inv.status !== "paid" && (
-    <button
-      onClick={() => setSelectedInvoiceForPayment(inv)}
-      className="flex h-6 px-2 items-center justify-center gap-1 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition-colors text-[11px] font-semibold whitespace-nowrap"
-      title="Receive Payment"
-    >
-      <DollarSign size={12} />
-      <span>Receive</span>
-    </button>
-  )}
+                    {/* Action buttons – all visible on mobile */}
+                    <div className="flex flex-wrap gap-1.5 md:flex-nowrap justify-end">
+                      {/* Receive Payment */}
+                      {inv.status !== "paid" && (
+                        <button
+                          onClick={() => setSelectedInvoiceForPayment(inv)}
+                          className="flex h-6 px-2 items-center justify-center gap-1 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition-colors text-[11px] font-semibold whitespace-nowrap"
+                          title="Receive Payment"
+                        >
+                          <DollarSign size={12} />
+                          <span>Receive</span>
+                        </button>
+                      )}
 
-  {/* Quick Add Expense */}
-  <button
-    onClick={() => handleOpenAddExpense(inv)}
-    className="flex h-6 px-2 items-center justify-center gap-1 rounded-md border border-slate-200 text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors text-[11px] font-semibold"
-    title="Quick Add Expense"
-  >
-    <Plus size={12} />
-    <span>Expense</span>
-  </button>
+                      {/* Quick Add Expense */}
+                      <button
+                        onClick={() => handleOpenAddExpense(inv)}
+                        className="flex h-6 px-2 items-center justify-center gap-1 rounded-md border border-slate-200 text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors text-[11px] font-semibold"
+                        title="Quick Add Expense"
+                      >
+                        <Plus size={12} />
+                        <span>Expense</span>
+                      </button>
 
-  {/* Expense */}
-  <Link
-    href={`/expense?project=${inv.estimate_id}`}
-    onClick={(e) => e.stopPropagation()}
-    className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-colors"
-    title="View All Expenses"
-  >
-    <Receipt size={12} />
-  </Link>
+                      {/* Expense link */}
+                      <Link
+                        href={`/expense?project=${inv.estimate_id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-colors"
+                        title="View All Expenses"
+                      >
+                        <Receipt size={12} />
+                      </Link>
 
-  {/* Copy Link */}
-  <button
-    onClick={() => copyLink(inv)}
-    className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-    title="Copy Link"
-  >
-    <Link2 size={12} />
-  </button>
+                      {/* Copy Link */}
+                      <button
+                        onClick={() => copyLink(inv)}
+                        className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                        title="Copy Link"
+                      >
+                        <Link2 size={12} />
+                      </button>
 
-  {/* SMS */}
-  <button
-    onClick={() => sendSMSLink(inv)}
-    className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
-    title="Send SMS"
-  >
-    <Send size={12} />
-  </button>
-</div>
+                      {/* SMS */}
+                      <button
+                        onClick={() => sendSMSLink(inv)}
+                        className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+                        title="Send SMS"
+                      >
+                        <Send size={12} />
+                      </button>
                     </div>
                   </div>
                 </div>
