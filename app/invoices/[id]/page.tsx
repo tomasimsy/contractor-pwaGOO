@@ -594,7 +594,7 @@ export default function InvoicePage() {
             invoiceId={invoice.id}
             invoiceNumber={invoice.invoice_number || invoice.id.slice(0, 8)}
             clientName={client?.name || "Client"}
-            invoiceTotal={invoice.total}
+            invoiceTotal={revisedTotal}
             remainingBalance={remainingBalance}
             onPaymentRecorded={() => {
               setShowReceivedPaymentModal(false);

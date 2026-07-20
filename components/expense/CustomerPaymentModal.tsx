@@ -20,6 +20,14 @@ export default function CustomerPaymentModal({
 }) {
   const invoices = bundle.invoices || [];
 
+  // Calculate revised total for each invoice (includes approved change orders)
+  const getRevisedTotal = (invoiceId: string) => {
+    const approvedChangeOrdersTotal = (bundle.changeOrders || [])
+      .filter(co => co.status === 'approved')
+      .reduce((sum, co) => sum + (co.total_amount || 0), 0);
+    return approvedChangeOrdersTotal;
+  };
+
   // Auto-select invoice if only one exists, otherwise empty
   const defaultInvoiceId = invoices.length === 1 ? invoices[0].id : "";
   const [selectedInvoiceId, setSelectedInvoiceId] = useState(defaultInvoiceId);
@@ -43,6 +51,7 @@ export default function CustomerPaymentModal({
   if (!isOpen) return null;
 
   const selectedInvoice = invoices.find((inv) => inv.id === selectedInvoiceId);
+  const selectedInvoiceRevisedTotal = selectedInvoice ? selectedInvoice.total + getRevisedTotal(selectedInvoice.id) : 0;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -52,8 +61,8 @@ export default function CustomerPaymentModal({
       return;
     }
 
-    if (selectedInvoice && parseFloat(amount) > selectedInvoice.total) {
-      toast.error(`Amount cannot exceed invoice total of ${formatCurrency(selectedInvoice.total)}`);
+    if (selectedInvoice && parseFloat(amount) > selectedInvoiceRevisedTotal) {
+      toast.error(`Amount cannot exceed invoice total of ${formatCurrency(selectedInvoiceRevisedTotal)}`);
       return;
     }
 
@@ -163,7 +172,7 @@ export default function CustomerPaymentModal({
                   <div className="grid grid-cols-2 gap-2 text-[12px]">
                     <div>
                       <div className="text-gray-600">Total:</div>
-                      <div className="font-medium text-gray-900">{formatCurrency(selectedInvoice.total)}</div>
+                      <div className="font-medium text-gray-900">{formatCurrency(selectedInvoiceRevisedTotal)}</div>
                     </div>
                     <div>
                       <div className="text-gray-600">Received:</div>
@@ -190,12 +199,15 @@ export default function CustomerPaymentModal({
                 required
               >
                 <option value="">Select an invoice...</option>
-                {invoices.map((invoice) => (
-                  <option key={invoice.id} value={invoice.id}>
-                    {invoice.invoice_number} • {formatCurrency(invoice.total)} (Balance:{" "}
-                    {formatCurrency(invoice.remaining_balance)})
-                  </option>
-                ))}
+                {invoices.map((invoice) => {
+                  const revisedTotal = invoice.total + getRevisedTotal(invoice.id);
+                  return (
+                    <option key={invoice.id} value={invoice.id}>
+                      {invoice.invoice_number} • {formatCurrency(revisedTotal)} (Balance:{" "}
+                      {formatCurrency(invoice.remaining_balance)})
+                    </option>
+                  );
+                })}
               </select>
             </div>
           )}

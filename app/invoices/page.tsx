@@ -42,7 +42,37 @@ export default function InvoicesPage() {
           "invoices"
         );
         if (error) throw error;
-        if (data) setInvoices(data);
+        if (data) {
+          // Fetch change orders for each estimate to calculate revised totals
+          const estimateIds = [...new Set(data.map((inv: any) => inv.estimate_id).filter(Boolean))];
+          const changeOrdersMap = new Map<string, any[]>();
+
+          if (estimateIds.length > 0) {
+            const { data: cos } = await supabase
+              .from("change_orders")
+              .select("estimate_id, total_amount, status")
+              .in("estimate_id", estimateIds)
+              .eq("status", "approved")
+              .is("deleted_at", null);
+
+            if (cos) {
+              cos.forEach((co: any) => {
+                if (!changeOrdersMap.has(co.estimate_id)) {
+                  changeOrdersMap.set(co.estimate_id, []);
+                }
+                changeOrdersMap.get(co.estimate_id)!.push(co);
+              });
+            }
+          }
+
+          // Calculate revised totals and store for modal display
+          const invoicesWithRevised = data.map((inv: any) => ({
+            ...inv,
+            revisedTotal: inv.total + (changeOrdersMap.get(inv.estimate_id)?.reduce((sum: number, co: any) => sum + (co.total_amount || 0), 0) || 0)
+          }));
+
+          setInvoices(invoicesWithRevised);
+        }
       } catch (err) {
         console.error("Error fetching invoices:", err);
       } finally {
@@ -464,7 +494,7 @@ export default function InvoicesPage() {
         invoiceId={selectedInvoiceForPayment.id}
         invoiceNumber={selectedInvoiceForPayment.invoice_number || selectedInvoiceForPayment.id.slice(0, 8)}
         clientName={selectedInvoiceForPayment.clients?.name || "Client"}
-        invoiceTotal={selectedInvoiceForPayment.total}
+        invoiceTotal={selectedInvoiceForPayment.revisedTotal || selectedInvoiceForPayment.total}
         remainingBalance={selectedInvoiceForPayment.remaining_balance || selectedInvoiceForPayment.total}
         onPaymentRecorded={() => {
           setSelectedInvoiceForPayment(null);

@@ -58,6 +58,7 @@ function ProjectExpenseContent() {
     clientName: string;
     invoiceTotal: number;
     remainingBalance: number;
+    revisedTotal: number;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
@@ -164,12 +165,19 @@ function ProjectExpenseContent() {
     // Auto-select first invoice if only one exists
     if (bundle.invoices.length === 1) {
       const invoice = bundle.invoices[0];
+      // Calculate revised total including approved change orders
+      const approvedChangeOrdersTotal = (bundle.changeOrders || [])
+        .filter(co => co.status === 'approved')
+        .reduce((sum, co) => sum + (co.total_amount || 0), 0);
+      const revisedTotal = invoice.total + approvedChangeOrdersTotal;
+
       setSelectedInvoiceForPayment({
         invoiceId: invoice.id,
         invoiceNumber: invoice.invoice_number || "Invoice",
         clientName: bundle.client.name,
-        invoiceTotal: invoice.total,
+        invoiceTotal: revisedTotal,
         remainingBalance: invoice.remaining_balance,
+        revisedTotal: revisedTotal,
       });
     }
     setIsRecordPaymentModalOpen(true);
@@ -424,7 +432,7 @@ function ProjectExpenseContent() {
           invoiceId={selectedInvoiceForPayment.invoiceId}
           invoiceNumber={selectedInvoiceForPayment.invoiceNumber}
           clientName={selectedInvoiceForPayment.clientName}
-          invoiceTotal={selectedInvoiceForPayment.invoiceTotal}
+          invoiceTotal={selectedInvoiceForPayment.revisedTotal}
           remainingBalance={selectedInvoiceForPayment.remainingBalance}
           onPaymentRecorded={handlePaymentRecorded}
         />
