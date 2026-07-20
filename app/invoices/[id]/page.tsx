@@ -80,6 +80,7 @@ export default function InvoicePage() {
         .select("*")
         .eq("id", id)
         .eq("company_id", companyId)
+        .eq("is_deleted", false)
         .single();
 
       if (invError || !inv) {
@@ -125,6 +126,7 @@ export default function InvoicePage() {
           .select("title")
           .eq("id", inv.estimate_id)
           .eq("company_id", companyId)
+          .eq("is_deleted", false)
           .single();
         setEstimateTitle(est?.title ?? null);
       } else {
