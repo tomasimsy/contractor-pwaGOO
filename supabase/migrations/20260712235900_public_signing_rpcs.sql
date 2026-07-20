@@ -44,12 +44,12 @@ as $$
     ),
     'items', (
       select coalesce(json_agg(i), '[]'::json) from public.estimate_items i
-      where i.estimate_id = p_estimate_id
+      where i.estimate_id = p_estimate_id and i.deleted_at is null
     ),
     'change_orders', (
       select coalesce(json_agg(co order by co.created_at desc), '[]'::json)
       from public.change_orders co
-      where co.estimate_id = p_estimate_id and co.status <> 'draft'
+      where co.estimate_id = p_estimate_id and co.status <> 'draft' and co.deleted_at is null
     ),
     'invoice_id', (
       select id from public.invoices where estimate_id = p_estimate_id limit 1
@@ -58,6 +58,7 @@ as $$
       select coalesce(json_agg(p order by p.created_at desc), '[]'::json)
       from public.invoice_payments p
       where p.invoice_id = (select id from public.invoices where estimate_id = p_estimate_id limit 1)
+        and p.deleted_at is null
     )
   );
 $$;
@@ -190,12 +191,12 @@ as $$
     ),
     'items', (
       select coalesce(json_agg(it), '[]'::json) from public.invoice_items it
-      where it.invoice_id = p_invoice_id
+      where it.invoice_id = p_invoice_id and it.deleted_at is null
     ),
     'payments', (
       select coalesce(json_agg(p order by p.created_at desc), '[]'::json)
       from public.invoice_payments p
-      where p.invoice_id = p_invoice_id
+      where p.invoice_id = p_invoice_id and p.deleted_at is null
     )
   );
 $$;

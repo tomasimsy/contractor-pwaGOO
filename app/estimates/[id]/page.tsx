@@ -212,6 +212,7 @@ export default function EstimatePage() {
         .from("invoice_payments")
         .select("*")
         .in("invoice_id", invoiceIds)
+        .is("deleted_at", null)
         .order("created_at", { ascending: false });
       if (data) {
         setPayments(data);
