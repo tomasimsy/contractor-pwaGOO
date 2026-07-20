@@ -72,9 +72,7 @@ export default function InvoicesPage() {
             const approvedCOTotal = changeOrdersMap.get(inv.estimate_id)?.reduce((sum: number, co: any) => sum + (co.total_amount || 0), 0) || 0;
             const revisedTotal = inv.total + approvedCOTotal;
             const revisedRemainingBalance = (inv.remaining_balance || inv.total) + approvedCOTotal;
-            if (approvedCOTotal > 0) {
-              console.log(`[Invoices] ${inv.invoice_number}: base=$${inv.total}, co=$${approvedCOTotal}, revised=$${revisedTotal}, remaining=$${revisedRemainingBalance}`);
-            }
+            console.log(`[Invoices] ${inv.invoice_number}: estimate_id=${inv.estimate_id}, base=$${inv.total}, co=$${approvedCOTotal}, revised=$${revisedTotal}, remaining=$${revisedRemainingBalance}`);
             return {
               ...inv,
               revisedTotal,
@@ -82,6 +80,7 @@ export default function InvoicesPage() {
             };
           });
 
+          console.log('[Invoices] Setting state with enriched invoices:', invoicesWithRevised);
           setInvoices(invoicesWithRevised);
         }
       } catch (err) {
@@ -498,22 +497,31 @@ export default function InvoicesPage() {
     </div>
 
     {/* Receive Payment Modal */}
-    {selectedInvoiceForPayment && (
-      <ReceivedPaymentModal
-        isOpen={true}
-        onClose={() => setSelectedInvoiceForPayment(null)}
-        invoiceId={selectedInvoiceForPayment.id}
-        invoiceNumber={selectedInvoiceForPayment.invoice_number || selectedInvoiceForPayment.id.slice(0, 8)}
-        clientName={selectedInvoiceForPayment.clients?.name || "Client"}
-        invoiceTotal={selectedInvoiceForPayment.revisedTotal || selectedInvoiceForPayment.total}
-        remainingBalance={selectedInvoiceForPayment.revisedRemainingBalance || selectedInvoiceForPayment.remaining_balance || selectedInvoiceForPayment.total}
-        onPaymentRecorded={() => {
-          setSelectedInvoiceForPayment(null);
-          // Reload invoices to show updated payment status
-          // Add small delay to ensure database trigger has completed
-          setTimeout(async () => {
-            try {
-              const { data, error } = await filterActive(
+    {selectedInvoiceForPayment && (() => {
+      console.log('[Modal] selectedInvoiceForPayment:', {
+        id: selectedInvoiceForPayment.id,
+        invoice_number: selectedInvoiceForPayment.invoice_number,
+        total: selectedInvoiceForPayment.total,
+        revisedTotal: selectedInvoiceForPayment.revisedTotal,
+        remaining_balance: selectedInvoiceForPayment.remaining_balance,
+        revisedRemainingBalance: selectedInvoiceForPayment.revisedRemainingBalance,
+      });
+      return (
+        <ReceivedPaymentModal
+          isOpen={true}
+          onClose={() => setSelectedInvoiceForPayment(null)}
+          invoiceId={selectedInvoiceForPayment.id}
+          invoiceNumber={selectedInvoiceForPayment.invoice_number || selectedInvoiceForPayment.id.slice(0, 8)}
+          clientName={selectedInvoiceForPayment.clients?.name || "Client"}
+          invoiceTotal={selectedInvoiceForPayment.revisedTotal || selectedInvoiceForPayment.total}
+          remainingBalance={selectedInvoiceForPayment.revisedRemainingBalance || selectedInvoiceForPayment.remaining_balance || selectedInvoiceForPayment.total}
+          onPaymentRecorded={() => {
+            setSelectedInvoiceForPayment(null);
+            // Reload invoices to show updated payment status
+            // Add small delay to ensure database trigger has completed
+            setTimeout(async () => {
+              try {
+                const { data, error } = await filterActive(
                 supabase
                   .from("invoices")
                   .select("id, invoice_number, total, remaining_balance, due_date, created_at, status, estimate_id, clients(name, phone), estimates(title)")
@@ -528,7 +536,8 @@ export default function InvoicesPage() {
           }, 300);
         }}
       />
-    )}
+      );
+    })()}
 
     {/* Add Expense Sheet Modal */}
     {isAddSheetOpen && expenseBundle && (
