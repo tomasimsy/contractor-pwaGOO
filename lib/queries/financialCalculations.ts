@@ -338,27 +338,8 @@ export async function calculateCompanyFinancials(
   const estimates = estimatesRes.data || [];
   const estimateIds = estimates.map((e) => e.id);
 
-  // Fetch all data in parallel, filtering by estimate IDs for assignments AND payments
-  const [
-    subPaymentsRes,
-    estSubsRes,
-    agentPaymentsRes,
-    estAgentsRes,
-    expensesRes,
-    mileageRes,
-    invoicesRes,
-  ] = await Promise.all([
-    // CRITICAL FIX: Only fetch payments for the estimates we're calculating
-    estimateIds.length > 0
-      ? supabase
-          .from("subcontractor_payments")
-          .select("amount, created_at")
-          .eq("company_id", companyId)
-          .is("deleted_at", null)
-          .in("estimate_id", estimateIds)
-      : Promise.resolve({ data: [] }),
-
-    // CRITICAL FIX: Only fetch assignments for estimates in the date range
+  // First, fetch assignments so we can get their IDs for payment queries
+  const [estSubsRes, estAgentsRes] = await Promise.all([
     estimateIds.length > 0
       ? supabase
           .from("estimate_subcontractors")
@@ -368,17 +349,6 @@ export async function calculateCompanyFinancials(
           .in("estimate_id", estimateIds)
       : Promise.resolve({ data: [] }),
 
-    // CRITICAL FIX: Only fetch payments for the estimates we're calculating
-    estimateIds.length > 0
-      ? supabase
-          .from("agent_payments")
-          .select("amount, payment_date")
-          .eq("company_id", companyId)
-          .is("deleted_at", null)
-          .in("estimate_id", estimateIds)
-      : Promise.resolve({ data: [] }),
-
-    // CRITICAL FIX: Only fetch assignments for estimates in the date range
     estimateIds.length > 0
       ? supabase
           .from("estimate_agents")
@@ -386,6 +356,40 @@ export async function calculateCompanyFinancials(
           .eq("company_id", companyId)
           .is("deleted_at", null)
           .in("estimate_id", estimateIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+
+  const estSubs = estSubsRes.data || [];
+  const estAgents = estAgentsRes.data || [];
+  const estSubIds = estSubs.map((s) => s.id);
+  const estAgentIds = estAgents.map((a) => a.id);
+
+  // Now fetch payments using the assignment IDs
+  const [
+    subPaymentsRes,
+    agentPaymentsRes,
+    expensesRes,
+    mileageRes,
+    invoicesRes,
+  ] = await Promise.all([
+    // CRITICAL FIX: Payments link via estimate_subcontractor_id, not estimate_id
+    estSubIds.length > 0
+      ? supabase
+          .from("subcontractor_payments")
+          .select("amount, created_at")
+          .eq("company_id", companyId)
+          .is("deleted_at", null)
+          .in("estimate_subcontractor_id", estSubIds)
+      : Promise.resolve({ data: [] }),
+
+    // CRITICAL FIX: Agent payments link via estimate_agent_id, not estimate_id
+    estAgentIds.length > 0
+      ? supabase
+          .from("agent_payments")
+          .select("amount, payment_date")
+          .eq("company_id", companyId)
+          .is("deleted_at", null)
+          .in("estimate_agent_id", estAgentIds)
       : Promise.resolve({ data: [] }),
 
     // CRITICAL FIX: Only fetch expenses for the estimates we're calculating
@@ -417,9 +421,7 @@ export async function calculateCompanyFinancials(
 
   // Extract data
   const subPayments = subPaymentsRes.data || [];
-  const estSubs = estSubsRes.data || [];
   const agentPayments = agentPaymentsRes.data || [];
-  const estAgents = estAgentsRes.data || [];
   const expenses = expensesRes.data || [];
   const mileage = mileageRes.data || [];
   const invoices = invoicesRes.data || [];
