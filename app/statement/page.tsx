@@ -133,9 +133,9 @@ export default function FinancialDashboard() {
       ] = await Promise.all([
         supabase.from("estimates").select("id, total, status, created_at, estimate_number").eq("company_id", companyId).is("deleted_at", null).in("status", ["completed", "converted"]).gte("created_at", startDateStr),
         supabase.from("subcontractor_payments").select(`amount, created_at, estimate_subcontractors(subcontractors(name))`).eq("company_id", companyId).is("deleted_at", null).gte("created_at", startDateStr),
-        supabase.from("estimate_subcontractors").select("amount, paid_amount").eq("company_id", companyId).is("deleted_at", null),
+        supabase.from("estimate_subcontractors").select("amount, paid_amount").eq("company_id", companyId).is("deleted_at", null).gte("created_at", startDateStr),
         supabase.from("agent_payments").select(`amount, payment_date, agents(name), estimates(estimate_number)`).eq("company_id", companyId).is("deleted_at", null).gte("payment_date", startDateStr),
-        supabase.from("estimate_agents").select("amount, paid_amount").eq("company_id", companyId).is("deleted_at", null),
+        supabase.from("estimate_agents").select("amount, paid_amount").eq("company_id", companyId).is("deleted_at", null).gte("created_at", startDateStr),
         supabase.from("estimate_expenses").select("amount, category, description, expense_date").eq("company_id", companyId).is("deleted_at", null).gte("expense_date", startDateStr),
         supabase.from("mileage_trips").select("reimbursement, trip_date").eq("company_id", companyId).is("deleted_at", null).gte("trip_date", startDateStr)
       ]);
