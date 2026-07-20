@@ -1024,7 +1024,11 @@ export default function EstimatePage() {
                   #{estimate?.estimate_number || id?.slice(0, 8)}
                 </p>
               </div>
-              <div className="shrink-0">
+              <div className="shrink-0 flex gap-1.5 items-center">
+                <Link href={`/expense?project=${id}`} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50/60 rounded-xl border border-slate-200/60 bg-white shadow-3xs transition-all active:scale-95 flex items-center gap-1 text-xs font-bold">
+                  <DollarSign size={13} />
+                  <span className="hidden sm:inline pr-0.5">Expenses</span>
+                </Link>
                 {!isEditMode && !estimate?.signature && estimate?.status !== "converted" && (
                   <button onClick={() => setIsEditMode(true)} className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50/60 rounded-xl border border-slate-200/60 bg-white shadow-3xs transition-all active:scale-95 flex items-center gap-1 text-xs font-bold">
                     <SquarePen size={13} />

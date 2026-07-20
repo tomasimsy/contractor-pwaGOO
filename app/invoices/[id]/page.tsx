@@ -354,7 +354,15 @@ export default function InvoicePage() {
                     <p className="text-[10px] text-slate-400 truncate mt-0.5">{estimateTitle}</p>
                   )}
                 </div>
-                <div className="shrink-0">
+                <div className="shrink-0 flex gap-1.5 items-center">
+                  {estimateId && (
+                    <Link
+                      href={`/expense?project=${estimateId}`}
+                      className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl border border-slate-200/60 bg-white shadow-3xs transition-all text-[11px] font-bold flex items-center gap-1"
+                    >
+                      <DollarSign size={13} /><span className="hidden sm:inline">Expenses</span>
+                    </Link>
+                  )}
                   <button
                     onClick={async () => {
                       const { data: { session } } = await supabase.auth.getSession();

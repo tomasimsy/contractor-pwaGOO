@@ -30,7 +30,7 @@ export default function InvoicesPage() {
         const { data, error } = await filterActive(
           supabase
             .from("invoices")
-            .select("id, invoice_number,  total, remaining_balance, due_date, created_at, status, estimate_id, clients(name, phone), estimates(title)")
+            .select("id, invoice_number,  total, remaining_balance, due_date, created_at, status, estimate_id, is_locked, clients(name, phone), estimates(title)")
             .order("created_at", { ascending: false }),
           "invoices"
         );
@@ -308,7 +308,10 @@ export default function InvoicesPage() {
                         let statusLabel = "";
                         let statusColor = "";
 
-                        if (amountPaid >= total) {
+                        if (inv.is_locked) {
+                          statusLabel = "Closed";
+                          statusColor = "bg-slate-100/50 text-slate-600 border-slate-200/60";
+                        } else if (amountPaid >= total) {
                           statusLabel = "Fully Paid";
                           statusColor = "bg-teal-100/50 text-teal-700 border-teal-200/50";
                         } else if (amountPaid > 0) {
