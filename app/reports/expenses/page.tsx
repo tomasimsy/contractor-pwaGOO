@@ -6,6 +6,8 @@ import { supabase } from "@/lib/supabase/client";
 import { filterActive } from '@/lib/queries/softDeleteFilter';
 import DesktopShell from "@/components/layout/DesktopShell";
 import { formatCurrency } from "@/lib/utils/formatting";
+import { calculateProjectFinancials } from "@/lib/queries/financialCalculations";
+import { getProjectBundle } from "@/lib/queries/projects";
 import {
   ArrowUpDown,
   ArrowUp,
@@ -112,216 +114,58 @@ export default function ExpensesReportPage() {
 
       const companyId = profile.company_id;
 
-        // 1. Fetch all estimates – include client ID and name
-        const { data: estimates, error: estError } = await supabase
-          .from("estimates")
-          .select(`
-            id,
-            estimate_number,
-            title,
-            status,
-            created_at,
-            total,
-            client:client_id (id, name)
-          `)
-          .eq("company_id", companyId)
-          .is("deleted_at", null)
-          .order("created_at", { ascending: false });
+      // Fetch all estimates with client info
+      const { data: estimates, error: estError } = await supabase
+        .from("estimates")
+        .select("id, estimate_number, title, status, created_at, client:client_id (id, name)")
+        .eq("company_id", companyId)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false });
 
-        if (estError || !estimates) throw new Error("Failed to load estimates");
+      if (estError || !estimates) throw new Error("Failed to load estimates");
 
-        const allEstimateIds = estimates.map((e) => e.id);
+      // Fetch invoices to find which estimates have payments
+      const { data: invoices, error: invError } = await supabase
+        .from("invoices")
+        .select("estimate_id, amount_paid, status, created_at")
+        .eq("company_id", companyId)
+        .in("estimate_id", estimates.map(e => e.id))
+        .in("status", ["paid", "partial"]);
 
-        // 2. Fetch invoices with status 'paid' or 'partial'
-        const { data: invoices, error: invError } = await supabase
-          .from("invoices")
-          .select("estimate_id, amount_paid, status, created_at")
-          .eq("company_id", companyId)
-          .in("estimate_id", allEstimateIds)
-          .in("status", ["paid", "partial"]);
+      if (invError) throw new Error("Failed to load invoices");
 
-        if (invError) throw new Error("Failed to load invoices");
+      // Find estimates with payments
+      const paidEstimateIds = new Set(invoices.map(inv => inv.estimate_id));
+      if (paidEstimateIds.size === 0) {
+        setData([]);
+        setLoading(false);
+        return;
+      }
 
-        const paidEstimateIds = new Set<string>();
-        invoices.forEach((inv) => paidEstimateIds.add(inv.estimate_id));
+      const activeEstimates = estimates.filter(e => paidEstimateIds.has(e.id));
 
-        if (paidEstimateIds.size === 0) {
-          setData([]);
-          setLoading(false);
-          return;
+      // Build invoice lookup
+      const invoicesByEstimate: Record<string, any[]> = {};
+      const invoiceCounts: Record<string, number> = {};
+      const lastPaymentDates: Record<string, string> = {};
+      invoices.forEach(inv => {
+        if (!invoicesByEstimate[inv.estimate_id]) invoicesByEstimate[inv.estimate_id] = [];
+        invoicesByEstimate[inv.estimate_id].push(inv);
+        invoiceCounts[inv.estimate_id] = (invoiceCounts[inv.estimate_id] || 0) + 1;
+        if (!lastPaymentDates[inv.estimate_id] || inv.created_at > lastPaymentDates[inv.estimate_id]) {
+          lastPaymentDates[inv.estimate_id] = inv.created_at;
         }
+      });
 
-        const activeEstimates = estimates.filter((e) =>
-          paidEstimateIds.has(e.id)
-        );
-        const activeIds = activeEstimates.map((e) => e.id);
-
-        const safeFetch = async (table: string, query: any) => {
-          try {
-            const { data, error } = await query(supabase.from(table));
-            if (error) throw error;
-            return data || [];
-          } catch (e) {
-            console.warn(`Table "${table}" fetch failed:`, e);
-            return [];
-          }
-        };
-
-        // ---------- Subcontractor data ----------
-        const estimateSubs = await safeFetch(
-          "estimate_subcontractors",
-          (q: any) =>
-            q
-              .select(`
-                id,
-                estimate_id,
-                subcontractor_id,
-                subcontractors (id, name)
-              `)
-              .eq("company_id", companyId)
-              .in("estimate_id", activeIds)
-              .is("deleted_at", null)
-        );
-
-        const subMap: Record<string, { id: string; name: string }[]> = {};
-        estimateSubs.forEach((es: any) => {
-          const estId = es.estimate_id;
-          if (!subMap[estId]) subMap[estId] = [];
-          const sub = es.subcontractors;
-          if (sub?.id && sub?.name) {
-            if (!subMap[estId].find((s) => s.id === sub.id)) {
-              subMap[estId].push({ id: sub.id, name: sub.name });
-            }
-          }
-        });
-
-        const subLinkIds = estimateSubs.map((es: any) => es.id);
-        let subPayments: any[] = [];
-        if (subLinkIds.length) {
-          subPayments = await safeFetch(
-            "subcontractor_payments",
-            (q: any) =>
-              q
-                .select("amount, estimate_subcontractor_id")
-                .eq("company_id", companyId)
-                .in("estimate_subcontractor_id", subLinkIds)
-                .is("deleted_at", null)
-          );
-        }
-
-        const subTotals: Record<string, number> = {};
-        subPayments.forEach((p: any) => {
-          const found = estimateSubs.find(
-            (es: any) => es.id === p.estimate_subcontractor_id
-          );
-          if (found) {
-            const estId = found.estimate_id;
-            subTotals[estId] = (subTotals[estId] || 0) + (p.amount || 0);
-          }
-        });
-
-        // ---------- Agent data ----------
-        const agentPaymentsData = await safeFetch(
-          "agent_payments",
-          (q: any) =>
-            q
-              .select(`
-                estimate_id,
-                agent_id,
-                amount,
-                agents (id, name)
-              `)
-              .eq("company_id", companyId)
-              .in("estimate_id", activeIds)
-              .is("deleted_at", null)
-        );
-
-        const agentMap: Record<string, { id: string; name: string }[]> = {};
-        const agentTotals: Record<string, number> = {};
-        agentPaymentsData.forEach((ap: any) => {
-          const estId = ap.estimate_id;
-          if (!agentMap[estId]) agentMap[estId] = [];
-          const agent = ap.agents;
-          if (agent?.id && agent?.name) {
-            if (!agentMap[estId].find((a) => a.id === agent.id)) {
-              agentMap[estId].push({ id: agent.id, name: agent.name });
-            }
-          }
-          agentTotals[estId] = (agentTotals[estId] || 0) + (ap.amount || 0);
-        });
-
-        // ---------- Other expenses ----------
-        const expensePayments = await safeFetch(
-          "estimate_expenses",
-          (q: any) =>
-            q.select("estimate_id, amount").eq("company_id", companyId).in("estimate_id", activeIds).is("deleted_at", null)
-        );
-        const expenseTotals: Record<string, number> = {};
-        expensePayments.forEach((p: any) => {
-          expenseTotals[p.estimate_id] =
-            (expenseTotals[p.estimate_id] || 0) + (p.amount || 0);
-        });
-
-        // ---------- Mileage costs ----------
-        const mileagePayments = await safeFetch(
-          "mileage_trips",
-          (q: any) =>
-            q.select("estimate_id, reimbursement").eq("company_id", companyId).in("estimate_id", activeIds).is("deleted_at", null)
-        );
-        const mileageTotals: Record<string, number> = {};
-        mileagePayments.forEach((m: any) => {
-          mileageTotals[m.estimate_id] =
-            (mileageTotals[m.estimate_id] || 0) + (m.reimbursement || 0);
-        });
-
-        // ---------- Payment totals from invoices ----------
-        const payTotals: Record<string, number> = {};
-        const invoiceCounts: Record<string, number> = {};
-        const lastPaymentDates: Record<string, string> = {};
-        invoices.forEach((inv: any) => {
-          const eid = inv.estimate_id;
-          payTotals[eid] = (payTotals[eid] || 0) + (inv.amount_paid || 0);
-          invoiceCounts[eid] = (invoiceCounts[eid] || 0) + 1;
-          if (!lastPaymentDates[eid] || inv.created_at > lastPaymentDates[eid]) {
-            lastPaymentDates[eid] = inv.created_at;
-          }
-        });
-
-        // ---------- Approved change orders ----------
-        const changeOrders = await safeFetch(
-          "change_orders",
-          (q: any) =>
-            q
-              .select("estimate_id, total_amount")
-              .eq("company_id", companyId)
-              .in("estimate_id", activeIds)
-              .eq("status", "approved")
-              .is("deleted_at", null)
-        );
-        const coTotals: Record<string, number> = {};
-        changeOrders.forEach((co: any) => {
-          coTotals[co.estimate_id] =
-            (coTotals[co.estimate_id] || 0) + (co.total_amount || 0);
-        });
-
-        // ---------- Build summaries ----------
-        const summaries: EstimateSummary[] = activeEstimates.map((est) => {
-          const originalTotal = est.total || 0;
-          const coTotal = coTotals[est.id] || 0;
-          const revisedTotal = originalTotal + coTotal;
-          const subPaid = subTotals[est.id] || 0;
-          const agentPaid = agentTotals[est.id] || 0;
-          const otherExpenses = expenseTotals[est.id] || 0;
-          const mileageExpenses = mileageTotals[est.id] || 0;
-          const totalExpenses = subPaid + agentPaid + otherExpenses + mileageExpenses;
-          const paymentsReceived = payTotals[est.id] || 0;
-          const remainingBalance = revisedTotal - paymentsReceived;
-          const profit = revisedTotal - totalExpenses;
-          const profitMargin =
-            revisedTotal > 0 ? (profit / revisedTotal) * 100 : 0;
+      // Calculate financials using unified engine
+      const summaries: EstimateSummary[] = [];
+      for (const est of activeEstimates) {
+        try {
+          const bundle = await getProjectBundle(est.id);
+          const financials = calculateProjectFinancials(bundle);
 
           const clientObj = est.client as any;
-          return {
+          summaries.push({
             id: est.id,
             client_id: clientObj?.id || null,
             client_name: clientObj?.name || "Unassigned",
@@ -329,22 +173,25 @@ export default function ExpensesReportPage() {
             title: est.title || null,
             status: est.status || "unknown",
             created_at: est.created_at || new Date().toISOString(),
-            revised_total: revisedTotal,
-            subcontractor_paid: subPaid,
-            subcontractors: subMap[est.id] || [],
-            agent_paid: agentPaid,
-            agents: agentMap[est.id] || [],
-            other_expenses: otherExpenses,
-            payments_received: paymentsReceived,
-            remaining_balance: remainingBalance,
-            profit: profit,
-            profit_margin: profitMargin,
+            revised_total: financials.revisedTotal,
+            subcontractor_paid: financials.subcontractorCosts,
+            subcontractors: [],
+            agent_paid: financials.agentCosts,
+            agents: [],
+            other_expenses: financials.expenseItems + financials.mileageCosts,
+            payments_received: financials.amountPaid,
+            remaining_balance: financials.remainingBalance,
+            profit: financials.netProfit,
+            profit_margin: financials.profitMargin,
             invoice_count: invoiceCounts[est.id] || 0,
             last_payment_date: lastPaymentDates[est.id] || null,
-          };
-        });
+          });
+        } catch (err) {
+          console.warn(`Failed to calculate for estimate ${est.id}:`, err);
+        }
+      }
 
-        setData(summaries);
+      setData(summaries);
       } catch (err: any) {
         setError(err.message || "Failed to load data");
       } finally {
