@@ -7,6 +7,7 @@ import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import { formatCurrency } from "@/lib/utils/formatting";
 import { filterActive } from '@/lib/queries/softDeleteFilter';
 import Link from "next/link";
+import { calculateAgentFinancials } from "@/lib/queries/financialCalculations";
 
 type PaymentRecord = {
   estimate_id: string;
@@ -46,7 +47,12 @@ export default function AgentDetail() {
         if (agentError) throw agentError;
         setAgentName(agent?.name || "Agent");
 
-        // Get agent_payments
+        // Use unified engine to get agent financial data
+        const agentFinancials = await calculateAgentFinancials(id, companyId);
+        setTotalPaid(agentFinancials.totalPaid);
+        setTotalAssigned(agentFinancials.outstandingPayable + agentFinancials.totalPaid);
+
+        // Get agent_payments for detailed list
         const { data: paymentsData, error: payError } = await supabase
           .from("agent_payments")
           .select(`
@@ -78,19 +84,6 @@ export default function AgentDetail() {
         });
 
         setPayments(records);
-        const total = records.reduce((sum, r) => sum + r.amount, 0);
-        setTotalPaid(total);
-
-        // Assigned payout amounts, for a "still owed" summary — same
-        // estimate_agents assignment table the Expense page's payout
-        // workflow now assigns/edits against.
-        const { data: assignments } = await supabase
-          .from("estimate_agents")
-          .select("amount")
-          .eq("agent_id", id)
-          .eq("company_id", companyId)
-          .is("deleted_at", null);
-        setTotalAssigned((assignments || []).reduce((sum, a: any) => sum + (a.amount || 0), 0));
       } catch (err) {
         console.error(err);
       } finally {
