@@ -132,10 +132,10 @@ export default function FinancialDashboard() {
         mileageRes
       ] = await Promise.all([
         supabase.from("estimates").select("id, total, status, created_at, estimate_number").eq("company_id", companyId).is("deleted_at", null).in("status", ["completed", "converted"]).gte("created_at", startDateStr),
-        supabase.from("subcontractor_payments").select(`amount, created_at, estimate_subcontractors(subcontractors(name))`).eq("company_id", companyId).is("deleted_at", null).gte("created_at", startDateStr),
-        supabase.from("estimate_subcontractors").select("amount, paid_amount").eq("company_id", companyId).is("deleted_at", null).gte("created_at", startDateStr),
-        supabase.from("agent_payments").select(`amount, payment_date, agents(name), estimates(estimate_number)`).eq("company_id", companyId).is("deleted_at", null).gte("payment_date", startDateStr),
-        supabase.from("estimate_agents").select("amount, paid_amount").eq("company_id", companyId).is("deleted_at", null).gte("created_at", startDateStr),
+        supabase.from("subcontractor_payments").select(`amount, created_at, estimate_subcontractor_id, estimate_subcontractors(subcontractors(name))`).eq("company_id", companyId).is("deleted_at", null).gte("created_at", startDateStr),
+        supabase.from("estimate_subcontractors").select("id, amount").eq("company_id", companyId).is("deleted_at", null),
+        supabase.from("agent_payments").select(`amount, payment_date, estimate_agent_id, agents(name), estimates(estimate_number)`).eq("company_id", companyId).is("deleted_at", null).gte("payment_date", startDateStr),
+        supabase.from("estimate_agents").select("id, amount").eq("company_id", companyId).is("deleted_at", null),
         supabase.from("estimate_expenses").select("amount, category, description, expense_date").eq("company_id", companyId).is("deleted_at", null).gte("expense_date", startDateStr),
         supabase.from("mileage_trips").select("reimbursement, trip_date").eq("company_id", companyId).is("deleted_at", null).gte("trip_date", startDateStr)
       ]);
@@ -149,15 +149,31 @@ export default function FinancialDashboard() {
 
       const subPayments = subPaymentsRes.data || [];
       const subcontractorPaid = subPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
-      
+
+      // Calculate outstanding by summing actual payments per assignment (not using denormalized paid_amount field)
+      const subPaymentsByAssignment = new Map<string, number>();
+      subPayments.forEach(p => {
+        const assignmentId = p.estimate_subcontractor_id;
+        if (assignmentId) {
+          subPaymentsByAssignment.set(assignmentId, (subPaymentsByAssignment.get(assignmentId) || 0) + (p.amount || 0));
+        }
+      });
       const estSubs = estSubsRes.data || [];
-      const outstandingSubcontractor = estSubs.reduce((sum, s) => sum + ((s.amount || 0) - (s.paid_amount || 0)), 0);
+      const outstandingSubcontractor = estSubs.reduce((sum, s) => sum + ((s.amount || 0) - (subPaymentsByAssignment.get(s.id) || 0)), 0);
 
       const agentPayments = agentPaymentsRes.data || [];
       const agentPaid = agentPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
 
+      // Calculate outstanding by summing actual payments per assignment (not using denormalized paid_amount field)
+      const agentPaymentsByAssignment = new Map<string, number>();
+      agentPayments.forEach(p => {
+        const assignmentId = p.estimate_agent_id;
+        if (assignmentId) {
+          agentPaymentsByAssignment.set(assignmentId, (agentPaymentsByAssignment.get(assignmentId) || 0) + (p.amount || 0));
+        }
+      });
       const estAgents = estAgentsRes.data || [];
-      const outstandingAgent = estAgents.reduce((sum, a) => sum + ((a.amount || 0) - (a.paid_amount || 0)), 0);
+      const outstandingAgent = estAgents.reduce((sum, a) => sum + ((a.amount || 0) - (agentPaymentsByAssignment.get(a.id) || 0)), 0);
 
       const expenses = expensesRes.data || [];
       const expensesCost = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
