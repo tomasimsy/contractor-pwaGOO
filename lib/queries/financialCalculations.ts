@@ -438,6 +438,7 @@ export async function calculateCompanyFinancials(
   console.log(`  Expenses: ${expenses.length}`, expenses);
   console.log(`  Mileage: ${mileage.length}`, mileage);
   console.log(`  Invoices: ${invoices.length}`, invoices);
+  console.log(`  Invoice details:`, invoices.map(inv => ({ total: inv.total, amount_paid: inv.amount_paid, status: inv.status })));
 
   // Calculate totals
   const totalRevenue = estimates.reduce((sum, e) => sum + (e.total || 0), 0);
