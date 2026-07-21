@@ -13,7 +13,7 @@ import ProjectFinancialPills from "@/components/shared/ProjectFinancialPills";
 import ReceivedPaymentModal from "@/components/payments/ReceivedPaymentModal";
 import AddExpenseSheet, { type FormCategory } from "@/components/expense/AddExpenseSheet";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
-import { getCompanyProjectFinancialSummaries, type ProjectFinancialSummary, addEntry, assignSubcontractorToProject, calculateApprovedChangeOrdersTotal } from "@/lib/queries/expenses";
+import { getCompanyProjectFinancialSummaries, type ProjectFinancialSummary, addEntry, assignSubcontractorToProject } from "@/lib/queries/expenses";
 import { getProjectBundle } from "@/lib/queries/projects";
 import type { ProjectBundle, NewEntryInput } from "@/lib/types";
 import invoice from "../estimates/[id]/invoice";
@@ -34,56 +34,20 @@ export default function InvoicesPage() {
     async function fetchInvoices() {
       try {
         setLoading(true);
+        // invoices.total/remaining_balance/amount_paid/status are kept
+        // current with approved change orders baked in by
+        // cascadeRevisedTotalToInvoices() (see lib/queries/changeOrders.ts)
+        // — no separate change-order fetch or "revised" recomputation
+        // needed here, it would only double-count what's already included.
         const { data, error } = await filterActive(
           supabase
             .from("invoices")
-            .select("id, invoice_number,  total, remaining_balance, due_date, created_at, status, estimate_id, is_locked, clients(name, phone), estimates(title)")
+            .select("id, invoice_number, total, remaining_balance, amount_paid, due_date, created_at, status, estimate_id, is_locked, clients(name, phone), estimates(title)")
             .order("created_at", { ascending: false }),
           "invoices"
         );
         if (error) throw error;
-        if (data) {
-          // Fetch change orders for each estimate to calculate revised totals
-          const estimateIds = [...new Set(data.map((inv: any) => inv.estimate_id).filter(Boolean))];
-          const changeOrdersMap = new Map<string, any[]>();
-
-          if (estimateIds.length > 0) {
-            const { data: cos } = await supabase
-              .from("change_orders")
-              .select("estimate_id, total_amount, status")
-              .in("estimate_id", estimateIds)
-              .eq("status", "approved")
-              .is("deleted_at", null);
-
-            console.log(`[Invoices] Fetched ${cos?.length || 0} approved change orders from ${estimateIds.length} estimates`);
-
-            if (cos) {
-              cos.forEach((co: any) => {
-                if (!changeOrdersMap.has(co.estimate_id)) {
-                  changeOrdersMap.set(co.estimate_id, []);
-                }
-                changeOrdersMap.get(co.estimate_id)!.push(co);
-              });
-            }
-          }
-
-          // Calculate revised totals and remaining balance including approved change orders
-          const invoicesWithRevised = data.map((inv: any) => {
-            const cosForEstimate = changeOrdersMap.get(inv.estimate_id) || [];
-            const approvedCOTotal = calculateApprovedChangeOrdersTotal(cosForEstimate);
-            const revisedTotal = inv.total + approvedCOTotal;
-            const revisedRemainingBalance = (inv.remaining_balance || inv.total) + approvedCOTotal;
-            console.log(`[Invoices] ${inv.invoice_number}: estimate_id=${inv.estimate_id}, base=$${inv.total}, co=$${approvedCOTotal}, revised=$${revisedTotal}, remaining=$${revisedRemainingBalance}`);
-            return {
-              ...inv,
-              revisedTotal,
-              revisedRemainingBalance
-            };
-          });
-
-          console.log('[Invoices] Setting state with enriched invoices:', invoicesWithRevised);
-          setInvoices(invoicesWithRevised);
-        }
+        if (data) setInvoices(data);
       } catch (err) {
         console.error("Error fetching invoices:", err);
       } finally {
@@ -499,14 +463,6 @@ export default function InvoicesPage() {
 
     {/* Receive Payment Modal */}
     {selectedInvoiceForPayment && (() => {
-      console.log('[Modal] selectedInvoiceForPayment:', {
-        id: selectedInvoiceForPayment.id,
-        invoice_number: selectedInvoiceForPayment.invoice_number,
-        total: selectedInvoiceForPayment.total,
-        revisedTotal: selectedInvoiceForPayment.revisedTotal,
-        remaining_balance: selectedInvoiceForPayment.remaining_balance,
-        revisedRemainingBalance: selectedInvoiceForPayment.revisedRemainingBalance,
-      });
       return (
         <ReceivedPaymentModal
           isOpen={true}
@@ -514,8 +470,8 @@ export default function InvoicesPage() {
           invoiceId={selectedInvoiceForPayment.id}
           invoiceNumber={selectedInvoiceForPayment.invoice_number || selectedInvoiceForPayment.id.slice(0, 8)}
           clientName={selectedInvoiceForPayment.clients?.name || "Client"}
-          invoiceTotal={selectedInvoiceForPayment.revisedTotal || selectedInvoiceForPayment.total}
-          remainingBalance={selectedInvoiceForPayment.revisedRemainingBalance || selectedInvoiceForPayment.remaining_balance || selectedInvoiceForPayment.total}
+          invoiceTotal={selectedInvoiceForPayment.total}
+          remainingBalance={selectedInvoiceForPayment.remaining_balance ?? selectedInvoiceForPayment.total}
           onPaymentRecorded={() => {
             setSelectedInvoiceForPayment(null);
             // Reload invoices to show updated payment status
@@ -525,7 +481,7 @@ export default function InvoicesPage() {
                 const { data, error } = await filterActive(
                 supabase
                   .from("invoices")
-                  .select("id, invoice_number, total, remaining_balance, due_date, created_at, status, estimate_id, clients(name, phone), estimates(title)")
+                  .select("id, invoice_number, total, remaining_balance, amount_paid, due_date, created_at, status, estimate_id, is_locked, clients(name, phone), estimates(title)")
                   .order("created_at", { ascending: false }),
                 "invoices"
               );

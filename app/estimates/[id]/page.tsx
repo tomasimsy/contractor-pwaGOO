@@ -7,6 +7,7 @@ import { filterActive } from '@/lib/queries/softDeleteFilter';
 import { Estimate, Client, Project, LineItem, Signature } from "@/types";
 import { formatCurrency } from "@/lib/utils/formatting";
 import { calculateSubtotal, calculateTax, calculateTotal } from "@/lib/utils/calculations";
+import { cascadeRevisedTotalToInvoices, computeRevisedEstimateTotal } from "@/lib/queries/changeOrders";
 import SignaturePad from "@/components/signature/SignaturePad";
 import ProjectFinancialsModal from "@/components/ProjectFinancialsModal";
 import ExpenseModal from "@/components/ExpenseModal";
@@ -400,36 +401,21 @@ export default function EstimatePage() {
       return;
     }
 
-    // Keep estimates.total in sync using the same formula every other
-    // recompute of this total uses (originalSubtotal +
-    // approvedChangeOrdersTotal — see approve_public_change_order RPC
-    // and the public/internal Invoice pages). This page and the
-    // invoice page always recompute live and were never affected by
-    // this being stale, but list/dashboard views that read
-    // estimates.total directly need it kept current too.
-    const [{ data: items }, { data: approvedCOs }] = await Promise.all([
-      supabase
-        .from("estimate_items")
-        .select("total")
-        .eq("estimate_id", id)
-        .eq("company_id", companyId)
-        .is("deleted_at", null),
-      supabase
-        .from("change_orders")
-        .select("total_amount")
-        .eq("estimate_id", id)
-        .eq("company_id", companyId)
-        .eq("status", "approved")
-        .is("deleted_at", null),
-    ]);
-    const newTotal =
-      (items || []).reduce((sum, i) => sum + (i.total || 0), 0) +
-      (approvedCOs || []).reduce((sum, co) => sum + (co.total_amount || 0), 0);
+    // Keep estimates.total in sync using the SAME formula saveEdit uses
+    // (items + markup/discount/tax + approved change orders) — this used
+    // to duplicate a truncated items-and-COs-only formula that silently
+    // dropped markup/discount/tax on every approval. Also cascades the
+    // new total to any already-generated invoice, whose own `total` is
+    // otherwise a one-time snapshot that goes stale (and can even push
+    // remaining_balance negative) the moment a change order is approved
+    // after invoicing.
+    const { revisedTotal: newTotal } = await computeRevisedEstimateTotal(id as string, companyId);
     await supabase
       .from("estimates")
       .update({ total: newTotal })
       .eq("id", id)
       .eq("company_id", companyId);
+    await cascadeRevisedTotalToInvoices(id as string, companyId, newTotal);
 
     await loadChangeOrders();
     await loadEstimate();

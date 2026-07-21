@@ -212,12 +212,23 @@ export async function getTaxDashboard(companyId: string, startDate: Date, endDat
 }
 
 /**
- * Get subcontractor 1099 summary
- * Uses unified financial calculations for amounts
+ * Get subcontractor 1099 summary.
+ *
+ * NOTE: this runs its own queries rather than calling
+ * calculateSubcontractorFinancials() (financialCalculations.ts) — that
+ * function computes a lifetime total, not one scoped to a tax year, so
+ * it isn't a drop-in replacement for a year-by-year 1099 report. Kept
+ * as an intentionally separate, tax-year-scoped calculation.
  */
 export async function getSubcontractor1099Summary(companyId: string, taxYear: number) {
-  const startDate = new Date(taxYear, 0, 1);
-  const endDate = new Date(taxYear, 11, 31);
+  // Exclusive upper bound (start of next year) rather than an inclusive
+  // "Dec 31 23:59:59" cutoff — the latter is only correct if payment_date
+  // is a timestamp compared in the same timezone snapshot it was built
+  // in; a `date` column, or a server/DB timezone offset, can silently
+  // shift that instant across the year boundary. `< nextYearStart` is
+  // correct either way.
+  const startDate = new Date(taxYear, 0, 1).toISOString();
+  const endDate = new Date(taxYear + 1, 0, 1).toISOString();
 
   // Get all subcontractors for company
   const { data: subcontractors } = await supabase
@@ -237,24 +248,27 @@ export async function getSubcontractor1099Summary(companyId: string, taxYear: nu
         .eq("subcontractor_id", sub.id)
         .single();
 
-      // Get all assignments for this subcontractor in the tax year
+      // All of this subcontractor's assignments, regardless of when the
+      // assignment itself was created — a 1099 is about when they were
+      // PAID, not when the assignment row was made. Date-scoping this
+      // query used to drop any payment made this tax year against an
+      // assignment created in an earlier year.
       const { data: assignments } = await supabase
         .from("estimate_subcontractors")
         .select("*")
         .eq("subcontractor_id", sub.id)
         .eq("company_id", companyId)
-        .is("deleted_at", null)
-        .gte("created_at", startDate.toISOString())
-        .lte("created_at", endDate.toISOString());
+        .is("deleted_at", null);
 
-      // Get all payments for these assignments
+      // Payments scoped by payment_date (when they were actually paid),
+      // not created_at (when the row happened to be entered).
       const { data: payments } = await supabase
         .from("subcontractor_payments")
         .select("amount")
         .eq("company_id", companyId)
         .is("deleted_at", null)
-        .gte("created_at", startDate.toISOString())
-        .lte("created_at", endDate.toISOString())
+        .gte("payment_date", startDate)
+        .lt("payment_date", endDate)
         .in("estimate_subcontractor_id", assignments?.map(a => a.id) || []);
 
       const totalPaid = payments?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0;
@@ -276,12 +290,17 @@ export async function getSubcontractor1099Summary(companyId: string, taxYear: nu
 }
 
 /**
- * Get agent compensation summary for tax year
- * Uses unified financial calculations for amounts
+ * Get agent compensation summary for tax year.
+ *
+ * NOTE: intentionally tax-year-scoped and separate from
+ * calculateAgentFinancials() (financialCalculations.ts), which computes
+ * a lifetime total — see the note on getSubcontractor1099Summary above.
  */
 export async function getAgentCompensationSummary(companyId: string, taxYear: number) {
-  const startDate = new Date(taxYear, 0, 1);
-  const endDate = new Date(taxYear, 11, 31);
+  // See the note in getSubcontractor1099Summary above on why this is an
+  // exclusive upper bound rather than an inclusive "Dec 31 23:59:59" one.
+  const startDate = new Date(taxYear, 0, 1).toISOString();
+  const endDate = new Date(taxYear + 1, 0, 1).toISOString();
 
   // Get all agents for company
   const { data: agents } = await supabase
@@ -294,25 +313,29 @@ export async function getAgentCompensationSummary(companyId: string, taxYear: nu
 
   const summaries = await Promise.all(
     agents.map(async (agent) => {
-      // Get all commissions
+      // Commissions scoped by payment_date (when actually paid) —
+      // matches the date field calculateCompanyFinancials uses for this
+      // same table, so this report and the dashboards can't attribute
+      // the same payment to different tax years.
       const { data: commissions } = await supabase
         .from("agent_payments")
         .select("amount")
         .eq("agent_id", agent.id)
         .eq("company_id", companyId)
         .is("deleted_at", null)
-        .gte("created_at", startDate.toISOString())
-        .lte("created_at", endDate.toISOString());
+        .gte("payment_date", startDate)
+        .lt("payment_date", endDate);
 
-      // Get all reimbursements
+      // Reimbursements scoped by expense_date (when the cost was
+      // incurred), not created_at (when the row was entered).
       const { data: reimbursements } = await supabase
         .from("estimate_expenses")
         .select("amount")
         .eq("agent_id", agent.id)
         .eq("company_id", companyId)
         .is("deleted_at", null)
-        .gte("created_at", startDate.toISOString())
-        .lte("created_at", endDate.toISOString());
+        .gte("expense_date", startDate)
+        .lt("expense_date", endDate);
 
       const totalCommissions = commissions?.reduce((sum, c) => sum + (c.amount || 0), 0) || 0;
       const totalReimbursements = reimbursements?.reduce((sum, r) => sum + (r.amount || 0), 0) || 0;

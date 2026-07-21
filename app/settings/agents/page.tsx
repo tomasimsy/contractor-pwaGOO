@@ -37,11 +37,13 @@ function AgentsContent() {
   async function load() {
     setLoading(true);
     const companyId = await getCompanyId();
-    const { data, error } = await supabase
-      .from("agents")
-      .select("id, name, phone, email, commission_rate, notes, is_active")
-      .eq("company_id", companyId)
-      .order("name");
+    const { data, error } = await filterActive(
+      supabase
+        .from("agents")
+        .select("id, name, phone, email, commission_rate, notes, is_active")
+        .eq("company_id", companyId),
+      "agents"
+    ).order("name");
     if (error) toast.error("Couldn't load agents.");
     setAgents(data || []);
     setLoading(false);

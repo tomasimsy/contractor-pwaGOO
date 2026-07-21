@@ -49,7 +49,7 @@ export default function CustomerPaymentStatusCard({
           value={formatCurrency(financials.revisedTotal)}
           sublabel={
             financials.approvedChangeOrderTotal !== 0
-              ? `${formatCurrency(financials.estimateTotal)} + CO`
+              ? `${formatCurrency(financials.estimateTotal - financials.approvedChangeOrderTotal)} + CO`
               : "Original estimate"
           }
         />

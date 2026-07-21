@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { X } from "lucide-react";
 import { recordCustomerPayment } from "@/lib/queries/customerPayments";
-import { calculateApprovedChangeOrdersTotal } from "@/lib/queries/expenses";
 import { formatCurrency } from "@/lib/utils/formatting";
 import type { ProjectBundle } from "@/lib/types";
 
@@ -20,11 +19,6 @@ export default function CustomerPaymentModal({
   onPaymentRecorded?: () => void;
 }) {
   const invoices = bundle.invoices || [];
-
-  // Calculate revised total for each invoice (includes approved change orders)
-  const getRevisedTotal = () => {
-    return calculateApprovedChangeOrdersTotal(bundle.changeOrders);
-  };
 
   // Auto-select invoice if only one exists, otherwise empty
   const defaultInvoiceId = invoices.length === 1 ? invoices[0].id : "";
@@ -49,8 +43,10 @@ export default function CustomerPaymentModal({
   if (!isOpen) return null;
 
   const selectedInvoice = invoices.find((inv) => inv.id === selectedInvoiceId);
-  const approvedCOTotal = getRevisedTotal();
-  const selectedInvoiceRevisedTotal = selectedInvoice ? selectedInvoice.total + approvedCOTotal : 0;
+  // invoice.total is kept current with approved change orders baked in
+  // (see lib/queries/changeOrders.ts's cascadeRevisedTotalToInvoices) —
+  // no separate addition needed here.
+  const selectedInvoiceRevisedTotal = selectedInvoice ? selectedInvoice.total : 0;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -199,10 +195,9 @@ export default function CustomerPaymentModal({
               >
                 <option value="">Select an invoice...</option>
                 {invoices.map((invoice) => {
-                  const revisedTotal = invoice.total + approvedCOTotal;
                   return (
                     <option key={invoice.id} value={invoice.id}>
-                      {invoice.invoice_number} • {formatCurrency(revisedTotal)} (Balance:{" "}
+                      {invoice.invoice_number} • {formatCurrency(invoice.total)} (Balance:{" "}
                       {formatCurrency(invoice.remaining_balance)})
                     </option>
                   );

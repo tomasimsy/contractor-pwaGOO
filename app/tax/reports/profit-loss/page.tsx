@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import { getTaxDashboard, getTaxSettings } from "@/lib/queries/tax";
 import type { TaxDashboardData } from "@/lib/queries/tax";
@@ -58,7 +59,10 @@ export default function ProfitLossReport() {
               <h1 className="text-3xl font-bold text-slate-900">Profit & Loss Statement</h1>
               <p className="text-sm text-slate-600 mt-1">For the Year Ended December 31, {taxYear}</p>
             </div>
-            <button className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800">
+            <button
+              onClick={() => toast("PDF export isn't available yet.", { icon: "📄" })}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800"
+            >
               <Download size={16} />
               Download PDF
             </button>

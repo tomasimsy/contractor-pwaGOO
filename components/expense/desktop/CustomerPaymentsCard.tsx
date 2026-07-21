@@ -91,7 +91,7 @@ export default function CustomerPaymentsCard({
           </div>
           <div className="text-[11px] text-gray-500 mt-0.5">
             {financials.approvedChangeOrderTotal !== 0
-              ? `${formatCurrency(financials.estimateTotal)} + CO`
+              ? `${formatCurrency(financials.estimateTotal - financials.approvedChangeOrderTotal)} + CO`
               : "Original estimate"}
           </div>
         </div>

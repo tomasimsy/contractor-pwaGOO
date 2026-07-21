@@ -15,21 +15,25 @@ export interface GenerateInvoiceInput {
 /** Generate an invoice from an estimate and its approved change orders.
  * Calculates line items, subtotals, tax, and creates the invoice record. */
 export async function generateInvoiceFromEstimate(input: GenerateInvoiceInput): Promise<string> {
-  // Calculate totals
+  // input.estimateTotal is `estimates.total`, which approveChangeOrder()
+  // already keeps current as items + markup/discount/tax + approved
+  // change orders (see lib/queries/changeOrders.ts). Do NOT add
+  // approvedChangeOrderTotal again here — that used to double-count
+  // every change order approved before invoice generation.
   const originalEstimateTotal = input.estimateTotal;
   const approvedChangeOrderTotal = input.approvedChangeOrders.reduce((sum, co) => sum + (co.total_amount || 0), 0);
   const changeOrderTax = input.approvedChangeOrders.reduce((sum, co) => sum + (co.tax || 0), 0);
 
   // Line items: original estimate line items + approved change orders
-  let lineItemsSummary = "Original Estimate: $" + (originalEstimateTotal || 0).toFixed(2);
+  let lineItemsSummary = "Original Estimate: $" + ((originalEstimateTotal - approvedChangeOrderTotal) || 0).toFixed(2);
   if (approvedChangeOrderTotal > 0) {
     lineItemsSummary += "; Approved Change Orders: " + input.approvedChangeOrders.map(co => `${co.title} ($${(co.total_amount || 0).toFixed(2)})`).join(", ");
   }
 
-  // Calculate subtotal (before tax)
-  const subtotal = originalEstimateTotal + approvedChangeOrderTotal;
-  // Total tax from both estimate and change orders
-  const totalTax = changeOrderTax; // Estimate tax is typically already included in the total
+  // estimateTotal is already change-order-inclusive; only change-order-level
+  // tax (not part of the estimate's own tax_rate) is layered on top here.
+  const subtotal = originalEstimateTotal;
+  const totalTax = changeOrderTax;
   const total = subtotal + totalTax;
 
   // Create invoice record

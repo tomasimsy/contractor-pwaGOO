@@ -62,11 +62,13 @@ function SubcontractorsContent() {
   async function load() {
     setLoading(true);
     const companyId = await getCompanyId();
-    const { data, error } = await supabase
-      .from("subcontractors")
-      .select("id, name, trade, contact_person, phone, email, notes, is_active")
-      .eq("company_id", companyId)
-      .order("name");
+    const { data, error } = await filterActive(
+      supabase
+        .from("subcontractors")
+        .select("id, name, trade, contact_person, phone, email, notes, is_active")
+        .eq("company_id", companyId),
+      "subcontractors"
+    ).order("name");
     if (error) toast.error("Couldn't load subcontractors.");
     setSubs(data || []);
     setLoading(false);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import toast from "react-hot-toast";
 import { Download, FileText } from "lucide-react";
 
 export interface ReportData {
@@ -25,16 +25,10 @@ export interface ReportItem {
 }
 
 export function ReportViewer({ data, taxYear }: { data: ReportData; taxYear: number }) {
-  const [downloading, setDownloading] = useState(false);
-
-  const handleDownloadPDF = async () => {
-    setDownloading(true);
-    try {
-      // PDF generation would happen here
-      console.log("Generating PDF for:", data.title);
-    } finally {
-      setDownloading(false);
-    }
+  const handleDownloadPDF = () => {
+    // PDF export isn't built yet — say so instead of a button that
+    // silently does nothing after a "Generating..." flash.
+    toast("PDF export isn't available yet.", { icon: "📄" });
   };
 
   const formatCurrency = (amount: number) => {
@@ -59,11 +53,10 @@ export function ReportViewer({ data, taxYear }: { data: ReportData; taxYear: num
             </div>
             <button
               onClick={handleDownloadPDF}
-              disabled={downloading}
-              className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800"
             >
               <Download size={16} />
-              {downloading ? "Generating..." : "Download PDF"}
+              Download PDF
             </button>
           </div>
         </div>

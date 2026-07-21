@@ -319,6 +319,7 @@ export async function getCompanyPendingPayoutsDetailed(companyId: string): Promi
     { data: agents, error: agentsError },
     { data: subPayments, error: subPaymentsError },
     { data: agentPayments, error: agentPaymentsError },
+    { data: agentPayableExpenses, error: agentPayableExpensesError },
   ] = await Promise.all([
     supabase
       .from("estimate_subcontractors")
@@ -340,11 +341,22 @@ export async function getCompanyPendingPayoutsDetailed(companyId: string): Promi
       .select("estimate_agent_id, agent_id, estimate_id, amount")
       .eq("company_id", companyId)
       .is("deleted_at", null),
+    // Expenses an agent paid out of pocket on the company's behalf — the
+    // same "owed to agent" component computePendingPayouts() (the
+    // per-project Expense page's source of truth) already folds in, so
+    // this page's totals can't come out lower than the project page's.
+    supabase
+      .from("estimate_expenses")
+      .select("paid_by_agent_id, estimate_id, amount, tax")
+      .eq("company_id", companyId)
+      .is("deleted_at", null)
+      .not("paid_by_agent_id", "is", null),
   ]);
   if (subsError) throw subsError;
   if (agentsError) throw agentsError;
   if (subPaymentsError) throw subPaymentsError;
   if (agentPaymentsError) throw agentPaymentsError;
+  if (agentPayableExpensesError) throw agentPayableExpensesError;
 
   const estimateIds = Array.from(
     new Set([...(subs ?? []).map((s) => s.estimate_id), ...(agents ?? []).map((a) => a.estimate_id)])
@@ -379,6 +391,19 @@ export async function getCompanyPendingPayoutsDetailed(companyId: string): Promi
     paidByAgent.set(assignmentId, (paidByAgent.get(assignmentId) ?? 0) + p.amount);
   }
 
+  // Keyed by agent+estimate, not agent alone — an agent assigned to
+  // multiple projects must have each project's reimbursement attributed
+  // to that project's own assignment row, not summed onto every row.
+  const expensePayablesByAgentEstimate = new Map<string, number>();
+  for (const e of agentPayableExpenses ?? []) {
+    if (!e.paid_by_agent_id) continue;
+    const key = agentAssignmentKey(e.paid_by_agent_id, e.estimate_id);
+    expensePayablesByAgentEstimate.set(
+      key,
+      (expensePayablesByAgentEstimate.get(key) ?? 0) + (e.amount || 0) + (e.tax ?? 0)
+    );
+  }
+
   const subPayouts: DetailedPendingPayout[] = (subs ?? []).map((s: any) => {
     const paidAmount = paidBySub.get(s.id) ?? 0;
     const { remainingAmount, status } = computePayoutStatus(s.amount ?? 0, paidAmount);
@@ -403,7 +428,9 @@ export async function getCompanyPendingPayoutsDetailed(companyId: string): Promi
 
   const agentPayouts: DetailedPendingPayout[] = (agents ?? []).map((a: any) => {
     const paidAmount = paidByAgent.get(a.id) ?? 0;
-    const { remainingAmount, status } = computePayoutStatus(a.amount ?? 0, paidAmount);
+    const totalAssignedAmount =
+      (a.amount ?? 0) + (expensePayablesByAgentEstimate.get(agentAssignmentKey(a.agent_id, a.estimate_id)) ?? 0);
+    const { remainingAmount, status } = computePayoutStatus(totalAssignedAmount, paidAmount);
     const est = estimateById.get(a.estimate_id);
     return {
       role: "agent",
@@ -411,7 +438,7 @@ export async function getCompanyPendingPayoutsDetailed(companyId: string): Promi
       personId: a.agent_id,
       name: a.agents?.name ?? "Agent",
       roleDetail: null,
-      assignedAmount: a.amount ?? 0,
+      assignedAmount: totalAssignedAmount,
       paidAmount,
       remainingAmount,
       status,
@@ -736,12 +763,15 @@ export function summarizeFinancials(
   const agentCommissions = getEffectiveAgentPaid(bundle.assignedAgents, bundle.agentPayments);
   const mileageCosts = bundle.mileageTrips.reduce((sum, t) => sum + (t.reimbursement || 0), 0);
 
-  // Same "revised total = original + approved change orders" formula
-  // already established in app/reports/expenses/[id]/page.tsx and the
-  // estimate/invoice pages — relocated here so every card on the
-  // Expense page gets it consistently instead of computing it ad hoc.
+  // `estimateTotal` (the invoice's or estimate's stored `total`) is kept
+  // current with approved change orders baked in by
+  // approveChangeOrder()/cascadeRevisedTotalToInvoices() — see
+  // lib/queries/changeOrders.ts — so it IS the revised total already.
+  // approvedChangeOrderTotal is still surfaced separately for the
+  // Original/Approved-COs/Revised breakdown shown on RevenueCard; it
+  // must not be added again here, or every card double-counts.
   const approvedChangeOrderTotal = calculateApprovedChangeOrdersTotal(bundle.changeOrders);
-  const revisedTotal = estimateTotal + approvedChangeOrderTotal;
+  const revisedTotal = estimateTotal;
 
   // Single source of truth for profit: revenue minus all committed costs
   // Subcontractor and agent costs use committed amounts (not paid-to-date)
@@ -783,10 +813,9 @@ export function getProjectFinancialSnapshot(
     "assignedSubcontractors" | "subcontractorPayments" | "expenses" | "mileageTrips" | "changeOrders" | "project"
   >
 ) {
-  const approvedChangeOrderTotal = bundle.changeOrders
-    .filter((co) => co.status === "approved")
-    .reduce((sum, co) => sum + (co.total_amount || 0), 0);
-  const revenue = (bundle.project.total || 0) + approvedChangeOrderTotal;
+  // bundle.project.total (estimates.total) already has approved change
+  // orders baked in — see the note in summarizeFinancials above.
+  const revenue = bundle.project.total || 0;
 
   const subcontractorCommitted = getEffectiveSubcontractorCommitted(bundle.assignedSubcontractors, bundle.subcontractorPayments);
 
@@ -935,10 +964,11 @@ export type ProjectFinancialSummary = {
 export async function getCompanyProjectFinancialSummaries(
   companyId: string
 ): Promise<Map<string, ProjectFinancialSummary>> {
-  const [estimatesRes, changeOrdersRes, expensesRes, subPaymentsRes, agentPaymentsRes, assignedSubsRes, assignedAgentsRes] =
+  // No change_orders fetch here — estimates.total is already kept current
+  // with approved change orders baked in (see the note below).
+  const [estimatesRes, expensesRes, subPaymentsRes, agentPaymentsRes, assignedSubsRes, assignedAgentsRes] =
     await Promise.all([
       supabase.from("estimates").select("id, total").eq("company_id", companyId).eq("is_deleted", false),
-      supabase.from("change_orders").select("estimate_id, status, total_amount").eq("company_id", companyId).is("deleted_at", null),
       supabase.from("estimate_expenses").select("estimate_id, amount, tax").eq("company_id", companyId).is("deleted_at", null),
       supabase
         .from("subcontractor_payments")
@@ -954,7 +984,6 @@ export async function getCompanyProjectFinancialSummaries(
       supabase.from("estimate_agents").select("id, estimate_id, agent_id, amount").eq("company_id", companyId).is("deleted_at", null),
     ]);
   if (estimatesRes.error) throw estimatesRes.error;
-  if (changeOrdersRes.error) throw changeOrdersRes.error;
   if (expensesRes.error) throw expensesRes.error;
   if (subPaymentsRes.error) throw subPaymentsRes.error;
   if (agentPaymentsRes.error) throw agentPaymentsRes.error;
@@ -971,7 +1000,6 @@ export async function getCompanyProjectFinancialSummaries(
     return map;
   };
 
-  const changeOrdersByEst = groupBy((changeOrdersRes.data ?? []) as any);
   const expensesByEst = groupBy((expensesRes.data ?? []) as any);
   const subPaymentsByEst = groupBy((subPaymentsRes.data ?? []) as any);
   const agentPaymentsByEst = groupBy((agentPaymentsRes.data ?? []) as any);
@@ -980,10 +1008,9 @@ export async function getCompanyProjectFinancialSummaries(
 
   const summaries = new Map<string, ProjectFinancialSummary>();
   for (const est of estimatesRes.data ?? []) {
-    const approvedChangeOrderTotal = (changeOrdersByEst.get(est.id) ?? [])
-      .filter((co: any) => co.status === "approved")
-      .reduce((sum: number, co: any) => sum + (co.total_amount || 0), 0);
-    const revenue = (est.total || 0) + approvedChangeOrderTotal;
+    // est.total (estimates.total) already has approved change orders
+    // baked in — see the note in summarizeFinancials above.
+    const revenue = est.total || 0;
 
     const expenseRows = expensesByEst.get(est.id) ?? [];
     const otherExpenses = expenseRows.reduce((sum: number, e: any) => sum + (e.amount || 0) + (e.tax || 0), 0);

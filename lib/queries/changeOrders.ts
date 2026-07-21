@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase/client";
 import type { ChangeOrderRow } from "@/lib/types";
 import { filterActive } from '@/lib/queries/softDeleteFilter';
+import { calculateTax, calculateTotal } from "@/lib/utils/calculations";
 
 /**
  * Change Order CRUD for the Expense page. Mirrors the business rules
@@ -12,6 +13,86 @@ import { filterActive } from '@/lib/queries/softDeleteFilter';
  * a large, already-working file for this feature — see the plan's
  * "explicitly out of scope" note.
  */
+
+/**
+ * The one formula for "what should this estimate's total be right now,"
+ * given its items, markup/discount/tax, and its approved change orders.
+ * Mirrors app/estimates/[id]/page.tsx's saveEdit formula exactly (the
+ * only place that already got markup/discount/tax right) — previously
+ * approveChangeOrder had its own truncated copy that summed items +
+ * approved change orders only, silently dropping markup/discount/tax
+ * on every approval.
+ */
+export async function computeRevisedEstimateTotal(
+  estimateId: string,
+  companyId: string
+): Promise<{ itemsSubtotal: number; approvedChangeOrderTotal: number; revisedTotal: number }> {
+  const [{ data: estimate, error: estError }, { data: items, error: itemsError }, { data: approvedCOs, error: coError }] =
+    await Promise.all([
+      supabase.from("estimates").select("markup, discount, tax_rate").eq("id", estimateId).eq("company_id", companyId).single(),
+      supabase.from("estimate_items").select("total").eq("estimate_id", estimateId).eq("company_id", companyId).is("deleted_at", null),
+      supabase
+        .from("change_orders")
+        .select("total_amount")
+        .eq("estimate_id", estimateId)
+        .eq("company_id", companyId)
+        .eq("status", "approved")
+        .is("deleted_at", null),
+    ]);
+  if (estError) throw estError;
+  if (itemsError) throw itemsError;
+  if (coError) throw coError;
+
+  const itemsSubtotal = (items || []).reduce((sum, i) => sum + (i.total || 0), 0);
+  const approvedChangeOrderTotal = (approvedCOs || []).reduce((sum, co) => sum + (co.total_amount || 0), 0);
+  const tax = calculateTax(itemsSubtotal, estimate?.tax_rate || 0);
+  const originalTotal = calculateTotal(itemsSubtotal, estimate?.markup || 0, estimate?.discount || 0, tax);
+
+  return { itemsSubtotal, approvedChangeOrderTotal, revisedTotal: originalTotal + approvedChangeOrderTotal };
+}
+
+/**
+ * Once an estimate's true total changes (a change order was approved),
+ * any already-generated invoice for it needs the same number — its own
+ * `total` is a one-time snapshot taken at generation time, never
+ * revisited otherwise, which is what let `remaining_balance`/`status`
+ * go stale (even negative) in the database the moment a change order
+ * was approved after invoicing. Recomputes remaining_balance/status/
+ * payment_status the same way trg_update_invoice_payment_totals does,
+ * so the two stay consistent no matter which one last touched the row.
+ */
+export async function cascadeRevisedTotalToInvoices(
+  estimateId: string,
+  companyId: string,
+  newTotal: number
+): Promise<void> {
+  const { data: invoices, error } = await supabase
+    .from("invoices")
+    .select("id, amount_paid")
+    .eq("estimate_id", estimateId)
+    .eq("company_id", companyId)
+    .eq("is_deleted", false);
+  if (error) throw error;
+
+  for (const invoice of invoices || []) {
+    const amountPaid = invoice.amount_paid || 0;
+    const remaining = newTotal - amountPaid;
+    const isPaid = amountPaid > 0 && amountPaid >= newTotal;
+    const status = amountPaid === 0 ? "pending" : isPaid ? "paid" : "partial";
+    const paymentStatus = amountPaid === 0 ? "unpaid" : isPaid ? "paid" : "partial";
+
+    await supabase
+      .from("invoices")
+      .update({
+        total: newTotal,
+        remaining_balance: remaining,
+        status,
+        payment_status: paymentStatus,
+        ...(isPaid ? { paid_at: new Date().toISOString() } : {}),
+      })
+      .eq("id", invoice.id);
+  }
+}
 
 export type NewChangeOrderInput = {
   title: string;
@@ -98,10 +179,11 @@ export async function submitChangeOrder(id: string, companyId: string): Promise<
 
 /**
  * Approves the change order, then recomputes and writes estimates.total
- * using the same formula used everywhere else this total is kept in
- * sync (sum of estimate_items.total + sum of approved change_orders.total_amount)
- * — see the identical logic in app/estimates/[id]/page.tsx's
- * approveChangeOrder and app/api/change-orders/[id]/approve/route.ts.
+ * via computeRevisedEstimateTotal (items + markup/discount/tax +
+ * approved change orders — the complete formula, not the items-and-COs-
+ * only one this used to duplicate), and cascades that total to any
+ * already-generated invoice so its remaining_balance/status stay correct
+ * instead of going stale against a frozen snapshot.
  */
 export async function approveChangeOrder(
   id: string,
@@ -116,30 +198,15 @@ export async function approveChangeOrder(
     .eq("status", "pending");
   if (error) throw error;
 
-  const [{ data: items }, { data: approvedCOs }] = await Promise.all([
-    supabase
-      .from("estimate_items")
-      .select("total")
-      .eq("estimate_id", estimateId)
-      .eq("company_id", companyId)
-      .is("deleted_at", null),
-    supabase
-      .from("change_orders")
-      .select("total_amount")
-      .eq("estimate_id", estimateId)
-      .eq("company_id", companyId)
-      .eq("status", "approved")
-      .is("deleted_at", null),
-  ]);
-  const newTotal =
-    (items || []).reduce((sum, i) => sum + (i.total || 0), 0) +
-    (approvedCOs || []).reduce((sum, co) => sum + (co.total_amount || 0), 0);
+  const { revisedTotal } = await computeRevisedEstimateTotal(estimateId, companyId);
 
   await supabase
     .from("estimates")
-    .update({ total: newTotal })
+    .update({ total: revisedTotal })
     .eq("id", estimateId)
     .eq("company_id", companyId);
+
+  await cascadeRevisedTotalToInvoices(estimateId, companyId, revisedTotal);
 }
 
 export async function rejectChangeOrder(id: string, companyId: string): Promise<void> {

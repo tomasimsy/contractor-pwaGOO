@@ -59,10 +59,6 @@ export default function ExpenseSummaryReport() {
                     label: "Materials & Equipment",
                     value: financials.expenseItems,
                   },
-                  {
-                    label: "Supplies & Consumables",
-                    value: 0,
-                  },
                 ],
                 subtotal: {
                   label: "Total Materials",
@@ -75,14 +71,6 @@ export default function ExpenseSummaryReport() {
                   {
                     label: "Mileage Deduction",
                     value: financials.mileageCosts,
-                  },
-                  {
-                    label: "Vehicle Maintenance",
-                    value: 0,
-                  },
-                  {
-                    label: "Fuel & Tolls",
-                    value: 0,
                   },
                 ],
                 subtotal: {

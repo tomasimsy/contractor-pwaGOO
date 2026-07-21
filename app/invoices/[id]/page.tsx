@@ -156,9 +156,12 @@ export default function InvoicePage() {
           setEstimateItems(bundle.estimateItems || []);
           setChangeOrders(bundle.changeOrders || []);
 
-          // Calculate revised total using the same utility as expense page
+          // inv.total is kept current with approved change orders baked
+          // in by cascadeRevisedTotalToInvoices() (see
+          // lib/queries/changeOrders.ts) — approvedCOTotal is only
+          // computed here for the breakdown line, not added again.
           const approvedCOTotal = calculateApprovedChangeOrdersTotal(bundle.changeOrders);
-          const revisedInvoiceTotal = inv.total + approvedCOTotal;
+          const revisedInvoiceTotal = inv.total;
           const revisedRemainingBalance = Math.max(revisedInvoiceTotal - financials.amountPaid, 0);
 
           setOriginalSubtotal(financials.originalEstimateTotal);
@@ -168,21 +171,18 @@ export default function InvoicePage() {
           // Remaining balance based on revised total with change orders
           setRemainingBalance(revisedRemainingBalance);
 
-          console.log('[Invoice Detail] Financials calculated:', {
-            invoice_number: inv.invoice_number,
-            base_total: inv.total,
-            approved_cos: approvedCOTotal,
-            revisedTotal: revisedInvoiceTotal,
-            amountPaid: financials.amountPaid,
-            revisedRemainingBalance: revisedRemainingBalance,
-          });
-
           // Use the invoice's actual configured deposit if one was set
           const deposit = inv.deposit_amount > 0 ? inv.deposit_amount : revisedInvoiceTotal * 0.5;
           setDepositAmount(deposit);
 
-          const fullyPaid = financials.remainingBalance <= 0;
-          const overdue = inv.due_date && !fullyPaid && financials.remainingBalance > 0 && new Date(inv.due_date) < new Date();
+          // Fully-paid/overdue/lock must be derived from the SAME revised
+          // balance shown on screen — financials.remainingBalance (from
+          // calculateProjectFinancials) subtracts amountPaid from the
+          // un-revised invoicesTotal and used to disagree with the
+          // correct number computed above, letting the UI claim "Fully
+          // paid" (and offer Lock) while real money was still owed.
+          const fullyPaid = revisedRemainingBalance <= 0;
+          const overdue = inv.due_date && !fullyPaid && revisedRemainingBalance > 0 && new Date(inv.due_date) < new Date();
           setIsFullyPaid(fullyPaid);
           setIsOverdue(overdue);
           setCanLock(fullyPaid && !inv.is_locked);

@@ -10,7 +10,6 @@ import {
   addEntry,
   assignSubcontractorToProject,
   buildLedger,
-  calculateApprovedChangeOrdersTotal,
   computePendingPayouts,
   deleteEntry,
   derivePaymentStatus,
@@ -167,19 +166,17 @@ function ProjectExpenseContent() {
     // Auto-select first invoice if only one exists
     if (bundle.invoices.length === 1) {
       const invoice = bundle.invoices[0];
-      // Calculate revised total including approved change orders
-      const approvedChangeOrdersTotal = calculateApprovedChangeOrdersTotal(bundle.changeOrders);
-      const revisedTotal = invoice.total + approvedChangeOrdersTotal;
-      const revisedRemainingBalance = (invoice.remaining_balance || 0) + approvedChangeOrdersTotal;
-
+      // invoice.total/remaining_balance are kept current with approved
+      // change orders baked in (see lib/queries/changeOrders.ts's
+      // cascadeRevisedTotalToInvoices) — no separate addition needed.
       setSelectedInvoiceForPayment({
         invoiceId: invoice.id,
         invoiceNumber: invoice.invoice_number || "Invoice",
         clientName: bundle.client.name,
-        invoiceTotal: revisedTotal,
+        invoiceTotal: invoice.total,
         remainingBalance: invoice.remaining_balance,
-        revisedTotal: revisedTotal,
-        revisedRemainingBalance: revisedRemainingBalance,
+        revisedTotal: invoice.total,
+        revisedRemainingBalance: invoice.remaining_balance,
       });
     }
     setIsRecordPaymentModalOpen(true);

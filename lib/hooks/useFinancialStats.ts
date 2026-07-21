@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { filterActive } from '@/lib/queries/softDeleteFilter';
 import { calculateCompanyFinancials } from "@/lib/queries/financialCalculations";
+import { getCompanyPendingPayoutsDetailed } from "@/lib/queries/expenses";
 
 export type FinancialStats = {
   estimates: number;
@@ -125,6 +126,19 @@ export function useFinancialStats() {
 
       const lifetimeRevenue = allPaymentsData?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0;
 
+      // "Pending Payouts" is a balance (what's currently owed), not a
+      // period flow — scoping it to the last year (like the rest of
+      // `financials` above) could omit an older still-unpaid assignment,
+      // and would disagree with the Dashboard's own "N pending payouts"
+      // banner, which already reads this same lifetime source.
+      const pendingPayouts = await getCompanyPendingPayoutsDetailed(companyId);
+      const pendingSubPayments = pendingPayouts
+        .filter((p) => p.role === "subcontractor")
+        .reduce((sum, p) => sum + p.remainingAmount, 0);
+      const pendingAgentPayments = pendingPayouts
+        .filter((p) => p.role === "agent")
+        .reduce((sum, p) => sum + p.remainingAmount, 0);
+
       setStats({
         estimates: estimates?.length || 0,
         invoices: invoiceCount,
@@ -145,8 +159,8 @@ export function useFinancialStats() {
         netProfit: financials.netProfit,
         grossMargin: financials.profitMargin,
         netMargin: financials.profitMargin,
-        pendingSubPayments: financials.outstandingSubcontractor,
-        pendingAgentPayments: financials.outstandingAgent,
+        pendingSubPayments,
+        pendingAgentPayments,
         overdueInvoices: 0, // would need separate query
         monthlyProfit: monthlyFinancials.netProfit,
       });
