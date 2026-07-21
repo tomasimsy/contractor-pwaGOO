@@ -264,7 +264,12 @@ function ProjectExpenseContent() {
 
   const ledger = bundle ? buildLedger(bundle) : [];
   const amountReceived = bundle ? totalAmountPaid(bundle.invoices) : 0;
-  const financials = bundle ? summarizeFinancials(bundle.project.total, bundle, amountReceived) : null;
+  // Use invoice total if invoices exist (invoices may have different totals than estimate),
+  // otherwise use estimate total
+  const baseTotal = bundle && bundle.invoices.length > 0
+    ? bundle.invoices[0].total
+    : bundle?.project.total || 0;
+  const financials = bundle ? summarizeFinancials(baseTotal, bundle, amountReceived) : null;
   // Revised total (original + approved change orders), not the raw
   // estimate total, once change orders can affect the contract value —
   // same precedent as app/reports/expenses/[id]/page.tsx.
