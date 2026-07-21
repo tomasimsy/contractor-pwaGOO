@@ -159,13 +159,14 @@ export default function InvoicePage() {
           // Calculate revised total using the same utility as expense page
           const approvedCOTotal = calculateApprovedChangeOrdersTotal(bundle.changeOrders);
           const revisedInvoiceTotal = inv.total + approvedCOTotal;
+          const revisedRemainingBalance = Math.max(revisedInvoiceTotal - financials.amountPaid, 0);
 
           setOriginalSubtotal(financials.originalEstimateTotal);
           setApprovedChangeTotal(approvedCOTotal);
           setRevisedTotal(revisedInvoiceTotal);
           setTotalPaid(financials.amountPaid);
-          // Remaining balance: use actual remaining from financials (which is properly calculated)
-          setRemainingBalance(financials.remainingBalance);
+          // Remaining balance based on revised total with change orders
+          setRemainingBalance(revisedRemainingBalance);
 
           console.log('[Invoice Detail] Financials calculated:', {
             invoice_number: inv.invoice_number,
@@ -173,11 +174,11 @@ export default function InvoicePage() {
             approved_cos: approvedCOTotal,
             revisedTotal: revisedInvoiceTotal,
             amountPaid: financials.amountPaid,
-            remainingBalance: financials.remainingBalance,
+            revisedRemainingBalance: revisedRemainingBalance,
           });
 
           // Use the invoice's actual configured deposit if one was set
-          const deposit = inv.deposit_amount > 0 ? inv.deposit_amount : financials.revisedTotal * 0.5;
+          const deposit = inv.deposit_amount > 0 ? inv.deposit_amount : revisedInvoiceTotal * 0.5;
           setDepositAmount(deposit);
 
           const fullyPaid = financials.remainingBalance <= 0;
