@@ -13,7 +13,7 @@ import ProjectFinancialPills from "@/components/shared/ProjectFinancialPills";
 import ReceivedPaymentModal from "@/components/payments/ReceivedPaymentModal";
 import AddExpenseSheet, { type FormCategory } from "@/components/expense/AddExpenseSheet";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
-import { getCompanyProjectFinancialSummaries, type ProjectFinancialSummary, addEntry, assignSubcontractorToProject } from "@/lib/queries/expenses";
+import { getCompanyProjectFinancialSummaries, type ProjectFinancialSummary, addEntry, assignSubcontractorToProject, calculateApprovedChangeOrdersTotal } from "@/lib/queries/expenses";
 import { getProjectBundle } from "@/lib/queries/projects";
 import type { ProjectBundle, NewEntryInput } from "@/lib/types";
 import invoice from "../estimates/[id]/invoice";
@@ -69,7 +69,8 @@ export default function InvoicesPage() {
 
           // Calculate revised totals and remaining balance including approved change orders
           const invoicesWithRevised = data.map((inv: any) => {
-            const approvedCOTotal = changeOrdersMap.get(inv.estimate_id)?.reduce((sum: number, co: any) => sum + (co.total_amount || 0), 0) || 0;
+            const cosForEstimate = changeOrdersMap.get(inv.estimate_id) || [];
+            const approvedCOTotal = calculateApprovedChangeOrdersTotal(cosForEstimate);
             const revisedTotal = inv.total + approvedCOTotal;
             const revisedRemainingBalance = (inv.remaining_balance || inv.total) + approvedCOTotal;
             console.log(`[Invoices] ${inv.invoice_number}: estimate_id=${inv.estimate_id}, base=$${inv.total}, co=$${approvedCOTotal}, revised=$${revisedTotal}, remaining=$${revisedRemainingBalance}`);

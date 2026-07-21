@@ -10,6 +10,7 @@ import {
   addEntry,
   assignSubcontractorToProject,
   buildLedger,
+  calculateApprovedChangeOrdersTotal,
   computePendingPayouts,
   deleteEntry,
   derivePaymentStatus,
@@ -167,9 +168,7 @@ function ProjectExpenseContent() {
     if (bundle.invoices.length === 1) {
       const invoice = bundle.invoices[0];
       // Calculate revised total including approved change orders
-      const approvedChangeOrdersTotal = (bundle.changeOrders || [])
-        .filter(co => co.status === 'approved')
-        .reduce((sum, co) => sum + (co.total_amount || 0), 0);
+      const approvedChangeOrdersTotal = calculateApprovedChangeOrdersTotal(bundle.changeOrders);
       const revisedTotal = invoice.total + approvedChangeOrdersTotal;
       const revisedRemainingBalance = (invoice.remaining_balance || 0) + approvedChangeOrdersTotal;
 

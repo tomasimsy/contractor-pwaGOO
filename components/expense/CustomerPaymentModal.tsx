@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { X } from "lucide-react";
 import { recordCustomerPayment } from "@/lib/queries/customerPayments";
+import { calculateApprovedChangeOrdersTotal } from "@/lib/queries/expenses";
 import { formatCurrency } from "@/lib/utils/formatting";
 import type { ProjectBundle } from "@/lib/types";
 
@@ -21,11 +22,8 @@ export default function CustomerPaymentModal({
   const invoices = bundle.invoices || [];
 
   // Calculate revised total for each invoice (includes approved change orders)
-  const getRevisedTotal = (invoiceId: string) => {
-    const approvedChangeOrdersTotal = (bundle.changeOrders || [])
-      .filter(co => co.status === 'approved')
-      .reduce((sum, co) => sum + (co.total_amount || 0), 0);
-    return approvedChangeOrdersTotal;
+  const getRevisedTotal = () => {
+    return calculateApprovedChangeOrdersTotal(bundle.changeOrders);
   };
 
   // Auto-select invoice if only one exists, otherwise empty
@@ -51,7 +49,8 @@ export default function CustomerPaymentModal({
   if (!isOpen) return null;
 
   const selectedInvoice = invoices.find((inv) => inv.id === selectedInvoiceId);
-  const selectedInvoiceRevisedTotal = selectedInvoice ? selectedInvoice.total + getRevisedTotal(selectedInvoice.id) : 0;
+  const approvedCOTotal = getRevisedTotal();
+  const selectedInvoiceRevisedTotal = selectedInvoice ? selectedInvoice.total + approvedCOTotal : 0;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -200,7 +199,7 @@ export default function CustomerPaymentModal({
               >
                 <option value="">Select an invoice...</option>
                 {invoices.map((invoice) => {
-                  const revisedTotal = invoice.total + getRevisedTotal(invoice.id);
+                  const revisedTotal = invoice.total + approvedCOTotal;
                   return (
                     <option key={invoice.id} value={invoice.id}>
                       {invoice.invoice_number} • {formatCurrency(revisedTotal)} (Balance:{" "}

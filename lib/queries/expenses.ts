@@ -5,6 +5,7 @@ import type {
   AssignedSubcontractor,
   BudgetAlert,
   BudgetComparison,
+  ChangeOrderRow,
   ExpenseAnalytics,
   FinancialSummaryData,
   InvoiceRow,
@@ -17,6 +18,17 @@ import type {
   ProjectBundle,
   SubcontractorPaymentRow,
 } from "@/lib/types";
+
+/**
+ * Calculate total of all approved change orders.
+ * Single source of truth for this calculation used across the app.
+ */
+export function calculateApprovedChangeOrdersTotal(changeOrders: ChangeOrderRow[] | undefined): number {
+  if (!changeOrders) return 0;
+  return changeOrders
+    .filter(co => co.status === 'approved')
+    .reduce((sum, co) => sum + (co.total_amount || 0), 0);
+}
 
 /**
  * Routes the add-expense form to the right table based on what the
@@ -728,9 +740,7 @@ export function summarizeFinancials(
   // already established in app/reports/expenses/[id]/page.tsx and the
   // estimate/invoice pages — relocated here so every card on the
   // Expense page gets it consistently instead of computing it ad hoc.
-  const approvedChangeOrderTotal = bundle.changeOrders
-    .filter((co) => co.status === "approved")
-    .reduce((sum, co) => sum + (co.total_amount || 0), 0);
+  const approvedChangeOrderTotal = calculateApprovedChangeOrdersTotal(bundle.changeOrders);
   const revisedTotal = estimateTotal + approvedChangeOrderTotal;
 
   // Single source of truth for profit: revenue minus all committed costs
