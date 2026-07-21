@@ -160,6 +160,15 @@ export default function InvoicePage() {
           setTotalPaid(financials.amountPaid);
           setRemainingBalance(financials.remainingBalance);
 
+          console.log('[Invoice Detail] Financials calculated:', {
+            invoice_number: inv.invoice_number,
+            base_total: inv.total,
+            approved_cos: financials.approvedChangeOrderTotal,
+            revisedTotal: financials.revisedTotal,
+            amountPaid: financials.amountPaid,
+            remainingBalance: financials.remainingBalance,
+          });
+
           // Use the invoice's actual configured deposit if one was set
           const deposit = inv.deposit_amount > 0 ? inv.deposit_amount : financials.revisedTotal * 0.5;
           setDepositAmount(deposit);
