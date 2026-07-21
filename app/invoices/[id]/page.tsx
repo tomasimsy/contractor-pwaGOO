@@ -18,6 +18,7 @@ import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import ProjectFinancialsModal from "@/components/ProjectFinancialsModal";
 import toast from "react-hot-toast";
 import { calculateProjectFinancials } from "@/lib/queries/financialCalculations";
+import { calculateApprovedChangeOrdersTotal } from "@/lib/queries/expenses";
 import { getProjectBundle } from "@/lib/queries/projects";
 
 import { Trash2, Lock, Unlock, AlertCircle, ArrowLeft, FileText, Receipt, DollarSign } from "lucide-react";
@@ -154,17 +155,23 @@ export default function InvoicePage() {
 
           setEstimateItems(bundle.estimateItems || []);
           setChangeOrders(bundle.changeOrders || []);
+
+          // Calculate revised total using the same utility as expense page
+          const approvedCOTotal = calculateApprovedChangeOrdersTotal(bundle.changeOrders);
+          const revisedInvoiceTotal = inv.total + approvedCOTotal;
+
           setOriginalSubtotal(financials.originalEstimateTotal);
-          setApprovedChangeTotal(financials.approvedChangeOrderTotal);
-          setRevisedTotal(financials.revisedTotal);
+          setApprovedChangeTotal(approvedCOTotal);
+          setRevisedTotal(revisedInvoiceTotal);
           setTotalPaid(financials.amountPaid);
+          // Remaining balance: use actual remaining from financials (which is properly calculated)
           setRemainingBalance(financials.remainingBalance);
 
           console.log('[Invoice Detail] Financials calculated:', {
             invoice_number: inv.invoice_number,
             base_total: inv.total,
-            approved_cos: financials.approvedChangeOrderTotal,
-            revisedTotal: financials.revisedTotal,
+            approved_cos: approvedCOTotal,
+            revisedTotal: revisedInvoiceTotal,
             amountPaid: financials.amountPaid,
             remainingBalance: financials.remainingBalance,
           });
