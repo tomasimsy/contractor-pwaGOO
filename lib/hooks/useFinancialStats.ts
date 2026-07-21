@@ -151,9 +151,9 @@ export function useFinancialStats() {
         monthlyRevenue: monthlyFinancials.totalRevenue,
         totalCollected: lifetimeRevenue,
         totalSubcontractorPaid: financials.subcontractorPaid,
-        totalSubcontractorAssigned: 0, // would need separate query
+        totalSubcontractorAssigned: financials.subcontractorAssigned,
         totalAgentPaid: financials.agentPaid,
-        totalAgentAssigned: 0, // would need separate query
+        totalAgentAssigned: financials.agentAssigned,
         totalExpenses: financials.totalExpenses,
         grossProfit: financials.netProfit, // using netProfit as gross for now
         netProfit: financials.netProfit,

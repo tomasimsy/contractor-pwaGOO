@@ -69,6 +69,8 @@ export interface CompanyFinancials {
   // Expenses (by type)
   subcontractorPaid: number;
   agentPaid: number;
+  subcontractorAssigned: number;
+  agentAssigned: number;
   expenseItems: number;
   mileageCosts: number;
   totalExpenses: number;
@@ -331,40 +333,48 @@ export async function calculateCompanyFinancials(
   endDate: Date
 ): Promise<CompanyFinancials> {
   const startDateStr = startDate.toISOString();
-  const endDateStr = endDate.toISOString();
+  // Exclusive upper bound (start of the day after endDate) — callers pass
+  // endDate as local midnight of the last day (e.g. `new Date(year, month
+  // + 1, 0)`), not that day's last instant, so an inclusive `.lte()` (or a
+  // same-day comparison against a `date` column) could drop same-day rows
+  // depending on server timezone. See the identical note on totalRevenue
+  // below, which used to have this exact bug for invoice_payments.
+  const endOfRangeExclusive = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate() + 1);
+  const endOfRangeExclusiveStr = endOfRangeExclusive.toISOString();
 
-  // Fetch estimates first to get the date range
+  // Estimates in range — used ONLY for the completedProjects/convertedProjects
+  // counts below. Money actually spent (subcontractors, agents, materials,
+  // mileage) is NOT gated by this list or by estimate status anymore: a
+  // dollar paid to a subcontractor on a project that's still "pending" or
+  // "in progress" is a real, already-incurred cost, not a hypothetical one
+  // that should wait for the project to reach "completed"/"converted"
+  // before it counts. Previously this function only fetched estimates
+  // with status IN ('completed','converted'), and every downstream
+  // expense query was scoped to THOSE estimate ids only — so any spend
+  // recorded via the Expense page's Subcontractor/Agent commission/Add
+  // expense actions on a project at any other stage was silently excluded
+  // from Dashboard, Dashboard v2, Tax Dashboard, and Analytics (all four
+  // call this same function), even though the Expense page itself
+  // (summarizeFinancials, a separate calculation) correctly counted it.
   const estimatesRes = await supabase
     .from("estimates")
-    .select("id, total, status, created_at")
+    .select("id, status, created_at")
     .eq("company_id", companyId)
     .eq("is_deleted", false)
-    .in("status", ["completed", "converted"])
     .gte("created_at", startDateStr)
-    .lte("created_at", endDateStr);
+    .lt("created_at", endOfRangeExclusiveStr);
 
   const estimates = estimatesRes.data || [];
-  const estimateIds = estimates.map((e) => e.id);
+  const completedProjects = estimates.filter((e) => e.status === "completed").length;
+  const convertedProjects = estimates.filter((e) => e.status === "converted").length;
 
-  // First, fetch assignments so we can get their IDs for payment queries
+  // Assignments — company-wide, no estimate-status or date gate at all.
+  // "Assigned" is a standing commitment (what a subcontractor/agent is
+  // contracted for), not a dated transaction, so it's always the current
+  // total regardless of which period is being viewed.
   const [estSubsRes, estAgentsRes] = await Promise.all([
-    estimateIds.length > 0
-      ? supabase
-          .from("estimate_subcontractors")
-          .select("id, amount")
-          .eq("company_id", companyId)
-          .is("deleted_at", null)
-          .in("estimate_id", estimateIds)
-      : Promise.resolve({ data: [] }),
-
-    estimateIds.length > 0
-      ? supabase
-          .from("estimate_agents")
-          .select("id, amount")
-          .eq("company_id", companyId)
-          .is("deleted_at", null)
-          .in("estimate_id", estimateIds)
-      : Promise.resolve({ data: [] }),
+    supabase.from("estimate_subcontractors").select("id, amount").eq("company_id", companyId).is("deleted_at", null),
+    supabase.from("estimate_agents").select("id, amount").eq("company_id", companyId).is("deleted_at", null),
   ]);
 
   const estSubs = estSubsRes.data || [];
@@ -372,7 +382,6 @@ export async function calculateCompanyFinancials(
   const estSubIds = estSubs.map((s) => s.id);
   const estAgentIds = estAgents.map((a) => a.id);
 
-  // Now fetch payments using the assignment IDs
   const [
     subPaymentsRes,
     agentPaymentsRes,
@@ -381,17 +390,17 @@ export async function calculateCompanyFinancials(
     invoicesRes,
     invoicePaymentsRes,
   ] = await Promise.all([
-    // CRITICAL FIX: Payments link via estimate_subcontractor_id, not estimate_id
+    // Payments link via estimate_subcontractor_id, not estimate_id
     estSubIds.length > 0
       ? supabase
           .from("subcontractor_payments")
-          .select("amount, created_at")
+          .select("amount, payment_date, created_at")
           .eq("company_id", companyId)
           .is("deleted_at", null)
           .in("estimate_subcontractor_id", estSubIds)
       : Promise.resolve({ data: [] }),
 
-    // CRITICAL FIX: Agent payments link via estimate_agent_id, not estimate_id
+    // Agent payments link via estimate_agent_id, not estimate_id
     estAgentIds.length > 0
       ? supabase
           .from("agent_payments")
@@ -401,25 +410,19 @@ export async function calculateCompanyFinancials(
           .in("estimate_agent_id", estAgentIds)
       : Promise.resolve({ data: [] }),
 
-    // CRITICAL FIX: Only fetch expenses for the estimates we're calculating
-    estimateIds.length > 0
-      ? supabase
-          .from("estimate_expenses")
-          .select("amount")
-          .eq("company_id", companyId)
-          .is("deleted_at", null)
-          .in("estimate_id", estimateIds)
-      : Promise.resolve({ data: [] }),
+    // Company-wide, not gated by which estimates are "in scope" — see the
+    // note on the estimates query above.
+    supabase
+      .from("estimate_expenses")
+      .select("amount, expense_date, created_at")
+      .eq("company_id", companyId)
+      .is("deleted_at", null),
 
-    // CRITICAL FIX: Only fetch mileage for the estimates we're calculating
-    estimateIds.length > 0
-      ? supabase
-          .from("mileage_trips")
-          .select("reimbursement")
-          .eq("company_id", companyId)
-          .is("deleted_at", null)
-          .in("estimate_id", estimateIds)
-      : Promise.resolve({ data: [] }),
+    supabase
+      .from("mileage_trips")
+      .select("reimbursement, created_at")
+      .eq("company_id", companyId)
+      .is("deleted_at", null),
 
     // Fetch ALL invoices for date-range reporting
     supabase
@@ -428,7 +431,7 @@ export async function calculateCompanyFinancials(
       .eq("company_id", companyId)
       .eq("is_deleted", false)
       .gte("created_at", startDateStr)
-      .lte("created_at", endDateStr),
+      .lt("created_at", endOfRangeExclusiveStr),
 
     // Payments actually received within the date range, by their own
     // payment_date — NOT invoices.amount_paid (a cumulative, lifetime
@@ -452,61 +455,62 @@ export async function calculateCompanyFinancials(
   const invoices = invoicesRes.data || [];
   const invoicePayments = invoicePaymentsRes.data || [];
 
-  // Calculate totals
+  // A single, shared "did this happen within the requested period"
+  // check — every dated cost/revenue item below uses it, keyed off its
+  // own date column (falling back to created_at), not a proxy like the
+  // parent estimate's creation date.
+  const inRange = (dateStr: string | null | undefined) => {
+    if (!dateStr) return false;
+    const d = new Date(dateStr);
+    return d >= startDate && d < endOfRangeExclusive;
+  };
+
   // REVENUE = payments whose own payment_date (falling back to
   // created_at for older rows recorded before that column existed)
   // falls within the requested period — a dated ledger, not a
   // point-in-time snapshot that drifts as invoices get paid later.
-  // Upper bound is the day AFTER endDate's calendar date (exclusive) —
-  // callers pass endDate as local midnight of the last day (e.g.
-  // `new Date(year, month + 1, 0)`), not that day's last instant, so a
-  // same-day comparison against a `date` column or a positive UTC-offset
-  // server timezone could otherwise drop payments dated on that last day.
-  const endOfRangeExclusive = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate() + 1);
-  const totalRevenue = invoicePayments.reduce((sum, p: any) => {
-    const paidOn = p.payment_date || p.created_at;
-    if (!paidOn) return sum;
-    const paidOnDate = new Date(paidOn);
-    if (paidOnDate < startDate || paidOnDate >= endOfRangeExclusive) return sum;
-    return sum + (p.amount || 0);
-  }, 0);
-  const completedProjects = estimates.filter(
-    (e) => e.status === "completed"
-  ).length;
-  const convertedProjects = estimates.filter(
-    (e) => e.status === "converted"
-  ).length;
+  const totalRevenue = invoicePayments.reduce(
+    (sum, p: any) => (inRange(p.payment_date || p.created_at) ? sum + (p.amount || 0) : sum),
+    0
+  );
 
+  // EXPENSES this period = actual cash spent within the period (dated by
+  // each item's own date column), not "committed" assigned-vs-paid
+  // floors — that model belongs at the project level (calculateProjectFinancials,
+  // "what will this project ultimately cost regardless of timing"), not
+  // here where a fixed calendar window is the whole point.
   const subcontractorPaid = subPayments.reduce(
-    (sum, p) => sum + (p.amount || 0),
+    (sum: number, p: any) => (inRange(p.payment_date || p.created_at) ? sum + (p.amount || 0) : sum),
+    0
+  );
+  const agentPaid = agentPayments.reduce(
+    (sum: number, p: any) => (inRange(p.payment_date) ? sum + (p.amount || 0) : sum),
+    0
+  );
+  const expenseItems = expenses.reduce(
+    (sum: number, e: any) => (inRange(e.expense_date || e.created_at) ? sum + (e.amount || 0) : sum),
+    0
+  );
+  const mileageCosts = mileage.reduce(
+    (sum: number, m: any) => (inRange(m.created_at) ? sum + (m.reimbursement || 0) : sum),
     0
   );
 
-  // CRITICAL: Use committed costs (max of assigned vs paid) to match project-level logic
-  const subcontractorAssigned = estSubs.reduce(
-    (sum, s) => sum + (s.amount || 0),
-    0
-  );
-  const subcontractorCommitted = Math.max(subcontractorAssigned, subcontractorPaid);
-  const outstandingSubcontractor = Math.max(
-    0,
-    subcontractorAssigned - subcontractorPaid
-  );
-
-  const agentPaid = agentPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
-  const agentAssigned = estAgents.reduce((sum, a) => sum + (a.amount || 0), 0);
-  const agentCommitted = Math.max(agentAssigned, agentPaid);
-  const outstandingAgent = Math.max(0, agentAssigned - agentPaid);
-
-  const expenseItems = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-  const mileageCosts = mileage.reduce((sum, m) => sum + (m.reimbursement || 0), 0);
-
-  // Use committed costs, not just paid - CRITICAL for consistency with project-level calculations
-  const totalExpenses =
-    expenseItems + mileageCosts + subcontractorCommitted + agentCommitted;
+  const totalExpenses = expenseItems + mileageCosts + subcontractorPaid + agentPaid;
 
   const netProfit = totalRevenue - totalExpenses;
   const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
+
+  // Assigned/outstanding are lifetime balances (all-time assigned minus
+  // all-time paid), independent of the requested period — matches
+  // getCompanyPendingPayoutsDetailed's per-assignment model, just
+  // aggregated, so this can't disagree with the Pending Payouts page.
+  const subcontractorAssigned = estSubs.reduce((sum, s) => sum + (s.amount || 0), 0);
+  const agentAssigned = estAgents.reduce((sum, a) => sum + (a.amount || 0), 0);
+  const subcontractorPaidLifetime = subPayments.reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
+  const agentPaidLifetime = agentPayments.reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
+  const outstandingSubcontractor = Math.max(0, subcontractorAssigned - subcontractorPaidLifetime);
+  const outstandingAgent = Math.max(0, agentAssigned - agentPaidLifetime);
 
   const totalInvoiced = invoices.reduce((sum, i) => sum + (i.total || 0), 0);
   const totalPaid = invoices.reduce(
@@ -522,8 +526,10 @@ export async function calculateCompanyFinancials(
     totalRevenue,
     completedProjects,
     convertedProjects,
-    subcontractorPaid: subcontractorCommitted,
-    agentPaid: agentCommitted,
+    subcontractorPaid,
+    agentPaid,
+    subcontractorAssigned,
+    agentAssigned,
     expenseItems,
     mileageCosts,
     totalExpenses,
