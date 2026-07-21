@@ -327,15 +327,17 @@ function Panel({
   title,
   action,
   accentDot,
+  className,
   children,
 }: {
   title: string;
   action?: React.ReactNode;
   accentDot?: "rose";
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5">
+    <section className={`bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 ${className ?? ""}`}>
       <div className="flex items-center justify-between gap-3 mb-3">
         <h3 className="flex items-center gap-2 text-[13px] font-semibold text-gray-700">
           {accentDot && <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />}

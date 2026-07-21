@@ -22,6 +22,7 @@ export interface ReportItem {
   indent?: boolean;
   bold?: boolean;
   highlight?: boolean;
+  format?: "currency" | "percent";
 }
 
 export function ReportViewer({ data, taxYear }: { data: ReportData; taxYear: number }) {
@@ -39,6 +40,9 @@ export function ReportViewer({ data, taxYear }: { data: ReportData; taxYear: num
       maximumFractionDigits: 2,
     }).format(amount);
   };
+
+  const formatItemValue = (item: ReportItem) =>
+    item.format === "percent" ? `${item.value}%` : formatCurrency(item.value);
 
   return (
     <div className="min-h-screen bg-white">
@@ -92,7 +96,7 @@ export function ReportViewer({ data, taxYear }: { data: ReportData; taxYear: num
                             item.bold ? "font-semibold text-slate-900" : "text-slate-600"
                           }`}
                         >
-                          {formatCurrency(item.value)}
+                          {formatItemValue(item)}
                         </td>
                       </tr>
                     ))}
