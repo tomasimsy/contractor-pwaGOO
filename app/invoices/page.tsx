@@ -30,30 +30,45 @@ export default function InvoicesPage() {
   const [expenseBundle, setExpenseBundle] = useState<ProjectBundle | null>(null);
   const [selectedEstimateId, setSelectedEstimateId] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function fetchInvoices() {
-      try {
-        setLoading(true);
-        // invoices.total/remaining_balance/amount_paid/status are kept
-        // current with approved change orders baked in by
-        // cascadeRevisedTotalToInvoices() (see lib/queries/changeOrders.ts)
-        // — no separate change-order fetch or "revised" recomputation
-        // needed here, it would only double-count what's already included.
-        const { data, error } = await filterActive(
-          supabase
-            .from("invoices")
-            .select("id, invoice_number, total, remaining_balance, amount_paid, due_date, created_at, status, estimate_id, is_locked, clients(name, phone), estimates(title)")
-            .order("created_at", { ascending: false }),
-          "invoices"
+  // invoices.total/remaining_balance/amount_paid/status are kept current
+  // with approved change orders baked in by cascadeRevisedTotalToInvoices()
+  // (see lib/queries/changeOrders.ts) for change orders approved in-app —
+  // but NOT for ones approved via the public customer-signing link (a
+  // database function this codebase can't reach to fix directly), which
+  // only updates estimates.total. estimates(total) is joined here so the
+  // render below can prefer that always-current figure over the invoice's
+  // own, which can go stale in that one case.
+  async function fetchInvoices() {
+    try {
+      setLoading(true);
+      const { data, error } = await filterActive(
+        supabase
+          .from("invoices")
+          .select("id, invoice_number, total, remaining_balance, amount_paid, due_date, created_at, status, estimate_id, is_locked, clients(name, phone), estimates(title, total)")
+          .order("created_at", { ascending: false }),
+        "invoices"
+      );
+      if (error) throw error;
+      if (data) {
+        setInvoices(
+          data.map((inv: any) => {
+            const estimateTotal = (Array.isArray(inv.estimates) ? inv.estimates[0]?.total : inv.estimates?.total) ?? inv.total;
+            return {
+              ...inv,
+              revisedTotal: estimateTotal,
+              revisedRemainingBalance: Math.max(estimateTotal - (inv.amount_paid || 0), 0),
+            };
+          })
         );
-        if (error) throw error;
-        if (data) setInvoices(data);
-      } catch (err) {
-        console.error("Error fetching invoices:", err);
-      } finally {
-        setLoading(false);
       }
+    } catch (err) {
+      console.error("Error fetching invoices:", err);
+    } finally {
+      setLoading(false);
     }
+  }
+
+  useEffect(() => {
     fetchInvoices();
   }, []);
 
@@ -113,7 +128,7 @@ export default function InvoicesPage() {
       return;
     }
     const documentUrl = getInvoiceUrl(inv.id);
-    const balance = inv.remaining_balance || inv.total;
+    const balance = inv.revisedRemainingBalance ?? inv.remaining_balance ?? inv.total;
     const message = encodeURIComponent(
       `Hello ${inv.clients?.name || "Customer"}! Please find your invoice #${inv.invoice_number || inv.id.slice(0, 8)}
       here: ${documentUrl}\n\nTotal Due: ${formatCurrency(balance)}\nThank you!`
@@ -329,7 +344,7 @@ export default function InvoicesPage() {
 
                     {(() => {
                       const amountPaid = inv.amount_paid || 0;
-                      const total = inv.total || 0;
+                      const total = inv.revisedTotal ?? inv.total ?? 0;
                       let statusLabel = "";
                       let statusColor = "";
 
@@ -388,14 +403,14 @@ export default function InvoicesPage() {
                         }`}
                       >
                         {inv.status === "paid"
-                          ? formatCurrency(inv.total)
-                          : formatCurrency(inv.remaining_balance || inv.total)}
+                          ? formatCurrency(inv.revisedTotal ?? inv.total)
+                          : formatCurrency(inv.revisedRemainingBalance ?? inv.remaining_balance ?? inv.total)}
                       </div>
 
                       {/* Payment progress for partial invoices – mobile only */}
                       {inv.status === "partial" && (
                         <div className="text-[9px] text-slate-500 md:hidden">
-                          {formatCurrency((inv.total || 0) - (inv.remaining_balance || 0))} paid
+                          {formatCurrency(inv.amount_paid || 0)} paid
                         </div>
                       )}
                     </div>
@@ -470,28 +485,16 @@ export default function InvoicesPage() {
           invoiceId={selectedInvoiceForPayment.id}
           invoiceNumber={selectedInvoiceForPayment.invoice_number || selectedInvoiceForPayment.id.slice(0, 8)}
           clientName={selectedInvoiceForPayment.clients?.name || "Client"}
-          invoiceTotal={selectedInvoiceForPayment.total}
-          remainingBalance={selectedInvoiceForPayment.remaining_balance ?? selectedInvoiceForPayment.total}
+          invoiceTotal={selectedInvoiceForPayment.revisedTotal ?? selectedInvoiceForPayment.total}
+          remainingBalance={selectedInvoiceForPayment.revisedRemainingBalance ?? selectedInvoiceForPayment.remaining_balance ?? selectedInvoiceForPayment.total}
           onPaymentRecorded={() => {
             setSelectedInvoiceForPayment(null);
-            // Reload invoices to show updated payment status
-            // Add small delay to ensure database trigger has completed
-            setTimeout(async () => {
-              try {
-                const { data, error } = await filterActive(
-                supabase
-                  .from("invoices")
-                  .select("id, invoice_number, total, remaining_balance, amount_paid, due_date, created_at, status, estimate_id, is_locked, clients(name, phone), estimates(title)")
-                  .order("created_at", { ascending: false }),
-                "invoices"
-              );
-              if (error) throw error;
-              if (data) setInvoices(data);
-            } catch (err) {
-              console.error("Error fetching invoices:", err);
-            }
-          }, 300);
-        }}
+            // Reload invoices to show updated payment status — same
+            // fetch/mapping as the initial load, so this can't drift
+            // from it. Small delay to ensure the database trigger has
+            // completed.
+            setTimeout(fetchInvoices, 300);
+          }}
       />
       );
     })()}

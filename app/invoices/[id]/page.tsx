@@ -156,12 +156,19 @@ export default function InvoicePage() {
           setEstimateItems(bundle.estimateItems || []);
           setChangeOrders(bundle.changeOrders || []);
 
-          // inv.total is kept current with approved change orders baked
-          // in by cascadeRevisedTotalToInvoices() (see
-          // lib/queries/changeOrders.ts) — approvedCOTotal is only
-          // computed here for the breakdown line, not added again.
+          // Prefer the ESTIMATE's total, not the invoice's own — every
+          // change-order-approval path keeps estimates.total current
+          // (including the public customer-signing link's
+          // approve_public_change_order database function, which this
+          // app's code can't reach to fix directly), but only the
+          // in-app approval paths cascade that total onto the invoice
+          // row itself. An invoice whose change order was approved via
+          // the public link would otherwise show a frozen, stale total
+          // here despite the change-order breakdown above correctly
+          // listing it. approvedCOTotal is only computed here for the
+          // breakdown line, not added again.
           const approvedCOTotal = calculateApprovedChangeOrdersTotal(bundle.changeOrders);
-          const revisedInvoiceTotal = inv.total;
+          const revisedInvoiceTotal = bundle.project.total || inv.total;
           const revisedRemainingBalance = Math.max(revisedInvoiceTotal - financials.amountPaid, 0);
 
           setOriginalSubtotal(financials.originalEstimateTotal);

@@ -133,10 +133,20 @@ export default function DashboardV2() {
                   ) : (
                     <div className="divide-y divide-gray-100 -mx-1">
                       {recentEstimates.map((est) => {
-                        // Get payment info from related invoice
+                        // Get payment info from related invoice, but compute
+                        // the balance from est.total (the estimate's own
+                        // total, kept current by every change-order-approval
+                        // path — including the public customer-signing
+                        // link's database function, which can't be reached
+                        // to fix directly) minus amount actually paid,
+                        // rather than trusting invoice.remaining_balance —
+                        // that column is only cascaded by the in-app
+                        // approval paths, so it can go stale (and this was
+                        // also using `||`, which would incorrectly replace
+                        // a genuine $0 balance with the full total).
                         const invoice = est.invoices?.[0];
                         const amountPaid = invoice?.amount_paid || 0;
-                        const remainingBalance = invoice?.remaining_balance || est.total;
+                        const remainingBalance = Math.max(est.total - amountPaid, 0);
 
                         return (
                           <div key={est.id} className="flex items-center justify-between gap-3 px-1 py-2.5 hover:bg-gray-50 rounded-lg transition-colors group">
@@ -145,6 +155,9 @@ export default function DashboardV2() {
                               <div className="text-xs text-gray-400 mt-0.5">
                                 #{est.estimate_number || est.id.slice(0, 8)} · {formatShortDate(est.created_at)}
                               </div>
+                              {est.title && (
+                                <div className="text-xs text-gray-500 truncate mt-0.5">{est.title}</div>
+                              )}
                               {invoice && (
                                 <div className="mt-1">
                                   <PaymentStatusDisplay
@@ -184,18 +197,33 @@ export default function DashboardV2() {
                     <EmptyRow label="No invoices yet" />
                   ) : (
                     <div className="divide-y divide-gray-100 -mx-1">
-                      {recentInvoices.map((inv) => (
+                      {recentInvoices.map((inv) => {
+                        // Prefer the linked estimate's total — see the
+                        // matching note on the Recent Estimates card above
+                        // for why invoice.total/remaining_balance can go
+                        // stale (a change order approved via the public
+                        // customer-signing link updates estimates.total
+                        // but not the invoice row).
+                        const estimateEntry = Array.isArray(inv.estimates) ? inv.estimates[0] : inv.estimates;
+                        const estimateTotal = estimateEntry?.total ?? inv.total;
+                        const estimateTitle = estimateEntry?.title;
+                        const amountPaid = inv.amount_paid || 0;
+                        const remainingBalance = Math.max(estimateTotal - amountPaid, 0);
+                        return (
                         <div key={inv.id} className="flex items-center justify-between gap-3 px-1 py-2.5 hover:bg-gray-50 rounded-lg transition-colors group">
                           <Link href={`/invoices/${inv.id}`} className="min-w-0 flex-1">
                             <div className="text-[13px] font-medium text-gray-800 truncate">{inv.clients?.name || "No client"}</div>
                             <div className="text-xs text-gray-400 mt-0.5">
                               #{inv.invoice_number} · {formatShortDate(inv.created_at)}
                             </div>
+                            {estimateTitle && (
+                              <div className="text-xs text-gray-500 truncate mt-0.5">{estimateTitle}</div>
+                            )}
                             <div className="mt-1">
                               <PaymentStatusDisplay
-                                total={inv.total}
-                                amountPaid={inv.amount_paid || 0}
-                                remainingBalance={inv.remaining_balance || inv.total}
+                                total={estimateTotal}
+                                amountPaid={amountPaid}
+                                remainingBalance={remainingBalance}
                                 isLocked={inv.is_locked}
                                 status={inv.status}
                               />
@@ -213,12 +241,13 @@ export default function DashboardV2() {
                               </Link>
                             )}
                             <div>
-                              <div className="text-[13px] font-semibold text-gray-900">{formatCurrency(inv.total)}</div>
+                              <div className="text-[13px] font-semibold text-gray-900">{formatCurrency(estimateTotal)}</div>
                               <StatusBadge good={inv.status === "paid"} goodLabel="Paid" badLabel="Open" />
                             </div>
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </Panel>

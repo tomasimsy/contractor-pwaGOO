@@ -89,10 +89,15 @@ export function useDashboardOverview() {
           .eq("company_id", companyId)
           .eq("is_deleted", false)
           .neq("status", "paid"),
+        // estimate_id + estimates(total) joined so the card can prefer the
+        // estimate's total (kept current by every change-order-approval
+        // path) over the invoice's own total/remaining_balance, which only
+        // the in-app approval paths keep in sync — see the note where
+        // these are consumed in app/dashboard-v2/page.tsx.
         filterActive(
           supabase
             .from("invoices")
-            .select("id, created_at, total, invoice_number, amount_paid, remaining_balance, is_locked, clients(name), status")
+            .select("id, created_at, total, invoice_number, amount_paid, remaining_balance, is_locked, clients(name), status, estimate_id, estimates(title, total)")
             .order("created_at", { ascending: false })
             .limit(5),
           "invoices"

@@ -104,8 +104,14 @@ export async function getCompanyAnalytics(
   const overdueInvoices = overdueRes.count || 0;
 
   return {
+    // financials.totalRevenue IS "payments received in the period" (see
+    // calculateCompanyFinancials — it sums invoice_payments, not invoiced
+    // value), so paymentsReceived must equal it directly. Subtracting
+    // accountsReceivable (money NOT yet collected) from it, as this used
+    // to, mixes two unrelated buckets and goes negative whenever
+    // outstanding receivables exceed what's been collected in the period.
     totalRevenue: financials.totalRevenue,
-    paymentsReceived: financials.totalRevenue - financials.totalOutstanding,
+    paymentsReceived: financials.totalRevenue,
     accountsReceivable: financials.totalOutstanding,
     totalExpenses: financials.totalExpenses,
     subcontractorCosts: financials.subcontractorPaid,
