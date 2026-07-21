@@ -2,6 +2,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { requireCompanyUser } from '@/lib/api/requireCompanyUser';
+import { cascadeRevisedTotalToInvoices, computeRevisedEstimateTotal } from '@/lib/queries/changeOrders';
 
 export async function POST(
   request: Request,
@@ -46,36 +47,21 @@ export async function POST(
 
     if (updateError) throw updateError;
 
-    // Keep estimates.total in sync with the same formula used
-    // everywhere else this total is recomputed (originalSubtotal +
-    // approvedChangeOrdersTotal — see approve_public_change_order RPC
-    // and the Estimate/Invoice pages' live recalculation). The
-    // frontend recomputes live and was never affected by this being
-    // stale, but list/dashboard views that read estimates.total
-    // directly need it kept current too.
-    const [{ data: items }, { data: approvedCOs }] = await Promise.all([
-      supabase
-        .from('estimate_items')
-        .select('total')
-        .eq('estimate_id', co.estimate_id)
-        .eq('company_id', auth.companyId)
-        .is('deleted_at', null),
-      supabase
-        .from('change_orders')
-        .select('total_amount')
-        .eq('estimate_id', co.estimate_id)
-        .eq('company_id', auth.companyId)
-        .eq('status', 'approved')
-        .is('deleted_at', null),
-    ]);
-    const newTotal =
-      (items || []).reduce((sum, i) => sum + (i.total || 0), 0) +
-      (approvedCOs || []).reduce((sum, c) => sum + (c.total_amount || 0), 0);
+    // Keep estimates.total in sync using the same shared formula every
+    // other approval path uses (items + markup/discount/tax + approved
+    // change orders — see lib/queries/changeOrders.ts). This route used
+    // to carry its own truncated copy (items + COs only, no markup/
+    // discount/tax) and never cascaded the result to an already-
+    // generated invoice, which is exactly what let a customer-signed
+    // public change order leave the invoice's total/remaining_balance
+    // stale indefinitely.
+    const { revisedTotal: newTotal } = await computeRevisedEstimateTotal(co.estimate_id, auth.companyId, supabase as any);
     await supabase
       .from('estimates')
       .update({ total: newTotal })
       .eq('id', co.estimate_id)
       .eq('company_id', auth.companyId);
+    await cascadeRevisedTotalToInvoices(co.estimate_id, auth.companyId, newTotal, supabase as any);
 
     return NextResponse.json({ success: true });
   } catch (err: any) {

@@ -338,6 +338,23 @@ export default function InvoicePage() {
     );
   }
 
+  if (!invoice) {
+    return (
+      <ProtectedRoute>
+        <div className="min-h-screen bg-slate-50/70 flex flex-col items-center justify-center gap-3">
+          <p className="text-slate-600 font-semibold text-sm">Invoice not found</p>
+          <p className="text-slate-400 text-xs">It may have been deleted, or the link may be incorrect.</p>
+          <button
+            onClick={() => router.push("/invoices")}
+            className="text-emerald-600 hover:text-emerald-700 text-xs font-medium underline"
+          >
+            Back to Invoices
+          </button>
+        </div>
+      </ProtectedRoute>
+    );
+  }
+
   const status = getStatusBadge();
   // For display: original subtotal may be zero if no estimate items; fallback to invoice line items sum
   const displaySubtotal = originalSubtotal > 0 ? originalSubtotal : invoiceLineItems.reduce((s, i) => s + (i.total || 0), 0);

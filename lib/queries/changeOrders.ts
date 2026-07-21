@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase/client";
 import type { ChangeOrderRow } from "@/lib/types";
 import { filterActive } from '@/lib/queries/softDeleteFilter';
@@ -22,16 +23,23 @@ import { calculateTax, calculateTotal } from "@/lib/utils/calculations";
  * approveChangeOrder had its own truncated copy that summed items +
  * approved change orders only, silently dropping markup/discount/tax
  * on every approval.
+ *
+ * Takes the Supabase client as a parameter (defaulting to the
+ * client-side singleton) so the same formula can run from a Next.js
+ * Route Handler's server-side/cookie-authenticated client too — see
+ * app/api/change-orders/[id]/approve/route.ts, which used to carry its
+ * own drifted copy of this same formula.
  */
 export async function computeRevisedEstimateTotal(
   estimateId: string,
-  companyId: string
+  companyId: string,
+  client: SupabaseClient = supabase
 ): Promise<{ itemsSubtotal: number; approvedChangeOrderTotal: number; revisedTotal: number }> {
   const [{ data: estimate, error: estError }, { data: items, error: itemsError }, { data: approvedCOs, error: coError }] =
     await Promise.all([
-      supabase.from("estimates").select("markup, discount, tax_rate").eq("id", estimateId).eq("company_id", companyId).single(),
-      supabase.from("estimate_items").select("total").eq("estimate_id", estimateId).eq("company_id", companyId).is("deleted_at", null),
-      supabase
+      client.from("estimates").select("markup, discount, tax_rate").eq("id", estimateId).eq("company_id", companyId).single(),
+      client.from("estimate_items").select("total").eq("estimate_id", estimateId).eq("company_id", companyId).is("deleted_at", null),
+      client
         .from("change_orders")
         .select("total_amount")
         .eq("estimate_id", estimateId)
@@ -43,10 +51,10 @@ export async function computeRevisedEstimateTotal(
   if (itemsError) throw itemsError;
   if (coError) throw coError;
 
-  const itemsSubtotal = (items || []).reduce((sum, i) => sum + (i.total || 0), 0);
-  const approvedChangeOrderTotal = (approvedCOs || []).reduce((sum, co) => sum + (co.total_amount || 0), 0);
-  const tax = calculateTax(itemsSubtotal, estimate?.tax_rate || 0);
-  const originalTotal = calculateTotal(itemsSubtotal, estimate?.markup || 0, estimate?.discount || 0, tax);
+  const itemsSubtotal = (items || []).reduce((sum: number, i: any) => sum + (i.total || 0), 0);
+  const approvedChangeOrderTotal = (approvedCOs || []).reduce((sum: number, co: any) => sum + (co.total_amount || 0), 0);
+  const tax = calculateTax(itemsSubtotal, (estimate as any)?.tax_rate || 0);
+  const originalTotal = calculateTotal(itemsSubtotal, (estimate as any)?.markup || 0, (estimate as any)?.discount || 0, tax);
 
   return { itemsSubtotal, approvedChangeOrderTotal, revisedTotal: originalTotal + approvedChangeOrderTotal };
 }
@@ -60,13 +68,17 @@ export async function computeRevisedEstimateTotal(
  * was approved after invoicing. Recomputes remaining_balance/status/
  * payment_status the same way trg_update_invoice_payment_totals does,
  * so the two stay consistent no matter which one last touched the row.
+ *
+ * Takes the Supabase client as a parameter — see
+ * computeRevisedEstimateTotal above for why.
  */
 export async function cascadeRevisedTotalToInvoices(
   estimateId: string,
   companyId: string,
-  newTotal: number
+  newTotal: number,
+  client: SupabaseClient = supabase
 ): Promise<void> {
-  const { data: invoices, error } = await supabase
+  const { data: invoices, error } = await client
     .from("invoices")
     .select("id, amount_paid")
     .eq("estimate_id", estimateId)
@@ -74,14 +86,14 @@ export async function cascadeRevisedTotalToInvoices(
     .eq("is_deleted", false);
   if (error) throw error;
 
-  for (const invoice of invoices || []) {
+  for (const invoice of (invoices || []) as any[]) {
     const amountPaid = invoice.amount_paid || 0;
     const remaining = newTotal - amountPaid;
     const isPaid = amountPaid > 0 && amountPaid >= newTotal;
     const status = amountPaid === 0 ? "pending" : isPaid ? "paid" : "partial";
     const paymentStatus = amountPaid === 0 ? "unpaid" : isPaid ? "paid" : "partial";
 
-    await supabase
+    await client
       .from("invoices")
       .update({
         total: newTotal,

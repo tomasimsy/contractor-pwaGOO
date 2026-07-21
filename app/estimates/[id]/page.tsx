@@ -893,6 +893,23 @@ export default function EstimatePage() {
 
   if (loading) return <div className="p-8 text-center">Loading...</div>;
 
+  if (!estimate) {
+    return (
+      <div className="p-8 text-center space-y-3">
+        <p className="text-slate-600 font-semibold">Estimate not found</p>
+        <p className="text-slate-400 text-sm">
+          It may have been deleted, or the link may be incorrect.
+        </p>
+        <button
+          onClick={() => router.push("/estimates")}
+          className="text-emerald-600 hover:text-emerald-700 text-sm font-medium underline"
+        >
+          Back to Estimates
+        </button>
+      </div>
+    );
+  }
+
   const getStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
       draft: "bg-gray-100 text-gray-700",
