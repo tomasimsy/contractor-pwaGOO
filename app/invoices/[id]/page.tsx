@@ -194,13 +194,16 @@ export default function InvoicePage() {
         }
       } else {
         // Invoice with no estimate - use invoice total
-        setOriginalSubtotal(inv.total || 0);
+        const revisedInvoiceTotal = inv.total || 0;
+        const totalPaid = paymentsData.reduce((sum, p) => sum + (p.amount || 0), 0);
+        const remaining = revisedInvoiceTotal - totalPaid;
+
+        setOriginalSubtotal(revisedInvoiceTotal);
         setApprovedChangeTotal(0);
-        setRevisedTotal(inv.total || 0);
-        setTotalPaid(paymentsData.reduce((sum, p) => sum + (p.amount || 0), 0));
-        const remaining = (inv.total || 0) - (paymentsData.reduce((sum, p) => sum + (p.amount || 0), 0));
+        setRevisedTotal(revisedInvoiceTotal);
+        setTotalPaid(totalPaid);
         setRemainingBalance(remaining);
-        setDepositAmount(inv.deposit_amount > 0 ? inv.deposit_amount : (inv.total || 0) * 0.5);
+        setDepositAmount(inv.deposit_amount > 0 ? inv.deposit_amount : revisedInvoiceTotal * 0.5);
         setIsFullyPaid(remaining <= 0);
         setIsOverdue(inv.due_date && remaining > 0 && new Date(inv.due_date) < new Date());
         setCanLock(remaining <= 0 && !inv.is_locked);
