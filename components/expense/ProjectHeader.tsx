@@ -1,6 +1,7 @@
 "use client";
 
-import { User, Phone } from "lucide-react";
+import Link from "next/link";
+import { User, Phone, SquarePen } from "lucide-react";
 import type { ProjectBundle } from "@/lib/types";
 
 export default function ProjectHeader({ bundle }: { bundle: ProjectBundle }) {
@@ -28,11 +29,20 @@ export default function ProjectHeader({ bundle }: { bundle: ProjectBundle }) {
           </div>
         )}
       </div>
-      {project.status && (
-        <span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-gray-500 border border-gray-200 rounded px-2 py-0.5">
-          {project.status}
-        </span>
-      )}
+      <div className="flex items-center gap-2 shrink-0">
+        <Link
+          href={`/estimates/${project.id}`}
+          className="inline-flex items-center gap-1.5 text-[13px] font-medium text-emerald-700 border border-emerald-200 bg-emerald-50 rounded-lg px-2.5 py-1.5 hover:bg-emerald-100 transition"
+        >
+          <SquarePen size={13} />
+          Edit Estimate
+        </Link>
+        {project.status && (
+          <span className="text-[11px] font-medium uppercase tracking-wide text-gray-500 border border-gray-200 rounded px-2 py-0.5">
+            {project.status}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

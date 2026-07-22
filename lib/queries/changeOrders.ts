@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase/client";
 import type { ChangeOrderRow } from "@/lib/types";
 import { filterActive } from '@/lib/queries/softDeleteFilter';
-import { calculateTax, calculateTotal } from "@/lib/utils/calculations";
+import { calculateTax, calculateRevisedTotal } from "@/lib/utils/calculations";
 
 /**
  * Change Order CRUD for the Expense page. Mirrors the business rules
@@ -54,9 +54,15 @@ export async function computeRevisedEstimateTotal(
   const itemsSubtotal = (items || []).reduce((sum: number, i: any) => sum + (i.total || 0), 0);
   const approvedChangeOrderTotal = (approvedCOs || []).reduce((sum: number, co: any) => sum + (co.total_amount || 0), 0);
   const tax = calculateTax(itemsSubtotal, (estimate as any)?.tax_rate || 0);
-  const originalTotal = calculateTotal(itemsSubtotal, (estimate as any)?.markup || 0, (estimate as any)?.discount || 0, tax);
+  const revisedTotal = calculateRevisedTotal(
+    itemsSubtotal,
+    (estimate as any)?.markup || 0,
+    (estimate as any)?.discount || 0,
+    tax,
+    approvedChangeOrderTotal
+  );
 
-  return { itemsSubtotal, approvedChangeOrderTotal, revisedTotal: originalTotal + approvedChangeOrderTotal };
+  return { itemsSubtotal, approvedChangeOrderTotal, revisedTotal };
 }
 
 /**
@@ -106,13 +112,63 @@ export async function cascadeRevisedTotalToInvoices(
   }
 }
 
+export type ChangeOrderLineItemInput = {
+  description: string;
+  quantity: number;
+  unit_price: number;
+  type: "addition" | "deduction";
+};
+
 export type NewChangeOrderInput = {
   title: string;
   description: string | null;
+  /** Used directly when lineItems isn't provided. Ignored (recomputed from
+   * lineItems) otherwise. */
   amount: number;
   tax: number;
   notes: string | null;
+  /** Optional itemized breakdown (the estimate form's Change Order tab).
+   * When provided, total_amount is derived as the signed sum instead of
+   * trusting `amount` — mirrors the estimate page's existing itemized
+   * ChangeOrderModal, now routed through this shared module instead of a
+   * page-local copy of the same insert/delete-reinsert logic. */
+  lineItems?: ChangeOrderLineItemInput[];
 };
+
+function sumLineItems(lineItems: ChangeOrderLineItemInput[]): number {
+  return lineItems.reduce((sum, item) => {
+    const lineTotal = item.quantity * item.unit_price;
+    return sum + (item.type === "addition" ? lineTotal : -lineTotal);
+  }, 0);
+}
+
+async function replaceLineItems(
+  changeOrderId: string,
+  companyId: string,
+  lineItems: ChangeOrderLineItemInput[]
+): Promise<void> {
+  const { error: deleteError } = await supabase
+    .from("change_order_line_items")
+    .delete()
+    .eq("change_order_id", changeOrderId)
+    .eq("company_id", companyId);
+  if (deleteError) throw deleteError;
+
+  if (lineItems.length === 0) return;
+
+  const { error: insertError } = await supabase.from("change_order_line_items").insert(
+    lineItems.map((item) => ({
+      change_order_id: changeOrderId,
+      company_id: companyId,
+      description: item.description,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      total: item.quantity * item.unit_price,
+      type: item.type,
+    }))
+  );
+  if (insertError) throw insertError;
+}
 
 export async function createChangeOrder(
   estimateId: string,
@@ -131,6 +187,7 @@ export async function createChangeOrder(
   if (estimateError) throw estimateError;
 
   const changeOrderNumber = `CO-${(count || 0) + 1}`;
+  const totalAmount = input.lineItems ? sumLineItems(input.lineItems) : input.amount;
 
   const { data, error } = await supabase
     .from("change_orders")
@@ -140,7 +197,7 @@ export async function createChangeOrder(
       change_order_number: changeOrderNumber,
       title: input.title,
       description: input.description,
-      total_amount: input.amount,
+      total_amount: totalAmount,
       tax: input.tax,
       notes: input.notes,
       status: "draft",
@@ -149,6 +206,11 @@ export async function createChangeOrder(
     .select()
     .single();
   if (error) throw error;
+
+  if (input.lineItems) {
+    await replaceLineItems(data.id, companyId, input.lineItems);
+  }
+
   return data;
 }
 
@@ -163,12 +225,14 @@ export async function updateChangeOrder(
   input: NewChangeOrderInput,
   currentStatus: "draft" | "rejected" = "draft"
 ): Promise<void> {
+  const totalAmount = input.lineItems ? sumLineItems(input.lineItems) : input.amount;
+
   const { error } = await supabase
     .from("change_orders")
     .update({
       title: input.title,
       description: input.description,
-      total_amount: input.amount,
+      total_amount: totalAmount,
       tax: input.tax,
       notes: input.notes,
       ...(currentStatus === "rejected" ? { status: "draft" } : {}),
@@ -177,6 +241,10 @@ export async function updateChangeOrder(
     .eq("company_id", companyId)
     .in("status", ["draft", "rejected"]);
   if (error) throw error;
+
+  if (input.lineItems) {
+    await replaceLineItems(id, companyId, input.lineItems);
+  }
 }
 
 export async function submitChangeOrder(id: string, companyId: string): Promise<void> {

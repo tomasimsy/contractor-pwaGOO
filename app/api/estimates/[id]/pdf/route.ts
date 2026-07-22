@@ -50,11 +50,30 @@ export async function GET(
     const estimateItems = items || [];
     const company = await getCompanySettingsByCompanyId(supabase, estimate.company_id);
 
-    // ---------- Calculations (unchanged from prior implementation) ----------
+    const { data: approvedCOs } = await supabase
+      .from("change_orders")
+      .select("total_amount")
+      .eq("estimate_id", id)
+      .eq("company_id", estimate.company_id)
+      .eq("status", "approved")
+      .is("deleted_at", null);
+
+    // ---------- Calculations ----------
+    // estimates.total is the single source of truth (kept current by the
+    // unified estimate-form save path and by change-order approval — see
+    // lib/queries/estimates.ts and lib/queries/changeOrders.ts) — this
+    // used to independently re-derive a subtotal from raw items and
+    // ignore markup/discount/tax_rate/approved change orders entirely,
+    // drifting from what the estimate/invoice pages actually show.
     const subtotal = estimateItems.reduce((sum, i) => sum + (i.total || 0), 0);
+    const taxAmount = subtotal * ((estimate.tax_rate || 0) / 100);
+    const markupAmount = estimate.markup || 0;
+    const discountAmount = estimate.discount || 0;
+    const approvedChangeOrderTotal = (approvedCOs || []).reduce((sum, co) => sum + (co.total_amount || 0), 0);
+    const total = estimate.total || 0;
     const depositPct = company.default_deposit_percentage / 100;
-    const depositAmount = estimate.deposit_amount || subtotal * depositPct;
-    const balanceAmount = subtotal - depositAmount;
+    const depositAmount = estimate.deposit_amount || total * depositPct;
+    const balanceAmount = total - depositAmount;
 
     const html = pdfDocument({
       docTitle: `Estimate ${estimate.estimate_number || estimate.id.slice(0, 8)}`,
@@ -124,7 +143,12 @@ export async function GET(
         <div class="section">
           <div class="section-title">Financial Summary</div>
           <div class="summary-box">
-            <div class="summary-row"><span>Total Estimate Amount</span><span>${formatCurrency(subtotal)}</span></div>
+            <div class="summary-row muted"><span>Subtotal</span><span>${formatCurrency(subtotal)}</span></div>
+            ${markupAmount ? `<div class="summary-row muted"><span>Markup</span><span>${formatCurrency(markupAmount)}</span></div>` : ""}
+            ${discountAmount ? `<div class="summary-row muted"><span>Discount</span><span>-${formatCurrency(discountAmount)}</span></div>` : ""}
+            ${taxAmount ? `<div class="summary-row muted"><span>Tax (${estimate.tax_rate}%)</span><span>${formatCurrency(taxAmount)}</span></div>` : ""}
+            ${approvedChangeOrderTotal ? `<div class="summary-row muted"><span>Approved Change Orders</span><span>${formatCurrency(approvedChangeOrderTotal)}</span></div>` : ""}
+            <div class="summary-row"><span>Total Estimate Amount</span><span>${formatCurrency(total)}</span></div>
             <div class="summary-row muted"><span>Deposit Required (${company.default_deposit_percentage}%)</span><span>${formatCurrency(depositAmount)}</span></div>
             <div class="summary-row muted"><span>Balance Due Upon Completion</span><span>${formatCurrency(balanceAmount)}</span></div>
             <div class="summary-row balance"><span>Due Today</span><span>${formatCurrency(depositAmount)}</span></div>

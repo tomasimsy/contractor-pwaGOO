@@ -10,6 +10,7 @@ import toast from "react-hot-toast";
 import ProgressDisplay from "@/components/progress/ProgressDisplay";
 import { EstimateImageUploader, EstimateImageView } from "@/components/ui/EstimateImages";
 import { CompanySettings, mergeCompanyDefaults } from "@/lib/company";
+import { calculateTax, calculateRevisedTotal } from "@/lib/utils/calculations";
 
 type Signature = { type: "draw" | "type"; value: string; date: string };
 type ChangeOrder = {
@@ -142,7 +143,13 @@ const [estimate, setEstimate] = useState<any>(null);
                       .reduce((sum: number, co: ChangeOrder) => sum + (co.total_amount || 0), 0);
                       setApprovedTotal(approvedSum);
 
-                      const revTotal = origSum + approvedSum;
+                      // Same shared formula as the authenticated estimate form
+                      // (lib/utils/calculations.ts) — this used to sum items +
+                      // approved change orders only, silently dropping
+                      // markup/discount/tax_rate and showing the customer a
+                      // lower total than what they actually owe.
+                      const tax = calculateTax(origSum, est.tax_rate || 0);
+                      const revTotal = calculateRevisedTotal(origSum, est.markup || 0, est.discount || 0, tax, approvedSum);
                       setRevisedTotal(revTotal);
                       setDepositAmount(est.deposit_amount > 0 ? est.deposit_amount : revTotal * 0.5);
 
@@ -581,7 +588,9 @@ const [estimate, setEstimate] = useState<any>(null);
                                 {!signed && (
                                 <div className="flex justify-between">
                                   <span>{changeOrders.length > 0 ? "Original Estimate Subtotal" : "CurrentEstimate"}</span>
-                                  <span className="text-slate-200 font-bold">{formatCurrency(originalSubtotal)}</span>
+                                  <span className="text-slate-200 font-bold">
+                                    {formatCurrency(changeOrders.length > 0 ? originalSubtotal : revisedTotal)}
+                                  </span>
                                 </div>
                                 )}
                                 {approvedTotal !== 0 && (
