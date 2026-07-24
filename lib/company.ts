@@ -24,7 +24,7 @@ export type CompanySettings = {
 // Used whenever a company hasn't configured a field yet, so documents never
 // render blank/broken. Deliberately generic — no specific company's branding.
 export const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
-  company_name: "Your Company Name",
+  company_name: "OneSquare Roofing LLC",
   dba: null,
   company_address: "Add your business address in Settings",
   company_phone: "Add your phone number",
