@@ -41,11 +41,16 @@ const EMPTY_STATS: FinancialStats = {
 };
 
 /**
- * Company-wide revenue/expense/profit rollup — NOW using same logic as Analytics page
- * to ensure Dashboard and Analytics show identical numbers.
+ * Company-wide revenue/expense/profit rollup — uses calculateCompanyFinancials,
+ * the same engine Analytics uses, so Dashboard and Analytics show identical
+ * numbers.
  *
- * CRITICAL: Uses committed costs (max of assigned vs paid) for profit calculations,
- * not just paid costs, to match Expense page and Analytics calculations.
+ * Note: at this company/period level, subcontractor/agent costs are actual
+ * cash paid within the period (not committed/assigned amounts) — that's
+ * intentional for a period rollup. Committed-cost flooring (max of assigned
+ * vs paid) is a per-project concept used by the Expense page and Project
+ * Analytics (calculateProjectFinancials/getEffectiveSubcontractorCommitted/
+ * getEffectiveAgentPaid), not this hook.
  */
 export function useFinancialStats() {
   const [stats, setStats] = useState<FinancialStats>(EMPTY_STATS);

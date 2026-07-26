@@ -13,6 +13,7 @@ import { supabase } from "@/lib/supabase/client";
 import ClientSelector from "@/components/forms/ClientSelector";
 import { EstimateCamera } from "@/components/ui/EstimateCamera";
 import SignaturePad from "@/components/signature/SignaturePad";
+import EstimateTimeline from "@/components/estimates/EstimateTimeline";
 
 /**
  * The unified Estimate Create/Edit form. All state, calculation, and
@@ -86,6 +87,9 @@ export default function EstimateForm({
 
   const saveDisabled = form.saving || (mode === "edit" && form.isLocked);
   const saveLabel = form.saving ? "Saving..." : mode === "create" ? "Save" : "Update";
+  const lockReason = form.existingInvoiceId
+    ? "This estimate has already been converted to an invoice and can no longer be edited."
+    : "This estimate has been signed and can no longer be edited.";
 
   return (
     <div className="min-h-screen bg-gray-100 pb-44 lg:pb-10">
@@ -108,13 +112,38 @@ export default function EstimateForm({
           </button>
           <div className="lg:hidden w-8" />
         </div>
+        {/* Section-jump nav — the estimate workflow is one long scroll of
+            Customer/Line Items/Photos/Change Orders/Signature/Timeline/
+            Financial Summary; this lets a user go straight to one instead
+            of scrolling past sections that don't apply while editing. Only
+            shown in edit mode since several of these sections don't exist
+            in create mode yet (change orders, signature, timeline). */}
+        {mode === "edit" && (
+          <div className="hidden lg:block border-t border-gray-100 bg-gray-50/60">
+            <nav className="max-w-6xl mx-auto flex items-center gap-4 px-4 py-1.5 text-xs font-medium text-gray-500 overflow-x-auto">
+              {[
+                ["Customer", "section-customer"],
+                ["Line Items", "section-line-items"],
+                ["Photos", "section-photos"],
+                ["Change Orders", "section-change-orders"],
+                ["Signature", "section-signature"],
+                ["Timeline", "section-timeline"],
+                ["Financial Summary", "section-financial-summary"],
+              ].map(([label, id]) => (
+                <a key={id} href={`#${id}`} className="whitespace-nowrap hover:text-green-700 transition-colors">
+                  {label}
+                </a>
+              ))}
+            </nav>
+          </div>
+        )}
       </div>
 
       <div className="max-w-6xl mx-auto p-3 lg:p-4 lg:grid lg:grid-cols-3 lg:gap-4 lg:items-start">
         {/* Main column */}
         <div className="lg:col-span-2 space-y-3 min-w-0">
           {/* Client */}
-          <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
+          <div id="section-customer" className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 scroll-mt-24">
             <ClientSelector selectedId={form.clientId} onSelect={form.setClientId} companyId={form.companyId} />
             {form.clientId && (
               <div className="mt-2 pt-2 border-t border-gray-100">
@@ -168,7 +197,7 @@ export default function EstimateForm({
               it — both duplicated the same photos in an always-visible
               3-column grid with dashed "Add" tiles even at zero photos,
               which is the bulky placeholder this section used to show. */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 space-y-3">
+          <div id="section-photos" className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 space-y-3 scroll-mt-24">
             <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Photos</div>
             {form.photosEnabled ? (
               <EstimateCamera estimateId={form.formId} onUploaded={form.bumpGallery} />
@@ -180,10 +209,10 @@ export default function EstimateForm({
           {/* Projects / Line Items */}
           {form.isLocked && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
-              This estimate has been signed and its scope is locked. Use a Change Order to modify scope.
+              {lockReason} Use a Change Order to modify scope.
             </div>
           )}
-          <div className="space-y-3">
+          <div id="section-line-items" className="space-y-3 scroll-mt-24">
             {form.projects.map((project, projectIdx) => (
               <ProjectCard key={project.id} project={project} projectIdx={projectIdx} form={form} locked={form.isLocked} />
             ))}
@@ -210,14 +239,18 @@ export default function EstimateForm({
           </div>
 
           {/* Change Orders */}
-          {mode === "edit" && <ChangeOrdersSection form={form} onNew={openNewChangeOrder} onEdit={openEditChangeOrder} />}
+          {mode === "edit" && (
+            <div id="section-change-orders" className="scroll-mt-24">
+              <ChangeOrdersSection form={form} onNew={openNewChangeOrder} onEdit={openEditChangeOrder} />
+            </div>
+          )}
 
           {/* Assigned Agent / Subcontractors */}
           {mode === "edit" && <AssignmentsSection form={form} />}
 
           {/* Signature */}
           {mode === "edit" && (
-            <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
+            <div id="section-signature" className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 scroll-mt-24">
               <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Signature</div>
               <SignaturePad
                 onSave={form.saveSignature}
@@ -227,6 +260,15 @@ export default function EstimateForm({
                 estimateId={form.formId}
                 onRefresh={() => {}}
               />
+            </div>
+          )}
+
+          {/* Timeline — what has actually happened to this estimate, in
+              order (change orders, signature, payments). New section. */}
+          {mode === "edit" && (
+            <div id="section-timeline" className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 scroll-mt-24">
+              <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Timeline</div>
+              <EstimateTimeline form={form} />
             </div>
           )}
 
@@ -314,7 +356,7 @@ export default function EstimateForm({
         </div>
 
         {/* Desktop sticky pricing panel */}
-        <div className="hidden lg:block lg:sticky lg:top-20 lg:self-start">
+        <div id="section-financial-summary" className="hidden lg:block lg:sticky lg:top-20 lg:self-start scroll-mt-24">
           <PricingSummary
             form={form}
             onOpenTargetModal={() => {
@@ -336,7 +378,7 @@ export default function EstimateForm({
           bar (painted later in the DOM) covers this one entirely. */}
       <div className="fixed bottom-[calc(4rem+env(safe-area-inset-bottom))] inset-x-0 bg-white border-t border-gray-200 p-3 z-40 lg:hidden">
         {mode === "edit" && form.isLocked && (
-          <p className="text-[11px] text-amber-600 text-center mb-1.5">This estimate has been signed and can no longer be edited.</p>
+          <p className="text-[11px] text-amber-600 text-center mb-1.5">{lockReason}</p>
         )}
         <button
           onClick={handleSave}
@@ -654,7 +696,11 @@ function PricingSummary({
       {showSaveButton && (
         <div className="pt-2 border-t border-gray-100 space-y-1.5">
           {form.mode === "edit" && form.isLocked && (
-            <p className="text-[11px] text-amber-600">This estimate has been signed and can no longer be edited.</p>
+            <p className="text-[11px] text-amber-600">
+              {form.existingInvoiceId
+                ? "This estimate has already been converted to an invoice and can no longer be edited."
+                : "This estimate has been signed and can no longer be edited."}
+            </p>
           )}
           <button
             onClick={onSave}

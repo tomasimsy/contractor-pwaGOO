@@ -174,11 +174,20 @@ export function useEstimateForm({ mode, estimateId }: { mode: EstimateFormMode; 
 
   const photosEnabled = mode === "edit" ? true : draftRowCreated;
 
-  // An estimate the customer has already signed, or that's been
-  // converted/completed, shouldn't have its scope/pricing silently
-  // changed out from under them — mirrors the old page's "Modify" button
-  // gating (!estimate?.signature && status !== 'converted').
-  const isLocked = mode === "edit" && (!!signature || status === "converted" || status === "completed");
+  // An estimate the customer has already signed, that's been
+  // converted/completed, OR that already has a generated invoice
+  // shouldn't have its scope/pricing silently changed out from under it.
+  // The invoice check matters on its own: app/expense/page.tsx trusts
+  // invoices[0].total once an invoice exists (it may legitimately differ
+  // from a later change-order-driven estimate total), and only change
+  // order approval cascades a new total onto that invoice — a plain item
+  // edit does not. Without this, editing items on an already-invoiced
+  // estimate desyncs estimates.total from the frozen invoices.total with
+  // no path to reconcile them, which is exactly what status/signature
+  // alone failed to catch for older records whose status was never set
+  // to "converted".
+  const isLocked =
+    mode === "edit" && (!!signature || status === "converted" || status === "completed" || !!existingInvoiceId);
 
   // --- derived calculations — the single source of truth for every
   // number this form displays. No separate "view" vs "edit" formula. ---

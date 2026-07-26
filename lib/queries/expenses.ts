@@ -700,19 +700,24 @@ function getEffectiveSubcontractorCommitted(
 }
 
 /**
- * Agent commissions actually paid, restricted to agents currently
- * assigned to the project — mirrors getEffectiveSubcontractorCommitted's
- * "only count currently-assigned rows" scoping. Without this, removing
- * an agent's assignment (the only way to delete their commission entry
- * from the Agent Commissions list) orphaned their payment rows: the row
- * disappeared from the UI with no way to view/manage it, yet its amount
- * stayed stuck in this total forever since a plain sum over all
- * agent_payments doesn't know the assignment was removed. Matches
- * estimate_agent_id, falling back to agent_id — same rule
- * computePendingPayouts already uses.
+ * Agent commissions — committed, not paid-to-date, mirroring
+ * getEffectiveSubcontractorCommitted exactly (Σ max(assigned, paid) per
+ * assignment, restricted to agents currently assigned to the project).
+ * This used to be paid-only (no floor against the assigned/committed
+ * amount), which silently contradicted this file's own "both use
+ * committed amounts" comment on summarizeFinancials below: an agent
+ * assigned a commission with $0 paid so far contributed $0 to cost here,
+ * while calculateProjectFinancials() (financialCalculations.ts) correctly
+ * floored at committed for both roles — so the Expense page/Estimates
+ * list/Invoices list (which route through this function) disagreed with
+ * Analytics' Project Analytics (which routes through
+ * calculateProjectFinancials) for any project with an unpaid agent
+ * commission. Matches estimate_agent_id, falling back to agent_id — same
+ * rule computePendingPayouts already uses, so a payment logged against a
+ * $0-committed assignment still counts once flooring is applied.
  */
 function getEffectiveAgentPaid(
-  assignedAgents: Pick<ProjectBundle["assignedAgents"][number], "estimateAgentId" | "agentId">[],
+  assignedAgents: Pick<ProjectBundle["assignedAgents"][number], "estimateAgentId" | "agentId" | "assignedAmount">[],
   agentPayments: Pick<ProjectBundle["agentPayments"][number], "estimate_agent_id" | "agent_id" | "amount">[]
 ): number {
   const paidByAssignment = new Map<string, number>();
@@ -721,7 +726,10 @@ function getEffectiveAgentPaid(
     if (!assignmentId) continue;
     paidByAssignment.set(assignmentId, (paidByAssignment.get(assignmentId) ?? 0) + p.amount);
   }
-  return assignedAgents.reduce((sum, a) => sum + (paidByAssignment.get(a.estimateAgentId) ?? 0), 0);
+  return assignedAgents.reduce(
+    (sum, a) => sum + Math.max(a.assignedAmount, paidByAssignment.get(a.estimateAgentId) ?? 0),
+    0
+  );
 }
 
 
@@ -1021,7 +1029,7 @@ export async function getCompanyProjectFinancialSummaries(
     const agentPaymentRows = (agentPaymentsByEst.get(est.id) ?? []) as any[];
 
     const assignedSubs = assignedSubRows.map((s: any) => ({ estimateSubcontractorId: s.id, contractedAmount: s.amount || 0 }));
-    const assignedAgents = assignedAgentRows.map((a: any) => ({ estimateAgentId: a.id, agentId: a.agent_id }));
+    const assignedAgents = assignedAgentRows.map((a: any) => ({ estimateAgentId: a.id, agentId: a.agent_id, assignedAmount: a.amount || 0 }));
     const subPaymentsForFn = subPaymentRows.map((p: any) => ({ estimate_subcontractor_id: p.estimate_subcontractor_id, amount: p.amount }));
     const agentPaymentsForFn = agentPaymentRows.map((p: any) => ({
       estimate_agent_id: p.estimate_agent_id,
@@ -1130,6 +1138,7 @@ export async function getCompanyExpenseAnalytics(
     { data: subPayments, error: subPayError },
     { data: agentPayments, error: agentPayError },
     { data: estimates, error: estimatesError },
+    { data: agentPayableExpenses, error: agentPayableExpensesError },
   ] = await Promise.all([
     dateFilter
       ? supabase
@@ -1168,6 +1177,18 @@ export async function getCompanyExpenseAnalytics(
       .select("id")
       .eq("company_id", companyId)
       .eq("is_deleted", false),
+    // Expenses an agent paid out of pocket on the company's behalf — the
+    // same "owed to agent" component computePendingPayouts()/
+    // getCompanyPendingPayoutsDetailed() already fold in. Without this,
+    // Pending Payouts here (Expense Analytics) undercounts relative to
+    // the standalone Pending Payouts page/Dashboard for any agent who's
+    // been reimbursed.
+    supabase
+      .from("estimate_expenses")
+      .select("paid_by_agent_id, amount, tax")
+      .eq("company_id", companyId)
+      .is("deleted_at", null)
+      .not("paid_by_agent_id", "is", null),
   ]);
 
   if (expensesError) throw expensesError;
@@ -1176,6 +1197,7 @@ export async function getCompanyExpenseAnalytics(
   if (subPayError) throw subPayError;
   if (agentPayError) throw agentPayError;
   if (estimatesError) throw estimatesError;
+  if (agentPayableExpensesError) throw agentPayableExpensesError;
 
   // Group expenses by vendor
   const vendorMap = new Map<string, { amount: number; count: number }>();
@@ -1231,8 +1253,18 @@ export async function getCompanyExpenseAnalytics(
     totalAgentAssigned += agent.amount || 0;
   }
 
+  // Agent reimbursements owed — unpaid-by-default (no payment record marks
+  // these settled), so the whole amount is both "assigned" and "pending"
+  // for this component, matching computePendingPayouts()'s reimbursement
+  // handling (paidReimbursement is always 0 there too).
+  let totalAgentReimbursements = 0;
+  for (const exp of agentPayableExpenses ?? []) {
+    totalAgentReimbursements += (exp.amount || 0) + (exp.tax || 0);
+  }
+  totalAgentAssigned += totalAgentReimbursements;
+
   // Calculate total pending payouts across assignments
-  let totalPending = 0;
+  let totalPending = totalAgentReimbursements;
   for (const sub of subAssignments ?? []) {
     const paid = subPaidByAssignment.get(sub.id) ?? 0;
     const remaining = Math.max((sub.amount || 0) - paid, 0);

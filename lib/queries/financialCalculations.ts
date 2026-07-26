@@ -16,6 +16,7 @@
 
 import { supabase } from "@/lib/supabase/client";
 import type { ProjectBundle } from "@/lib/types";
+import { resolveProjectTotal } from "@/lib/utils/calculations";
 
 /**
  * Complete financial data for a single project/estimate
@@ -164,14 +165,14 @@ export function calculateProjectFinancials(bundle: ProjectBundle): ProjectFinanc
   );
 
   // The authoritative current total — items + markup/discount/tax +
-  // approved change orders — already lives on the invoice (if one
-  // exists) or the estimate, kept current by
-  // cascadeRevisedTotalToInvoices()/approveChangeOrder() (see
-  // lib/queries/changeOrders.ts). Recomputing it here as
-  // originalEstimateTotal + approvedChangeOrderTotal silently dropped
-  // markup/discount/tax and could diverge from what every other page
-  // (and summarizeFinancials, the Expense page's engine) shows.
-  const revisedTotal = bundle.invoices.length > 0 ? bundle.invoices[0].total : (bundle.project.total || 0);
+  // approved change orders — already lives on the estimate, kept current
+  // by every total-changing path (see lib/queries/estimates.ts's
+  // saveEstimate and lib/queries/changeOrders.ts's approveChangeOrder).
+  // Both of those also cascade the number onto any linked invoice, but
+  // the estimate's own total is the one guaranteed fresh regardless of
+  // cascade — same resolveProjectTotal used by the Expense and Invoice
+  // detail pages, so this can't independently diverge from what they show.
+  const revisedTotal = resolveProjectTotal(bundle.project.total, bundle.invoices[0]?.total);
 
   // ========== EXPENSES ==========
   // Subcontractor costs: max(assigned, paid) per assignment

@@ -9,6 +9,7 @@ import { ACTIVE_ESTIMATE_STATUSES, COMPLETED_ESTIMATE_STATUSES, ARCHIVED_ESTIMAT
 import type { Estimate, Client, LineItem } from "@/types";
 import { calculateSubtotal, calculateTax, calculateRevisedTotal } from "@/lib/utils/calculations";
 import { generateEstimateNumber } from "@/lib/utils/estimateNumber";
+import { cascadeRevisedTotalToInvoices } from "@/lib/queries/changeOrders";
 
 /**
  * Get active estimates (draft, sent, approved, in progress)
@@ -575,6 +576,18 @@ export async function saveEstimate(
   if (itemsToInsert.length > 0) {
     const { error: itemsError } = await supabase.from("estimate_items").insert(itemsToInsert);
     if (itemsError) throw itemsError;
+  }
+
+  // Keep any already-generated invoice's total in lock-step with the
+  // estimate's — the Expense page (and others) read a project's total
+  // from whichever of these was last actually written, so this can never
+  // be allowed to drift no matter what triggered the estimate update.
+  // Change order approval already does this (cascadeRevisedTotalToInvoices);
+  // this makes the same guarantee for the estimate's own save path, since
+  // in practice most estimates are locked once invoiced and this only
+  // fires for edits made before that lock existed or for legacy rows.
+  if (mode === "edit") {
+    await cascadeRevisedTotalToInvoices(estimateId, companyId, total);
   }
 
   return { id: estimateId, estimateNumber };

@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { X } from "lucide-react";
 import { recordCustomerPayment } from "@/lib/queries/customerPayments";
 import { formatCurrency } from "@/lib/utils/formatting";
+import { resolveProjectTotal } from "@/lib/utils/calculations";
 import type { ProjectBundle } from "@/lib/types";
 
 export default function CustomerPaymentModal({
@@ -43,10 +44,10 @@ export default function CustomerPaymentModal({
   if (!isOpen) return null;
 
   const selectedInvoice = invoices.find((inv) => inv.id === selectedInvoiceId);
-  // invoice.total is kept current with approved change orders baked in
-  // (see lib/queries/changeOrders.ts's cascadeRevisedTotalToInvoices) —
-  // no separate addition needed here.
-  const selectedInvoiceRevisedTotal = selectedInvoice ? selectedInvoice.total : 0;
+  // Prefer the estimate's live total over the invoice's own — same
+  // resolveProjectTotal preference used everywhere else a project's
+  // total is shown, so this can't independently diverge.
+  const selectedInvoiceRevisedTotal = selectedInvoice ? resolveProjectTotal(bundle.project.total, selectedInvoice.total) : 0;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

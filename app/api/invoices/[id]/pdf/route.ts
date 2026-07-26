@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { formatCurrency, formatDate, renderSignature, pdfDocument, renderCompanyHeaderBlock, renderCompanyFooterBlock, renderCompanySignatureLine } from "@/lib/pdf/pdfLayout";
 import { getCompanySettingsByCompanyId } from "@/lib/company";
+import { calculateRevisedTotal } from "@/lib/utils/calculations";
 
 export async function GET(
   request: NextRequest,
@@ -86,10 +87,22 @@ export async function GET(
 
     const company = await getCompanySettingsByCompanyId(supabase, invoice.company_id);
 
-    // ---------- 2. Calculations (unchanged from prior implementation) ----------
+    // ---------- 2. Calculations ----------
+    // Same shared calculateRevisedTotal formula as the internal Invoice
+    // detail page and public invoice-signing page — this used to sum
+    // items + approved change orders only, silently dropping the
+    // invoice's own markup/discount/tax. invoice.tax is already a dollar
+    // amount (set at conversion time), not a rate, so it's passed
+    // straight through.
     const originalSubtotal = estimateItems.reduce((sum, i) => sum + (i.total || 0), 0);
     const approvedChangeTotal = changeOrders.reduce((sum, co) => sum + (co.total_amount || 0), 0);
-    const revisedTotal = originalSubtotal + approvedChangeTotal;
+    const revisedTotal = calculateRevisedTotal(
+      originalSubtotal,
+      invoice.markup || 0,
+      invoice.discount || 0,
+      invoice.tax || 0,
+      approvedChangeTotal
+    );
     const totalPaid = payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
     const remainingBalance = revisedTotal - totalPaid;
     const depositPct = company.default_deposit_percentage / 100;
@@ -191,6 +204,9 @@ export async function GET(
           <div class="section-title">Financial Summary</div>
           <div class="summary-box">
             <div class="summary-row"><span>Original Estimate Subtotal</span><span>${formatCurrency(originalSubtotal)}</span></div>
+            ${invoice.markup ? `<div class="summary-row muted"><span>Markup</span><span>${formatCurrency(invoice.markup)}</span></div>` : ""}
+            ${invoice.discount ? `<div class="summary-row muted"><span>Discount</span><span>-${formatCurrency(invoice.discount)}</span></div>` : ""}
+            ${invoice.tax ? `<div class="summary-row muted"><span>Tax</span><span>${formatCurrency(invoice.tax)}</span></div>` : ""}
             ${approvedChangeTotal !== 0 ? `<div class="summary-row"><span>Approved Change Orders</span><span>${formatCurrency(approvedChangeTotal)}</span></div>` : ""}
             <div class="summary-row total"><span>Revised Total</span><span>${formatCurrency(revisedTotal)}</span></div>
             <div class="summary-row muted"><span>Deposit (${company.default_deposit_percentage}% of Revised Total)</span><span>${formatCurrency(depositAmount)}</span></div>

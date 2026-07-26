@@ -283,3 +283,74 @@ export async function getMonthlyRevenueTrend(companyId: string, months: number =
 
   return monthlyData;
 }
+
+export interface ARAgingBuckets {
+  current: number; // not yet due
+  days1to30: number;
+  days31to60: number;
+  days61to90: number;
+  days90plus: number;
+  total: number;
+}
+
+/** Accounts-receivable aging — every invoice with a balance still owed,
+ * bucketed by how many days past its due date it is. Same underlying
+ * rows as getAccountsReceivable/getOverdueInvoices, just bucketed
+ * instead of summed/listed, for the AR dashboard's aging breakdown. */
+export async function getARAgingBuckets(companyId: string): Promise<ARAgingBuckets> {
+  const { data, error } = await supabase
+    .from("invoices")
+    .select("remaining_balance, due_date")
+    .eq("company_id", companyId)
+    .eq("is_deleted", false)
+    .gt("remaining_balance", 0);
+
+  if (error) throw error;
+
+  const buckets: ARAgingBuckets = { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0, total: 0 };
+  const today = new Date();
+
+  (data || []).forEach((inv: any) => {
+    const balance = inv.remaining_balance || 0;
+    buckets.total += balance;
+    if (!inv.due_date) {
+      buckets.current += balance;
+      return;
+    }
+    const daysPastDue = Math.floor((today.getTime() - new Date(inv.due_date).getTime()) / (1000 * 60 * 60 * 24));
+    if (daysPastDue <= 0) buckets.current += balance;
+    else if (daysPastDue <= 30) buckets.days1to30 += balance;
+    else if (daysPastDue <= 60) buckets.days31to60 += balance;
+    else if (daysPastDue <= 90) buckets.days61to90 += balance;
+    else buckets.days90plus += balance;
+  });
+
+  return buckets;
+}
+
+export interface PaymentWithContext extends CustomerPayment {
+  invoiceNumber: string | null;
+  clientName: string | null;
+}
+
+/** Company-wide payment history with the invoice number + client name
+ * already joined in — getCompanyPaymentsByDateRange returns the raw
+ * invoice_payments row only, which is enough for date-range sums but
+ * not enough to render a readable "who paid what" list. */
+export async function getCompanyPaymentHistory(companyId: string, limit: number = 50): Promise<PaymentWithContext[]> {
+  const { data, error } = await supabase
+    .from("invoice_payments")
+    .select("*, invoices(invoice_number, client_id, clients(name))")
+    .eq("company_id", companyId)
+    .is("deleted_at", null)
+    .order("payment_date", { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+
+  return (data || []).map((p: any) => ({
+    ...p,
+    invoiceNumber: p.invoices?.invoice_number ?? null,
+    clientName: p.invoices?.clients?.name ?? null,
+  }));
+}

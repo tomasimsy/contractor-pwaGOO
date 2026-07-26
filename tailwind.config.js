@@ -7,25 +7,13 @@ content: [
 ],
 theme: {
 extend: {
-colors: {
-primary: "#0F172A", // deep navy TEST COMMENT UPDATE
-secondary: "#1E293B", // slate navy
-accent: "#C19A6B", // warm tan / gold
-background: "#F5EFE6", // soft tan background
-surface: "#FFFDF9", // cards / containers
-
-text: {
-primary: "#111827", // rich dark text
-secondary: "#475569", // muted slate
-light: "#F8FAFC", // white-ish
-},
-
-border: "#D6C7B2",
-
-warning: "#F59E0B",
-error: "#EF4444",
-success: "#10B981",
-},
+// Color no longer lives here — it was never actually applied (Tailwind
+// v4's @import "tailwindcss" in app/globals.css doesn't read this file
+// without an explicit @config directive, which this project doesn't
+// have), so this block was a dead, misleading second "source of truth"
+// alongside the real one (the CSS custom properties + @theme inline in
+// app/globals.css). Every color token (bg-primary, text-success, ...)
+// is defined there now — see DESIGN_SYSTEM.md.
 fontFamily: {
 sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
 },

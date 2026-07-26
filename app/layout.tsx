@@ -47,11 +47,18 @@ const PUBLIC_ROUTES = [
   // at all. /settings is prefix-matched because all of its sub-routes
   // (agents, subcontractors, team) are shell-wrapped.
   const DESKTOP_SHELL_EXACT_ROUTES = [
-    '/dashboard-v2', '/estimates', '/invoices', '/expense', '/pending-payouts', '/clients',
+    '/dashboard-v2', '/estimates', '/invoices', '/invoices/receivables', '/expense', '/pending-payouts', '/clients',
     '/documents', '/mileage', '/analytics', '/deleted',
   ];
   const isDesktopShellRoute =
-    DESKTOP_SHELL_EXACT_ROUTES.includes(pathname || '') || pathname === '/settings' || pathname?.startsWith('/settings/');
+    DESKTOP_SHELL_EXACT_ROUTES.includes(pathname || '') ||
+    pathname === '/settings' || pathname?.startsWith('/settings/') ||
+    // /projects/[id] — the project workspace, shell-wrapped like every
+    // other detail-ish page above. Prefix-matched since every sub-path
+    // under it is the same page (tab state lives in ?tab=, not the URL
+    // path), unlike /estimates/[id] which deliberately isn't prefix-
+    // matched because its actual sub-routes aren't shell-wrapped yet.
+    pathname?.startsWith('/projects/');
 
 useEffect(() => {
   if ("serviceWorker" in navigator) {

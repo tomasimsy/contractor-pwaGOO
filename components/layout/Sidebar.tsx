@@ -18,6 +18,7 @@ import {
   Trash2,
   LogOut,
   TrendingUp,
+  Landmark,
 } from "lucide-react";
 
 // Every existing route in the app's nav surfaces (BottomNav's top-level
@@ -28,6 +29,7 @@ const MAIN_MENU = [
   { href: "/dashboard-v2", label: "Dashboard", icon: LayoutDashboard },
   { href: "/estimates", label: "Estimates", icon: ClipboardList },
   { href: "/invoices", label: "Invoices", icon: FileText },
+  { href: "/invoices/receivables", label: "Receivables", icon: Landmark },
   { href: "/expense", label: "Expenses", icon: ReceiptText },
   { href: "/pending-payouts", label: "Pending Payouts", icon: Wallet },
 ];
@@ -54,7 +56,7 @@ const GENERAL = [
 function NavGroup({ title, items, pathname }: { title: string; items: typeof MAIN_MENU; pathname: string | null }) {
   return (
     <div>
-      <div className="px-3 text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">{title}</div>
+      <div className="px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">{title}</div>
       <div className="space-y-0.5">
         {items.map((item) => {
           const Icon = item.icon;
@@ -64,10 +66,10 @@ function NavGroup({ title, items, pathname }: { title: string; items: typeof MAI
               key={item.href}
               href={item.href}
               className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors ${
-                isActive ? "bg-emerald-600 text-white" : "text-gray-600 hover:bg-gray-100"
+                isActive ? "bg-primary text-primary-foreground" : "text-foreground/80 hover:bg-muted"
               }`}
             >
-              <Icon size={16} className={isActive ? "text-white" : "text-gray-400"} />
+              <Icon size={16} className={isActive ? "text-primary-foreground" : "text-muted-foreground"} />
               {item.label}
             </Link>
           );
@@ -81,10 +83,10 @@ export default function Sidebar({ onLogout }: { onLogout: () => void }) {
   const pathname = usePathname();
 
   return (
-    <aside className="hidden md:flex md:flex-col w-64 shrink-0 h-screen sticky top-0 border-r border-gray-200 bg-white">
-      <div className="flex items-center gap-2 px-5 h-16 border-b border-gray-100 shrink-0">
-        <span className="rounded-lg bg-emerald-600 px-2 py-0.5 text-lg font-black tracking-tight text-white">OSR</span>
-        <span className="text-lg font-medium tracking-tight text-gray-700">Pros</span>
+    <aside className="hidden md:flex md:flex-col w-64 shrink-0 h-screen sticky top-0 border-r border-border bg-card">
+      <div className="flex items-center gap-2 px-5 h-16 border-b border-border shrink-0">
+        <span className="rounded-lg bg-primary px-2 py-0.5 text-lg font-black tracking-tight text-primary-foreground">OSR</span>
+        <span className="text-lg font-medium tracking-tight text-foreground">Pros</span>
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 py-5 space-y-6">
@@ -94,13 +96,13 @@ export default function Sidebar({ onLogout }: { onLogout: () => void }) {
         <NavGroup title="General" items={GENERAL} pathname={pathname} />
       </div>
 
-      <div className="p-3 border-t border-gray-100 shrink-0">
+      <div className="p-3 border-t border-border shrink-0">
         <button
           type="button"
           onClick={onLogout}
-          className="flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-800 transition-colors"
+          className="flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
         >
-          <LogOut size={16} className="text-gray-400" />
+          <LogOut size={16} className="text-muted-foreground" />
           Log out
         </button>
       </div>

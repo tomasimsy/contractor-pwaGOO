@@ -7,6 +7,7 @@ import SignaturePad from "@/components/signature/SignaturePad";
 import { formatCurrency } from "@/lib/utils/formatting";
 import { Smile, ThumbsUp, FileSignature, BadgeCheck, ShieldCheck } from "lucide-react";
 import { CompanySettings, mergeCompanyDefaults } from "@/lib/company";
+import { calculateRevisedTotal } from "@/lib/utils/calculations";
 
 type Signature = { type: "draw" | "type"; value: string; date: string };
 type ChangeOrder = {
@@ -103,15 +104,24 @@ export default function PublicInvoicePage() {
     total: items.reduce((sum, i) => sum + (i.total || 0), 0)
   }));
 
-  // Same formula as the public Estimate page (originalSubtotal +
-  // approvedTotal) and the internal Invoice page's revisedTotal — no
-  // stored `invoice.total` column is read here, so this always
-  // reflects the latest change-order state instead of a stale copy.
+  // Same shared calculateRevisedTotal formula the authenticated Invoice
+  // detail page and estimate form use — this used to sum items +
+  // approved change orders only, the same bug the public Estimate page
+  // had, silently dropping the invoice's own markup/discount/tax and
+  // understating what the customer actually owes. invoice.tax is already
+  // a dollar amount (not a rate) — set at conversion time — so it's
+  // passed straight through, not run through calculateTax again.
   const originalSubtotal = items.reduce((sum, i) => sum + (i.total || 0), 0);
   const approvedChangeOrdersTotal = changeOrders
     .filter((co) => co.status === "approved")
     .reduce((sum, co) => sum + (co.total_amount || 0), 0);
-  const revisedTotal = originalSubtotal + approvedChangeOrdersTotal;
+  const revisedTotal = calculateRevisedTotal(
+    originalSubtotal,
+    invoice?.markup || 0,
+    invoice?.discount || 0,
+    invoice?.tax || 0,
+    approvedChangeOrdersTotal
+  );
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
   const remainingBalance = revisedTotal - totalPaid;
   const isPaid = remainingBalance <= 0;

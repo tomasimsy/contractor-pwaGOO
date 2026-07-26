@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency, formatShortDate } from "@/lib/utils/formatting";
+import { resolveProjectTotal, calculateRemainingBalance } from "@/lib/utils/calculations";
 import Image from "next/image";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import FinancialDashboard from "@/components/FinancialDashboard";
@@ -23,6 +24,19 @@ const { addNotification } = useNotifications(); // ✅ top level test
    const router = useRouter();
   const [isFabOpen, setIsFabOpen] = useState(false);
   const { loading, recentEstimates, recentInvoices, overdueInvoices, pendingPayouts } = useDashboardOverview();
+
+  // This page is the mobile-first dashboard; /dashboard-v2 is the desktop/
+  // tablet sidebar layout. Previously a desktop visitor landing directly on
+  // /dashboard (bookmark, old link, typed URL) got this mobile layout
+  // squeezed into a wide viewport with no sidebar — confirmed live during
+  // the last verification pass. Bounce anyone at md+ to the real desktop
+  // experience instead of rendering the mobile page there.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.matchMedia("(min-width: 768px)").matches) {
+      router.replace("/dashboard-v2");
+    }
+  }, [router]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -98,7 +112,11 @@ const { addNotification } = useNotifications(); // ✅ top level test
                 <AlertCircle size={12} className="text-rose-600" />
                 <span>Overdue · {overdueInvoices.length}</span>
               </div>
-              {overdueInvoices.map((inv) => (
+              {overdueInvoices.map((inv) => {
+                const estimateEntry = Array.isArray(inv.estimates) ? inv.estimates[0] : inv.estimates;
+                const resolvedTotal = resolveProjectTotal(estimateEntry?.total, inv.total);
+                const remainingBalance = calculateRemainingBalance(resolvedTotal, inv.amount_paid || 0);
+                return (
                 <Link key={inv.id} href={`/invoices/${inv.id}`}>
                   <div className="group relative overflow-hidden rounded-xl border border-rose-200/80 bg-gradient-to-br from-rose-50/80 to-rose-100/40 p-4 shadow-sm transition hover:shadow-md hover:shadow-rose-200/30 active:scale-[0.99]">
                     <div className="flex items-center justify-between gap-3">
@@ -114,7 +132,7 @@ const { addNotification } = useNotifications(); // ✅ top level test
                       </div>
                       <div className="text-right">
                         <div className="text-sm font-black text-rose-700">
-                          {formatCurrency(inv.remaining_balance || inv.total)}
+                          {formatCurrency(remainingBalance)}
                         </div>
                         <div className="mt-0.5 inline-block rounded-full bg-rose-200/60 px-1.5 py-0.5 text-[9px] font-bold uppercase text-rose-800">
                           Overdue
@@ -123,7 +141,8 @@ const { addNotification } = useNotifications(); // ✅ top level test
                     </div>
                   </div>
                 </Link>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -192,7 +211,10 @@ const { addNotification } = useNotifications(); // ✅ top level test
                   No invoices yet
                 </div>
               ) : (
-                recentInvoices.map((inv) => (
+                recentInvoices.map((inv) => {
+                  const estimateEntry = Array.isArray(inv.estimates) ? inv.estimates[0] : inv.estimates;
+                  const resolvedTotal = resolveProjectTotal(estimateEntry?.total, inv.total);
+                  return (
                   <Link key={inv.id} href={`/invoices/${inv.id}`}>
                     <div className="group rounded-xl border border-slate-200/60 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md active:scale-[0.99]">
                       <div className="flex items-center justify-between gap-3">
@@ -207,10 +229,10 @@ const { addNotification } = useNotifications(); // ✅ top level test
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="text-sm font-bold text-slate-900">{formatCurrency(inv.total)}</div>
+                          <div className="text-sm font-bold text-slate-900">{formatCurrency(resolvedTotal)}</div>
                           <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[9px] font-bold uppercase border ${
-                            inv.status === "paid" 
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                            inv.status === "paid"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                               : "bg-amber-50 text-amber-700 border-amber-200"
                           }`}>
                             {inv.status === "paid" ? "Paid" : "Open"}
@@ -219,7 +241,8 @@ const { addNotification } = useNotifications(); // ✅ top level test
                       </div>
                     </div>
                   </Link>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

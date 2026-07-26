@@ -6,6 +6,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import { filterActive } from "@/lib/queries/softDeleteFilter";
 import { formatCurrency, formatShortDate } from "@/lib/utils/formatting";
+import { resolveProjectTotal, calculateRemainingBalance } from "@/lib/utils/calculations";
 import { ArrowLeft, Search, AlertCircle, Link2, Send, ArrowRight,Receipt, DollarSign, Plus } from "lucide-react";
 import toast from "react-hot-toast";
 import DesktopShell from "@/components/layout/DesktopShell";
@@ -52,11 +53,12 @@ export default function InvoicesPage() {
       if (data) {
         setInvoices(
           data.map((inv: any) => {
-            const estimateTotal = (Array.isArray(inv.estimates) ? inv.estimates[0]?.total : inv.estimates?.total) ?? inv.total;
+            const estimateEntry = Array.isArray(inv.estimates) ? inv.estimates[0] : inv.estimates;
+            const estimateTotal = resolveProjectTotal(estimateEntry?.total, inv.total);
             return {
               ...inv,
               revisedTotal: estimateTotal,
-              revisedRemainingBalance: Math.max(estimateTotal - (inv.amount_paid || 0), 0),
+              revisedRemainingBalance: calculateRemainingBalance(estimateTotal, inv.amount_paid || 0),
             };
           })
         );

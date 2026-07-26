@@ -9,6 +9,7 @@ import type { CompanyFinancials } from "@/lib/queries/financialCalculations";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import DesktopShell from "@/components/layout/DesktopShell";
 import { formatCurrency, formatPercentage } from "@/lib/utils/formatting";
+import { calculateEstimatedTaxLiability } from "@/lib/utils/calculations";
 import { ArrowLeft } from "lucide-react";
 
 function DashboardCard({
@@ -91,7 +92,7 @@ export default function TaxDashboardPage() {
   }
 
   // Calculate estimated tax (simplified: 25% of net profit for federal)
-  const estimatedTaxLiability = financials.netProfit * 0.25;
+  const estimatedTaxLiability = calculateEstimatedTaxLiability(financials.netProfit);
 
   return (
     <ProtectedRoute>
@@ -125,7 +126,7 @@ export default function TaxDashboardPage() {
               <div className="grid gap-4 md:grid-cols-4">
                 <DashboardCard
                   title="Gross Revenue"
-                  value={financials.totalRevenue}
+                  value={financials.totalInvoiced}
                   type="currency"
                   subtitle="All estimates (including change orders)"
                 />
@@ -143,7 +144,7 @@ export default function TaxDashboardPage() {
                 />
                 <DashboardCard
                   title="Taxable Revenue"
-                  value={financials.totalRevenue}
+                  value={financials.totalInvoiced}
                   type="currency"
                   subtitle="Before deductions"
                 />
@@ -187,7 +188,7 @@ export default function TaxDashboardPage() {
               <div className="grid gap-4 md:grid-cols-4">
                 <DashboardCard
                   title="Gross Profit"
-                  value={financials.totalRevenue - financials.totalExpenses}
+                  value={financials.netProfit}
                   type="currency"
                   subtitle="Revenue minus expenses"
                 />

@@ -28,6 +28,7 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -40,6 +41,20 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  /* Semantic status colors — the ONE place "success/warning/danger/info"
+     map to actual color values. Every status pill, toast, and alert in
+     the app should use these tokens (bg-success/10 text-success, etc.)
+     instead of picking a raw Tailwind color (bg-emerald-50, bg-amber-100,
+     ...) by hand — that per-component guessing is why the app currently
+     has ~15 different greens and ambers doing the same job. */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -47,75 +62,111 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  /* Responsive spacing scale, registered under Tailwind v4's --spacing-*
+     namespace so it generates real utilities: p-xs, gap-lg, px-2xl, etc.
+     Use these for the outer padding/gaps of page shells and card grids
+     so "how much breathing room a page gets" is one decision, not one
+     per page. Component-internal spacing can still use Tailwind's
+     built-in numeric spacing utilities (p-2, gap-4, ...) as usual. */
+  --spacing-xs: 0.5rem;
+  --spacing-sm: 0.75rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2rem;
+  --spacing-2xl: 3rem;
 }
 
 :root {
-  --background: oklch(66.25% 0.00352 16.069);
-  --foreground: oklch(0.145 0 0);
+  /* Brand: the green used across the live app's buttons/nav/logo
+     ("OSR Pros"), promoted from a scattered emerald-600/700 utility
+     into the actual --primary token. This was previously undefined —
+     tailwind.config.js declared an unrelated navy/tan palette that
+     Tailwind v4 never loads (no @config directive here), so every
+     page was hand-picking emerald/green shades independently. */
+  --background: oklch(0.99 0.002 106);
+  --foreground: oklch(0.205 0.01 264);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.205 0.01 264);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.205 0.01 264);
+  --primary: oklch(0.523 0.135 155);
+  --primary-foreground: oklch(0.99 0.002 106);
+  --secondary: oklch(0.96 0.006 106);
+  --secondary-foreground: oklch(0.205 0.01 264);
+  --muted: oklch(0.96 0.006 106);
+  --muted-foreground: oklch(0.5 0.02 264);
+  --accent: oklch(0.94 0.03 155);
+  --accent-foreground: oklch(0.35 0.1 155);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --destructive-foreground: oklch(0.99 0.002 106);
+  --border: oklch(0.9 0.006 106);
+  --input: oklch(0.9 0.006 106);
+  --ring: oklch(0.523 0.135 155 / 50%);
+  --success: oklch(0.523 0.135 155);
+  --success-foreground: oklch(0.99 0.002 106);
+  --warning: oklch(0.72 0.15 75);
+  --warning-foreground: oklch(0.28 0.08 75);
+  --danger: oklch(0.577 0.245 27.325);
+  --danger-foreground: oklch(0.99 0.002 106);
+  --info: oklch(0.6 0.13 250);
+  --info-foreground: oklch(0.99 0.002 106);
+  --chart-1: oklch(0.523 0.135 155);
+  --chart-2: oklch(0.6 0.13 250);
+  --chart-3: oklch(0.72 0.15 75);
+  --chart-4: oklch(0.577 0.245 27.325);
+  --chart-5: oklch(0.5 0.02 264);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: oklch(0.99 0.002 106);
+  --sidebar-foreground: oklch(0.205 0.01 264);
+  --sidebar-primary: oklch(0.523 0.135 155);
+  --sidebar-primary-foreground: oklch(0.99 0.002 106);
+  --sidebar-accent: oklch(0.94 0.03 155);
+  --sidebar-accent-foreground: oklch(0.35 0.1 155);
+  --sidebar-border: oklch(0.9 0.006 106);
+  --sidebar-ring: oklch(0.523 0.135 155 / 50%);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: oklch(0.19 0.01 264);
+  --foreground: oklch(0.96 0.006 106);
+  --card: oklch(0.24 0.012 264);
+  --card-foreground: oklch(0.96 0.006 106);
+  --popover: oklch(0.24 0.012 264);
+  --popover-foreground: oklch(0.96 0.006 106);
+  --primary: oklch(0.63 0.15 155);
+  --primary-foreground: oklch(0.15 0.02 155);
+  --secondary: oklch(0.3 0.012 264);
+  --secondary-foreground: oklch(0.96 0.006 106);
+  --muted: oklch(0.3 0.012 264);
+  --muted-foreground: oklch(0.7 0.012 264);
+  --accent: oklch(0.32 0.05 155);
+  --accent-foreground: oklch(0.9 0.05 155);
   --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.15 0.02 22);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.63 0.15 155 / 50%);
+  --success: oklch(0.63 0.15 155);
+  --success-foreground: oklch(0.15 0.02 155);
+  --warning: oklch(0.75 0.15 75);
+  --warning-foreground: oklch(0.2 0.04 75);
+  --danger: oklch(0.704 0.191 22.216);
+  --danger-foreground: oklch(0.15 0.02 22);
+  --info: oklch(0.68 0.13 250);
+  --info-foreground: oklch(0.15 0.02 250);
+  --chart-1: oklch(0.63 0.15 155);
+  --chart-2: oklch(0.68 0.13 250);
+  --chart-3: oklch(0.75 0.15 75);
+  --chart-4: oklch(0.704 0.191 22.216);
+  --chart-5: oklch(0.7 0.012 264);
+  --sidebar: oklch(0.22 0.012 264);
+  --sidebar-foreground: oklch(0.96 0.006 106);
+  --sidebar-primary: oklch(0.63 0.15 155);
+  --sidebar-primary-foreground: oklch(0.15 0.02 155);
+  --sidebar-accent: oklch(0.32 0.05 155);
+  --sidebar-accent-foreground: oklch(0.9 0.05 155);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar-ring: oklch(0.63 0.15 155 / 50%);
 }
 
 @layer base {

@@ -11,6 +11,11 @@ export default function BottomNav({ desktopHidden = false }: { desktopHidden?: b
   const { start, isTripActive, isSaving, startTrip, endTrip, completeTrip } = useTrip();
 
 const navItems = [
+  // Same dashboard route the desktop Sidebar links to — a phone-width
+  // visitor still gets the mobile-first /dashboard experience because
+  // this tab is only shown below the md breakpoint (BottomNav itself is
+  // hidden at md+ on shell routes); md+ visitors landing on /dashboard
+  // directly get redirected to /dashboard-v2 by that page itself.
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Estimates", href: "/estimates", icon: ClipboardList },
   { label: "Invoices", href: "/invoices", icon: FileText },
@@ -53,13 +58,13 @@ const navItems = [
     icon = <Square size={18} className="stroke-[2px] animate-pulse" />;
     label = "Stop Trip";
   } else {
-    bgColor = "bg-green-700 hover:bg-green-600";
+    bgColor = "bg-primary hover:bg-primary/90";
     icon = <Play size={18} className="stroke-[2px]" />;
     label = "Start Trip";
   }
 
   return (
-    <div className={`fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200/60 bg-white/90 backdrop-blur-md pb-safe ${desktopHidden ? "md:hidden" : ""}`}>
+    <div className={`fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-background/90 backdrop-blur-md pb-safe ${desktopHidden ? "md:hidden" : ""}`}>
       <div className="mx-auto flex h-16 max-w-xl items-center justify-around px-2">
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -74,8 +79,8 @@ const navItems = [
               <div
                 className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all duration-200 ${
                   isActive
-                    ? "text-emerald-600 bg-emerald-600/10 font-semibold"
-                    : "text-slate-400 hover:text-slate-600 hover:bg-slate-50 font-medium"
+                    ? "text-primary bg-primary/10 font-semibold"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted font-medium"
                 }`}
               >
                 <Icon

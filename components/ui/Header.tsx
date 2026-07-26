@@ -22,12 +22,12 @@ mdHidden,
 // No unread count since we're not using a table
 
 return (
-<div className={`bg-primary border-b border-gold/20 px-4 py-3 flex items-center sticky top-0 z-10 shadow-md ${mdHidden ? "md:hidden" : ""}`}>
+<div className={`bg-primary border-b border-primary-foreground/10 px-4 py-3 flex items-center sticky top-0 z-10 shadow-md ${mdHidden ? "md:hidden" : ""}`}>
 
   {/* Left */}
   <div className="w-10 flex justify-start">
     {backLink && (
-    <Link href={backLink} className="text-white text-xl hover:text-gold-light transition">
+    <Link href={backLink} className="text-primary-foreground text-xl hover:text-primary-foreground/80 transition">
     ←
     </Link>
     )}
@@ -35,7 +35,7 @@ return (
 
   {/* Center */}
   <div className="flex-1 text-center">
-    <h1 className="font-semibold text-sm text-white">
+    <h1 className="font-semibold text-sm text-primary-foreground">
       {title}
     </h1>
   </div>
@@ -43,7 +43,7 @@ return (
   {/* Right */}
   <div className="w-10 flex justify-end">
     {rightAction && (
-    <div className="text-white">
+    <div className="text-primary-foreground">
       {rightAction}
     </div>
     )}

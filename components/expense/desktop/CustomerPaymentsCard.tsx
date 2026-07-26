@@ -31,9 +31,9 @@ function formatDate(iso: string | null): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
-function invoiceStatus(invoice: InvoiceRow) {
+function invoiceStatus(invoice: InvoiceRow, resolvedTotal: number) {
   if (invoice.amount_paid <= 0) return { label: "Unpaid", icon: Clock, text: "text-amber-600" };
-  if (invoice.amount_paid >= invoice.total) return { label: "Paid", icon: CheckCircle2, text: "text-emerald-600" };
+  if (invoice.amount_paid >= resolvedTotal) return { label: "Paid", icon: CheckCircle2, text: "text-emerald-600" };
   return { label: "Partial", icon: Clock, text: "text-blue-600" };
 }
 
@@ -134,7 +134,12 @@ export default function CustomerPaymentsCard({
         <div className="space-y-2 max-h-48 overflow-y-auto pb-4 mb-4 border-b border-gray-100">
           <div className="text-[12px] font-semibold text-gray-600 uppercase tracking-wide mb-2">Invoices</div>
           {invoices.map((invoice) => {
-            const status = invoiceStatus(invoice);
+            // Prefer the project's already-resolved total (financials.revisedTotal
+            // — same resolveProjectTotal preference used everywhere else) over
+            // this invoice row's own total, which only stays fresh if something
+            // cascaded to it.
+            const resolvedTotal = financials.revisedTotal || invoice.total;
+            const status = invoiceStatus(invoice, resolvedTotal);
             const Icon = invoice.overdue ? AlertCircle : status.icon;
 
             return (
@@ -146,7 +151,7 @@ export default function CustomerPaymentsCard({
                       {invoice.invoice_number || "Invoice"}
                     </span>
                     <span className="shrink-0 text-[12px] tabular-nums text-gray-900">
-                      {formatCurrency(invoice.amount_paid)} / {formatCurrency(invoice.total)}
+                      {formatCurrency(invoice.amount_paid)} / {formatCurrency(resolvedTotal)}
                     </span>
                   </div>
                   <div className="text-[11px] text-gray-500 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-1">

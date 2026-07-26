@@ -102,10 +102,14 @@ export function useDashboardOverview() {
             .limit(5),
           "invoices"
         ),
+        // estimate_id + estimates(total) joined for the same reason as
+        // recentInvDataRes below — prefer the estimate's live total over
+        // this invoice row's own total/remaining_balance, which only
+        // stays fresh if something cascaded to it.
         filterActive(
           supabase
             .from("invoices")
-            .select("id, invoice_number, total, remaining_balance, due_date, clients(name)")
+            .select("id, invoice_number, total, remaining_balance, amount_paid, due_date, clients(name), estimate_id, estimates(total)")
             .lt("due_date", todayString)
             .neq("status", "paid"),
           "invoices"

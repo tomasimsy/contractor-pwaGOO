@@ -331,7 +331,7 @@ export async function getAgentCompensationSummary(companyId: string, taxYear: nu
       const { data: reimbursements } = await supabase
         .from("estimate_expenses")
         .select("amount")
-        .eq("agent_id", agent.id)
+        .eq("paid_by_agent_id", agent.id)
         .eq("company_id", companyId)
         .is("deleted_at", null)
         .gte("expense_date", startDate)

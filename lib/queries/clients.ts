@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase/client";
 import { filterActive } from '@/lib/queries/softDeleteFilter';
+import { resolveProjectTotal, calculateRemainingBalance } from "@/lib/utils/calculations";
 
 export type ClientEstimateSummary = {
   id: string;
@@ -75,7 +76,26 @@ export async function getClientDetail(clientId: string, companyId: string): Prom
   if (invoicesRes.error) throw invoicesRes.error;
 
   const estimates = (estimatesRes.data ?? []) as ClientEstimateSummary[];
-  const invoices = (invoicesRes.data ?? []) as ClientInvoiceSummary[];
+  const rawInvoices = (invoicesRes.data ?? []) as ClientInvoiceSummary[];
+
+  // Prefer each invoice's linked estimate's live total (resolveProjectTotal
+  // — same preference used on Expense/Invoice detail/Dashboard) over the
+  // invoice's own `total`/`remaining_balance` columns, which only stay
+  // fresh if something cascaded to them. Without this, an estimate edited
+  // after its invoice was generated left this page showing a stale total
+  // that disagreed with the Estimates/Expense pages for the same project.
+  const estimateTotalById = new Map(estimates.map((e) => [e.id, e.total]));
+  const invoices: ClientInvoiceSummary[] = rawInvoices.map((i) => {
+    const resolvedTotal = resolveProjectTotal(
+      i.estimate_id ? estimateTotalById.get(i.estimate_id) : undefined,
+      i.total
+    );
+    return {
+      ...i,
+      total: resolvedTotal,
+      remaining_balance: calculateRemainingBalance(resolvedTotal, i.amount_paid || 0),
+    };
+  });
 
   const invoiceIds = invoices.map((i) => i.id);
   let payments: ClientPaymentSummary[] = [];

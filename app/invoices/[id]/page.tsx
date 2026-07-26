@@ -20,6 +20,7 @@ import toast from "react-hot-toast";
 import { calculateProjectFinancials } from "@/lib/queries/financialCalculations";
 import { calculateApprovedChangeOrdersTotal } from "@/lib/queries/expenses";
 import { getProjectBundle } from "@/lib/queries/projects";
+import { resolveProjectTotal } from "@/lib/utils/calculations";
 
 import { Trash2, Lock, Unlock, AlertCircle, ArrowLeft, FileText, Receipt, DollarSign } from "lucide-react";
 import { deleteCustomerPayment } from "@/lib/queries/customerPayments";
@@ -168,7 +169,7 @@ export default function InvoicePage() {
           // listing it. approvedCOTotal is only computed here for the
           // breakdown line, not added again.
           const approvedCOTotal = calculateApprovedChangeOrdersTotal(bundle.changeOrders);
-          const revisedInvoiceTotal = bundle.project.total || inv.total;
+          const revisedInvoiceTotal = resolveProjectTotal(bundle.project.total, inv.total);
           const revisedRemainingBalance = Math.max(revisedInvoiceTotal - financials.amountPaid, 0);
 
           setOriginalSubtotal(financials.originalEstimateTotal);

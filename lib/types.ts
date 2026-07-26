@@ -328,8 +328,7 @@ export type EstimateRow = {
   estimate_number: string | null;
   title: string | null;
   description: string | null;
-  status: EstimateStatus; // lifecycle status (replaces old_status)
-  old_status: string | null; // legacy status field for backwards compatibility
+  status: EstimateStatus; // lifecycle status
   total: number;
   deposit: number;
   deposit_amount: number;

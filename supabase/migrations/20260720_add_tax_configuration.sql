@@ -163,51 +163,31 @@ CREATE TABLE IF NOT EXISTS public.tax_audit_log (
 );
 
 -- RLS Policies
+-- Uses public.current_company_id() (defined in
+-- 20260713000000_company_rls_lockdown.sql), the live convention every
+-- other table's RLS policy uses — NOT a "company_members" join table,
+-- which does not exist anywhere in this schema.
 ALTER TABLE public.company_tax_settings ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can view tax settings for their company" ON public.company_tax_settings
-  FOR SELECT USING (
-    company_id IN (
-      SELECT company_id FROM public.company_members WHERE user_id = auth.uid()
-    )
-  );
+  FOR SELECT USING (company_id = public.current_company_id());
 CREATE POLICY "Users can update tax settings for their company" ON public.company_tax_settings
-  FOR UPDATE USING (
-    company_id IN (
-      SELECT company_id FROM public.company_members WHERE user_id = auth.uid()
-    )
-  );
+  FOR UPDATE USING (company_id = public.current_company_id());
 
 ALTER TABLE public.subcontractor_tax_info ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can view subcontractor tax info for their company" ON public.subcontractor_tax_info
-  FOR SELECT USING (
-    company_id IN (
-      SELECT company_id FROM public.company_members WHERE user_id = auth.uid()
-    )
-  );
+  FOR SELECT USING (company_id = public.current_company_id());
 
 ALTER TABLE public.agent_tax_info ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can view agent tax info for their company" ON public.agent_tax_info
-  FOR SELECT USING (
-    company_id IN (
-      SELECT company_id FROM public.company_members WHERE user_id = auth.uid()
-    )
-  );
+  FOR SELECT USING (company_id = public.current_company_id());
 
 ALTER TABLE public.expense_receipts ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can view expense receipts for their company" ON public.expense_receipts
-  FOR SELECT USING (
-    company_id IN (
-      SELECT company_id FROM public.company_members WHERE user_id = auth.uid()
-    )
-  );
+  FOR SELECT USING (company_id = public.current_company_id());
 
 ALTER TABLE public.tax_audit_log ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can view tax audit logs for their company" ON public.tax_audit_log
-  FOR SELECT USING (
-    company_id IN (
-      SELECT company_id FROM public.company_members WHERE user_id = auth.uid()
-    )
-  );
+  FOR SELECT USING (company_id = public.current_company_id());
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_company_tax_settings_company_id ON public.company_tax_settings(company_id);

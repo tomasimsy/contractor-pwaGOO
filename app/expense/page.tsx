@@ -18,6 +18,7 @@ import {
   totalAmountPaid,
 } from "@/lib/queries/expenses";
 import { generateInvoiceFromEstimate, invoiceExistsForEstimate } from "@/lib/queries/invoices";
+import { resolveProjectTotal } from "@/lib/utils/calculations";
 import {
   getLastSelectedProjectId,
   getRecentProjectIds,
@@ -166,17 +167,20 @@ function ProjectExpenseContent() {
     // Auto-select first invoice if only one exists
     if (bundle.invoices.length === 1) {
       const invoice = bundle.invoices[0];
-      // invoice.total/remaining_balance are kept current with approved
-      // change orders baked in (see lib/queries/changeOrders.ts's
-      // cascadeRevisedTotalToInvoices) — no separate addition needed.
+      // Prefer the estimate's live total over the invoice's own, same as
+      // baseTotal above — invoice.total/remaining_balance are cascaded on
+      // every estimate save and change-order approval, but the estimate's
+      // total is the one guaranteed fresh regardless of cascade.
+      const resolvedTotal = resolveProjectTotal(bundle.project.total, invoice.total);
+      const resolvedRemaining = Math.max(resolvedTotal - (invoice.amount_paid || 0), 0);
       setSelectedInvoiceForPayment({
         invoiceId: invoice.id,
         invoiceNumber: invoice.invoice_number || "Invoice",
         clientName: bundle.client.name,
-        invoiceTotal: invoice.total,
-        remainingBalance: invoice.remaining_balance,
-        revisedTotal: invoice.total,
-        revisedRemainingBalance: invoice.remaining_balance,
+        invoiceTotal: resolvedTotal,
+        remainingBalance: resolvedRemaining,
+        revisedTotal: resolvedTotal,
+        revisedRemainingBalance: resolvedRemaining,
       });
     }
     setIsRecordPaymentModalOpen(true);
@@ -260,11 +264,13 @@ function ProjectExpenseContent() {
 
   const ledger = bundle ? buildLedger(bundle) : [];
   const amountReceived = bundle ? totalAmountPaid(bundle.invoices) : 0;
-  // Use invoice total if invoices exist (invoices may have different totals than estimate),
-  // otherwise use estimate total
-  const baseTotal = bundle && bundle.invoices.length > 0
-    ? bundle.invoices[0].total
-    : bundle?.project.total || 0;
+  // Prefer the estimate's own total (kept current by every total-changing
+  // path) over the invoice's, which is only ever as fresh as the last
+  // cascade — same resolveProjectTotal helper app/invoices/[id]/page.tsx
+  // uses, so this can't independently drift from that page again.
+  const baseTotal = bundle
+    ? resolveProjectTotal(bundle.project.total, bundle.invoices[0]?.total)
+    : 0;
   const financials = bundle ? summarizeFinancials(baseTotal, bundle, amountReceived) : null;
   // Revised total (original + approved change orders), not the raw
   // estimate total, once change orders can affect the contract value —

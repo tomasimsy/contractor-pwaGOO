@@ -1,0 +1,21 @@
+-- =====================================================================
+-- DRAFT — REVIEW BEFORE RUNNING.
+--
+-- DATABASE_INTEGRITY_AUDIT.md finding #5: contractor-app-v2's
+-- EstimateStatus TypeScript type includes "rejected", which is not a
+-- valid value in the DB's estimate_status enum (created in
+-- 20260719_add_estimate_status_lifecycle.sql) — a write of
+-- status: "rejected" against a real database would fail the enum
+-- constraint outright.
+--
+-- This adds "rejected" as a valid enum value (additive, cannot be
+-- undone by a later migration — Postgres doesn't support dropping an
+-- enum value). It does not resolve the other direction of the
+-- mismatch: the DB enum also has project_in_progress/completed/
+-- archived/cancelled, which contractor-app-v2's EstimateStatus type
+-- does not yet model — that's a TypeScript-side fix, not a migration,
+-- and should be done alongside this so both sides agree on the full
+-- set of 10 values.
+-- =====================================================================
+
+alter type public.estimate_status add value if not exists 'rejected';
