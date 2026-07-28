@@ -24,17 +24,19 @@ export async function GET(
     // the page passes the current access token as a query param,
     // forwarded here as a Bearer header.
     const token = request.nextUrl.searchParams.get("token");
+    // Customer-portal download: an opaque per-estimate token, applied as
+    // an additional REQUIRED filter (never an alternative identity), so a
+    // wrong token yields no row rather than someone else's estimate.
+    const customerToken = request.nextUrl.searchParams.get("customerToken");
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       token ? { global: { headers: { Authorization: `Bearer ${token}` } } } : undefined
     );
 
-    const { data: estimate } = await supabase
-      .from("estimates")
-      .select("*")
-      .eq("id", id)
-      .single();
+    let estimateQuery = supabase.from("estimates").select("*").eq("id", id).is("deleted_at", null);
+    if (customerToken) estimateQuery = estimateQuery.eq("customer_token", customerToken);
+    const { data: estimate } = await estimateQuery.maybeSingle();
 
     if (!estimate) {
       return new NextResponse("Not found", { status: 404 });

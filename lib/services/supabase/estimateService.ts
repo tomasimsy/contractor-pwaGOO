@@ -92,6 +92,7 @@ interface EstimateRow {
   deleted_by: string | null;
   deleted_at: string | null;
   delete_reason: string | null;
+  customer_token: string | null;
 }
 
 interface EstimateItemRow {
@@ -124,6 +125,7 @@ function rowToEstimate(row: EstimateRow): Estimate {
     total: row.total,
     depositAmount: row.deposit_amount ?? 0,
     signature: row.signature,
+    customerToken: row.customer_token,
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedBy: row.updated_by,
@@ -315,6 +317,13 @@ export function createSupabaseEstimateService(
           tax_rate: input.taxRate,
           total,
           deposit_amount: input.depositAmount ?? 0,
+          // Portal capability token, minted at creation so every new
+          // estimate is shareable immediately. Without this only rows
+          // touched by the backfill migration would have one, and any
+          // estimate created afterwards would silently render "no
+          // portal link yet" — caught when a token audit came back
+          // 20/21 right after the migration.
+          customer_token: crypto.randomUUID(),
           created_by: actorId,
         })
         .select()
@@ -326,6 +335,13 @@ export function createSupabaseEstimateService(
           const { error: itemsError } = await supabase.from("estimate_items").insert(
             lineItemsWithTotal.map((li) => ({
               estimate_id: estimate.id,
+              // REQUIRED by RLS. `estimate_items` has its own company_id
+              // and the insert policy checks it; omitting it fails with
+              // "new row violates row-level security policy". This was
+              // dropped when the original app's query was ported —
+              // invoice_items and change_order_line_items both set it,
+              // estimate_items was the one that didn't.
+              company_id: input.companyId,
               category: li.category,
               name: li.name,
               description: li.description,
@@ -356,6 +372,12 @@ export function createSupabaseEstimateService(
       if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
     }
 
+    // The parent's company_id — required on every child row by RLS.
+    const { data: parent, error: parentError } = await supabase
+      .from("estimates").select("company_id").eq("id", estimateId).single();
+    if (parentError) throw new Error(`Failed to load estimate: ${parentError.message}`);
+    const companyId = (parent as { company_id: string }).company_id;
+
     const { error: deleteError } = await supabase.from("estimate_items").delete().eq("estimate_id", estimateId);
     if (deleteError) throw new Error(`Failed to update estimate line items: ${deleteError.message}`);
 
@@ -364,6 +386,7 @@ export function createSupabaseEstimateService(
       const { error: insertError } = await supabase.from("estimate_items").insert(
         lineItemsWithTotal.map((li) => ({
           estimate_id: estimateId,
+          company_id: companyId,
           category: li.category,
           name: li.name,
           description: li.description,

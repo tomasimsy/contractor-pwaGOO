@@ -274,7 +274,7 @@ describe("CRUD stress", () => {
   });
 
   test("Rapid create/update/delete/restore cycles leave the ledger internally consistent", async () => {
-    const expense = await services.expenseService.create({ companyId: COMPANY_ID, projectId, category: "material", amount: 100, expenseDate: "2026-01-01" });
+    const expense = await services.expenseService.create({ companyId: COMPANY_ID, projectId, expenseType: "materials", amount: 100, expenseDate: "2026-01-01" });
     // Each update must actually change the amount (update() only
     // appends a ledger delta row when the value truly differs) —
     // starting at +10 rather than +0 avoids a no-op first iteration.
@@ -599,7 +599,7 @@ describe("Concurrency", () => {
 
   test("Simultaneous expenses on the same project: no lost writes", async () => {
     const amounts = [50, 75, 100, 125, 150];
-    await Promise.all(amounts.map((amount) => services.expenseService.create({ companyId: COMPANY_ID, projectId, category: "material", amount, expenseDate: "2026-01-03" })));
+    await Promise.all(amounts.map((amount) => services.expenseService.create({ companyId: COMPANY_ID, projectId, expenseType: "materials", amount, expenseDate: "2026-01-03" })));
 
     const expenses = await services.expenseService.listForProject(projectId);
     const relevant = expenses.filter((e) => amounts.includes(e.amount));
@@ -643,7 +643,7 @@ describe("Data integrity", () => {
     });
     const invoice = await services.invoiceService.createFromEstimate(estimate.id, { issueDate: "2026-01-01", dueDate: "2026-01-31" });
     await services.paymentService.record({ companyId: COMPANY_ID, invoiceId: invoice.id, amount: 500, method: "cash", paymentDate: "2026-01-02" });
-    await services.expenseService.create({ companyId: COMPANY_ID, projectId, category: "material", amount: 300, expenseDate: "2026-01-03" });
+    await services.expenseService.create({ companyId: COMPANY_ID, projectId, expenseType: "materials", amount: 300, expenseDate: "2026-01-03" });
     const assignment = await services.agentCommissionService.assignToProject({ companyId: COMPANY_ID, projectId, agentId: "agent-1", assignedAmount: 200 });
     await services.agentCommissionService.recordPayment({ companyId: COMPANY_ID, agentId: "agent-1", assignmentId: assignment.id, amount: 200, paymentType: "commission", paymentDate: "2026-01-04" });
   });
@@ -705,7 +705,10 @@ describe("Data integrity", () => {
     let allValid = true;
     const problems: string[] = [];
     for (const expense of services.store.expenses.values()) {
-      if (!services.store.projects.has(expense.projectId)) {
+      // projectId is nullable: an expense may hang off an estimate
+      // only (real legacy rows do). Those are validated via the
+      // estimate, not counted as orphans here.
+      if (expense.projectId !== null && !services.store.projects.has(expense.projectId)) {
         allValid = false;
         problems.push(expense.id);
       }
@@ -761,7 +764,7 @@ describe("Cross-page validation", () => {
     });
     const invoice = await services.invoiceService.createFromEstimate(estimate.id, { issueDate: "2026-01-01", dueDate: "2026-01-31" });
     await services.paymentService.record({ companyId: COMPANY_ID, invoiceId: invoice.id, amount: 3000, method: "cash", paymentDate: "2026-01-02" });
-    await services.expenseService.create({ companyId: COMPANY_ID, projectId, category: "material", amount: 1000, expenseDate: "2026-01-03" });
+    await services.expenseService.create({ companyId: COMPANY_ID, projectId, expenseType: "materials", amount: 1000, expenseDate: "2026-01-03" });
     const co = await services.changeOrderService.createChangeOrder({ companyId: COMPANY_ID, projectId, estimateId: estimate.id, changeOrderNumber: "CO-X", title: "X", totalAmount: 500, tax: 0 });
     await services.changeOrderService.approveChangeOrder(co.id);
     const subAssignment = await services.subcontractorService.assignToProject({ companyId: COMPANY_ID, projectId, subcontractorId: "sub-1", contractedAmount: 1500 });

@@ -58,7 +58,7 @@ describe("Accounting + reporting foundation", () => {
     invoiceId = invoice.id;
 
     await services.paymentService.record({ companyId: COMPANY_ID, invoiceId, amount: 6000, method: "bank_transfer", paymentDate: "2026-01-10" });
-    await services.expenseService.create({ companyId: COMPANY_ID, projectId, category: "material", amount: 2000, expenseDate: "2026-01-15" });
+    await services.expenseService.create({ companyId: COMPANY_ID, projectId, expenseType: "materials", amount: 2000, expenseDate: "2026-01-15" });
   });
 
   test("General ledger postings exist for every booked event, correctly debited/credited", async () => {

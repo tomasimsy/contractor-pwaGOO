@@ -187,6 +187,9 @@ describe("FinancialService calculation methods", () => {
     expect(summary.status).toBe(services.financialEngine.derivePaymentStatus(invoice.total, summary.totalPaid));
 
     const refreshed = await services.invoiceService.refreshStatus(invoice.id);
-    expect(refreshed.status).toBe("partial");
+    // "partially_paid" is InvoiceStatus's vocabulary for PaymentStatus's
+    // "partial" — the two enums stay distinct because an invoice also
+    // has draft/sent/void lifecycle states a payment never has.
+    expect(refreshed.status).toBe("partially_paid");
   });
 });

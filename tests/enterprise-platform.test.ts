@@ -45,7 +45,7 @@ describe("Enterprise platform: accounting, payroll, multi-location, reporting", 
     const invA = await services.invoiceService.createFromEstimate(estA.id, { issueDate: "2026-01-05", dueDate: "2026-02-04" });
     invoiceAId = invA.id;
     await services.paymentService.record({ companyId: COMPANY_ID, invoiceId: invA.id, amount: 12000, method: "bank_transfer", paymentDate: "2026-01-10" });
-    await services.expenseService.create({ companyId: COMPANY_ID, projectId: projectA, category: "labor", amount: 3000, expenseDate: "2026-01-12" });
+    await services.expenseService.create({ companyId: COMPANY_ID, projectId: projectA, expenseType: "labor", amount: 3000, expenseDate: "2026-01-12" });
 
     const estB = await services.estimateService.create({
       companyId: COMPANY_ID, projectId: projectB, clientId: "client-2",

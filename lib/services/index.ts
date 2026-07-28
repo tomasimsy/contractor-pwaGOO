@@ -36,7 +36,22 @@ export type { EstimateService, Estimate, EstimateLineItem } from "./estimateServ
 export type { ChangeOrderService, ChangeOrder } from "./changeOrderService";
 export type { InvoiceService, Invoice, InvoiceLineItem, InvoiceStatus } from "./invoiceService";
 export type { PaymentService, CustomerPayment } from "./paymentService";
-export type { ExpenseService, Expense, ExpenseCategory, MileageTrip } from "./expenseService";
+export type {
+  ExpenseService,
+  Expense,
+  ExpenseCategory,
+  ExpenseType,
+  ExpenseCreateInput,
+  ExpenseUpdateInput,
+  ExpenseTotals,
+  // Aliased: PayrollService exports its own, unrelated `PayeeType`
+  // (who gets a paycheck). This one is who an expense was paid TO.
+  PayeeType as ExpensePayeeType,
+  PaidByType,
+  ReimbursementStatus,
+  MileageTrip,
+} from "./expenseService";
+export { EXPENSE_TYPES, EXPENSE_TYPE_LABEL, PAYEE_TYPES, PAID_BY_TYPES, PAID_BY_LABEL } from "./expenseService";
 export type { SubcontractorService, Subcontractor, SubcontractorAssignment, SubcontractorPayment } from "./subcontractorService";
 export type { AgentCommissionService, Agent, AgentAssignment, AgentPayment } from "./agentCommissionService";
 // "AgentService" is the name used in the brief for the agent-side

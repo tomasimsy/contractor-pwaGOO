@@ -190,7 +190,7 @@ describe("Full workflow integration", () => {
 
   test("8a. Add Expense", async () => {
     const expense = await services.expenseService.create({
-      companyId: COMPANY_ID, projectId, category: "material", amount: 1200, expenseDate: "2026-01-10", vendor: "Supply Co",
+      companyId: COMPANY_ID, projectId, expenseType: "materials", amount: 1200, expenseDate: "2026-01-10", vendor: "Supply Co",
     });
     expenseIdToDelete = expense.id;
 

@@ -41,7 +41,7 @@ export function useAgentAssignments(companyId: string, projectId: string) {
     // the expense it settles (required by recordPayment when
     // paymentType is "reimbursement").
     const reimbursementEntries = await Promise.all(
-      rosterList.map(async (agent) => [agent.id, await expenseService.getPendingAgentReimbursements(agent.id)] as const)
+      rosterList.map(async (agent) => [agent.id, await expenseService.listPendingReimbursements(companyId, agent.id)] as const)
     );
     setPendingReimbursements(Object.fromEntries(reimbursementEntries));
   }, [agentCommissionService, expenseService, companyId, projectId]);

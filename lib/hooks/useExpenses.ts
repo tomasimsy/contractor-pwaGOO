@@ -1,37 +1,56 @@
 "use client";
 
 /**
- * Orchestration only. "Paid by agent" vs "paid by company" is not a
- * branch this hook decides how to handle financially — it's just
- * whether `paidByAgentId` is set on the create() call. ExpenseService
- * (and, underneath it, the ledger — see TRANSACTION_LEDGER.md) is what
- * turns that into a cost row plus a liability row. This hook only
- * collects which agent, if any, and passes it through.
+ * Orchestration only. Who paid, who was paid, and whether it's
+ * reimbursable are not branches this hook decides financially — they are
+ * fields on the create() call. ExpenseService owns what they mean, and
+ * FinancialEngine costs from those rows. This hook collects input,
+ * refreshes, and surfaces errors.
+ *
+ * `totals` comes back from ExpenseService.getTotalsForProject rather
+ * than being reduced here, so a page showing "total expenses" and
+ * FinancialEngine showing "total expenses" are literally the same
+ * calculation.
  */
 import { useCallback, useState } from "react";
-import { useServices } from "../services-context";
+// The app has TWO service contexts: lib/services-context.tsx (the
+// original, still used by a handful of unmounted legacy components) and
+// components/providers/ServicesProvider (the one app/layout.tsx
+// actually renders, and the only one holding the real Supabase-backed
+// services). This hook must read the live one — pointing it at the
+// legacy context threw "useServices() called outside <ServicesProvider>"
+// the moment it was mounted on a real page.
+import { useServices } from "@/components/providers/ServicesProvider";
 import { useRefreshableResource } from "./useAsyncResource";
-import type { Expense, ExpenseCategory, AuditedEntity } from "../services";
+import type { Expense, ExpenseCreateInput, ExpenseUpdateInput, ExpenseTotals } from "../services";
+
+const EMPTY_TOTALS: ExpenseTotals = {
+  total: 0,
+  byType: {
+    materials: 0, labor: 0, subcontractor: 0, agent_commission: 0,
+    permit: 0, equipment: 0, reimbursement: 0, miscellaneous: 0,
+  },
+  companyPaid: 0,
+  outstandingReimbursements: 0,
+  unpaid: 0,
+};
 
 export function useExpenses(companyId: string, projectId: string) {
   const { expenseService } = useServices();
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [totals, setTotals] = useState<ExpenseTotals>(EMPTY_TOTALS);
 
   const { loading, error, setError, refresh } = useRefreshableResource(async () => {
-    setExpenses(await expenseService.listForProject(projectId));
+    const [rows, sums] = await Promise.all([
+      expenseService.listForProject(projectId),
+      expenseService.getTotalsForProject(projectId),
+    ]);
+    setExpenses(rows);
+    setTotals(sums);
   }, [expenseService, projectId]);
 
   const create = useCallback(
-    async (input: {
-      category: ExpenseCategory;
-      amount: number;
-      expenseDate: string;
-      vendor?: string;
-      paymentMethod?: string;
-      paidByAgentId?: string | null; // set -> "paid by agent" (books a reimbursement liability); unset -> "paid by company"
-      changeOrderId?: string | null;
-      receiptUrl?: string;
-    }) => {
+    async (input: Omit<ExpenseCreateInput, "companyId" | "projectId">) => {
       setError(null);
       try {
         await expenseService.create({ companyId, projectId, ...input });
@@ -46,11 +65,18 @@ export function useExpenses(companyId: string, projectId: string) {
   );
 
   const update = useCallback(
-    async (expenseId: string, changes: Partial<Omit<Expense, keyof AuditedEntity | "projectId">>) => {
-      await expenseService.update(expenseId, changes);
-      await refresh();
+    async (expenseId: string, changes: ExpenseUpdateInput) => {
+      setError(null);
+      try {
+        await expenseService.update(expenseId, changes);
+        await refresh();
+        return true;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to update expense.");
+        return false;
+      }
     },
-    [expenseService, refresh]
+    [expenseService, refresh, setError]
   );
 
   /** `reason` required — see useInvoicePayments.deletePayment's
@@ -71,5 +97,13 @@ export function useExpenses(companyId: string, projectId: string) {
     [expenseService, refresh]
   );
 
-  return { expenses, loading, error, create, update, remove, restore };
+  const markReimbursed = useCallback(
+    async (expenseId: string) => {
+      await expenseService.markReimbursed(expenseId);
+      await refresh();
+    },
+    [expenseService, refresh]
+  );
+
+  return { expenses, totals, loading, error, create, update, remove, restore, markReimbursed, refresh };
 }

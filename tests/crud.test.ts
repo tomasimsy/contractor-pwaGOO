@@ -22,7 +22,7 @@ describe("CRUD + soft delete + restore", () => {
 
   test("create, update, delete, restore an expense — and deletion excludes it from FinancialEngine", async () => {
     const expense = await services.expenseService.create({
-      companyId: COMPANY_ID, projectId, category: "material", amount: 1000, expenseDate: "2026-01-01",
+      companyId: COMPANY_ID, projectId, expenseType: "materials", amount: 1000, expenseDate: "2026-01-01",
     });
 
     let f = await services.financialEngine.getProjectFinancials(projectId);

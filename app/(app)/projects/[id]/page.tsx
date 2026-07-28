@@ -13,12 +13,15 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { RequirePermission } from "@/components/layout/RequirePermission";
 import { useServices } from "@/components/providers/ServicesProvider";
+import { ProjectExpensesPanel } from "@/components/expenses/ProjectExpensesPanel";
+import { ProfitSummaryCard } from "@/components/shared/ProfitSummaryCard";
+import { usePermission } from "@/lib/hooks/usePermission";
 import type { Project } from "@/lib/services/projectService";
 import type { Client } from "@/lib/services/clientService";
 import type { Estimate } from "@/lib/services/estimateService";
 import type { ChangeOrder } from "@/lib/services/changeOrderService";
 import { sumApprovedChangeOrderRevenue, calculateChangeOrderRevenue } from "@/lib/services/financialCalculations";
-import type { AuditLogEntry, ProjectStatus, EstimateStatus, ChangeOrderStatus } from "@/lib/services";
+import type { AuditLogEntry, ProjectStatus, EstimateStatus, ChangeOrderStatus, ProjectFinancials } from "@/lib/services";
 
 const STATUS_TONE: Record<ProjectStatus, "neutral" | "success" | "warning" | "danger"> = {
   draft: "neutral",
@@ -51,7 +54,8 @@ function ProjectDetailContent() {
   const params = useParams();
   const router = useRouter();
   const projectId = params.id as string;
-  const { projectService, clientService, estimateService, changeOrderService, auditService } = useServices();
+  const { projectService, clientService, estimateService, changeOrderService, auditService, financialEngine } = useServices();
+  const canEditExpenses = usePermission("expense", "create");
 
   const [project, setProject] = useState<Project | null>(null);
   const [client, setClient] = useState<Client | null>(null);
@@ -59,8 +63,25 @@ function ProjectDetailContent() {
   const [estimates, setEstimates] = useState<Estimate[]>([]);
   const [changeOrders, setChangeOrders] = useState<ChangeOrder[]>([]);
   const [activity, setActivity] = useState<AuditLogEntry[]>([]);
+  const [financials, setFinancials] = useState<ProjectFinancials | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  /** Re-reads the profit picture from FinancialEngine. Called after any
+   * expense mutation so cost and profit move together. */
+  const loadFinancials = useCallback(async () => {
+    try {
+      setFinancials(await financialEngine.getProjectFinancials(projectId));
+    } catch {
+      // A missing financial figure must not blank out the project page.
+      setFinancials(null);
+    }
+  }, [financialEngine, projectId]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadFinancials();
+  }, [loadFinancials]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -227,9 +248,14 @@ function ProjectDetailContent() {
             <EmptyState title="No payments recorded" description="Payment history, amount collected, and remaining balance will appear here." />
           </Section>
 
-          <Section title="Expenses" icon={ReceiptText}>
-            <EmptyState title="No expenses logged" description="Project expenses, totals, and profit impact will appear here." />
-          </Section>
+          <ProjectExpensesPanel
+            companyId={project.companyId}
+            projectId={project.id}
+            canEdit={canEditExpenses}
+            onChanged={loadFinancials}
+          />
+
+          <ProfitSummaryCard financials={financials} />
 
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             <Section title="Subcontractors" icon={HardHat}>

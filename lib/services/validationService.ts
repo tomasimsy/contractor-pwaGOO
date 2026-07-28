@@ -10,6 +10,7 @@
  * have no reason to stay contract-only the way DB-backed services do.
  */
 import type { ValidationResult, ValidationIssue, EstimateStatus, ProjectStatus, ChangeOrderStatus } from "./types";
+import type { InvoiceLifecycleStatus } from "./invoiceService";
 import { hasPermission, type Role, type Resource, type PermissionAction } from "./permissions";
 
 const PROJECT_TRANSITIONS: Record<ProjectStatus, ProjectStatus[]> = {
@@ -29,6 +30,21 @@ const ESTIMATE_TRANSITIONS: Record<EstimateStatus, EstimateStatus[]> = {
   approved: ["converted_to_invoice"],
   rejected: ["draft"],
   converted_to_invoice: [],
+};
+
+/** Only the LIFECYCLE half of an invoice's status is transitionable —
+ * partially_paid/paid/overdue are derived from payments and dates
+ * (see deriveInvoiceStatus), so there is deliberately no transition
+ * INTO them: you record a payment, you don't "set an invoice paid."
+ * cancelled/void are terminal; void is reachable from anywhere issued
+ * because voiding is the correct escape hatch for an invoice already
+ * out in the world, whereas cancelled is for one never sent. */
+const INVOICE_LIFECYCLE_TRANSITIONS: Record<InvoiceLifecycleStatus, InvoiceLifecycleStatus[]> = {
+  draft: ["sent", "cancelled"],
+  sent: ["viewed", "void"],
+  viewed: ["void"],
+  cancelled: [],
+  void: [],
 };
 
 const CHANGE_ORDER_TRANSITIONS: Record<ChangeOrderStatus, ChangeOrderStatus[]> = {
@@ -54,6 +70,11 @@ export interface ValidationService {
   validateProjectStatusTransition(from: ProjectStatus, to: ProjectStatus): ValidationResult;
   validateEstimateStatusTransition(from: EstimateStatus, to: EstimateStatus): ValidationResult;
   validateChangeOrderStatusTransition(from: ChangeOrderStatus, to: ChangeOrderStatus): ValidationResult;
+
+  /** Lifecycle-only — see INVOICE_LIFECYCLE_TRANSITIONS. Payment-derived
+   * statuses (partially_paid/paid/overdue) are not settable and so are
+   * not valid targets here. */
+  validateInvoiceStatusTransition(from: InvoiceLifecycleStatus, to: InvoiceLifecycleStatus): ValidationResult;
   validateLineItem(input: { name: string; quantity: number; unitPrice: number }): ValidationResult;
   validateAssignmentAmount(input: { amount: number; isFinal: boolean; priorAmount?: number }): ValidationResult;
   validateCompanyOwnership(input: { payloadCompanyId: string; sessionCompanyId: string }): ValidationResult;
@@ -95,6 +116,10 @@ export function createValidationService(): ValidationService {
   }
   function validateChangeOrderStatusTransition(from: ChangeOrderStatus, to: ChangeOrderStatus): ValidationResult {
     return transitionResult(from, to, CHANGE_ORDER_TRANSITIONS);
+  }
+
+  function validateInvoiceStatusTransition(from: InvoiceLifecycleStatus, to: InvoiceLifecycleStatus): ValidationResult {
+    return transitionResult(from, to, INVOICE_LIFECYCLE_TRANSITIONS);
   }
 
   function validateLineItem({ name, quantity, unitPrice }: { name: string; quantity: number; unitPrice: number }): ValidationResult {
@@ -143,6 +168,7 @@ export function createValidationService(): ValidationService {
     validateProjectStatusTransition,
     validateEstimateStatusTransition,
     validateChangeOrderStatusTransition,
+    validateInvoiceStatusTransition,
     validateLineItem,
     validateAssignmentAmount,
     validateCompanyOwnership,

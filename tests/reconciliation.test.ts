@@ -38,8 +38,8 @@ describe("reconciliation: every module must agree", () => {
     await services.paymentService.record({ companyId: COMPANY_ID, invoiceId, amount: 1000, method: "cash", paymentDate: "2026-01-02" });
     await services.paymentService.record({ companyId: COMPANY_ID, invoiceId, amount: 500, method: "check", paymentDate: "2026-01-10" });
 
-    await services.expenseService.create({ companyId: COMPANY_ID, projectId, category: "material", amount: 300, expenseDate: "2026-01-03" });
-    await services.expenseService.create({ companyId: COMPANY_ID, projectId, category: "labor", amount: 400, expenseDate: "2026-01-04" });
+    await services.expenseService.create({ companyId: COMPANY_ID, projectId, expenseType: "materials", amount: 300, expenseDate: "2026-01-03" });
+    await services.expenseService.create({ companyId: COMPANY_ID, projectId, expenseType: "labor", amount: 400, expenseDate: "2026-01-04" });
   });
 
   test("1. Estimate matches invoice", async () => {

@@ -102,6 +102,7 @@ import {
   derivePaymentStatus,
   calculateRemainingBalance,
   calculateCommittedCostBalance,
+  calculateExpenseTotals,
   type DocumentTotal,
   type DepositValidation,
   type LineItemLike,
@@ -115,6 +116,7 @@ import type { InvoiceService } from "./invoiceService";
 import type { SubcontractorService } from "./subcontractorService";
 import type { AgentCommissionService } from "./agentCommissionService";
 import type { TransactionService } from "./transactionService";
+import type { ExpenseService } from "./expenseService";
 import type { FilteringService } from "./filteringService";
 
 export interface FinancialEngine {
@@ -238,10 +240,20 @@ export interface FinancialEngineDeps {
   subcontractorService: SubcontractorService;
   agentCommissionService: AgentCommissionService;
   transactionService: TransactionService;
+  expenseService: ExpenseService;
   filteringService: FilteringService;
 }
 
 const EXPENSE_TYPES: TransactionType[] = ["material_expense", "labor_expense", "other_expense"];
+
+/** Inclusive date-range test on a plain YYYY-MM-DD string. Expense dates
+ * are stored as dates, not timestamps, so lexicographic comparison is
+ * exact here — no timezone shifting, which is what made the equivalent
+ * check wrong when it went through `new Date()`. */
+function withinRange(date: string, range: DateRange): boolean {
+  const day = (d: Date) => d.toISOString().slice(0, 10);
+  return date >= day(range.start) && date <= day(range.end);
+}
 
 function sumByType(
   ledger: Array<{ type: TransactionType; amount: number }>,
@@ -259,7 +271,7 @@ function sumByType(
  * composition layer rather than a second place raw queries happen.
  */
 export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngine {
-  const { projectService, estimateService, changeOrderService, invoiceService, subcontractorService, agentCommissionService, transactionService, filteringService } = deps;
+  const { projectService, estimateService, changeOrderService, invoiceService, subcontractorService, agentCommissionService, transactionService, expenseService, filteringService } = deps;
 
   /** THE one place a Filter enters this engine's arithmetic: resolves
    * it (if given) against the "projects" entity via FilteringService,
@@ -278,12 +290,13 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     if (!project) throw new Error(`getProjectFinancials: no project found for id ${projectId}`);
     const scope: QueryScope = { companyId: project.companyId, projectId };
 
-    const [invoices, approvedChangeOrders, ledger, subAssignments, agentAssignments] = await Promise.all([
+    const [invoices, approvedChangeOrders, ledger, subAssignments, agentAssignments, expenseTotals] = await Promise.all([
       invoiceService.listForProject(projectId),
       changeOrderService.listApprovedChangeOrders(projectId),
       transactionService.getProjectLedger(projectId),
       subcontractorService.listAssignments(scope),
       agentCommissionService.listAssignments(scope),
+      expenseService.getTotalsForProject(projectId),
     ]);
 
     // ---------- REVENUE (invoices + payments + approved change orders — never estimates.total) ----------
@@ -305,17 +318,45 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     const remainingBalance = calculateRemainingBalance(invoicesTotal, amountPaid);
 
     // ---------- COSTS ----------
-    const expenseItems = sumByType(ledger, EXPENSE_TYPES);
+    // Expenses come from ExpenseService — the SOURCE ROWS — not from the
+    // ledger. The ledger is append-only, so it structurally cannot
+    // represent a soft delete: before this change a deleted expense kept
+    // costing the project money forever, because there was no way to
+    // retract the row that recorded it. Reading the rows means
+    // `deleted_at is null` is the single exclusion rule, applied once
+    // inside ExpenseService.
+    //
+    // getTotalsForProject also resolves expenses attached to the
+    // project's ESTIMATES but with a null project_id (real legacy rows
+    // are shaped that way), which a ledger sum keyed on project_id
+    // silently dropped.
+    const expenseItems = expenseTotals.total;
     const mileageCosts = sumByType(ledger, ["mileage_expense"]);
-    // Reimbursement cost, at the PROJECT/committed level, is the amount
-    // OWED the moment an agent covers an expense — a liability booked
-    // is already a real cost to the project regardless of whether it's
-    // been paid out yet, same "committed" philosophy as subcontractor/
-    // agent-commission assignments. This deliberately sums
-    // "agent_reimbursement_owed", NOT "agent_reimbursement_paid" — see
-    // getCompanyFinancials below for why the period/cash view sums the
-    // opposite one.
-    const agentReimbursementsOwed = sumByType(ledger, ["agent_reimbursement_owed"]);
+    // An agent-paid expense books TWO ledger rows for one real-world
+    // event (see TRANSACTION_LEDGER.md): the expense itself
+    // (material/labor/other_expense — already summed into expenseItems
+    // above) AND `agent_reimbursement_owed`, which is a LIABILITY
+    // ("the company now owes an agent $X"), not a second cost.
+    // TRANSACTION_TYPE_META classifies it exactly that way:
+    // `{ effect: "liability" }`, deliberately distinct from the
+    // `{ effect: "cost" }` types.
+    //
+    // This value therefore feeds OUTSTANDING (what's still owed to
+    // agents) and never `agentCosts`. Adding it to costs double-counted
+    // the same spending — measured during the Expense/Subcontractor/
+    // Agent audit: an identical $300 purchase produced $300 of project
+    // cost when the company paid it, but $600 when an agent paid it,
+    // understating profit by exactly the reimbursement amount on every
+    // agent-funded expense.
+    // Same reasoning, same source: what's still owed to whoever fronted
+    // company money is the expenses' own pending-reimbursement figure,
+    // not a ledger liability row that a delete could never retract.
+    // NOTE this is still a LIABILITY, never a cost — an agent-funded
+    // $300 purchase costs the project $300 once. Adding the
+    // reimbursement on top double-counted it (measured during the
+    // Expense/Subcontractor/Agent audit: the identical purchase produced
+    // $300 of cost company-paid but $600 agent-paid).
+    const outstandingReimbursements = expenseTotals.outstandingReimbursements;
 
     const subBalances = await Promise.all(subAssignments.map((a) => transactionService.getAssignmentBalance(a.id)));
     const subcontractorCosts = asCommittedCost(subBalances.reduce((sum, b) => sum + b.committed, 0));
@@ -323,15 +364,13 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
 
     const agentBalances = await Promise.all(agentAssignments.map((a) => transactionService.getAssignmentBalance(a.id)));
     const agentCommissionCosts = agentBalances.reduce((sum, b) => sum + b.committed, 0);
-    const agentCosts = asCommittedCost(agentCommissionCosts + agentReimbursementsOwed);
+    const agentCosts = asCommittedCost(agentCommissionCosts);
     // Outstanding agent = unpaid commission (per assignment) + unpaid
     // reimbursement liability (owed minus paid, company-wide reimbursement
     // rows aren't assignment-scoped so they can't run through
     // getAssignmentBalance — summed directly from the ledger instead).
-    const agentReimbursementsPaid = sumByType(ledger, ["agent_reimbursement_paid"]);
     const outstandingAgent = asCommittedCost(
-      agentBalances.reduce((sum, b) => sum + b.outstanding, 0) +
-        Math.max(0, agentReimbursementsOwed - agentReimbursementsPaid)
+      agentBalances.reduce((sum, b) => sum + b.outstanding, 0) + outstandingReimbursements
     );
 
     const totalExpenses = expenseItems + mileageCosts + subcontractorCosts + agentCosts;
@@ -368,11 +407,12 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
   }
 
   async function getCompanyFinancials(scope: QueryScope & { dateRange: DateRange }, filter?: Filter): Promise<CompanyFinancials> {
-    const [ledgerAll, invoicesAll, projects, projectIds] = await Promise.all([
+    const [ledgerAll, invoicesAll, projects, projectIds, companyExpenses] = await Promise.all([
       transactionService.getCompanyLedger(scope),
       invoiceService.listForCompany(scope),
       projectService.list({ companyId: scope.companyId }),
       resolveProjectIds(scope, filter),
+      expenseService.listForCompany(scope.companyId),
     ]);
 
     // A Filter narrows to a project subset; ledger rows with no
@@ -390,18 +430,41 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     // DIFFERENT model than getProjectFinancials' committed-cost figures.
     const totalRevenue = asRealizedCost(sumByType(ledger, ["customer_payment"]));
     const subcontractorPaid = asRealizedCost(sumByType(ledger, ["subcontractor_payment"]));
-    // Cash actually paid out this period: commission + reimbursements
-    // ACTUALLY SETTLED ("_paid"), not the liability booked when the
-    // agent first covered the cost ("_owed") — a period cash-basis
-    // rollup only counts cash that moved, matching the file header's
-    // "cash-basis" model for this method. Compare to
-    // getProjectFinancials, which sums "_owed" instead because
-    // committed cost is incurred at the liability moment, not the
-    // settlement moment.
-    const agentPaid = asRealizedCost(sumByType(ledger, ["agent_commission", "agent_reimbursement_paid"]));
-    const expenseItems = sumByType(ledger, EXPENSE_TYPES);
+    // Cash actually paid out to agents this period. `agentPaid` is
+    // reported as-is (it answers "how much cash went to agents,"
+    // which legitimately includes reimbursements), but see
+    // `agentCostContribution` below for why only the COMMISSION half
+    // of it may enter totalExpenses.
+    const agentReimbursementsSettled = asRealizedCost(sumByType(ledger, ["agent_reimbursement_paid"]));
+    const agentCommissionPaid = asRealizedCost(sumByType(ledger, ["agent_commission"]));
+    const agentPaid = asRealizedCost(agentCommissionPaid + agentReimbursementsSettled);
+    // Expenses from the source rows, same as getProjectFinancials — but
+    // period-scoped and CASH-BASIS, which is the company-level model
+    // (see the file header). Only expenses actually settled (isPaid) and
+    // dated inside the range count: a period P&L must not book a vendor
+    // bill that hasn't been paid yet. Soft-deleted rows never arrive
+    // here at all, ExpenseService having already excluded them.
+    const periodExpenses = companyExpenses.filter(
+      (e) =>
+        e.isPaid &&
+        withinRange(e.expenseDate, scope.dateRange) &&
+        (!projectIds || (e.projectId !== null && projectIds.has(e.projectId)))
+    );
+    const expenseItems = calculateExpenseTotals(periodExpenses).total;
     const mileageCosts = sumByType(ledger, ["mileage_expense"]);
-    const totalExpenses = expenseItems + mileageCosts + subcontractorPaid + agentPaid;
+    // Reimbursing an agent is NOT an additional cost — it's settling a
+    // liability for a purchase already counted in `expenseItems` (an
+    // agent-paid expense books both an expense row and a reimbursement
+    // row; see TRANSACTION_LEDGER.md, and TRANSACTION_TYPE_META which
+    // types the reimbursement pair as liability/cash_out, never
+    // "cost"). Counting both double-charged the same spending —
+    // measured during the Expense/Subcontractor/Agent audit: a single
+    // $300 agent-funded purchase showed totalExpenses of $300 before
+    // settlement and $600 after, so merely repaying an agent appeared
+    // to destroy $300 of profit. Only the commission half is a real
+    // additional cost. (getProjectFinancials was fixed for the same
+    // double-count on its committed-cost side.)
+    const totalExpenses = expenseItems + mileageCosts + subcontractorPaid + agentCommissionPaid;
     const netProfit = totalRevenue - totalExpenses;
     const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
 
@@ -421,6 +484,7 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
       totalRevenue,
       subcontractorPaid,
       agentPaid,
+      agentCommissionPaid,
       expenseItems,
       mileageCosts,
       totalExpenses,
@@ -488,7 +552,10 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
       scope,
       revenue: f.totalRevenue,
       totalCosts: f.totalExpenses,
-      grossProfit: f.totalRevenue - (f.subcontractorPaid + f.agentPaid),
+      // agentCommissionPaid, not agentPaid — reimbursement settlements
+      // repay an already-counted expense and are not a cost (see
+      // getCompanyFinancials' comment on the double-count).
+      grossProfit: f.totalRevenue - (f.subcontractorPaid + f.agentCommissionPaid),
       netProfit: f.netProfit,
       profitMargin: f.profitMargin,
     };
@@ -550,9 +617,10 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
   }
 
   async function getTaxSummary(scope: QueryScope & { dateRange: DateRange }, taxRate = 0.25, filter?: Filter): Promise<TaxSummary> {
-    const [ledgerAll, projectIds] = await Promise.all([
+    const [ledgerAll, projectIds, companyExpenses] = await Promise.all([
       transactionService.getCompanyLedger(scope),
       resolveProjectIds(scope, filter),
+      expenseService.listForCompany(scope.companyId),
     ]);
     const ledger = projectIds ? ledgerAll.filter((tx) => tx.projectId !== null && projectIds.has(tx.projectId)) : ledgerAll;
 
@@ -562,7 +630,20 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     // project level.
     const taxableRevenue = asRealizedCost(sumByType(ledger, ["customer_payment"]));
 
-    const deductibleExpenses = sumByType(ledger, [...EXPENSE_TYPES, "mileage_expense"]);
+    // Same cash-basis, period-scoped expense set getCompanyFinancials
+    // uses — one rule, so "deductible expenses" on the tax report and
+    // "total expenses" on the dashboard can never disagree for the same
+    // range. Mileage still comes from the ledger (it has its own source
+    // table and its own tax treatment).
+    const deductibleExpenses =
+      calculateExpenseTotals(
+        companyExpenses.filter(
+          (e) =>
+            e.isPaid &&
+            withinRange(e.expenseDate, scope.dateRange) &&
+            (!projectIds || (e.projectId !== null && projectIds.has(e.projectId)))
+        )
+      ).total + sumByType(ledger, ["mileage_expense"]);
 
     // Approved costs = subcontractor payments + agent commission +
     // agent reimbursement ACTUALLY PAID this period — same reasoning as

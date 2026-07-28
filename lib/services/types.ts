@@ -143,7 +143,17 @@ export interface CompanyFinancials {
   range: DateRange;
   totalRevenue: RealizedCost;
   subcontractorPaid: RealizedCost;
+  /** ALL cash paid to agents in the period — commission plus settled
+   * reimbursements. Correct for "how much did agents receive," but
+   * NOT a cost input: the reimbursement half repays a purchase
+   * already counted in `expenseItems`. Use `agentCommissionPaid` for
+   * any cost/profit math (see FinancialEngine's comment on the
+   * double-count this prevents). */
   agentPaid: RealizedCost;
+  /** The COST-bearing half of `agentPaid` — commission only. This is
+   * what enters totalExpenses/profit; reimbursement settlements do
+   * not, because the underlying expense is already a cost. */
+  agentCommissionPaid: RealizedCost;
   expenseItems: number;
   mileageCosts: number;
   totalExpenses: number;

@@ -38,9 +38,19 @@ import { createInMemoryLocationService, type Location } from "../locationService
 import type { ProjectService, Project, CreateProjectInput } from "../projectService";
 import type { EstimateService, Estimate, EstimateLineItem } from "../estimateService";
 import type { ChangeOrderService, ChangeOrder, ChangeOrderLineItem } from "../changeOrderService";
-import type { InvoiceService, Invoice, InvoiceLineItem } from "../invoiceService";
+import type { InvoiceService, Invoice, InvoiceLineItem, InvoiceLifecycleStatus } from "../invoiceService";
 import type { PaymentService, CustomerPayment } from "../paymentService";
-import type { ExpenseService, Expense, MileageTrip } from "../expenseService";
+import type {
+  ExpenseService,
+  Expense,
+  ExpenseCategory,
+  ExpenseType,
+  ExpenseCreateInput,
+  ExpenseUpdateInput,
+  ExpenseTotals,
+  MileageTrip,
+} from "../expenseService";
+import { EXPENSE_TYPES } from "../expenseService";
 import type { SubcontractorService, Subcontractor, SubcontractorAssignment, SubcontractorPayment } from "../subcontractorService";
 import type { AgentCommissionService, Agent, AgentAssignment, AgentPayment } from "../agentCommissionService";
 import type { TransactionService, AppendTransactionInput } from "../transactionService";
@@ -64,9 +74,11 @@ import {
   validateDepositAmount,
   calculateChangeOrderRevenue,
   calculateInvoiceTotal,
+  deriveInvoiceStatus,
   derivePaymentStatus,
   calculateRemainingBalance,
   calculateCommittedCostBalance,
+  calculateExpenseTotals,
 } from "../financialCalculations";
 
 const now = () => new Date().toISOString();
@@ -467,6 +479,7 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
       total,
       depositAmount: input.depositAmount ?? 0,
       signature: null,
+      customerToken: null,
       createdBy: null,
       createdAt: now(),
       updatedBy: null,
@@ -699,15 +712,35 @@ function createChangeOrderService(store: InMemoryStore, validation: ValidationSe
   return { getById, listForProject, listForEstimate, createChangeOrder, update, changeStatus, approveChangeOrder, listApprovedChangeOrders, softDelete, restore };
 }
 
-function createInvoiceService(store: InMemoryStore, transactionService: TransactionService): InvoiceService {
+function createInvoiceService(store: InMemoryStore, transactionService: TransactionService, validation: ValidationService): InvoiceService {
+  /** Status is DERIVED on read, never stored — see Invoice.status's doc
+   * comment. Every method that returns an invoice runs it through here
+   * so no caller can ever observe a stale/contradictory status. */
+  function withDerivedStatus<T extends Invoice>(invoice: T): T {
+    const amountPaid = Array.from(store.payments.values())
+      .filter((p) => p.invoiceId === invoice.id && !p.deletedAt)
+      .reduce((sum, p) => sum + p.amount, 0);
+    return {
+      ...invoice,
+      status: deriveInvoiceStatus({
+        lifecycleStatus: invoice.lifecycleStatus,
+        total: invoice.total,
+        amountPaid,
+        dueDate: invoice.dueDate,
+        today: now().slice(0, 10),
+      }),
+    };
+  }
+
   async function getById(invoiceId: UUID) {
-    return store.invoices.get(invoiceId) ?? null;
+    const invoice = store.invoices.get(invoiceId);
+    return invoice ? withDerivedStatus(invoice) : null;
   }
   async function listForProject(projectId: UUID) {
-    return Array.from(store.invoices.values()).filter((i) => i.projectId === projectId && !i.deletedAt);
+    return Array.from(store.invoices.values()).filter((i) => i.projectId === projectId && !i.deletedAt).map(withDerivedStatus);
   }
   async function listForCompany(scope: QueryScope) {
-    return Array.from(store.invoices.values()).filter((i) => i.companyId === scope.companyId && !i.deletedAt);
+    return Array.from(store.invoices.values()).filter((i) => i.companyId === scope.companyId && !i.deletedAt).map(withDerivedStatus);
   }
   async function issueInvoice(
     companyId: UUID,
@@ -744,13 +777,15 @@ function createInvoiceService(store: InMemoryStore, transactionService: Transact
       estimateId,
       clientId,
       invoiceNumber: `INV-${store.invoices.size + 1}`,
-      status: "pending",
+      lifecycleStatus: "draft",
+      status: "draft",
       subtotal,
       tax,
       total,
       issueDate,
       dueDate,
       isLocked: false,
+      customerToken: null,
       createdBy: null,
       createdAt: now(),
       updatedBy: null,
@@ -817,34 +852,34 @@ function createInvoiceService(store: InMemoryStore, transactionService: Transact
   async function recordSignature(invoiceId: UUID, signature: { type: "draw" | "type"; value: string; date: string }) {
     const invoice = store.invoices.get(invoiceId);
     if (!invoice) throw new Error("Invoice not found");
-    const updated = { ...invoice, status: "signed" as const, isLocked: true, updatedAt: now() };
+    // Signing marks the document issued and locks its financials; it
+    // is NOT a payment, so the derived status still reflects money.
+    const updated = { ...invoice, lifecycleStatus: "sent" as const, isLocked: true, updatedAt: now() };
     store.invoices.set(invoiceId, updated);
-    return updated;
+    return withDerivedStatus(updated);
   }
+  /** Kept for interface compatibility, but status is no longer STORED
+   * — it's derived on every read by withDerivedStatus. This now just
+   * returns the current derived view; there is nothing to "refresh"
+   * into the record, which is the point: a stored status is what
+   * allowed live invoices to claim "paid" with zero payments. */
   async function refreshStatus(invoiceId: UUID) {
     const invoice = store.invoices.get(invoiceId);
     if (!invoice) throw new Error("Invoice not found");
-    const paid = Array.from(store.payments.values())
-      .filter((p) => p.invoiceId === invoiceId && !p.deletedAt)
-      .reduce((s, p) => s + p.amount, 0);
-    // derivePaymentStatus is THE payment-status formula (financialCalculations.ts)
-    // — this used to be a second, independent ternary chain computing
-    // the same thing. PaymentStatus's vocabulary ("unpaid"/"overpaid")
-    // maps onto InvoiceStatus's narrower one ("pending"/"paid"), since
-    // "signed" (a document-lifecycle state, not a payment amount) has
-    // no PaymentStatus equivalent and is preserved separately.
-    const paymentStatus = derivePaymentStatus(invoice.total, paid);
-    const status: Invoice["status"] =
-      paymentStatus === "paid" || paymentStatus === "overpaid"
-        ? "paid"
-        : paymentStatus === "partial"
-          ? "partial"
-          : invoice.status === "signed"
-            ? "signed"
-            : "pending";
-    const updated = { ...invoice, status, updatedAt: now() };
+    return withDerivedStatus(invoice);
+  }
+
+  async function changeStatus(invoiceId: UUID, toStatus: InvoiceLifecycleStatus): Promise<ValidationResult & { invoice?: Invoice }> {
+    const invoice = store.invoices.get(invoiceId);
+    if (!invoice) throw new Error("Invoice not found");
+    const result = validation.validateInvoiceStatusTransition(invoice.lifecycleStatus, toStatus);
+    if (!result.valid) return result;
+    // Issuing locks the financials — a document a customer has seen
+    // must not have its line items rewritten underneath them.
+    const locksOnIssue = toStatus === "sent" || toStatus === "viewed";
+    const updated = { ...invoice, lifecycleStatus: toStatus, isLocked: invoice.isLocked || locksOnIssue, updatedAt: now() };
     store.invoices.set(invoiceId, updated);
-    return updated;
+    return { ...result, invoice: withDerivedStatus(updated) };
   }
   async function softDelete(invoiceId: UUID, reason: string) {
     const invoice = store.invoices.get(invoiceId);
@@ -852,7 +887,7 @@ function createInvoiceService(store: InMemoryStore, transactionService: Transact
     store.invoices.set(invoiceId, { ...invoice, deletedAt: now(), deleteReason: reason });
   }
 
-  return { getById, listForProject, listForCompany, createFromEstimate, createStandalone, updateLineItems, lock, recordSignature, refreshStatus, softDelete };
+  return { getById, listForProject, listForCompany, createFromEstimate, createStandalone, updateLineItems, lock, recordSignature, refreshStatus, changeStatus, softDelete };
 }
 
 function createPaymentService(store: InMemoryStore, validation: ValidationService, transactionService: TransactionService): PaymentService {
@@ -867,7 +902,13 @@ function createPaymentService(store: InMemoryStore, validation: ValidationServic
     return { totalPaid, remainingBalance, status };
   }
   async function listForInvoice(invoiceId: UUID) {
-    return Array.from(store.payments.values()).filter((p) => p.invoiceId === invoiceId);
+    // Excludes soft-deleted payments — matching the real Supabase
+    // implementation, which filters `deleted_at IS NULL`. Without this
+    // the two implementations disagreed: a deleted payment stayed
+    // visible in payment history here while correctly vanishing in
+    // production. getSummaryForInvoice already filtered correctly, so
+    // the list and the totals it sat next to could contradict.
+    return Array.from(store.payments.values()).filter((p) => p.invoiceId === invoiceId && !p.deletedAt);
   }
   async function record(input: { companyId: UUID; invoiceId: UUID; amount: number; method: string; paymentDate: string; referenceNumber?: string; notes?: string; allowOverpayment?: boolean }) {
     const summary = await getSummaryForInvoice(input.invoiceId);
@@ -947,28 +988,79 @@ function createPaymentService(store: InMemoryStore, validation: ValidationServic
 }
 
 function createExpenseService(store: InMemoryStore, validation: ValidationService, transactionService: TransactionService): ExpenseService {
-  const categoryToType: Record<Expense["category"], TransactionType> = {
-    material: "material_expense",
+  /** expenseType -> the ledger's coarse cost type. The ledger keeps its
+   * three-way split (it is a historical audit record whose shape must
+   * not churn); the finer eight-way classification lives on the expense
+   * row, which is what FinancialEngine now costs from. */
+  const typeToLedgerType: Record<ExpenseType, TransactionType> = {
+    materials: "material_expense",
     labor: "labor_expense",
-    other: "other_expense",
+    subcontractor: "other_expense",
+    agent_commission: "other_expense",
+    permit: "other_expense",
+    equipment: "other_expense",
+    reimbursement: "other_expense",
+    miscellaneous: "other_expense",
   };
 
+  /** Mirrors the database trigger sync_expense_legacy_category so the
+   * in-memory double reports the same `category` the real table would. */
+  const legacyCategory = (t: ExpenseType): ExpenseCategory =>
+    t === "materials" ? "material" : t === "labor" ? "labor" : "other";
+
+  const active = () => Array.from(store.expenses.values()).filter((e) => !e.deletedAt);
+
   async function listForProject(projectId: UUID) {
-    return Array.from(store.expenses.values()).filter((e) => e.projectId === projectId && !e.deletedAt);
+    const estimateIds = new Set(
+      Array.from(store.estimates.values()).filter((e) => e.projectId === projectId).map((e) => e.id)
+    );
+    return active().filter((e) => e.projectId === projectId || (e.estimateId !== null && estimateIds.has(e.estimateId)));
   }
-  async function create(input: { companyId: UUID; projectId: UUID; category: Expense["category"]; amount: number; expenseDate: string; vendor?: string; paymentMethod?: string; paidByAgentId?: UUID | null; changeOrderId?: UUID | null; receiptUrl?: string }) {
+  async function listForEstimate(estimateId: UUID) {
+    return active().filter((e) => e.estimateId === estimateId);
+  }
+  async function listForCompany(companyId: UUID) {
+    return active().filter((e) => e.companyId === companyId);
+  }
+  async function getById(expenseId: UUID) {
+    return store.expenses.get(expenseId) ?? null;
+  }
+  async function getTotalsForProject(projectId: UUID): Promise<ExpenseTotals> {
+    const breakdown = calculateExpenseTotals(await listForProject(projectId));
+    return {
+      total: breakdown.total,
+      byType: Object.fromEntries(EXPENSE_TYPES.map((t) => [t, breakdown.byType[t] ?? 0])) as Record<ExpenseType, number>,
+      companyPaid: breakdown.companyPaid,
+      outstandingReimbursements: breakdown.outstandingReimbursements,
+      unpaid: breakdown.unpaid,
+    };
+  }
+
+  async function create(input: ExpenseCreateInput) {
+    const paidByType = input.paidByType ?? "company";
+    const reimbursable = input.reimbursable ?? paidByType !== "company";
     const expense: Expense = {
       id: id(),
       companyId: input.companyId,
       projectId: input.projectId,
-      category: input.category,
-      description: null,
+      estimateId: input.estimateId ?? null,
+      changeOrderId: input.changeOrderId ?? null,
+      expenseType: input.expenseType,
+      category: legacyCategory(input.expenseType),
+      description: input.description ?? null,
       amount: input.amount,
       expenseDate: input.expenseDate,
+      notes: input.notes ?? null,
       vendor: input.vendor ?? null,
+      payeeType: input.payeeType ?? null,
+      payeeId: input.payeeId ?? null,
+      paidByType,
+      paidById: input.paidById ?? null,
+      paidByAgentId: paidByType === "agent" ? input.paidById ?? null : null,
       paymentMethod: input.paymentMethod ?? null,
-      paidByAgentId: input.paidByAgentId ?? null,
-      changeOrderId: input.changeOrderId ?? null,
+      isPaid: input.isPaid ?? true,
+      reimbursable,
+      reimbursementStatus: reimbursable ? "pending" : "not_applicable",
       receiptUrl: input.receiptUrl ?? null,
       createdBy: null,
       createdAt: now(),
@@ -983,7 +1075,7 @@ function createExpenseService(store: InMemoryStore, validation: ValidationServic
     await transactionService.append({
       companyId: input.companyId,
       projectId: input.projectId,
-      type: categoryToType[input.category],
+      type: typeToLedgerType[input.expenseType],
       amount: input.amount,
       referenceId: expense.id,
       referenceType: "estimate_expense",
@@ -991,7 +1083,7 @@ function createExpenseService(store: InMemoryStore, validation: ValidationServic
       transactionDate: input.expenseDate,
     });
 
-    if (input.paidByAgentId) {
+    if (expense.paidByAgentId) {
       await transactionService.append({
         companyId: input.companyId,
         projectId: input.projectId,
@@ -1005,19 +1097,47 @@ function createExpenseService(store: InMemoryStore, validation: ValidationServic
     }
     return expense;
   }
-  async function update(expenseId: UUID, changes: Partial<Expense>) {
+
+  /** Internal — applies a patch to the stored row. Separate from the
+   * public update() so softDelete/restore/markReimbursed can set fields
+   * that are not part of ExpenseUpdateInput. */
+  function patch(expenseId: UUID, changes: Partial<Expense>): Expense {
     const expense = store.expenses.get(expenseId);
     if (!expense) throw new Error("Expense not found");
     const updated = { ...expense, ...changes, updatedAt: now() };
     store.expenses.set(expenseId, updated);
+    return updated;
+  }
 
-    // Same correction-row pattern as PaymentService.update above — see
-    // that comment for why a delta row, not an edited one.
+  async function update(expenseId: UUID, changes: ExpenseUpdateInput) {
+    const expense = store.expenses.get(expenseId);
+    if (!expense) throw new Error("Expense not found");
+
+    const next: Partial<Expense> = { ...changes } as Partial<Expense>;
+    if (changes.expenseType) next.category = legacyCategory(changes.expenseType);
+    if (changes.paidByType !== undefined) {
+      const paidByType = changes.paidByType ?? "company";
+      next.paidByType = paidByType;
+      const paidById = changes.paidById !== undefined ? changes.paidById : expense.paidById;
+      next.paidByAgentId = paidByType === "agent" ? paidById ?? null : null;
+      if (changes.reimbursable === undefined) {
+        const reimbursable = paidByType !== "company";
+        next.reimbursable = reimbursable;
+        // Never silently un-settle something already reimbursed.
+        if (!reimbursable) next.reimbursementStatus = "not_applicable";
+        else if (expense.reimbursementStatus === "not_applicable") next.reimbursementStatus = "pending";
+      }
+    }
+
+    const updated = patch(expenseId, next);
+
+    // Correction row, never an edited one — same pattern as
+    // PaymentService.update. The ledger is history; history is appended.
     if (changes.amount !== undefined && changes.amount !== expense.amount) {
       await transactionService.append({
         companyId: updated.companyId,
         projectId: updated.projectId,
-        type: categoryToType[updated.category],
+        type: typeToLedgerType[updated.expenseType],
         amount: changes.amount - expense.amount,
         referenceId: expenseId,
         referenceType: "estimate_expense",
@@ -1028,23 +1148,40 @@ function createExpenseService(store: InMemoryStore, validation: ValidationServic
     }
     return updated;
   }
+
   async function softDelete(expenseId: UUID, reason: string) {
     const check = validation.validateDeleteReason(reason);
     if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
-    await update(expenseId, { deletedAt: now(), deleteReason: reason });
+    patch(expenseId, { deletedAt: now(), deleteReason: reason });
   }
   async function restore(expenseId: UUID) {
-    await update(expenseId, { deletedAt: null, deleteReason: null });
+    patch(expenseId, { deletedAt: null, deleteReason: null });
   }
-  async function getPendingAgentReimbursements(agentId: UUID) {
-    const owedByAgent = Array.from(store.expenses.values()).filter((e) => e.paidByAgentId === agentId && !e.deletedAt);
-    const pending: Expense[] = [];
-    for (const expense of owedByAgent) {
-      const balance = await transactionService.getReimbursementBalance(expense.id);
-      if (balance.outstanding > 0) pending.push(expense);
-    }
-    return pending;
+
+  async function markReimbursed(expenseId: UUID) {
+    const expense = store.expenses.get(expenseId);
+    if (!expense) throw new Error("Expense not found");
+    if (!expense.reimbursable) throw new Error("This expense is not reimbursable.");
+    return patch(expenseId, { reimbursementStatus: "reimbursed" });
   }
+
+  async function listPendingReimbursements(companyId: UUID, payeeId?: UUID) {
+    return active().filter(
+      (e) =>
+        e.companyId === companyId &&
+        e.reimbursable &&
+        e.reimbursementStatus === "pending" &&
+        (!payeeId || e.paidById === payeeId)
+    );
+  }
+
+  async function listKnownVendors(companyId: UUID) {
+    const names = active()
+      .filter((e) => e.companyId === companyId && e.vendor)
+      .map((e) => e.vendor as string);
+    return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
+  }
+
   async function listMileageForProject(projectId: UUID) {
     return Array.from(store.mileageTrips.values()).filter((m) => m.projectId === projectId);
   }
@@ -1060,17 +1197,23 @@ function createExpenseService(store: InMemoryStore, validation: ValidationServic
         referenceId: trip.id,
         referenceType: "estimate_expense",
         createdBy: null,
-        transactionDate: now().slice(0, 10), // MileageTrip has no date field of its own in this fake
+        transactionDate: now().slice(0, 10),
       });
     }
     return trip;
   }
   async function getBudgetComparison(projectId: UUID) {
-    const estimates = Array.from(store.estimates.values()).filter((e) => e.projectId === projectId);
+    // `!e.deletedAt` matches what listForProject already does for the
+    // ACTUAL side — without it, a deleted estimate's line items kept
+    // forming the BUDGET baseline forever (measured during the
+    // Expense/Subcontractor/Agent audit: deleting the only estimate
+    // left budget at $900 instead of $0), so budget-vs-actual compared
+    // live spending against a quote that no longer exists.
+    const estimates = Array.from(store.estimates.values()).filter((e) => e.projectId === projectId && !e.deletedAt);
     const expenses = await listForProject(projectId);
-    const budgetFor = (cat: Expense["category"]) =>
+    const budgetFor = (cat: ExpenseCategory) =>
       estimates.flatMap((e) => e.lineItems).filter((li) => li.category === cat).reduce((s, li) => s + li.total, 0);
-    const actualFor = (cat: Expense["category"]) => expenses.filter((e) => e.category === cat).reduce((s, e) => s + e.amount, 0);
+    const actualFor = (cat: ExpenseCategory) => expenses.filter((e) => e.category === cat).reduce((s, e) => s + e.amount, 0);
     return {
       material: { budget: budgetFor("material"), actual: actualFor("material") },
       labor: { budget: budgetFor("labor"), actual: actualFor("labor") },
@@ -1078,7 +1221,23 @@ function createExpenseService(store: InMemoryStore, validation: ValidationServic
     };
   }
 
-  return { listForProject, create, update, softDelete, restore, getPendingAgentReimbursements, listMileageForProject, recordMileageTrip, getBudgetComparison };
+  return {
+    listForProject,
+    listForEstimate,
+    listForCompany,
+    getById,
+    getTotalsForProject,
+    create,
+    update,
+    softDelete,
+    restore,
+    markReimbursed,
+    listPendingReimbursements,
+    listKnownVendors,
+    listMileageForProject,
+    recordMileageTrip,
+    getBudgetComparison,
+  };
 }
 
 function createSubcontractorService(store: InMemoryStore, validation: ValidationService, transactionService: TransactionService): SubcontractorService {
@@ -1086,8 +1245,18 @@ function createSubcontractorService(store: InMemoryStore, validation: Validation
     return Array.from(store.subcontractors.values()).filter((s) => s.companyId === companyId);
   }
   async function listAssignments(scope: QueryScope) {
+    // `!a.deletedAt` is load-bearing, not cosmetic: FinancialEngine
+    // reads THIS list directly (getProjectFinancials/
+    // getCompanyFinancials) and sums each assignment's committed cost
+    // into subcontractorCosts -> totalExpenses -> netProfit. Without
+    // the filter, soft-deleting an assignment left its full contracted
+    // amount in project costs forever — measured during the Expense/
+    // Subcontractor/Agent audit: deleting a $5,000 assignment left
+    // subcontractorCosts at $5,000 and netProfit at -$5,800 instead of
+    // returning to $0. Every other list* method in this file already
+    // filtered deletedAt; these two were the outliers.
     return Array.from(store.subAssignments.values()).filter(
-      (a) => a.companyId === scope.companyId && (!scope.projectId || a.projectId === scope.projectId)
+      (a) => a.companyId === scope.companyId && !a.deletedAt && (!scope.projectId || a.projectId === scope.projectId)
     );
   }
   async function assignToProject(input: { companyId: UUID; projectId: UUID; subcontractorId: UUID; contractedAmount: number; notes?: string }) {
@@ -1202,8 +1371,13 @@ function createAgentCommissionService(store: InMemoryStore, validation: Validati
     return Array.from(store.agents.values()).filter((a) => a.companyId === companyId);
   }
   async function listAssignments(scope: QueryScope) {
+    // See SubcontractorService.listAssignments' comment — same
+    // load-bearing deletedAt filter, same reason: FinancialEngine sums
+    // this list into agentCosts -> totalExpenses -> netProfit, so a
+    // soft-deleted assignment left uncounted here would otherwise keep
+    // inflating project costs and understating profit forever.
     return Array.from(store.agentAssignments.values()).filter(
-      (a) => a.companyId === scope.companyId && (!scope.projectId || a.projectId === scope.projectId)
+      (a) => a.companyId === scope.companyId && !a.deletedAt && (!scope.projectId || a.projectId === scope.projectId)
     );
   }
   async function assignToProject(input: { companyId: UUID; projectId: UUID; agentId: UUID; assignedAmount: number; notes?: string }) {
@@ -1280,20 +1454,53 @@ function createAgentCommissionService(store: InMemoryStore, validation: Validati
         createdBy: null,
         transactionDate: input.paymentDate,
       });
+      syncExpenseReimbursement(input.reimbursesExpenseId);
     }
     return payment;
   }
+  /** Writes the settlement outcome back onto the EXPENSE, which is the
+   * one place the rest of the app asks "is this still owed?".
+   *
+   * Without this, settlement had two independent sources of truth — the
+   * ledger's reimbursement balance and estimate_expenses.
+   * reimbursement_status — and they disagreed the moment a
+   * reimbursement was paid: the ledger said settled, the expense still
+   * said pending, so the same debt appeared both closed and open
+   * depending on which service you asked. The settlement path owns the
+   * field; nothing else writes it.
+   *
+   * This is the seam the Agent module (Prompt 42) plugs into: record the
+   * payout, then reflect it on the expense — never a second
+   * reimbursement calculation of its own. */
+  function syncExpenseReimbursement(expenseId: UUID | null | undefined) {
+    if (!expenseId) return;
+    const expense = store.expenses.get(expenseId);
+    if (!expense || !expense.reimbursable) return;
+
+    const paid = Array.from(store.agentPayments.values())
+      .filter((p) => p.reimbursesExpenseId === expenseId && !p.deletedAt)
+      .reduce((sum, p) => sum + p.amount, 0);
+
+    store.expenses.set(expenseId, {
+      ...expense,
+      reimbursementStatus: paid >= expense.amount ? "reimbursed" : "pending",
+      updatedAt: now(),
+    });
+  }
+
   async function softDelete(paymentId: UUID, reason: string) {
     const check = validation.validateDeleteReason(reason);
     if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
     const payment = store.agentPayments.get(paymentId);
     if (!payment) throw new Error("Agent payment not found");
     store.agentPayments.set(paymentId, { ...payment, deletedAt: now(), deleteReason: reason });
+    syncExpenseReimbursement(payment.reimbursesExpenseId);
   }
   async function restore(paymentId: UUID) {
     const payment = store.agentPayments.get(paymentId);
     if (!payment) throw new Error("Agent payment not found");
     store.agentPayments.set(paymentId, { ...payment, deletedAt: null, deleteReason: null });
+    syncExpenseReimbursement(payment.reimbursesExpenseId);
   }
   async function getBalance(assignmentId: UUID) {
     const b = await transactionService.getAssignmentBalance(assignmentId);
@@ -1328,7 +1535,7 @@ export function createInMemoryServices(store: InMemoryStore = createInMemoryStor
   const projectService = createProjectService(store, validationService);
   const estimateService = createEstimateService(store, validationService);
   const changeOrderService = createChangeOrderService(store, validationService, transactionService, estimateService);
-  const invoiceService = createInvoiceService(store, transactionService);
+  const invoiceService = createInvoiceService(store, transactionService, validationService);
   const paymentService = createPaymentService(store, validationService, transactionService);
   const expenseService = createExpenseService(store, validationService, transactionService);
   const subcontractorService = createSubcontractorService(store, validationService, transactionService);
@@ -1356,6 +1563,7 @@ export function createInMemoryServices(store: InMemoryStore = createInMemoryStor
     subcontractorService,
     agentCommissionService,
     transactionService,
+    expenseService,
     filteringService,
   });
 

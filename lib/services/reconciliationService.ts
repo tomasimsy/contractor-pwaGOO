@@ -175,29 +175,18 @@ export function createReconciliationService(deps: ReconciliationServiceDeps): Re
         });
       }
 
-      // Customer balance — the invoice's STORED status column vs. what
-      // PaymentService actually derives from its payments right now.
-      // These can drift because status is a stored, denormalized field
-      // (see this file's header on "recalculate derived values"),
-      // updated only when something remembers to call
-      // InvoiceService.refreshStatus. This is the check that both
-      // detects that drift AND (being a real finding) is what makes
-      // reconcileAfterMutation's recalculation step actually run.
-      const summary = await paymentService.getSummaryForInvoice(invoice.id);
-      const expectedInvoiceStatus =
-        summary.status === "paid" || summary.status === "overpaid" ? "paid" : summary.status === "partial" ? "partial" : invoice.status === "signed" ? "signed" : "pending";
-      if (invoice.status !== expectedInvoiceStatus) {
-        findings.push({
-          severity: "warning",
-          scope: "project",
-          scopeId: projectId,
-          message: `Invoice ${invoice.id} stored status "${invoice.status}" does not match its actual payment status "${expectedInvoiceStatus}" (paid: $${summary.totalPaid} of $${invoice.total}).`,
-          expected: 0,
-          actual: 1,
-          difference: 1,
-        });
-      }
-
+      // NOTE: there is deliberately no "stored invoice status vs. real
+      // payment status" drift check here anymore. That check existed
+      // because `status` used to be a stored, denormalized column that
+      // only updated when something remembered to call refreshStatus —
+      // and it re-derived the expected value with its own ternary
+      // chain, a duplicate of the real formula. Invoice status is now
+      // DERIVED on every read (financialCalculations.deriveInvoiceStatus,
+      // applied by InvoiceService.withDerivedStatus), so the two can no
+      // longer disagree: there is no stored field left to drift. The
+      // check was removed rather than kept as a tautology that could
+      // only ever pass — and, being a second implementation of the
+      // status formula, would have been a drift risk in its own right.
       const payments = await paymentService.listForInvoice(invoice.id);
       for (const payment of payments) {
         const payTrail = await transactionService.getAuditTrail("invoice_payment", payment.id);

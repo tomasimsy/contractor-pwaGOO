@@ -217,6 +217,57 @@ export function derivePaymentStatus(totalAmount: number, amountPaid: number): Pa
   return "unpaid";
 }
 
+/** The stored, human-driven half of an invoice's status. */
+export type InvoiceLifecycleStatusLike = "draft" | "sent" | "viewed" | "cancelled" | "void";
+/** The full status a user sees — lifecycle plus the payment/date-derived states. */
+export type DerivedInvoiceStatus = InvoiceLifecycleStatusLike | "partially_paid" | "paid" | "overdue";
+
+/**
+ * THE invoice status formula. An invoice's displayed status is DERIVED,
+ * never stored: only the lifecycle half (draft/sent/viewed/cancelled/
+ * void) lives in the database, and everything payment- or date-driven
+ * is computed here from source data on every read.
+ *
+ * This exists because the live `invoices` table carries BOTH a `status`
+ * and a `payment_status` column that nothing kept in sync — audited
+ * 2026-07-24: 5 of 8 production invoices had `status='paid'` alongside
+ * `payment_status='pending'`, and all 8 claimed "paid" while having
+ * zero payment rows. Deriving removes the possibility by construction.
+ *
+ * Precedence, highest first:
+ *  1. `cancelled`/`void` — terminal administrative states. A voided
+ *     invoice is not "overdue" no matter how old, and is not "paid"
+ *     even if money was received against it before voiding.
+ *  2. `paid` / `partially_paid` — real money beats a date. An invoice
+ *     settled after its due date reads "paid", not "overdue".
+ *  3. `overdue` — only for an issued (sent/viewed), unpaid invoice
+ *     past its due date. A DRAFT is never overdue: it was never sent,
+ *     so nothing is owed yet.
+ *  4. The stored lifecycle status as-is.
+ */
+export function deriveInvoiceStatus(input: {
+  lifecycleStatus: InvoiceLifecycleStatusLike;
+  total: number;
+  amountPaid: number;
+  dueDate: string | null;
+  /** Injected, never `new Date()` internally — a status formula that
+   * reads the clock itself can't be tested deterministically. */
+  today: string;
+}): DerivedInvoiceStatus {
+  const { lifecycleStatus, total, amountPaid, dueDate, today } = input;
+
+  if (lifecycleStatus === "cancelled" || lifecycleStatus === "void") return lifecycleStatus;
+
+  const paymentStatus = derivePaymentStatus(total, amountPaid);
+  if (paymentStatus === "paid" || paymentStatus === "overpaid") return "paid";
+  if (paymentStatus === "partial") return "partially_paid";
+
+  const isIssued = lifecycleStatus === "sent" || lifecycleStatus === "viewed";
+  if (isIssued && dueDate && dueDate < today) return "overdue";
+
+  return lifecycleStatus;
+}
+
 /** Total billed minus total paid, floored at... deliberately NOT
  * floored at 0 — a negative remaining balance IS the overpaid amount,
  * and callers that want "how much is still owed" (never negative)
@@ -248,4 +299,70 @@ export function calculateCommittedCostBalance(assigned: number, paid: number): C
     committed: Math.max(assigned, paid),
     outstanding: Math.max(0, assigned - paid),
   };
+}
+
+// ============================================================
+// Expense totals — the single cost formula
+// ============================================================
+
+/** The minimum an expense row must expose to be costed. Deliberately
+ * structural rather than importing ExpenseService's `Expense`: Layer 0
+ * must not depend on Layer 2, and it lets both the Supabase and
+ * in-memory implementations feed the same function. */
+export interface ExpenseCostLike {
+  amount: number;
+  expenseType: string;
+  paidByType: string;
+  isPaid: boolean;
+  reimbursable: boolean;
+  reimbursementStatus: string;
+  deletedAt?: string | null;
+}
+
+export interface ExpenseTotalsBreakdown {
+  total: number;
+  byType: Record<string, number>;
+  companyPaid: number;
+  outstandingReimbursements: number;
+  unpaid: number;
+}
+
+/**
+ * THE expense-cost formula. Every "total expenses" figure in the app —
+ * FinancialEngine, the Project page, the Estimate page, Reports —
+ * resolves to this one function, so they cannot drift apart.
+ *
+ * Two rules worth stating explicitly, because getting either wrong is a
+ * silent money bug this codebase has already been bitten by:
+ *
+ *  1. A soft-deleted expense contributes NOTHING. Filtered here as well
+ *     as at the query, so an in-memory caller passing an unfiltered
+ *     array still gets the right answer.
+ *
+ *  2. A reimbursement is NOT an extra cost. If an agent buys $300 of
+ *     materials, the project cost $300 — once. Repaying the agent moves
+ *     cash but creates no new cost. `outstandingReimbursements` is
+ *     therefore reported as a LIABILITY alongside the total, never
+ *     added into it. (The same double-count was found and fixed in
+ *     FinancialEngine's ledger path; this keeps the property structural
+ *     rather than something each caller has to remember.)
+ */
+export function calculateExpenseTotals(expenses: ExpenseCostLike[]): ExpenseTotalsBreakdown {
+  const active = expenses.filter((e) => !e.deletedAt);
+
+  const byType: Record<string, number> = {};
+  let total = 0;
+  let companyPaid = 0;
+  let outstandingReimbursements = 0;
+  let unpaid = 0;
+
+  for (const e of active) {
+    total += e.amount;
+    byType[e.expenseType] = (byType[e.expenseType] ?? 0) + e.amount;
+    if (e.paidByType === "company") companyPaid += e.amount;
+    if (e.reimbursable && e.reimbursementStatus === "pending") outstandingReimbursements += e.amount;
+    if (!e.isPaid) unpaid += e.amount;
+  }
+
+  return { total, byType, companyPaid, outstandingReimbursements, unpaid };
 }

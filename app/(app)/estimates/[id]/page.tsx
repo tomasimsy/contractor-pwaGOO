@@ -4,8 +4,8 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
-  Pencil, Trash2, FileText, GitPullRequest, Receipt, Wallet, ReceiptText,
-  FolderOpen, Camera, History, User, Download,
+  Pencil, Trash2, FileText, GitPullRequest, Receipt, Wallet,
+  FolderOpen, Camera, History, User, Download, Share2,
 } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -14,13 +14,17 @@ import { Badge } from "@/components/ui/Badge";
 import { RequirePermission } from "@/components/layout/RequirePermission";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { SignaturePad } from "@/components/estimates/SignaturePad";
+import { SharePortalPanel } from "@/components/portal/SharePortalPanel";
+import { ProjectExpensesPanel } from "@/components/expenses/ProjectExpensesPanel";
+import { ProfitSummaryCard } from "@/components/shared/ProfitSummaryCard";
+import { usePermission } from "@/lib/hooks/usePermission";
 import { supabase } from "@/lib/supabase/client";
 import { sumApprovedChangeOrderRevenue, calculateRevisedEstimateTotal, calculateChangeOrderRevenue } from "@/lib/services/financialCalculations";
 import type { Estimate, EstimateLineItem } from "@/lib/services/estimateService";
 import type { Project } from "@/lib/services/projectService";
 import type { Client } from "@/lib/services/clientService";
 import type { ChangeOrder } from "@/lib/services/changeOrderService";
-import type { AuditLogEntry, EstimateStatus, ChangeOrderStatus } from "@/lib/services";
+import type { AuditLogEntry, EstimateStatus, ChangeOrderStatus, ProjectFinancials } from "@/lib/services";
 
 const STATUS_TONE: Record<EstimateStatus, "neutral" | "success" | "warning" | "danger"> = {
   draft: "neutral",
@@ -45,15 +49,36 @@ function EstimateDetailContent() {
   const params = useParams();
   const router = useRouter();
   const estimateId = params.id as string;
-  const { estimateService, projectService, clientService, changeOrderService, auditService } = useServices();
+  const { estimateService, projectService, clientService, changeOrderService, auditService, financialEngine } = useServices();
+  const canEditExpenses = usePermission("expense", "create");
 
   const [estimate, setEstimate] = useState<(Estimate & { lineItems: EstimateLineItem[] }) | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [client, setClient] = useState<Client | null>(null);
   const [changeOrders, setChangeOrders] = useState<ChangeOrder[]>([]);
   const [activity, setActivity] = useState<AuditLogEntry[]>([]);
+  const [financials, setFinancials] = useState<ProjectFinancials | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  /** Re-reads the whole profit picture from FinancialEngine. Called
+   * after any expense mutation so cost and profit update in the same
+   * interaction — the page never adjusts a number locally. */
+  const financialsProjectId = estimate?.projectId ?? null;
+  const loadFinancials = useCallback(async () => {
+    if (!financialsProjectId) return;
+    try {
+      setFinancials(await financialEngine.getProjectFinancials(financialsProjectId));
+    } catch {
+      // A missing financial figure must not blank out the estimate.
+      setFinancials(null);
+    }
+  }, [financialEngine, financialsProjectId]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadFinancials();
+  }, [loadFinancials]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -131,6 +156,9 @@ function EstimateDetailContent() {
   // Detail page, the Change Order Detail page, and the estimate PDF
   // route all call, so this figure can never independently drift from
   // what those other surfaces show.
+  // Absolute URL for sharing. Read from the browser rather than
+  // hardcoded so the link is right in dev, preview, and production.
+  const origin = typeof window === "undefined" ? "" : window.location.origin;
   const hasApprovedChangeOrders = changeOrders.some((c) => c.status === "approved");
   const approvedChangeOrderRevenue = sumApprovedChangeOrderRevenue(changeOrders);
   const revisedTotal = calculateRevisedEstimateTotal(estimate.total, changeOrders);
@@ -298,12 +326,17 @@ function EstimateDetailContent() {
             <EmptyState title="No payments recorded" description="Payments collected against this estimate's invoice will appear here." />
           </section>
 
-          <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
-            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-              <ReceiptText className="size-4 text-muted-foreground" /> Expenses
-            </h2>
-            <EmptyState title="No expenses logged" description="Expenses tied to this estimate will appear here." />
-          </section>
+          {estimate.projectId && (
+            <ProjectExpensesPanel
+              companyId={estimate.companyId}
+              projectId={estimate.projectId}
+              estimateId={estimate.id}
+              canEdit={canEditExpenses}
+              onChanged={loadFinancials}
+            />
+          )}
+
+          <ProfitSummaryCard financials={financials} />
 
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
@@ -322,6 +355,25 @@ function EstimateDetailContent() {
         </div>
 
         <div className="space-y-5">
+          <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
+            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Share2 className="size-4 text-muted-foreground" /> Customer Portal
+            </h2>
+            {estimate.customerToken ? (
+              <SharePortalPanel
+                portalUrl={`${origin}/portal/${estimate.id}?token=${encodeURIComponent(estimate.customerToken)}`}
+                clientName={client?.name ?? null}
+                clientPhone={client?.phone ?? null}
+                documentLabel="estimate"
+              />
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                No portal link yet — this estimate predates the sharing token. Re-save it, or run the customer-portal
+                migration to backfill tokens.
+              </p>
+            )}
+          </section>
+
           <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
             <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
               <User className="size-4 text-muted-foreground" /> Client

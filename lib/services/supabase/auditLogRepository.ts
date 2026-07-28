@@ -82,7 +82,14 @@ export function createSupabaseAuditLogRepository(supabase: SupabaseClient): Audi
       .single();
 
     if (error) {
-      console.error(`AuditLogRepository.insert failed for ${entry.entityTable}/${entry.entityId} (non-fatal — the generic DB trigger still logs the row change itself):`, error);
+      // Spread the fields explicitly. A Supabase PostgrestError carries
+      // message/code/details/hint on a prototype that JSON-serialises to
+      // `{}`, so logging the object itself printed an empty brace pair
+      // and told you nothing about what actually failed.
+      console.warn(
+        `AuditLogRepository.insert degraded for ${entry.entityTable}/${entry.entityId} — the generic DB trigger still logged the row change, so no history is lost.`,
+        { message: error.message, code: error.code, details: error.details, hint: error.hint }
+      );
       return { ...entry, id: `unpersisted-${Date.now()}`, occurredAt: new Date().toISOString() };
     }
     return rowToEntry(data as AuditLogRow);

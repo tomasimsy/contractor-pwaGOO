@@ -76,6 +76,11 @@ export interface Estimate extends AuditedEntity {
   // not a field this service tracks as "paid."
   depositAmount: number;
   signature: { type: "draw" | "type"; value: string; date: string } | null;
+  /** Opaque per-estimate capability token backing the customer portal.
+   * Safe to expose to STAFF (they need it to build the share link);
+   * never returned by the portal RPC itself. Null before the token
+   * backfill migration. */
+  customerToken: string | null;
 }
 
 export interface EstimateService {

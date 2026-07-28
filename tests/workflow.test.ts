@@ -87,7 +87,7 @@ describe("full financial workflow", () => {
 
     // 6. Add $2,000 expense
     await services.expenseService.create({
-      companyId: COMPANY_ID, projectId, category: "material", amount: 2000, expenseDate: "2026-01-06", vendor: "Supply Co",
+      companyId: COMPANY_ID, projectId, expenseType: "materials", amount: 2000, expenseDate: "2026-01-06", vendor: "Supply Co",
     });
 
     // 7. Pay subcontractor $3,000

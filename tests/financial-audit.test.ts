@@ -304,10 +304,10 @@ describe("End-to-end financial audit", () => {
       });
 
       await step(ctx, "Add expense 1 (material)", async () => {
-        await ctx.services.expenseService.create({ companyId: COMPANY_ID, projectId: ctx.projectId, category: "material", amount: amt(200), expenseDate: "2026-01-03" });
+        await ctx.services.expenseService.create({ companyId: COMPANY_ID, projectId: ctx.projectId, expenseType: "materials", amount: amt(200), expenseDate: "2026-01-03" });
       });
       await step(ctx, "Add expense 2 (labor)", async () => {
-        const e = await ctx.services.expenseService.create({ companyId: COMPANY_ID, projectId: ctx.projectId, category: "labor", amount: amt(300), expenseDate: "2026-01-04" });
+        const e = await ctx.services.expenseService.create({ companyId: COMPANY_ID, projectId: ctx.projectId, expenseType: "labor", amount: amt(300), expenseDate: "2026-01-04" });
         expenseToDeleteId = e.id;
       });
       await step(ctx, "Delete expense 2", async () => {
@@ -377,7 +377,7 @@ describe("End-to-end financial audit", () => {
         commissionPaymentId = p.id;
       });
       await step(ctx, "Agent covers an expense (creates reimbursement liability)", async () => {
-        const expense = await ctx.services.expenseService.create({ companyId: COMPANY_ID, projectId: ctx.projectId, category: "other", amount: amt(80), expenseDate: "2026-01-13", paidByAgentId: "agent-1" });
+        const expense = await ctx.services.expenseService.create({ companyId: COMPANY_ID, projectId: ctx.projectId, expenseType: "miscellaneous", amount: amt(80), expenseDate: "2026-01-13", paidByType: "agent", paidById: "agent-1" });
         expenseId = expense.id;
       });
       await step(ctx, "Pay agent reimbursement", async () => {
@@ -444,7 +444,7 @@ describe("End-to-end financial audit", () => {
         await ctx.services.changeOrderService.approveChangeOrder(coId);
       });
       await step(ctx, "Add expense", async () => {
-        await ctx.services.expenseService.create({ companyId: COMPANY_ID, projectId: ctx.projectId, category: "material", amount: amt(700), expenseDate: "2026-01-08" });
+        await ctx.services.expenseService.create({ companyId: COMPANY_ID, projectId: ctx.projectId, expenseType: "materials", amount: amt(700), expenseDate: "2026-01-08" });
       });
       await step(ctx, "Assign subcontractor", async () => {
         const a = await ctx.services.subcontractorService.assignToProject({ companyId: COMPANY_ID, projectId: ctx.projectId, subcontractorId: "sub-1", contractedAmount: amt(2000) });

@@ -63,7 +63,7 @@ describe("automatic reconciliation", () => {
     // Trigger ANY subsequent mutation on this project — the automatic
     // reconciliation that mutation fires should independently catch
     // the corruption, with no test code calling reconciliation itself.
-    await services.expenseService.create({ companyId: COMPANY_ID, projectId, category: "material", amount: 100, expenseDate: "2026-01-05" });
+    await services.expenseService.create({ companyId: COMPANY_ID, projectId, expenseType: "materials", amount: 100, expenseDate: "2026-01-05" });
 
     const runsForThisProject = services.store.reconciliationLog.filter((entry) => entry.report.scope.projectId === projectId);
     const lastRun = runsForThisProject[runsForThisProject.length - 1];
@@ -73,28 +73,34 @@ describe("automatic reconciliation", () => {
     void invoice;
   });
 
-  test("recalculates derived values: a stale stored invoice status is refreshed by the next mutation's automatic pass", async () => {
+  test("invoice status cannot go stale: it is derived on read, so no refresh pass is needed at all", async () => {
+    // This test previously corrupted the invoice's STORED status field
+    // and asserted that a later mutation's reconciliation pass repaired
+    // it. That premise no longer exists: status is derived on every
+    // read (financialCalculations.deriveInvoiceStatus) from the
+    // lifecycle status + active payments + due date, so there is no
+    // stored field left to corrupt. The property under test is now
+    // strictly stronger — the status is correct IMMEDIATELY, with no
+    // reconciliation, no refreshStatus call, and no intervening
+    // mutation.
     const estimate = await services.estimateService.create({
       companyId: COMPANY_ID, projectId, clientId: null,
       lineItems: [{ category: "material", name: "Item", description: null, quantity: 1, unitPrice: 1000, taxable: false }],
       markup: 0, discount: 0, taxRate: 0,
     });
     const invoice = await services.invoiceService.createFromEstimate(estimate.id, { issueDate: "2026-01-01", dueDate: "2026-01-31" });
-    await services.paymentService.record({ companyId: COMPANY_ID, invoiceId: invoice.id, amount: 1000, method: "cash", paymentDate: "2026-01-02" });
 
-    // Force the stored status field out of sync with reality (as if a
-    // bug elsewhere had skipped calling refreshStatus).
-    const storedInvoice = services.store.invoices.get(invoice.id)!;
-    storedInvoice.status = "pending";
+    await services.paymentService.record({ companyId: COMPANY_ID, invoiceId: invoice.id, amount: 400, method: "cash", paymentDate: "2026-01-02" });
+    expect((await services.invoiceService.getById(invoice.id))!.status).toBe("partially_paid");
 
-    // A later, unrelated mutation on the SAME project should still
-    // trigger reconcileAfterMutation's "recalculate derived values"
-    // step, which refreshes every invoice's status for that project —
-    // no test code calls refreshStatus directly.
-    await services.expenseService.create({ companyId: COMPANY_ID, projectId, category: "labor", amount: 50, expenseDate: "2026-01-06" });
+    await services.paymentService.record({ companyId: COMPANY_ID, invoiceId: invoice.id, amount: 600, method: "cash", paymentDate: "2026-01-03" });
+    expect((await services.invoiceService.getById(invoice.id))!.status).toBe("paid");
 
-    const refreshed = await services.invoiceService.getById(invoice.id);
-    expect(refreshed!.status).toBe("paid");
+    // Deleting a payment must walk it straight back — again with no
+    // refresh step of any kind.
+    const payments = await services.paymentService.listForInvoice(invoice.id);
+    await services.paymentService.softDelete(payments[1].id, "Recorded in error");
+    expect((await services.invoiceService.getById(invoice.id))!.status).toBe("partially_paid");
   });
 
   test("payables inconsistency (a missing assignment line) is caught", async () => {
