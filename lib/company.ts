@@ -4,7 +4,7 @@
 
 export type CompanySettings = {
   company_name: string;
-  dba: string | null;
+  // dba: string | null;
   company_address: string;
   company_phone: string;
   company_email: string;
@@ -25,7 +25,7 @@ export type CompanySettings = {
 // render blank/broken. Deliberately generic — no specific company's branding.
 export const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
   company_name: "Your Company Name",
-  dba: null,
+  // dba: null,
   company_address: "Add your business address in Settings",
   company_phone: "Add your phone number",
   company_email: "Add your email",
@@ -55,10 +55,11 @@ export const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
 };
 
 // Fills in any missing/empty fields with the defaults above.
-export function mergeCompanyDefaults(row: Partial<CompanySettings> | null | undefined): CompanySettings {
+export function mergeCompanyDefaults(
+  row: Partial<CompanySettings> | null | undefined
+): CompanySettings {
   return {
     company_name: row?.company_name || DEFAULT_COMPANY_SETTINGS.company_name,
-    dba: row?.dba || null,
     company_address: row?.company_address || DEFAULT_COMPANY_SETTINGS.company_address,
     company_phone: row?.company_phone || DEFAULT_COMPANY_SETTINGS.company_phone,
     company_email: row?.company_email || DEFAULT_COMPANY_SETTINGS.company_email,
@@ -72,7 +73,9 @@ export function mergeCompanyDefaults(row: Partial<CompanySettings> | null | unde
     terms_conditions: row?.terms_conditions || DEFAULT_COMPANY_SETTINGS.terms_conditions,
     payment_instructions: row?.payment_instructions || DEFAULT_COMPANY_SETTINGS.payment_instructions,
     warranty_text: row?.warranty_text || DEFAULT_COMPANY_SETTINGS.warranty_text,
-    default_deposit_percentage: row?.default_deposit_percentage || DEFAULT_COMPANY_SETTINGS.default_deposit_percentage,
+    default_deposit_percentage:
+      row?.default_deposit_percentage ||
+      DEFAULT_COMPANY_SETTINGS.default_deposit_percentage,
   };
 }
 
