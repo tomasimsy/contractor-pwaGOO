@@ -521,38 +521,76 @@ function ProjectCard({
               />
             )}
 
-            <div className="grid grid-cols-2 sm:flex sm:items-center gap-2">
-              <div className="flex items-center gap-1 bg-white px-2 py-1 rounded border border-gray-200 transition-all duration-200 focus-within:border-green-500 focus-within:ring-2 focus-within:ring-green-500/20">
-                <span className="text-[10px] text-gray-400">Qty</span>
-                <input
-                  type="number"
-                  value={item.quantity === 0 ? "" : item.quantity}
-                  onChange={(e) =>
-                    form.updateItem(project.id, item.id, "quantity", e.target.value === "" ? 0 : Number(e.target.value))
-                  }
-                  disabled={locked}
-                  className="w-full sm:w-12 text-sm text-gray-700 text-center focus:outline-none bg-transparent min-h-[32px]"
-                  placeholder="0"
-                />
-              </div>
-              <div className="flex items-center gap-1 bg-white px-2 py-1 rounded border border-gray-200 transition-all duration-200 focus-within:border-green-500 focus-within:ring-2 focus-within:ring-green-500/20">
-                <span className="text-[10px] text-gray-400">$</span>
-                <input
-                  type="number"
-                  value={item.unit_price === 0 ? "" : item.unit_price}
-                  onChange={(e) =>
-                    form.updateItem(project.id, item.id, "unit_price", e.target.value === "" ? 0 : Number(e.target.value))
-                  }
-                  disabled={locked}
-                  className="w-full sm:w-20 text-sm text-gray-700 text-right focus:outline-none bg-transparent min-h-[32px]"
-                  placeholder="0.00"
-                  step="0.01"
-                />
-              </div>
-              <div className="col-span-2 sm:flex-1 text-right text-sm font-medium text-gray-700">
-                {formatCurrency(item.quantity * item.unit_price)}
-              </div>
-            </div>
+<div className="grid grid-cols-2 sm:flex sm:items-center gap-2">
+  <div className="flex items-center bg-white rounded border border-gray-200 transition-all duration-200 focus-within:border-green-500 focus-within:ring-2 focus-within:ring-green-500/20 overflow-hidden">
+    <span className="text-[10px] text-gray-400 px-2">Qty</span>
+
+    <input
+      type="number"
+      value={item.quantity === 0 ? "" : item.quantity}
+      onChange={(e) =>
+        form.updateItem(
+          project.id,
+          item.id,
+          "quantity",
+          e.target.value === "" ? 0 : Number(e.target.value)
+        )
+      }
+      disabled={locked}
+      className="w-14 text-sm text-gray-700 text-center focus:outline-none bg-transparent min-h-[32px]"
+      placeholder="0"
+      min="0"
+      step="0.01"
+    />
+
+    <select
+      value={item.quantity ?? "Each"}
+      onChange={(e) =>
+        form.updateItem(project.id, item.id, "quantity", e.target.value)
+      }
+      disabled={locked}
+      className="text-xs text-gray-700 border-l border-gray-200 bg-transparent px-2 py-1 focus:outline-none min-h-[32px]"
+    >
+      <option value="Each">Each</option>
+      <option value="LF">LF</option>
+      <option value="SF">SF</option>
+      <option value="Sq Ft">Sq Ft</option>
+      <option value="Sq">Sq</option>
+      <option value="Bundle">Bundle</option>
+      <option value="Sheet">Sheet</option>
+      <option value="Box">Box</option>
+      <option value="Roll">Roll</option>
+      <option value="Piece">Piece</option>
+      <option value="Hour">Hour</option>
+      <option value="Day">Day</option>
+      <option value="Lot">Lot</option>
+    </select>
+  </div>
+
+  <div className="flex items-center gap-1 bg-white px-2 py-1 rounded border border-gray-200 transition-all duration-200 focus-within:border-green-500 focus-within:ring-2 focus-within:ring-green-500/20">
+    <span className="text-[10px] text-gray-400">$</span>
+    <input
+      type="number"
+      value={item.unit_price === 0 ? "" : item.unit_price}
+      onChange={(e) =>
+        form.updateItem(
+          project.id,
+          item.id,
+          "unit_price",
+          e.target.value === "" ? 0 : Number(e.target.value)
+        )
+      }
+      disabled={locked}
+      className="w-full sm:w-20 text-sm text-gray-700 text-right focus:outline-none bg-transparent min-h-[32px]"
+      placeholder="0.00"
+      step="0.01"
+    />
+  </div>
+
+  <div className="col-span-2 sm:flex-1 text-right text-sm font-medium text-gray-700">
+    {formatCurrency(item.quantity * item.unit_price)}
+  </div>
+</div>
           </div>
         ))}
       </div>
