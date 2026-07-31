@@ -12,7 +12,7 @@
  * `onChanged` lets the parent page re-read its own financials after any
  * mutation, so profit updates in the same interaction as the expense.
  */
-import { useState } from "react";
+import { forwardRef, useImperativeHandle, useState } from "react";
 import { Plus, Pencil, Trash2, Receipt, RotateCcw } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ExpenseDialog } from "./ExpenseDialog";
@@ -22,23 +22,31 @@ import { EXPENSE_TYPE_LABEL, PAID_BY_LABEL, type Expense } from "@/lib/services"
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
-export function ProjectExpensesPanel({
+export interface ProjectExpensesPanelRef {
+  openNewExpense: () => void;
+}
+
+export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
+  companyId: string;
+  projectId: string;
+  estimateId?: string | null;
+  canEdit: boolean;
+  onChanged?: () => Promise<void> | void;
+}>(function ProjectExpensesPanel({
   companyId,
   projectId,
   estimateId,
   canEdit,
   onChanged,
-}: {
-  companyId: string;
-  projectId: string;
-  /** When rendered on an Estimate page, new expenses are attached to
-   * that estimate as well as the project. */
-  estimateId?: string | null;
-  canEdit: boolean;
-  onChanged?: () => Promise<void> | void;
-}) {
-  const { expenses, totals, loading, error, create, update, remove, markReimbursed } = useExpenses(companyId, projectId);
+}, ref) {{
+  const { expenses, totals, loading, error, create, update, remove, markReimbursed } = useExpenses(companyId, projectId, estimateId);
   const [dialogFor, setDialogFor] = useState<Expense | "new" | null>(null);
+      useImperativeHandle(ref, () => ({
+      openNewExpense() {
+        setDialogFor("new");
+      },
+    }));
+
   const [actionError, setActionError] = useState<string | null>(null);
 
   async function afterChange(ok: boolean) {
@@ -50,11 +58,10 @@ export function ProjectExpensesPanel({
   }
 
   async function handleDelete(expense: Expense) {
-    const reason = window.prompt(`Why are you deleting this ${money(expense.amount)} expense?`);
-    if (!reason) return;
+    if (!window.confirm(`Delete this ${money(expense.amount)} expense?`)) return;
     setActionError(null);
     try {
-      await remove(expense.id, reason);
+      await remove(expense.id, "User deleted via UI");
       await onChanged?.();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Could not delete this expense.");
@@ -196,3 +203,4 @@ export function ProjectExpensesPanel({
     </section>
   );
 }
+});

@@ -2,37 +2,53 @@
 
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { createInMemoryServices, type InMemoryServices } from "@/lib/services/testing/inMemoryServices";
-import { createAuditService } from "@/lib/services";
-import { createSupabaseAuditLogRepository } from "@/lib/services/supabase/auditLogRepository";
-import { createSupabaseClientService } from "@/lib/services/supabase/clientService";
-import { createSupabaseProjectService } from "@/lib/services/supabase/projectService";
-import { createSupabaseEstimateService } from "@/lib/services/supabase/estimateService";
-import { createSupabaseChangeOrderService } from "@/lib/services/supabase/changeOrderService";
-import { createSupabaseInvoiceService } from "@/lib/services/supabase/invoiceService";
-import { createSupabasePaymentService } from "@/lib/services/supabase/paymentService";
+import { createServerAppServices } from "@/lib/services/server";
+import { createEstimatePhotoService } from "@/lib/services/supabase/estimatePhotoService";
+import { createRoofingAreaService } from "@/lib/services/supabase/roofingAreaService";
+import { createSupabaseEstimateAreaLineItemService } from "@/lib/services/supabase/estimateAreaLineItemService";
 import { createSupabaseExpenseService } from "@/lib/services/supabase/expenseService";
 import { createFinancialEngine } from "@/lib/services";
 import type { ClientService } from "@/lib/services/clientService";
 import type { ProjectService } from "@/lib/services/projectService";
 import type { EstimateService } from "@/lib/services/estimateService";
+import type { EstimatePhotoService } from "@/lib/services/estimatePhotoService";
+import type { RoofingAreaService } from "@/lib/services/roofingAreaService";
+import type { EstimateAreaLineItemService } from "@/lib/services/estimateAreaLineItemService";
 import type { ChangeOrderService } from "@/lib/services/changeOrderService";
 import type { InvoiceService } from "@/lib/services/invoiceService";
 import type { PaymentService } from "@/lib/services/paymentService";
 import type { ExpenseService } from "@/lib/services/expenseService";
+import type { SubcontractorService } from "@/lib/services/subcontractorService";
+import type { AgentCommissionService } from "@/lib/services/agentCommissionService";
 import type { FinancialEngine } from "@/lib/services/financialEngine";
 import type { AuditService } from "@/lib/services";
+import type { EstimateWorkflow } from "@/lib/services/estimateWorkflow";
+import type { ChangeOrderWorkflow } from "@/lib/services/changeOrderWorkflow";
 import { supabase } from "@/lib/supabase/client";
 
 export interface AppServices extends InMemoryServices {
   clientService: ClientService;
   projectService: ProjectService;
   estimateService: EstimateService;
+  estimatePhotoService: EstimatePhotoService;
+  roofingAreaService: RoofingAreaService;
+  estimateAreaLineItemService: EstimateAreaLineItemService;
   changeOrderService: ChangeOrderService;
   invoiceService: InvoiceService;
   paymentService: PaymentService;
   expenseService: ExpenseService;
+  subcontractorService: SubcontractorService;
+  agentCommissionService: AgentCommissionService;
   financialEngine: FinancialEngine;
   auditService: AuditService;
+  /** The single canonical estimate-signing workflow (sign/unsign) — see
+   * lib/services/estimateWorkflow.ts. The portal reaches the exact same
+   * function through app/api/portal/sign/route.ts, not a copy of it. */
+  estimateWorkflow: EstimateWorkflow;
+  /** The single canonical change-order-approval workflow — the portal
+   * reaches it through app/api/portal/change-orders/[id]/approve/route.ts,
+   * not a copy of it. See lib/services/changeOrderWorkflow.ts. */
+  changeOrderWorkflow: ChangeOrderWorkflow;
 }
 
 /**
@@ -42,30 +58,25 @@ export interface AppServices extends InMemoryServices {
  * never means touching call sites.
  *
  * `clientService`, `projectService`, `estimateService`,
- * `changeOrderService`, and `auditService` are now REAL — Supabase-backed
- * (see lib/services/supabase/), targeting the actual `clients`/
- * `projects`/`estimates`+`estimate_items`/`change_orders`+
- * `change_order_line_items`/`audit_logs` tables in the shared Supabase
- * project (see .env.local). Every other service (invoice, payment,
- * expense, subcontractor, agent, financial engine, reconciliation,
- * payroll, accounting, reporting) is still `createInMemoryServices()`
- * — the documented placeholder from earlier passes, unchanged.
+ * `changeOrderService`, `auditService`, `invoiceService`,
+ * `paymentService`, `expenseService`, `subcontractorService`, and
+ * `agentCommissionService` are all REAL — Supabase-backed (see
+ * lib/services/supabase/), targeting the actual `clients`/`projects`/
+ * `estimates`+`estimate_items`/`change_orders`+`change_order_line_items`/
+ * `audit_logs`/`subcontractors`+`estimate_subcontractors`+
+ * `subcontractor_payments`/`agents`+`estimate_agents`+`agent_payments`
+ * tables in the shared Supabase project (see .env.local). Only
+ * `transactionService` and `filteringService` remain
+ * `createInMemoryServices()` doubles — no real ledger table exists yet
+ * (see subcontractorService.ts's file header for why assignment
+ * balances no longer depend on it).
  *
- * FINANCIAL ENGINE — PARTIALLY REAL, AND HONEST ABOUT WHICH HALF.
- * `financialEngine` is now constructed against the REAL project,
- * estimate, change-order, invoice and expense services, so revenue,
- * billed totals, approved change orders and — as of the Expenses
- * module — every project COST figure reflect the live database.
- *
- * Its `subcontractorService`, `agentCommissionService` and
- * `transactionService` dependencies are still the in-memory doubles,
- * because those modules have not been built yet (Prompts 41/42). The
- * practical effect is bounded and knowable: subcontractor/agent
- * ASSIGNMENT costs read as zero, while expenses of type
- * "subcontractor"/"agent_commission" recorded through the Expenses
- * module DO count, because those come from ExpenseService. Nothing
- * silently reads stale in-memory data for a figure the real services
- * can answer.
+ * FINANCIAL ENGINE — now fully real for every cost source it composes:
+ * revenue, billed totals, approved change orders, expenses, and
+ * subcontractor/agent assignment costs (via SubcontractorService.
+ * getBalance/AgentCommissionService.getBalance, computed directly from
+ * persisted rows, not the in-memory ledger) all reflect the live
+ * database.
  */
 async function currentUserId(): Promise<string | null> {
   const { data } = await supabase.auth.getUser();
@@ -81,49 +92,35 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
   // state, but are constructed alongside for a single stable object.
   const services = useMemo<AppServices>(() => {
     const inMemory = createInMemoryServices();
-    const auditLogRepository = createSupabaseAuditLogRepository(supabase);
-    const auditService = createAuditService(auditLogRepository);
-    const clientService = createSupabaseClientService(supabase, inMemory.validationService, currentUserId);
-    const projectService = createSupabaseProjectService(supabase, inMemory.validationService, auditService, currentUserId, clientService);
-    const estimateService = createSupabaseEstimateService(supabase, inMemory.validationService, auditService, currentUserId, projectService);
-    const changeOrderService = createSupabaseChangeOrderService(
-      supabase,
-      inMemory.validationService,
-      auditService,
-      inMemory.transactionService,
-      currentUserId,
-      projectService,
-      estimateService
-    );
+    // Same construction recipe app/api/portal/sign/route.ts uses (with
+    // a service-role client instead of this browser session client) —
+    // see lib/services/server.ts's header for why this must be the one
+    // shared wiring path rather than a second copy of it here.
+    const server = createServerAppServices(supabase, currentUserId);
+    const {
+      auditService, clientService, projectService, estimateService, changeOrderService, invoiceService, paymentService,
+      expenseService, subcontractorService, agentCommissionService, estimateWorkflow, changeOrderWorkflow,
+    } = server;
 
-    const invoiceService = createSupabaseInvoiceService(
-      supabase,
-      inMemory.validationService,
-      auditService,
-      currentUserId,
-      estimateService,
-      changeOrderService
-    );
-    const paymentService = createSupabasePaymentService(supabase, inMemory.validationService, currentUserId);
-    const expenseService = createSupabaseExpenseService(
-      supabase,
-      inMemory.validationService,
-      currentUserId,
-      estimateService
-    );
+    const estimatePhotoService = createEstimatePhotoService(supabase);
+    const roofingAreaService = createRoofingAreaService(supabase);
+    const estimateAreaLineItemService = createSupabaseEstimateAreaLineItemService(supabase, inMemory.validationService);
 
     // Rebuilt over the real services rather than reusing
     // inMemory.financialEngine, which was closed over the in-memory
-    // doubles and could therefore never see a live number. See the
-    // header note for exactly which dependencies remain doubles.
+    // doubles and could therefore never see a live number.
+    // subcontractorService/agentCommissionService are now real too
+    // (Prompts 42/43) — every project/estimate cost figure reflects the
+    // live database, not just invoice/expense figures as before.
     const financialEngine = createFinancialEngine({
       projectService,
       estimateService,
       changeOrderService,
       invoiceService,
+      paymentService,
       expenseService,
-      subcontractorService: inMemory.subcontractorService,
-      agentCommissionService: inMemory.agentCommissionService,
+      subcontractorService,
+      agentCommissionService,
       transactionService: inMemory.transactionService,
       filteringService: inMemory.filteringService,
     });
@@ -134,11 +131,18 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
       clientService,
       projectService,
       estimateService,
+      estimatePhotoService,
+      roofingAreaService,
+      estimateAreaLineItemService,
       changeOrderService,
       invoiceService,
       paymentService,
       expenseService,
+      subcontractorService,
+      agentCommissionService,
       financialEngine,
+      estimateWorkflow,
+      changeOrderWorkflow,
     };
   }, []);
 

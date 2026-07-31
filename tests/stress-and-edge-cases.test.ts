@@ -74,7 +74,7 @@ const COMPANY_ID = "company-1";
 
 async function seedRosterAndProject(services: InMemoryServices) {
   services.store.subcontractors.set("sub-1", {
-    id: "sub-1", companyId: COMPANY_ID, name: "Test Sub", trade: null, phone: null,
+    id: "sub-1", companyId: COMPANY_ID, name: "Test Sub", trade: null, phone: null, contactPerson: null, isActive: true,
     createdBy: null, createdAt: new Date().toISOString(), updatedBy: null, updatedAt: new Date().toISOString(), deletedBy: null, deletedAt: null, deleteReason: null,
   });
   services.store.agents.set("agent-1", {

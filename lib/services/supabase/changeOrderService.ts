@@ -33,7 +33,7 @@
  * per row.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ChangeOrder, ChangeOrderLineItem, ChangeOrderService } from "../changeOrderService";
+import type { ChangeOrder, ChangeOrderLineItem, ChangeOrderService, ChangeOrderSignature } from "../changeOrderService";
 import type { UUID, ChangeOrderStatus, ValidationResult } from "../types";
 import type { ValidationService } from "../validationService";
 import type { AuditService } from "../auditService";
@@ -54,6 +54,7 @@ interface ChangeOrderRow {
   total_amount: number;
   tax: number;
   approved_at: string | null;
+  signature: ChangeOrderSignature | null;
   created_by: string | null;
   created_at: string;
   updated_by: string | null;
@@ -86,6 +87,7 @@ function rowToChangeOrder(row: ChangeOrderRow): ChangeOrder {
     totalAmount: row.total_amount,
     tax: row.tax,
     approvedAt: row.approved_at,
+    signature: row.signature ?? null,
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedBy: row.updated_by,
@@ -319,14 +321,26 @@ export function createSupabaseChangeOrderService(
    * FinancialEngine's revisedTotal — does NOT read this ledger; it
    * reads listApprovedChangeOrders directly (see that method below),
    * so this booking is a secondary record, not the source of truth. */
-  async function approveChangeOrder(changeOrderId: UUID): Promise<ChangeOrder> {
+  async function approveChangeOrder(changeOrderId: UUID, signature?: ChangeOrderSignature | null): Promise<ChangeOrder> {
     const result = await changeStatus(changeOrderId, "approved");
     if (!result.valid || !result.changeOrder) {
       throw new Error(result.issues.map((i) => i.message).join("; ") || "Failed to approve change order.");
     }
     const changeOrder = result.changeOrder;
 
-    const { data, error } = await supabase.from("change_orders").update({ approved_at: new Date().toISOString() }).eq("id", changeOrderId).select().single();
+    const { data, error } = await supabase
+      .from("change_orders")
+      .update({
+        approved_at: new Date().toISOString(),
+        // Only touched when a signature is actually passed — a staff
+        // approval with no signature must not overwrite a signature
+        // that (in principle) already existed, though in practice this
+        // is always the first and only time approved_at is set.
+        ...(signature !== undefined ? { signature } : {}),
+      })
+      .eq("id", changeOrderId)
+      .select()
+      .single();
     if (error) throw new Error(`Failed to record approval time: ${error.message}`);
     const approved = rowToChangeOrder(data as ChangeOrderRow);
 

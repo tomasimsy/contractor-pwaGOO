@@ -43,7 +43,7 @@ describe("full financial workflow", () => {
 
     // Seed roster
     services.store.subcontractors.set("sub-1", {
-      id: "sub-1", companyId: COMPANY_ID, name: "Ace Roofing", trade: "roofing", phone: null,
+      id: "sub-1", companyId: COMPANY_ID, name: "Ace Roofing", trade: "roofing", phone: null, contactPerson: null, isActive: true,
       createdBy: null, createdAt: new Date().toISOString(), updatedBy: null, updatedAt: new Date().toISOString(), deletedBy: null, deletedAt: null, deleteReason: null,
     });
     services.store.agents.set("agent-1", {
@@ -139,10 +139,10 @@ describe("full financial workflow", () => {
     expect(paymentSummary.status).toBe("partial");
 
     const subBalance = await services.subcontractorService.getBalance(subAssignmentId);
-    expect(subBalance).toEqual({ assigned: 3000, paid: 3000, outstanding: 0 });
+    expect(subBalance).toEqual({ assigned: 3000, paid: 3000, committed: 3000, outstanding: 0 });
 
     const agentBalance = await services.agentCommissionService.getBalance(agentAssignmentId);
-    expect(agentBalance).toEqual({ assigned: 500, paid: 500, outstanding: 0 });
+    expect(agentBalance).toEqual({ assigned: 500, paid: 500, committed: 500, outstanding: 0 });
   });
 
   test("payables summary agrees with the individual balances above", async () => {

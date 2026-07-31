@@ -34,6 +34,7 @@ import type {
   ValidationService,
   AuditService,
   ReconciliationService,
+  RoofingAreaService,
 } from "./services";
 
 export interface Services {
@@ -52,6 +53,7 @@ export interface Services {
   validationService: ValidationService;
   auditService: AuditService;
   reconciliationService: ReconciliationService;
+  roofingAreaService: RoofingAreaService;
 }
 
 const ServicesContext = createContext<Services | null>(null);

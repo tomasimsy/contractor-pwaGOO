@@ -80,6 +80,7 @@ import type {
   QueryScope,
   DateRange,
   ProjectFinancials,
+  EstimateFinancials,
   CompanyFinancials,
   ProfitSummary,
   PayablesSummary,
@@ -113,6 +114,7 @@ import type { ProjectService } from "./projectService";
 import type { EstimateService } from "./estimateService";
 import type { ChangeOrderService } from "./changeOrderService";
 import type { InvoiceService } from "./invoiceService";
+import type { PaymentService } from "./paymentService";
 import type { SubcontractorService } from "./subcontractorService";
 import type { AgentCommissionService } from "./agentCommissionService";
 import type { TransactionService } from "./transactionService";
@@ -128,6 +130,14 @@ export interface FinancialEngine {
    * ONLY function allowed to assemble a project's profit — every page,
    * PDF export, and report calls this, never its own arithmetic. */
   getProjectFinancials(projectId: UUID): Promise<ProjectFinancials>;
+
+  /** Same job-costing formulas as getProjectFinancials, scoped to ONE
+   * estimate instead of the whole project — the number the Estimate
+   * Detail page needs, since a project can carry several estimates and
+   * getProjectFinancials would otherwise mix them all together. See
+   * EstimateFinancials' doc comment (types.ts) for exactly which real
+   * data sources back subcontractor/agent costs here. */
+  getEstimateFinancials(estimateId: UUID): Promise<EstimateFinancials>;
 
   /** Composes TransactionService.getCompanyLedger (cash-basis revenue/
    * expense within range) with lifetime (not period-scoped) outstanding
@@ -237,6 +247,7 @@ export interface FinancialEngineDeps {
   estimateService: EstimateService;
   changeOrderService: ChangeOrderService;
   invoiceService: InvoiceService;
+  paymentService: PaymentService;
   subcontractorService: SubcontractorService;
   agentCommissionService: AgentCommissionService;
   transactionService: TransactionService;
@@ -271,7 +282,7 @@ function sumByType(
  * composition layer rather than a second place raw queries happen.
  */
 export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngine {
-  const { projectService, estimateService, changeOrderService, invoiceService, subcontractorService, agentCommissionService, transactionService, expenseService, filteringService } = deps;
+  const { projectService, estimateService, changeOrderService, invoiceService, paymentService, subcontractorService, agentCommissionService, transactionService, expenseService, filteringService } = deps;
 
   /** THE one place a Filter enters this engine's arithmetic: resolves
    * it (if given) against the "projects" entity via FilteringService,
@@ -358,11 +369,18 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     // $300 of cost company-paid but $600 agent-paid).
     const outstandingReimbursements = expenseTotals.outstandingReimbursements;
 
-    const subBalances = await Promise.all(subAssignments.map((a) => transactionService.getAssignmentBalance(a.id)));
+    // Real assigned-vs-paid balance, computed by the owning service
+    // directly from its own persisted rows (SubcontractorService.
+    // getBalance / AgentCommissionService.getBalance) — NOT
+    // transactionService.getAssignmentBalance. The shared transaction
+    // ledger has no real backing table, so it would report a stale/
+    // zero balance for a real, persisted assignment the moment a
+    // session restarts. See both services' getBalance doc comments.
+    const subBalances = await Promise.all(subAssignments.map((a) => subcontractorService.getBalance(a.id)));
     const subcontractorCosts = asCommittedCost(subBalances.reduce((sum, b) => sum + b.committed, 0));
     const outstandingSubcontractor = asCommittedCost(subBalances.reduce((sum, b) => sum + b.outstanding, 0));
 
-    const agentBalances = await Promise.all(agentAssignments.map((a) => transactionService.getAssignmentBalance(a.id)));
+    const agentBalances = await Promise.all(agentAssignments.map((a) => agentCommissionService.getBalance(a.id)));
     const agentCommissionCosts = agentBalances.reduce((sum, b) => sum + b.committed, 0);
     const agentCosts = asCommittedCost(agentCommissionCosts);
     // Outstanding agent = unpaid commission (per assignment) + unpaid
@@ -403,6 +421,111 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
       outstandingTotal: asCommittedCost(outstandingSubcontractor + outstandingAgent),
       paymentStatus,
       isFullyPaid: amountPaid >= invoicesTotal && invoicesTotal > 0,
+    };
+  }
+
+  /**
+   * Estimate-scoped counterpart to getProjectFinancials — same
+   * formulas, same Layer 0 functions, narrower input set. No new
+   * arithmetic: revisedTotal/remainingBalance/expense totals are the
+   * exact same calculateRevisedEstimateTotal/calculateRemainingBalance/
+   * calculateExpenseTotals calls getProjectFinancials makes, just fed
+   * this estimate's own rows instead of the whole project's.
+   *
+   * Invoices: InvoiceService has no listForEstimate — filtered here
+   * from listForProject(projectId) by invoice.estimateId rather than
+   * adding a new service method for a filter this engine can already
+   * apply itself.
+   *
+   * Subcontractor/agent costs: sourced from the SAME real
+   * assignment-based services getProjectFinancials uses
+   * (SubcontractorService/AgentCommissionService), scoped to this
+   * estimate's PROJECT (an assignment is a project-level fact — see
+   * both services' listAssignments doc comments) — no separate
+   * Expense-type-based cost path anymore. This was previously sourced
+   * from expenseType "subcontractor"/"agent_commission" rows because
+   * the formal Assignment-based services were still in-memory/
+   * non-functional; now that they're real, unifying avoids the two
+   * code paths silently disagreeing about the same kind of cost
+   * depending on whether you're viewing the project or one of its
+   * estimates. An expense row still typed "subcontractor"/
+   * "agent_commission" for OTHER reasons (e.g. a one-off cost with no
+   * formal assignment) is not double-counted here: this estimate's own
+   * `expenses` (used for totalExpenses/mileage/etc. below) still
+   * includes those rows in `expenseTotals.total`, exactly as
+   * getProjectFinancials' `expenseItems` does — only the dedicated
+   * subcontractorCosts/agentCommissionCosts figures now come from
+   * assignments instead of being re-derived from the same expense rows
+   * a second, different way.
+   */
+  async function getEstimateFinancials(estimateId: UUID): Promise<EstimateFinancials> {
+    const estimate = await estimateService.getById(estimateId);
+    if (!estimate) throw new Error(`getEstimateFinancials: no estimate found for id ${estimateId}`);
+
+    const scope: QueryScope = { companyId: estimate.companyId, projectId: estimate.projectId };
+    const [changeOrders, projectInvoices, expenses, subAssignments, agentAssignments] = await Promise.all([
+      changeOrderService.listForEstimate(estimateId),
+      invoiceService.listForProject(estimate.projectId),
+      expenseService.listForEstimate(estimateId),
+      subcontractorService.listAssignments(scope),
+      agentCommissionService.listAssignments(scope),
+    ]);
+
+    const invoicesForEstimate = projectInvoices.filter((inv) => inv.estimateId === estimateId);
+
+    // Same function getProjectFinancials calls — sumApprovedChangeOrderRevenue
+    // filters to approved internally, so passing every change order (not
+    // just pre-filtered ones) is the same call shape used everywhere else.
+    const approvedChangeOrderTotal = sumApprovedChangeOrderRevenue(changeOrders);
+    const revisedTotal = calculateRevisedEstimateTotal(estimate.total, changeOrders);
+
+    const invoicesTotal = invoicesForEstimate.reduce((sum, inv) => sum + inv.total, 0);
+
+    const paymentSummaries = await Promise.all(
+      invoicesForEstimate.map((inv) => paymentService.getSummaryForInvoice(inv.id))
+    );
+    const amountPaid = paymentSummaries.reduce((sum, p) => sum + p.totalPaid, 0);
+    const remainingBalance = calculateRemainingBalance(invoicesTotal, amountPaid);
+    const paymentStatus = derivePaymentStatus(invoicesTotal, amountPaid);
+
+    // Same Layer 0 function ExpenseService.getTotalsForProject and
+    // getProjectFinancials' cost math both call — applied directly to
+    // this estimate's own expense rows (already deleted_at-filtered by
+    // ExpenseService.listForEstimate). Still the source for
+    // totalExpenses (every expense row, of every type, on this
+    // estimate) — only subcontractorCosts/agentCommissionCosts below
+    // no longer come from this same breakdown.
+    const expenseTotals = calculateExpenseTotals(expenses);
+    const totalExpenses = expenseTotals.total;
+
+    // Assignment-based, same formula getProjectFinancials uses —
+    // committed cost (max(assigned, paid)) per assignment, summed.
+    const subBalances = await Promise.all(subAssignments.map((a) => subcontractorService.getBalance(a.id)));
+    const subcontractorCosts = subBalances.reduce((sum, b) => sum + b.committed, 0);
+    const agentBalances = await Promise.all(agentAssignments.map((a) => agentCommissionService.getBalance(a.id)));
+    const agentCommissionCosts = agentBalances.reduce((sum, b) => sum + b.committed, 0);
+
+    const grossProfit = revisedTotal - (subcontractorCosts + agentCommissionCosts);
+    const netProfit = revisedTotal - totalExpenses;
+    const profitMargin = revisedTotal > 0 ? (netProfit / revisedTotal) * 100 : 0;
+
+    return {
+      estimateId,
+      projectId: estimate.projectId,
+      estimateTotal: estimate.total,
+      approvedChangeOrderTotal,
+      revisedTotal,
+      invoicesTotal,
+      amountPaid,
+      remainingBalance,
+      paymentStatus,
+      isFullyPaid: amountPaid >= invoicesTotal && invoicesTotal > 0,
+      subcontractorCosts,
+      agentCommissionCosts,
+      totalExpenses,
+      grossProfit,
+      netProfit,
+      profitMargin,
     };
   }
 
@@ -575,7 +698,9 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
 
     const subLines: PayableLine[] = await Promise.all(
       subAssignments.map(async (a): Promise<PayableLine> => {
-        const balance = await transactionService.getAssignmentBalance(a.id);
+        // See getProjectFinancials' comment: real, persisted balance
+        // from the owning service, not the fictional-backing ledger.
+        const balance = await subcontractorService.getBalance(a.id);
         return {
           role: "subcontractor",
           assignmentId: a.id,
@@ -590,7 +715,7 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
 
     const agentLines: PayableLine[] = await Promise.all(
       agentAssignments.map(async (a): Promise<PayableLine> => {
-        const balance = await transactionService.getAssignmentBalance(a.id);
+        const balance = await agentCommissionService.getBalance(a.id);
         return {
           role: "agent",
           assignmentId: a.id,
@@ -669,6 +794,7 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
 
   return {
     getProjectFinancials,
+    getEstimateFinancials,
     getCompanyFinancials,
     getFinancialsForProjects,
     getClientFinancials,

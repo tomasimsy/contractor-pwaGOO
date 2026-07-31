@@ -11,7 +11,7 @@
  * passes through whatever the form collected.
  */
 import { useCallback, useState } from "react";
-import { useServices } from "../services-context";
+import { useServices } from "@/components/providers/ServicesProvider";
 import { useRefreshableResource } from "./useAsyncResource";
 import type { Agent, AgentAssignment, Expense } from "../services";
 
@@ -19,8 +19,17 @@ export function useAgentAssignments(companyId: string, projectId: string) {
   const { agentCommissionService, expenseService } = useServices();
   const [roster, setRoster] = useState<Agent[]>([]);
   const [assignments, setAssignments] = useState<Array<AgentAssignment & { agentName: string }>>([]);
-  const [balances, setBalances] = useState<Record<string, { assigned: number; paid: number; outstanding: number }>>({});
+  const [balances, setBalances] = useState<Record<string, { assigned: number; paid: number; committed: number; outstanding: number }>>({});
   const [pendingReimbursements, setPendingReimbursements] = useState<Record<string, Expense[]>>({});
+  /** Sum of each agent's pendingReimbursements — "Reimbursements Owed"
+   * in the balance breakdown. Derived from the exact same ExpenseService
+   * rows the picker below already fetches; never a second source. */
+  const [reimbursementsOwedByAgent, setReimbursementsOwedByAgent] = useState<Record<string, number>>({});
+  /** Lifetime commission/reimbursement totals per agent (see
+   * AgentCommissionService.getCompensationSummary) — "Payments Made"
+   * in the breakdown includes settled reimbursements, which
+   * getBalance's per-assignment `paid` deliberately excludes. */
+  const [compensationByAgent, setCompensationByAgent] = useState<Record<string, { totalCommissions: number; totalReimbursements: number; totalPaid: number }>>({});
 
   // Same gap as useSubcontractorAssignments had — no error handling at
   // all on the original bare useEffect. See useRefreshableResource's
@@ -43,7 +52,17 @@ export function useAgentAssignments(companyId: string, projectId: string) {
     const reimbursementEntries = await Promise.all(
       rosterList.map(async (agent) => [agent.id, await expenseService.listPendingReimbursements(companyId, agent.id)] as const)
     );
-    setPendingReimbursements(Object.fromEntries(reimbursementEntries));
+    const pending = Object.fromEntries(reimbursementEntries);
+    setPendingReimbursements(pending);
+    setReimbursementsOwedByAgent(
+      Object.fromEntries(reimbursementEntries.map(([agentId, expenses]) => [agentId, expenses.reduce((sum, e) => sum + e.amount, 0)]))
+    );
+
+    const currentYear = new Date().getFullYear();
+    const compensationEntries = await Promise.all(
+      rosterList.map(async (agent) => [agent.id, await agentCommissionService.getCompensationSummary(agent.id, currentYear)] as const)
+    );
+    setCompensationByAgent(Object.fromEntries(compensationEntries));
   }, [agentCommissionService, expenseService, companyId, projectId]);
 
   const assign = useCallback(
@@ -84,5 +103,17 @@ export function useAgentAssignments(companyId: string, projectId: string) {
     [agentCommissionService, companyId, refresh]
   );
 
-  return { roster, assignments, balances, pendingReimbursements, loading, error, assign, recordCommissionPayment, recordReimbursementPayment, refresh };
+  const createAgent = useCallback(
+    async (name: string, commissionRate?: number) => {
+      const created = await agentCommissionService.createAgent({ companyId, name, commissionRate: commissionRate ?? null });
+      await refresh();
+      return created;
+    },
+    [agentCommissionService, companyId, refresh]
+  );
+
+  return {
+    roster, assignments, balances, pendingReimbursements, reimbursementsOwedByAgent, compensationByAgent,
+    loading, error, assign, recordCommissionPayment, recordReimbursementPayment, createAgent, refresh,
+  };
 }

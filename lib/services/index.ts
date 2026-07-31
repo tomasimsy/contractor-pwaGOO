@@ -32,7 +32,15 @@ export type { TransactionService, AppendTransactionInput } from "./transactionSe
 // Layer 2 — entity services only; TaxService is Layer 3 (see below) since
 // it's the one service whose call graph points at FinancialEngine.
 export type { ProjectService, Project, CreateProjectInput } from "./projectService";
-export type { EstimateService, Estimate, EstimateLineItem } from "./estimateService";
+export type { EstimateService, Estimate, EstimateLineItem, EstimateLineItemUnit } from "./estimateService";
+export type { EstimatePhotoService, EstimatePhoto } from "./estimatePhotoService";
+export type { RoofingAreaService, RoofingArea, RoofingPhoto, RoofingAreaCreateInput, RoofingAreaUpdateInput, RoofingPhotoCreateInput } from "./roofingAreaService";
+export type {
+  EstimateAreaLineItemService,
+  EstimateAreaLineItem,
+  EstimateAreaLineItemCreateInput,
+  EstimateAreaLineItemUpdateInput,
+} from "./estimateAreaLineItemService";
 export type { ChangeOrderService, ChangeOrder } from "./changeOrderService";
 export type { InvoiceService, Invoice, InvoiceLineItem, InvoiceStatus } from "./invoiceService";
 export type { PaymentService, CustomerPayment } from "./paymentService";
@@ -64,6 +72,11 @@ export type { AgentCommissionService as AgentService } from "./agentCommissionSe
 // Layer 3
 export type { FinancialEngine, FinancialEngineDeps } from "./financialEngine";
 export { createFinancialEngine } from "./financialEngine";
+// The single canonical estimate-signing workflow — see estimateWorkflow.ts's
+// header for why both staff and the customer portal must call this same
+// function rather than each having their own signing logic.
+export type { EstimateWorkflow, EstimateWorkflowDeps, EstimateWorkflowResult } from "./estimateWorkflow";
+export { createEstimateWorkflow, signEstimate, unsignEstimate } from "./estimateWorkflow";
 // "FinancialService" is the name used in the brief; FinancialEngine is
 // the name already in use throughout this codebase and its docs
 // (SERVICE_LAYER_DESIGN.md, TRANSACTION_LEDGER.md, FILTER_SYSTEM.md).

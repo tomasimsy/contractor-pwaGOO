@@ -83,7 +83,7 @@ describe("Full workflow integration", () => {
   beforeAll(async () => {
     services = createInMemoryServices();
     services.store.subcontractors.set("sub-1", {
-      id: "sub-1", companyId: COMPANY_ID, name: "Ace Roofing", trade: "roofing", phone: null,
+      id: "sub-1", companyId: COMPANY_ID, name: "Ace Roofing", trade: "roofing", phone: null, contactPerson: null, isActive: true,
       createdBy: null, createdAt: new Date().toISOString(), updatedBy: null, updatedAt: new Date().toISOString(), deletedBy: null, deletedAt: null, deleteReason: null,
     });
     services.store.agents.set("agent-1", {

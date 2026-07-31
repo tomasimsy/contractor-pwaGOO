@@ -26,6 +26,7 @@ const STATUS_TONE: Record<EstimateStatus, "neutral" | "success" | "warning" | "d
   converted_to_invoice: "success",
 };
 
+
 const formatMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 function EstimatesListContent() {
@@ -40,6 +41,7 @@ function EstimatesListContent() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<EstimateStatus | "all">("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "standard" | "roofing">("all");
   const [sortKey, setSortKey] = useState<SortKey>("createdAt");
 
   const load = useCallback(async () => {
@@ -70,6 +72,7 @@ function EstimatesListContent() {
   const filtered = useMemo(() => {
     let rows = estimates;
     if (statusFilter !== "all") rows = rows.filter((e) => e.status === statusFilter);
+    if (typeFilter !== "all") rows = rows.filter((e) => e.estimateType === typeFilter);
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       rows = rows.filter((e) => {
@@ -89,7 +92,7 @@ function EstimatesListContent() {
       if (sortKey === "updatedAt") return b.updatedAt.localeCompare(a.updatedAt);
       return b.createdAt.localeCompare(a.createdAt);
     });
-  }, [estimates, statusFilter, search, sortKey, projectsById, clientsById]);
+  }, [estimates, statusFilter, typeFilter, search, sortKey, projectsById, clientsById]);
 
   return (
     <PageContainer>
@@ -116,6 +119,15 @@ function EstimatesListContent() {
             className="h-9 w-full rounded-lg border border-input bg-background pl-8 pr-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
           />
         </div>
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value as "all" | "standard" | "roofing")}
+          className="h-9 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+        >
+          <option value="all">All types</option>
+          <option value="standard">Standard</option>
+          <option value="roofing">Roofing</option>
+        </select>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as EstimateStatus | "all")}
@@ -155,6 +167,7 @@ function EstimatesListContent() {
                   <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Estimate #</th>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Project</th>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Client</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Type</th>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</th>
                   <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total</th>
                   <th className="hidden px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground md:table-cell">Created</th>
@@ -172,6 +185,7 @@ function EstimatesListContent() {
                     </td>
                     <td className="px-3 py-2.5 text-muted-foreground">{projectsById[estimate.projectId]?.name ?? "—"}</td>
                     <td className="px-3 py-2.5 text-muted-foreground">{estimate.clientId ? clientsById[estimate.clientId]?.name ?? "—" : "—"}</td>
+                    <td className="px-3 py-2.5 text-muted-foreground">{estimate.estimateType === "roofing" ? "Roofing" : "Standard"}</td>
                     <td className="px-3 py-2.5">
                       <Badge tone={STATUS_TONE[estimate.status]}>{estimate.status.replace(/_/g, " ")}</Badge>
                     </td>
@@ -191,7 +205,9 @@ function EstimatesListContent() {
                   <span className="font-medium text-foreground">{estimate.estimateNumber ?? estimate.id.slice(0, 8)}</span>
                   <Badge tone={STATUS_TONE[estimate.status]}>{estimate.status.replace(/_/g, " ")}</Badge>
                 </div>
-                <div className="mt-1 text-xs text-muted-foreground">{projectsById[estimate.projectId]?.name ?? "—"} · {estimate.clientId ? clientsById[estimate.clientId]?.name ?? "—" : "No client"}</div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {projectsById[estimate.projectId]?.name ?? "—"} · {estimate.clientId ? clientsById[estimate.clientId]?.name ?? "—" : "No client"} · {estimate.estimateType === "roofing" ? "Roofing" : "Standard"}
+                </div>
                 <div className="mt-1 text-sm font-semibold text-foreground">{formatMoney(estimate.total)}</div>
               </Link>
             ))}

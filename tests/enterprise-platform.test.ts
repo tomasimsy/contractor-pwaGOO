@@ -107,7 +107,7 @@ describe("Enterprise platform: accounting, payroll, multi-location, reporting", 
 
     test("AP report matches FinancialEngine.getPayablesSummary exactly", async () => {
       services.store.subcontractors.set("sub-1", {
-        id: "sub-1", companyId: COMPANY_ID, name: "Ace Roofing", trade: "roofing", phone: null,
+        id: "sub-1", companyId: COMPANY_ID, name: "Ace Roofing", trade: "roofing", phone: null, contactPerson: null, isActive: true,
         createdBy: null, createdAt: new Date().toISOString(), updatedBy: null, updatedAt: new Date().toISOString(), deletedBy: null, deletedAt: null, deleteReason: null,
       });
       const assignment = await services.subcontractorService.assignToProject({ companyId: COMPANY_ID, projectId: projectA, subcontractorId: "sub-1", contractedAmount: 4000 });

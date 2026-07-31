@@ -6,15 +6,15 @@
  *
  * Reuses components/estimates/SignaturePad wholesale (the same draw/type
  * capture staff use); this file adds only the submit path. The write
- * itself goes through the token-scoped `sign_estimate_via_token` RPC,
- * never a direct table write: the database refuses to overwrite an
- * existing signature, so a forwarded link cannot be used to replace a
- * genuine agreement.
+ * goes through POST /api/portal/sign — a server-only route that
+ * validates the token itself (same one-shot "refuses to overwrite an
+ * existing signature" guard the old RPC had) and then runs the exact
+ * same canonical signing workflow (lib/services/estimateWorkflow.ts)
+ * staff use, instead of a second, SQL-only implementation of what
+ * signing does. See that route's header for the full architecture.
  */
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabase/env";
 import { SignaturePad } from "@/components/estimates/SignaturePad";
 
 export function SignEstimateForm({ token, signedValue, signedDate }: { token: string; signedValue: string | null; signedDate: string | null }) {
@@ -43,18 +43,18 @@ export function SignEstimateForm({ token, signedValue, signedDate }: { token: st
     setSaving(true);
     setError(null);
     try {
-      const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      const { data, error: rpcError } = await supabase.rpc("sign_estimate_via_token", {
-        p_token: token,
-        p_signature_type: signature.type,
-        p_signature_value: signature.value,
+      const res = await fetch("/api/portal/sign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, signatureType: signature.type, signatureValue: signature.value }),
       });
-      if (rpcError) throw new Error(rpcError.message);
-      if (!data) {
-        // The RPC returns NULL for every rejection (bad token, already
-        // signed, converted) without saying which — deliberately, so it
-        // can't be used to probe. Reloading shows the true state.
-        setError("This estimate could not be signed. It may already be signed or no longer be open. Refreshing…");
+      const result = await res.json();
+      if (!result.ok) {
+        // The route returns a generic rejection for every failure case
+        // (bad token, already signed, no longer open) without saying
+        // which — deliberately, so it can't be used to probe. Reloading
+        // shows the true state.
+        setError((result.message ?? "This estimate could not be signed.") + " Refreshing…");
         setTimeout(() => router.refresh(), 1500);
         return;
       }

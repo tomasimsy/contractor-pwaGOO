@@ -8,7 +8,7 @@
  * this hook happens to be holding.
  */
 import { useCallback, useState } from "react";
-import { useServices } from "../services-context";
+import { useServices } from "@/components/providers/ServicesProvider";
 import { useRefreshableResource } from "./useAsyncResource";
 import type { Subcontractor, SubcontractorAssignment } from "../services";
 
@@ -16,7 +16,7 @@ export function useSubcontractorAssignments(companyId: string, projectId: string
   const { subcontractorService } = useServices();
   const [roster, setRoster] = useState<Subcontractor[]>([]);
   const [assignments, setAssignments] = useState<Array<SubcontractorAssignment & { subcontractorName: string; trade: string | null }>>([]);
-  const [balances, setBalances] = useState<Record<string, { assigned: number; paid: number; outstanding: number }>>({});
+  const [balances, setBalances] = useState<Record<string, { assigned: number; paid: number; committed: number; outstanding: number }>>({});
 
   // Previously a bare useEffect with no error handling at all — a
   // failed refresh (e.g. the service call rejecting) was an uncaught
@@ -59,5 +59,14 @@ export function useSubcontractorAssignments(companyId: string, projectId: string
     [subcontractorService, refresh]
   );
 
-  return { roster, assignments, balances, loading, error, assign, recordPayment, markFinal, refresh };
+  const createSubcontractor = useCallback(
+    async (name: string, trade?: string) => {
+      const created = await subcontractorService.createSubcontractor({ companyId, name, trade: trade || null });
+      await refresh();
+      return created;
+    },
+    [subcontractorService, companyId, refresh]
+  );
+
+  return { roster, assignments, balances, loading, error, assign, recordPayment, markFinal, createSubcontractor, refresh };
 }

@@ -133,6 +133,15 @@ export const PDF_STYLES = `
   .sig-empty { font-size: 11px; color: #9aa2ab; font-style: italic; }
 
   .footer { text-align: center; margin-top: 40px; padding-top: 18px; border-top: 1px solid #e2e5e8; font-size: 9px; color: #9aa2ab; }
+
+  /* Estimate Roof V2 — one printed page per roofing area, plus a page
+     break before the final totals/terms/signature page. Screen view is
+     unaffected (page-break-* only takes effect when printing/saving as
+     PDF); .roof-area-page:last-child suppresses the trailing blank page
+     that would otherwise follow the last area. */
+  .roof-area-page { page-break-after: always; break-after: page; }
+  .roof-area-page:last-child { page-break-after: auto; break-after: auto; }
+  .final-page-break { page-break-before: always; break-before: page; }
 `;
 
 export function pdfDocument(opts: {

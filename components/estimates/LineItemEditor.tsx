@@ -7,6 +7,7 @@ import { calculateLineItemTotal, calculateSubtotal } from "@/lib/services/financ
 export type DraftLineItem = Omit<EstimateLineItem, "id" | "total">;
 
 const CATEGORIES: DraftLineItem["category"][] = ["material", "labor", "other"];
+const UNITS: NonNullable<DraftLineItem["unit"]>[] = ["EA", "SF", "SQFT", "SQ", "LF", "FT", "HR", "DAY", "LS"];
 
 /**
  * The shared line-item table for Create/Edit Estimate — the ONE place
@@ -22,7 +23,7 @@ export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; on
   }
 
   function addItem() {
-    onChange([...items, { category: "material", name: "", description: null, quantity: 1, unitPrice: 0, taxable: true }]);
+    onChange([...items, { category: "material", name: "", description: null, quantity: 1, unitPrice: 0, unit: null, taxable: true }]);
   }
 
   function removeItem(index: number) {
@@ -40,6 +41,7 @@ export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; on
               <th className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Category</th>
               <th className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Name</th>
               <th className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Qty</th>
+              <th className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Unit</th>
               <th className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Unit Price</th>
               <th className="px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total</th>
               <th className="px-2 py-2"></th>
@@ -78,6 +80,18 @@ export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; on
                   />
                 </td>
                 <td className="px-2 py-1.5">
+                  <select
+                    value={item.unit ?? ""}
+                    onChange={(e) => updateItem(i, { unit: (e.target.value || null) as DraftLineItem["unit"] })}
+                    className="w-20 rounded-md border border-input bg-background px-2 py-1 text-xs outline-none focus-visible:border-ring"
+                  >
+                    <option value="">—</option>
+                    {UNITS.map((u) => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                  </select>
+                </td>
+                <td className="px-2 py-1.5">
                   <input
                     type="number"
                     min="0"
@@ -99,7 +113,7 @@ export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; on
             ))}
             {items.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-2 py-4 text-center text-xs text-muted-foreground">No line items yet.</td>
+                <td colSpan={7} className="px-2 py-4 text-center text-xs text-muted-foreground">No line items yet.</td>
               </tr>
             )}
           </tbody>

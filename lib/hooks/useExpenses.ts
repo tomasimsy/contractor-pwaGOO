@@ -22,6 +22,7 @@ import { useCallback, useState } from "react";
 // the moment it was mounted on a real page.
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useRefreshableResource } from "./useAsyncResource";
+import { calculateExpenseTotals } from "../services/financialCalculations";
 import type { Expense, ExpenseCreateInput, ExpenseUpdateInput, ExpenseTotals } from "../services";
 
 const EMPTY_TOTALS: ExpenseTotals = {
@@ -35,19 +36,25 @@ const EMPTY_TOTALS: ExpenseTotals = {
   unpaid: 0,
 };
 
-export function useExpenses(companyId: string, projectId: string) {
+export function useExpenses(companyId: string, projectId: string, estimateId?: string | null) {
   const { expenseService } = useServices();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [totals, setTotals] = useState<ExpenseTotals>(EMPTY_TOTALS);
 
+  // When estimateId is provided, fetch only that estimate's expenses.
+  // Otherwise fetch all project expenses.
   const { loading, error, setError, refresh } = useRefreshableResource(async () => {
-    const [rows, sums] = await Promise.all([
-      expenseService.listForProject(projectId),
-      expenseService.getTotalsForProject(projectId),
-    ]);
+    const rows = estimateId
+      ? await expenseService.listForEstimate(estimateId)
+      : await expenseService.listForProject(projectId);
+
+    const sums = estimateId
+      ? calculateExpenseTotals(rows)
+      : await expenseService.getTotalsForProject(projectId);
+
     setExpenses(rows);
     setTotals(sums);
-  }, [expenseService, projectId]);
+  }, [expenseService, projectId, estimateId]);
 
   const create = useCallback(
     async (input: Omit<ExpenseCreateInput, "companyId" | "projectId">) => {

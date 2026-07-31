@@ -57,6 +57,15 @@ export function calculateSubtotal(lineItems: Array<{ total: number }>): number {
   return lineItems.reduce((sum, item) => sum + item.total, 0);
 }
 
+/** The ONE Roof Area "Estimated Repair Cost" formula — material + labor
+ * + tax. Used by both RoofingAreaService (so the stored value is always
+ * derived, never caller-computed) and the RoofingAreasEditorV2 UI (for
+ * the live read-only preview before saving), so the two can never drift
+ * apart the way a duplicated formula would risk. */
+export function calculateAreaRepairCost(materialCost: number, laborCost: number, tax: number): number {
+  return materialCost + laborCost + tax;
+}
+
 export interface DocumentTotal {
   subtotal: number;
   taxedBase: number; // subtotal + markup - discount, before tax
@@ -299,6 +308,24 @@ export function calculateCommittedCostBalance(assigned: number, paid: number): C
     committed: Math.max(assigned, paid),
     outstanding: Math.max(0, assigned - paid),
   };
+}
+
+/** An agent's total outstanding balance = commission earned (committed,
+ * from calculateCommittedCostBalance) + reimbursements owed (sum of
+ * that agent's pending-reimbursement Expense rows — ExpenseService
+ * stays the one source of truth for those, never duplicated here)
+ * minus everything actually paid so far (commission payments +
+ * settled reimbursement payments). Distinct from
+ * AgentCommissionService.getBalance's own `outstanding`, which only
+ * covers the commission half — this is the composite figure the
+ * Agent panel's balance breakdown shows, not a second calculation of
+ * either half. */
+export function calculateAgentOutstandingBalance(
+  commissionEarned: number,
+  reimbursementsOwed: number,
+  paymentsMade: number
+): number {
+  return commissionEarned + reimbursementsOwed - paymentsMade;
 }
 
 // ============================================================

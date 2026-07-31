@@ -148,7 +148,7 @@ interface ScenarioContext {
 async function setupScenario(name: string, amountScale: number): Promise<ScenarioContext> {
   const services = createInMemoryServices();
   services.store.subcontractors.set("sub-1", {
-    id: "sub-1", companyId: COMPANY_ID, name: "Audit Sub", trade: "general", phone: null,
+    id: "sub-1", companyId: COMPANY_ID, name: "Audit Sub", trade: "general", phone: null, contactPerson: null, isActive: true,
     createdBy: null, createdAt: new Date().toISOString(), updatedBy: null, updatedAt: new Date().toISOString(), deletedBy: null, deletedAt: null, deleteReason: null,
   });
   services.store.agents.set("agent-1", {

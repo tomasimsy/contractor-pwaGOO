@@ -15,6 +15,8 @@
  */
 import type { UUID, AuditedEntity, EstimateStatus, ValidationResult, QueryScope } from "./types";
 
+export type EstimateLineItemUnit = "EA" | "SF" | "SQFT" | "SQ" | "LF" | "FT" | "HR" | "DAY" | "LS";
+
 export interface EstimateLineItem {
   id: UUID;
   category: "material" | "labor" | "other";
@@ -22,6 +24,8 @@ export interface EstimateLineItem {
   description: string | null;
   quantity: number;
   unitPrice: number;
+  /** Optional unit of measure (EA, SF, SQFT, SQ, LF, FT, HR, DAY, LS). Undefined/null for legacy rows. */
+  unit?: EstimateLineItemUnit | null;
   total: number;
   taxable: boolean;
 }
@@ -81,6 +85,9 @@ export interface Estimate extends AuditedEntity {
    * never returned by the portal RPC itself. Null before the token
    * backfill migration. */
   customerToken: string | null;
+  /** Estimate classification: 'standard' (line-item based) or
+   * 'roofing' (area-based with photos). Defaults to 'standard'. */
+  estimateType?: "standard" | "roofing";
 }
 
 export interface EstimateService {
@@ -103,6 +110,7 @@ export interface EstimateService {
     discount: number;
     taxRate: number;
     depositAmount?: number;
+    estimateType?: "standard" | "roofing";
   }): Promise<Estimate>;
 
   updateLineItems(estimateId: UUID, lineItems: Omit<EstimateLineItem, "id" | "total">[]): Promise<Estimate>;
@@ -113,7 +121,7 @@ export interface EstimateService {
    * taxRate recalculates the total the same way updateLineItems does
    * (both funnel through recalculateTotal internally) — never a bare
    * column write that leaves `total` stale. */
-  update(estimateId: UUID, changes: Partial<{ title: string | null; description: string | null; projectId: UUID; clientId: UUID | null; markup: number; discount: number; taxRate: number; depositAmount: number }>): Promise<Estimate>;
+  update(estimateId: UUID, changes: Partial<{ title: string | null; description: string | null; projectId: UUID; clientId: UUID | null; markup: number; discount: number; taxRate: number; depositAmount: number; estimateType: "standard" | "roofing" }>): Promise<Estimate>;
 
   /** Recomputes subtotal/total from current line items + markup/
    * discount/tax — the ONE implementation of that formula (replaces

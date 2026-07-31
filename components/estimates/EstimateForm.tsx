@@ -24,40 +24,114 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { LineItemEditor, type DraftLineItem } from "./LineItemEditor";
+import { RoofingAreasEditor } from "./RoofingAreasEditor";
+import { RoofingAreasEditorV2 } from "./RoofingAreasEditorV2";
+import { EstimatePhotosEditor } from "./EstimatePhotosEditor";
+import { Modal } from "@/components/ui/Modal";
+import { ProjectForm } from "@/components/projects/ProjectForm";
 import { calculateSubtotal, calculateLineItemTotal, calculateDocumentTotal } from "@/lib/services/financialCalculations";
 import type { Estimate, EstimateLineItem } from "@/lib/services/estimateService";
+import type { EstimatePhoto } from "@/lib/services/estimatePhotoService";
+import type { RoofingArea } from "@/lib/services";
 import type { Project } from "@/lib/services/projectService";
 
 const formatMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
-export function EstimateForm({ estimate, lineItems: initialLineItems }: { estimate?: Estimate; lineItems?: EstimateLineItem[] }) {
+export function EstimateForm({
+  estimate,
+  lineItems: initialLineItems,
+  roofV2 = false,
+  basePath = "/estimates",
+}: {
+  estimate?: Estimate;
+  lineItems?: EstimateLineItem[];
+  /**
+   * Estimate Roof V2 only. When true: estimate type is locked to
+   * "roofing" (no Standard/Roofing radio shown) and the per-area editor
+   * is RoofingAreasEditorV2 (measurements/inspection/notes/line items)
+   * instead of the V1 RoofingAreasEditor. Defaults to false so every
+   * existing route using EstimateForm (/estimates/**) is byte-for-byte
+   * unchanged.
+   */
+  roofV2?: boolean;
+  /**
+   * Base route this form redirects to after create/update. Defaults to
+   * "/estimates" (existing behavior, unchanged for every current
+   * caller). Estimate Roof V2 pages pass "/estimates-roof" so a newly
+   * created roofing estimate lands on the V2 edit route instead of V1's.
+   */
+  basePath?: string;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { estimateService, projectService } = useServices();
+  const { estimateService, projectService, roofingAreaService, estimatePhotoService } = useServices();
   const { profile } = useAuth();
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState(estimate?.projectId ?? searchParams.get("projectId") ?? "");
+  const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [title, setTitle] = useState(estimate?.title ?? "");
   const [description, setDescription] = useState(estimate?.description ?? "");
+  const [estimateType, setEstimateType] = useState<"standard" | "roofing">(estimate?.estimateType ?? (roofV2 ? "roofing" : "standard"));
   const [lineItems, setLineItems] = useState<DraftLineItem[]>(
-    initialLineItems?.map((li) => ({ category: li.category, name: li.name, description: li.description, quantity: li.quantity, unitPrice: li.unitPrice, taxable: li.taxable })) ?? []
+    initialLineItems?.map((li) => ({ category: li.category, name: li.name, description: li.description, quantity: li.quantity, unitPrice: li.unitPrice, unit: li.unit ?? null, taxable: li.taxable })) ?? []
   );
+  const [roofingAreas, setRoofingAreas] = useState<RoofingArea[]>([]);
+  const [estimatePhotos, setEstimatePhotos] = useState<{ before: EstimatePhoto[]; after: EstimatePhoto[] }>({ before: [], after: [] });
   const [markup, setMarkup] = useState(estimate?.markup ?? 0);
   const [discount, setDiscount] = useState(estimate?.discount ?? 0);
   const [taxRate, setTaxRate] = useState(estimate?.taxRate ?? 0);
   const [depositAmount, setDepositAmount] = useState(estimate?.depositAmount ?? 0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Roofing estimates' subtotal/total are derived from every roof
+  // area's line items (see EstimateService.recalculateTotal /
+  // writeRecalculatedTotals' estimate_type branch) rather than the
+  // `lineItems` state above, which stays empty/unused for roofing
+  // estimates. Populated on load and refreshed after every area/line-
+  // item mutation via refreshRoofingTotals() below — never computed
+  // independently here.
+  const [roofingTotals, setRoofingTotals] = useState<{ subtotal: number; total: number } | null>(null);
 
   useEffect(() => {
     if (!profile?.companyId) return;
     projectService.list({ companyId: profile.companyId }).then(setProjects);
   }, [projectService, profile?.companyId]);
 
+  useEffect(() => {
+    if (!estimate || estimateType !== "roofing") return;
+    roofingAreaService.listForEstimate(estimate.id).then(setRoofingAreas);
+  }, [estimate, estimateType, roofingAreaService]);
+
+  useEffect(() => {
+    if (!estimate || estimateType !== "roofing") return;
+    setRoofingTotals({ subtotal: estimate.subtotal, total: estimate.total });
+  }, [estimate, estimateType]);
+
+  async function refreshRoofingTotals() {
+    if (!estimate) return;
+    try {
+      const updated = await estimateService.recalculateTotal(estimate.id);
+      setRoofingTotals({ subtotal: updated.subtotal, total: updated.total });
+    } catch (err) {
+      console.error("Failed to recalculate roofing estimate totals:", err);
+    }
+  }
+
+  useEffect(() => {
+    if (!estimate) return;
+    estimatePhotoService.getForEstimate(estimate.id).then(setEstimatePhotos);
+  }, [estimate, estimatePhotoService]);
+
   const selectedProject = projects.find((p) => p.id === projectId);
-  const subtotal = calculateSubtotal(lineItems.map((li) => ({ total: calculateLineItemTotal(li) })));
-  const { total } = calculateDocumentTotal(subtotal, markup, discount, taxRate);
+  // Roofing estimates: subtotal/total come from the backend
+  // (roofingTotals, refreshed after every area/line-item mutation via
+  // refreshRoofingTotals) since they're derived from roofing area line
+  // items, not the `lineItems` state. Standard estimates: computed
+  // locally exactly as before, via the same calculateSubtotal/
+  // calculateDocumentTotal functions EstimateService itself uses.
+  const subtotal = roofV2 && roofingTotals ? roofingTotals.subtotal : calculateSubtotal(lineItems.map((li) => ({ total: calculateLineItemTotal(li) })));
+  const total = roofV2 && roofingTotals ? roofingTotals.total : calculateDocumentTotal(subtotal, markup, discount, taxRate).total;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -75,9 +149,10 @@ export function EstimateForm({ estimate, lineItems: initialLineItems }: { estima
           discount,
           taxRate,
           depositAmount,
+          estimateType,
         });
         await estimateService.updateLineItems(estimate.id, lineItems);
-        router.push(`/estimates/${estimate.id}`);
+        router.push(`${basePath}/${estimate.id}`);
       } else {
         const created = await estimateService.create({
           companyId: profile.companyId,
@@ -90,8 +165,9 @@ export function EstimateForm({ estimate, lineItems: initialLineItems }: { estima
           discount,
           taxRate,
           depositAmount,
+          estimateType,
         });
-        router.push(`/estimates/${created.id}`);
+        router.push(`${basePath}/${created.id}/edit`);
       }
       router.refresh();
     } catch (err) {
@@ -102,24 +178,34 @@ export function EstimateForm({ estimate, lineItems: initialLineItems }: { estima
   }
 
   return (
+    <>
     <form onSubmit={handleSubmit} className="max-w-3xl space-y-5 rounded-xl border border-border bg-card p-4 sm:p-6">
       {error && <div className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</div>}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <label className="text-xs font-medium text-foreground">Project *</label>
-          <select
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-            required
-            className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
-          >
-            <option value="" disabled>Select a project</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-          {projects.length === 0 && <p className="text-xs text-muted-foreground">No projects yet — <Link href="/projects/new" className="text-primary hover:underline">create one first</Link>.</p>}
+          <div className="flex gap-2">
+            <select
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+              required
+              className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+            >
+              <option value="" disabled>Select a project</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setShowNewProjectModal(true)}
+              className="shrink-0 whitespace-nowrap rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
+            >
+              ➕ Add New Project
+            </button>
+          </div>
+          {projects.length === 0 && <p className="text-xs text-muted-foreground">No projects yet — <Link href="/projects/new" className="text-primary hover:underline">create one first</Link>, or use the button above.</p>}
         </div>
 
         <div className="space-y-1">
@@ -151,10 +237,189 @@ export function EstimateForm({ estimate, lineItems: initialLineItems }: { estima
         />
       </div>
 
-      <div className="space-y-2">
-        <label className="text-xs font-medium text-foreground">Line items</label>
-        <LineItemEditor items={lineItems} onChange={setLineItems} />
-      </div>
+      {!roofV2 && (
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-foreground">Estimate Type</label>
+          <div className="flex gap-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="estimateType"
+                value="standard"
+                checked={estimateType === "standard"}
+                onChange={(e) => setEstimateType(e.target.value as "standard" | "roofing")}
+                className="w-4 h-4"
+              />
+              <span className="text-sm text-foreground">Standard (Line Items)</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="estimateType"
+                value="roofing"
+                checked={estimateType === "roofing"}
+                onChange={(e) => setEstimateType(e.target.value as "standard" | "roofing")}
+                className="w-4 h-4"
+              />
+              <span className="text-sm text-foreground">Roofing (Areas)</span>
+            </label>
+          </div>
+        </div>
+      )}
+
+      {estimate && (
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-foreground">Photos</label>
+          <EstimatePhotosEditor
+            estimateId={estimate.id}
+            photos={estimatePhotos}
+            onChange={setEstimatePhotos}
+            onDelete={async (photoId) => {
+              try {
+                await estimatePhotoService.softDelete(photoId);
+                setEstimatePhotos((prev) => ({
+                  before: prev.before.filter((p) => p.id !== photoId),
+                  after: prev.after.filter((p) => p.id !== photoId),
+                }));
+              } catch (err) {
+                console.error("Error deleting photo:", err);
+                throw err;
+              }
+            }}
+            onPhotoUpload={(photo) => {
+              setEstimatePhotos((prev) => {
+                const type = photo.photoType;
+                return {
+                  ...prev,
+                  [type]: [...prev[type], photo],
+                };
+              });
+            }}
+          />
+        </div>
+      )}
+
+      {estimateType === "roofing" && (
+        <>
+          {estimate && profile?.companyId ? (
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-foreground">Roof Areas</label>
+              {roofV2 ? (
+                <RoofingAreasEditorV2
+                  estimateId={estimate.id}
+                  areas={roofingAreas}
+                  onChange={setRoofingAreas}
+                  onSave={async (area) => {
+                    try {
+                      const areaWithCompany = { ...area, companyId: profile.companyId };
+                      let saved: RoofingArea;
+                      // Whether this area already exists in the DB must be
+                      // judged by area.companyId (empty string for a
+                      // freshly-added, never-persisted area — see
+                      // handleAddArea), NOT by `roofingAreas.find(...)`:
+                      // a brand-new area is already present in local
+                      // `roofingAreas` state the instant "Add Area" is
+                      // clicked (onChange runs immediately), so that find()
+                      // always matched and routed every first save to
+                      // update() — which then 0-rowed (PGRST116) because
+                      // the row never existed yet.
+                      if (area.id && area.companyId) {
+                        saved = await roofingAreaService.update(area.id, areaWithCompany);
+                      } else {
+                        saved = await roofingAreaService.create(areaWithCompany);
+                      }
+                      // Match on the ORIGINAL client-side draft id
+                      // (area.id), not saved.id: create() mints a brand
+                      // new server-side UUID, different from the local
+                      // draft's id — matching on saved.id here meant this
+                      // replacement never found the draft to replace, so
+                      // the stale draft (with empty companyId) stayed in
+                      // state forever, permanently disabling photo/line-
+                      // item buttons for that area even though the DB
+                      // row saved correctly.
+                      setRoofingAreas((prev) => prev.map((a) => (a.id === area.id ? saved : a)));
+                      // Totals refresh happens once, AFTER this area's
+                      // line items also save (see RoofingAreasEditorV2's
+                      // handleSaveArea → onAreaLineItemsSaved), not here
+                      // — recalculating before the line-item write lands
+                      // would show a stale subtotal for one extra beat.
+                      return saved;
+                    } catch (err) {
+                      console.error("Error saving roofing area:", err instanceof Error ? err.message : JSON.stringify(err));
+                      throw err;
+                    }
+                  }}
+                  onDelete={async (areaId) => {
+                    try {
+                      await roofingAreaService.softDelete(areaId, "Deleted by user");
+                      await refreshRoofingTotals();
+                    } catch (err) {
+                      console.error("Error deleting roofing area:", err);
+                      throw err;
+                    }
+                  }}
+                  onAreaLineItemsSaved={refreshRoofingTotals}
+                />
+              ) : (
+                <RoofingAreasEditor
+                  estimateId={estimate.id}
+                  areas={roofingAreas}
+                  onChange={setRoofingAreas}
+                  onSave={async (area) => {
+                    try {
+                      console.log("EstimateForm onSave called with area:", area);
+                      const areaWithCompany = {
+                        ...area,
+                        companyId: profile.companyId,
+                      };
+                      console.log("Prepared area with company:", areaWithCompany);
+                      // See the V2 branch's comment above: existence must
+                      // be judged by area.companyId, not roofingAreas.find(),
+                      // which always matches a just-added local-only area.
+                      let saved: RoofingArea;
+                      if (area.id && area.companyId) {
+                        console.log("Updating existing area");
+                        saved = await roofingAreaService.update(area.id, areaWithCompany);
+                      } else {
+                        console.log("Creating new area");
+                        saved = await roofingAreaService.create(areaWithCompany);
+                      }
+                      console.log("Area saved successfully");
+                      setRoofingAreas((prev) =>
+                        prev.map((a) => a.id === area.id ? saved : a)
+                      );
+                    } catch (err) {
+                      console.error("Error saving roofing area:", err instanceof Error ? err.message : JSON.stringify(err));
+                      throw err;
+                    }
+                  }}
+                  onDelete={async (areaId) => {
+                    try {
+                      await roofingAreaService.softDelete(areaId, "Deleted by user");
+                    } catch (err) {
+                      console.error("Error deleting roofing area:", err);
+                      throw err;
+                    }
+                  }}
+                />
+              )}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+              <p className="text-sm text-blue-800">
+                <strong>Roof Areas:</strong> Create the estimate first, then you'll be able to add roof areas and photos on the edit page.
+              </p>
+            </div>
+          )}
+        </>
+      )}
+
+      {!roofV2 && (
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-foreground">Line items</label>
+          <LineItemEditor items={lineItems} onChange={setLineItems} />
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="space-y-1">
@@ -189,5 +454,17 @@ export function EstimateForm({ estimate, lineItems: initialLineItems }: { estima
         </button>
       </div>
     </form>
+
+    <Modal open={showNewProjectModal} onClose={() => setShowNewProjectModal(false)} title="New Project">
+      <ProjectForm
+        onCreated={(created) => {
+          setProjects((prev) => [...prev, created]);
+          setProjectId(created.id);
+          setShowNewProjectModal(false);
+        }}
+        onCancel={() => setShowNewProjectModal(false)}
+      />
+    </Modal>
+    </>
   );
 }

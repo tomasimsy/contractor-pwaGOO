@@ -105,7 +105,7 @@ describe("automatic reconciliation", () => {
 
   test("payables inconsistency (a missing assignment line) is caught", async () => {
     services.store.subcontractors.set("sub-x", {
-      id: "sub-x", companyId: COMPANY_ID, name: "Test Sub", trade: null, phone: null,
+      id: "sub-x", companyId: COMPANY_ID, name: "Test Sub", trade: null, phone: null, contactPerson: null, isActive: true,
       createdBy: null, createdAt: new Date().toISOString(), updatedBy: null, updatedAt: new Date().toISOString(), deletedBy: null, deletedAt: null, deleteReason: null,
     });
     await services.subcontractorService.assignToProject({ companyId: COMPANY_ID, projectId, subcontractorId: "sub-x", contractedAmount: 500 });

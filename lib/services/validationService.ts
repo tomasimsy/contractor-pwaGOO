@@ -24,12 +24,29 @@ const PROJECT_TRANSITIONS: Record<ProjectStatus, ProjectStatus[]> = {
 };
 
 const ESTIMATE_TRANSITIONS: Record<EstimateStatus, EstimateStatus[]> = {
-  draft: ["sent"],
+  // "approved" added as a direct target: the canonical signing workflow
+  // (lib/services/estimateWorkflow.ts) moves an estimate straight to
+  // approved the moment a valid customer signature is recorded, even if
+  // it was never explicitly marked sent/viewed (e.g. signed in person,
+  // or signed via the portal link before staff ever changed its
+  // status). "sent"/"viewed" -> "approved" already covered the
+  // send-first path; this just makes sign-first legal too.
+  draft: ["sent", "approved"],
   sent: ["viewed", "approved", "rejected"],
   viewed: ["approved", "rejected"],
-  approved: ["converted_to_invoice"],
+  // "draft" added as a target: the workflow's unsignEstimate() reverts
+  // here when a signature is removed (from either "approved" or
+  // "converted_to_invoice", after archiving any zero-payment invoice —
+  // see estimateWorkflow.ts for the full guard).
+  approved: ["converted_to_invoice", "draft"],
   rejected: ["draft"],
-  converted_to_invoice: [],
+  // Reachable now that estimateWorkflow.signEstimate() actually sets it
+  // (previously declared in the schema but never written by any code
+  // path). "draft" is the unsignEstimate() revert target when a
+  // signature is removed after the auto-invoice was already created —
+  // only reached once the workflow has confirmed zero payments exist
+  // and archived that invoice; see estimateWorkflow.ts.
+  converted_to_invoice: ["draft"],
 };
 
 /** Only the LIFECYCLE half of an invoice's status is transitionable —

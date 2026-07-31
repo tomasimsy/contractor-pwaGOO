@@ -20,6 +20,8 @@ export default function DashboardPage() {
         title="Dashboard content coming soon"
         description="The navigation, layout, authentication, and permissions you see around this page are the real foundation — actionable dashboard content lands in a future update."
       />
+      
     </PageContainer>
+    
   );
 }

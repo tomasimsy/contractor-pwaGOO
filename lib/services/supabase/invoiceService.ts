@@ -52,6 +52,8 @@ import type { ValidationService } from "../validationService";
 import type { AuditService } from "../auditService";
 import type { EstimateService } from "../estimateService";
 import type { ChangeOrderService } from "../changeOrderService";
+import type { RoofingAreaService } from "../roofingAreaService";
+import type { EstimateAreaLineItemService } from "../estimateAreaLineItemService";
 import {
   calculateLineItemTotal,
   calculateSubtotal,
@@ -172,6 +174,11 @@ export function createSupabaseInvoiceService(
   currentUserId: () => Promise<UUID | null>,
   estimateService: EstimateService,
   changeOrderService: ChangeOrderService,
+  /** Only needed for createFromEstimate on ROOFING estimates — see that
+   * function's comment for why a roofing estimate's real line items
+   * live in estimate_area_line_items, not estimate_items. */
+  roofingAreaService: RoofingAreaService,
+  estimateAreaLineItemService: EstimateAreaLineItemService,
   /** Injected so status derivation is deterministic and testable —
    * never `new Date()` inline. */
   today: () => string = () => new Date().toISOString().slice(0, 10)
@@ -460,12 +467,34 @@ export function createSupabaseInvoiceService(
     // rather than re-deriving, so a quoted $X always invoices as $X.
     const { taxedBase, tax } = calculateDocumentTotal(estimate.subtotal, estimate.markup, estimate.discount, estimate.taxRate);
 
-    const estimateLines: Omit<InvoiceLineItem, "id" | "total">[] = estimate.lineItems.map((li) => ({
-      name: li.name,
-      description: li.description,
-      quantity: li.quantity,
-      unitPrice: li.unitPrice,
-    }));
+    // A roofing estimate's real pricing lives in estimate_area_line_items
+    // (per roof area), NOT estimate_items — that table stays empty for
+    // roofing estimates (see EstimateForm's roofV2 branch, which hides
+    // the standard Line Items editor entirely for them). Using
+    // estimate.lineItems unconditionally here produced a $0 invoice
+    // for every roofing estimate signed through the automated workflow
+    // (zero line items -> self-heals to $0 total on next read) — found
+    // live while verifying estimateWorkflow.ts's auto-invoice step.
+    let estimateLines: Omit<InvoiceLineItem, "id" | "total">[];
+    if (estimate.estimateType === "roofing") {
+      const areas = await roofingAreaService.listForEstimate(estimateId);
+      const areaLineItemLists = await Promise.all(
+        areas.map((area) => estimateAreaLineItemService.listForArea(area.id))
+      );
+      estimateLines = areaLineItemLists.flat().map((li) => ({
+        name: li.name,
+        description: li.description,
+        quantity: li.quantity,
+        unitPrice: li.unitPrice,
+      }));
+    } else {
+      estimateLines = estimate.lineItems.map((li) => ({
+        name: li.name,
+        description: li.description,
+        quantity: li.quantity,
+        unitPrice: li.unitPrice,
+      }));
+    }
 
     // Approved change orders become real line items on the invoice —
     // pending/rejected/deleted ones are excluded by listForEstimate

@@ -11,7 +11,7 @@
  * to the running total" — that incremental pattern is what this
  * codebase has been removing throughout.
  */
-import { useState } from "react";
+import { forwardRef, useImperativeHandle, useState } from "react";
 import { Plus, Pencil, Trash2, Wallet } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PaymentDialog } from "./PaymentDialog";
@@ -21,15 +21,15 @@ import type { CustomerPayment } from "@/lib/services/paymentService";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
-export function InvoicePaymentsPanel({
-  invoiceId,
-  companyId,
-  invoiceTotal,
-  totalPaid,
-  payments,
-  canEdit,
-  onChanged,
-}: {
+/** Lets a caller (e.g. a "Record Payment" button in a page header, above
+ * where this panel actually renders) open the same record-payment
+ * dialog this panel already owns, instead of duplicating it — mirrors
+ * ProjectExpensesPanelRef's openNewExpense() pattern. */
+export interface InvoicePaymentsPanelRef {
+  openNewPayment: () => void;
+}
+
+export const InvoicePaymentsPanel = forwardRef<InvoicePaymentsPanelRef, {
   invoiceId: string;
   companyId: string;
   invoiceTotal: number;
@@ -39,10 +39,24 @@ export function InvoicePaymentsPanel({
   /** Parent reloads everything — invoice status, balances, activity —
    * so no figure on the page can be left stale by a payment change. */
   onChanged: () => Promise<void> | void;
-}) {
+}>(function InvoicePaymentsPanel({
+  invoiceId,
+  companyId,
+  invoiceTotal,
+  totalPaid,
+  payments,
+  canEdit,
+  onChanged,
+}, ref) {
   const { paymentService } = useServices();
   const [dialogFor, setDialogFor] = useState<CustomerPayment | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    openNewPayment() {
+      setDialogFor("new");
+    },
+  }));
 
   async function handleSubmit(input: {
     amount: number; method: string; paymentDate: string;
@@ -158,4 +172,4 @@ export function InvoicePaymentsPanel({
       )}
     </section>
   );
-}
+});

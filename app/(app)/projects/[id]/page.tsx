@@ -13,7 +13,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { RequirePermission } from "@/components/layout/RequirePermission";
 import { useServices } from "@/components/providers/ServicesProvider";
-import { ProjectExpensesPanel } from "@/components/expenses/ProjectExpensesPanel";
+import { ProjectExpensesGroupedPanel } from "@/components/expenses/ProjectExpensesGroupedPanel";
 import { ProfitSummaryCard } from "@/components/shared/ProfitSummaryCard";
 import { usePermission } from "@/lib/hooks/usePermission";
 import type { Project } from "@/lib/services/projectService";
@@ -248,9 +248,10 @@ function ProjectDetailContent() {
             <EmptyState title="No payments recorded" description="Payment history, amount collected, and remaining balance will appear here." />
           </Section>
 
-          <ProjectExpensesPanel
+          <ProjectExpensesGroupedPanel
             companyId={project.companyId}
             projectId={project.id}
+            estimates={estimates}
             canEdit={canEditExpenses}
             onChanged={loadFinancials}
           />

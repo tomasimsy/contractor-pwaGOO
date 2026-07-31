@@ -11,6 +11,13 @@
  * behavior) is unchanged, only which file owns it.
  */
 import type { UUID, AuditedEntity, ValidationResult, ChangeOrderStatus } from "./types";
+import type { Estimate } from "./estimateService";
+
+/** Reuses the exact shape Estimate signatures already use (see
+ * estimateService.ts's `signature` field) rather than defining a
+ * parallel type — a change order's customer approval signature and an
+ * estimate's are the same kind of fact, captured the same way. */
+export type ChangeOrderSignature = NonNullable<Estimate["signature"]>;
 
 /** One line of a change order's itemized breakdown — mirrors the live
  * `change_order_line_items` table (contractor-pwa's existing schema,
@@ -47,6 +54,10 @@ export interface ChangeOrder extends AuditedEntity {
   totalAmount: number;
   tax: number;
   approvedAt: string | null;
+  /** Customer e-signature captured on approval (portal) or null for a
+   * staff approval with no signature on file. Same shape as
+   * Estimate["signature"] — see ChangeOrderSignature above. */
+  signature: ChangeOrderSignature | null;
 }
 
 export interface ChangeOrderService {
@@ -97,8 +108,13 @@ export interface ChangeOrderService {
   /** Approving a change order appends "change_order_approved" to the
    * ledger for its total (+tax) — revenue booked at approval, the same
    * accrual moment InvoiceService books "invoice_issued." Rejecting or
-   * leaving one in draft/pending writes nothing to the ledger. */
-  approveChangeOrder(changeOrderId: UUID): Promise<ChangeOrder>;
+   * leaving one in draft/pending writes nothing to the ledger.
+   *
+   * `signature`, when provided, is persisted alongside the approval —
+   * used by the customer portal's approval flow (changeOrderWorkflow.ts)
+   * so a portal approval carries the same proof-of-approval an estimate
+   * signature does. Staff approving in-app pass no signature. */
+  approveChangeOrder(changeOrderId: UUID, signature?: ChangeOrderSignature | null): Promise<ChangeOrder>;
 
   /** Approved change orders for a PROJECT — this is what FinancialEngine
    * reads for its change-order revenue input. Scoped by projectId, not

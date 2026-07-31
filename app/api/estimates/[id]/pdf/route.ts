@@ -5,11 +5,8 @@ import { getCompanySettingsByCompanyId } from "@/lib/company";
 import { sumApprovedChangeOrderRevenue } from "@/lib/services/financialCalculations";
 
 /**
- * Ported from contractor-pwa's app/api/estimates/[id]/pdf/route.ts —
- * same query shape and pdfLayout rendering, unchanged, since this app
- * shares the exact same live `estimates`/`estimate_items`/`clients`/
- * `change_orders`/`company_settings` tables (see .env.local). No new
- * PDF pipeline was built; this is the existing one, reused.
+ * PDF route for estimates — clean, minimalist contractor proposal redesign.
+ * Queries estimate_areas, estimate_area_photos, and estimate_photos tables.
  */
 export async function GET(
   request: NextRequest,
@@ -18,15 +15,7 @@ export async function GET(
   try {
     const { id } = await params;
 
-    // Staff-facing "Save as PDF" — needs the logged-in user's session
-    // so RLS (company_id = current_company_id()) can resolve. The
-    // app's client stores the session in localStorage, not cookies, so
-    // the page passes the current access token as a query param,
-    // forwarded here as a Bearer header.
     const token = request.nextUrl.searchParams.get("token");
-    // Customer-portal download: an opaque per-estimate token, applied as
-    // an additional REQUIRED filter (never an alternative identity), so a
-    // wrong token yields no row rather than someone else's estimate.
     const customerToken = request.nextUrl.searchParams.get("customerToken");
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -57,14 +46,54 @@ export async function GET(
     const estimateItems = items || [];
     const company = await getCompanySettingsByCompanyId(supabase, estimate.company_id);
 
-    // NOT filtered by status in the query — sumApprovedChangeOrderRevenue
-    // does that filtering itself, the same way every in-app page
-    // (Estimate/Project/Change Order Detail) does, so this can never
-    // drift from what they show. A previous version of this route
-    // selected only `total_amount` (no `tax`, no `status`) and summed
-    // it directly, silently UNDERSTATING the figure for any approved
-    // change order with non-zero tax — found while auditing why the
-    // Estimate Detail page's "Revised total" didn't match this PDF.
+    // Fetch roofing areas if this is a roofing estimate
+    let roofingAreas: any[] = [];
+    let roofingAreaPhotos: any[] = [];
+    let roofingAreaLineItems: any[] = [];
+    if (estimate.estimate_type === "roofing") {
+      const { data: areas } = await supabase
+        .from("estimate_areas")
+        .select("*")
+        .eq("estimate_id", id)
+        .is("deleted_at", null)
+        .order("sequence_number", { ascending: true });
+      roofingAreas = areas || [];
+
+      if (roofingAreas.length > 0) {
+        const areaIds = roofingAreas.map((a) => a.id);
+        const { data: photos } = await supabase
+          .from("estimate_area_photos")
+          .select("*")
+          .in("estimate_area_id", areaIds)
+          .is("deleted_at", null)
+          .order("display_order", { ascending: true });
+        roofingAreaPhotos = photos || [];
+
+        const { data: lineItems } = await supabase
+          .from("estimate_area_line_items")
+          .select("*")
+          .in("estimate_area_id", areaIds)
+          .is("deleted_at", null)
+          .order("sequence_number", { ascending: true });
+        roofingAreaLineItems = lineItems || [];
+      }
+    }
+
+    const photoUrl = (storagePath: string) => `${request.nextUrl.origin}/api/estimate-photos/download?path=${encodeURIComponent(storagePath)}`;
+
+    // Fetch estimate-level photos
+    const { data: estimatePhotos } = await supabase
+      .from("estimate_photos")
+      .select("*")
+      .eq("estimate_id", id)
+      .is("deleted_at", null)
+      .order("display_order", { ascending: true });
+
+    const estimatePhotosByType = {
+      before: (estimatePhotos || []).filter((p) => p.photo_type === "before"),
+      after: (estimatePhotos || []).filter((p) => p.photo_type === "after"),
+    };
+
     const { data: changeOrders } = await supabase
       .from("change_orders")
       .select("total_amount, tax, status")
@@ -73,9 +102,6 @@ export async function GET(
       .is("deleted_at", null);
 
     // ---------- Calculations ----------
-    // estimates.total is the single source of truth (kept current by
-    // EstimateService.recalculateTotal) — this never independently
-    // re-derives a subtotal that could drift from what the app shows.
     const subtotal = estimateItems.reduce((sum: number, i: { total?: number }) => sum + (i.total || 0), 0);
     const taxAmount = subtotal * ((estimate.tax_rate || 0) / 100);
     const markupAmount = estimate.markup || 0;
@@ -92,46 +118,216 @@ export async function GET(
     const depositAmount = estimate.deposit_amount || total * depositPct;
     const balanceAmount = total - depositAmount;
 
+    // Aggregate totals across all roofing areas
+    const totalMaterialCost = roofingAreas.reduce((sum, a) => sum + (Number(a.material_cost) || 0), 0);
+    const totalLaborCost = roofingAreas.reduce((sum, a) => sum + (Number(a.labor_cost) || 0), 0);
+    const totalRoofTax = roofingAreas.reduce((sum, a) => sum + (Number(a.tax) || 0), 0);
+    const totalRepairCost = roofingAreas.reduce((sum, a) => sum + (Number(a.estimated_repair_cost) || 0), 0);
+
     const html = pdfDocument({
-      docTitle: `Estimate ${estimate.estimate_number || estimate.id.slice(0, 8)}`,
+      docTitle: `Contractor Proposal ${estimate.estimate_number || estimate.id.slice(0, 8)}`,
       bodyHtml: `
-        <div class="header">
+        <!-- Minimal Header -->
+        <div class="header" style="border-bottom: 1px solid #e5e7eb; padding-bottom: 16px; margin-bottom: 24px;">
           <div>
             ${renderCompanyHeaderBlock(company)}
           </div>
+          <div style="text-align: right;">
+            <div style="font-size: 15px; font-weight: 700; color: #111827; letter-spacing: 0.05em;">PROPOSAL</div>
+            <div style="font-size: 12px; font-weight: 600; color: #4b5563; margin-top: 2px;">#${estimate.estimate_number || estimate.id.slice(0, 8)}</div>
+            ${estimate.title ? `<div style="font-size: 11px; color: #6b7280; margin-top: 2px;">${estimate.title}</div>` : ""}
+            <div style="font-size: 10px; color: #9ca3af; margin-top: 4px;">Issued ${formatDate(estimate.created_at)}</div>
+          </div>
+        </div>
+
+        <!-- Client & Project Details (Clean, borderless grid) -->
+        <div style="display: flex; gap: 24px; margin-bottom: 24px; font-size: 11.5px; color: #374151;">
+          <div style="flex: 1;">
+            <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #9ca3af; letter-spacing: 0.05em; margin-bottom: 4px;">Prepared For</div>
+            <div style="font-weight: 700; color: #111827; font-size: 12.5px; margin-bottom: 2px;">${client?.name || "No client"}</div>
+            <div>${client?.phone || ""}</div>
+            <div>${client?.email || ""}</div>
+            <div>${client?.address || ""}</div>
+          </div>
+          <div style="flex: 1;">
+            <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #9ca3af; letter-spacing: 0.05em; margin-bottom: 4px;">Project Scope</div>
+            <div style="line-height: 1.5; color: #4b5563; white-space: pre-wrap;">${estimate.description || "No project overview provided."}</div>
+          </div>
+        </div>
+
+        <!-- Minimal Summary Bar -->
+        <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 14px 18px; margin-bottom: 28px; display: flex; justify-content: space-between; align-items: center;">
           <div>
-            <div class="doc-title">ESTIMATE</div>
-            <div class="doc-meta"><strong>#${estimate.estimate_number || estimate.id.slice(0, 8)}</strong></div>
-            ${estimate.title ? `<div class="doc-meta">${estimate.title}</div>` : ""}
-            <div class="doc-meta">Issued ${formatDate(estimate.created_at)}</div>
-            <div class="status-badge">${estimate.status || "pending"}</div>
+            <div style="font-size: 9.5px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.05em;">Contract Total</div>
+            <div style="font-size: 18px; font-weight: 800; color: #111827; margin-top: 2px;">${formatCurrency(total)}</div>
+          </div>
+          ${estimate.estimate_type === "roofing" && roofingAreas.length > 0 ? `
+            <div style="display: flex; gap: 20px; font-size: 11px;">
+              <div><span style="color: #6b7280;">Material:</span> <strong style="color: #111827;">${formatCurrency(totalMaterialCost)}</strong></div>
+              <div><span style="color: #6b7280;">Labor:</span> <strong style="color: #111827;">${formatCurrency(totalLaborCost)}</strong></div>
+              <div><span style="color: #6b7280;">Tax:</span> <strong style="color: #111827;">${formatCurrency(totalRoofTax)}</strong></div>
+            </div>
+          ` : ""}
+          <div style="text-align: right;">
+            <div style="font-size: 9.5px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.05em;">Due Today (${company.default_deposit_percentage}%)</div>
+            <div style="font-size: 15px; font-weight: 700; color: #059669; margin-top: 2px;">${formatCurrency(depositAmount)}</div>
           </div>
         </div>
 
-        <div class="section">
-          <div class="section-title">Customer</div>
-          <div class="info-grid">
-            <div class="info-col">
-              <div class="info-row"><div class="info-label">Name</div><div class="info-value">${client?.name || "No client"}</div></div>
-              <div class="info-row"><div class="info-label">Phone</div><div class="info-value">${client?.phone || "Not provided"}</div></div>
-            </div>
-            <div class="info-col">
-              <div class="info-row"><div class="info-label">Email</div><div class="info-value">${client?.email || "Not provided"}</div></div>
-              <div class="info-row"><div class="info-label">Address</div><div class="info-value">${client?.address || "Not provided"}</div></div>
-            </div>
-          </div>
-        </div>
-
-        ${estimate.description ? `
+        ${estimatePhotosByType.before.length > 0 ? `
           <div class="section">
-            <div class="section-title">Project Overview</div>
-            <div style="font-size:11px; line-height:1.6; white-space: pre-wrap;">${estimate.description}</div>
+            <div class="section-title">Initial Site Photos</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px;">
+              ${estimatePhotosByType.before.map((photo) => `
+                <img src="${photoUrl(photo.storage_path)}" style="width: 140px; height: 100px; object-fit: cover; border-radius: 4px; border: 1px solid #e5e7eb;" alt="Before photo" />
+              `).join("")}
+            </div>
           </div>
         ` : ""}
 
-        <div class="section">
-          <div class="section-title">Items</div>
-          ${estimateItems.length ? `
+        <!-- Restyled Roof Areas Section with Larger 2x2 Photos -->
+        ${estimate.estimate_type === "roofing" && roofingAreas.length > 0 ? `
+          <div class="section" style="page-break-inside: avoid;">
+            <div style="font-size: 14px; font-weight: 800; color: #111827; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 16px; border-bottom: 2px solid #111827; padding-bottom: 6px;">
+              Detailed Roof Areas &amp; Scope of Work
+            </div>
+            
+            ${roofingAreas.map((area, idx) => {
+              const areaPhotos = roofingAreaPhotos.filter((p) => p.estimate_area_id === area.id);
+              const beforePhotos = areaPhotos.filter((p) => p.photo_type === "before");
+              const afterPhotos = areaPhotos.filter((p) => p.photo_type === "after");
+              
+              // Subtle alternating background colors
+              const bgColors = ["#fcfcfc", "#f7f9fa", "#f5f7f8"];
+              const cardBg = bgColors[idx % bgColors.length];
+
+              return `
+                <div style="background-color: ${cardBg}; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-bottom: 28px; page-break-inside: avoid;">
+                  
+                  <!-- Roof Area Card Header -->
+                  <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e5e7eb; padding-bottom: 12px; margin-bottom: 16px;">
+                    <div style="font-size: 13.5px; font-weight: 800; color: #111827; letter-spacing: 0.02em;">
+                      Area ${idx + 1} &mdash; ${area.area_name || "Untitled Area"}
+                    </div>
+                    <div style="font-size: 12px; font-weight: 700; color: #1f2937; background: #ffffff; border: 1px solid #d1d5db; padding: 4px 10px; border-radius: 4px;">
+                      ${formatCurrency(area.estimated_repair_cost || 0)}
+                    </div>
+                  </div>
+
+                  <!-- Two-Column Layout -->
+                  <div style="display: flex; gap: 20px; align-items: flex-start; margin-bottom: 16px;">
+                    
+                    <!-- Left Column: Larger Photos (46%) configured in 2x2 grid blocks -->
+                    <div style="width: 46%; flex-shrink: 0;">
+                      ${beforePhotos.length > 0 ? `
+                        <div style="margin-bottom: ${afterPhotos.length > 0 ? '12px' : '0'};">
+                          <div style="font-size: 9.5px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.05em; margin-bottom: 4px;">Before Photos</div>
+                          <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                            ${beforePhotos.map((photo) => `
+                              <img src="${photoUrl(photo.storage_path)}" style="width: 132px; height: 96px; object-fit: cover; border-radius: 4px; border: 1px solid #e5e7eb;" alt="Before Photo" />
+                            `).join("")}
+                          </div>
+                        </div>
+                      ` : ""}
+
+                      ${afterPhotos.length > 0 ? `
+                        <div>
+                          <div style="font-size: 9.5px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.05em; margin-bottom: 4px;">After Photos</div>
+                          <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                            ${afterPhotos.map((photo) => `
+                              <img src="${photoUrl(photo.storage_path)}" style="width: 132px; height: 96px; object-fit: cover; border-radius: 4px; border: 1px solid #e5e7eb;" alt="After Photo" />
+                            `).join("")}
+                          </div>
+                        </div>
+                      ` : ""}
+
+                      ${beforePhotos.length === 0 && afterPhotos.length === 0 ? `
+                        <div style="width: 100%; height: 140px; background: #f3f4f6; border: 1px dashed #d1d5db; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 11px; font-weight: 600;">
+                          No Photo Available
+                        </div>
+                      ` : ""}
+                    </div>
+
+                    <!-- Right Column: Vertical Details (54%) -->
+                    <div style="width: 54%; flex-grow: 1; font-size: 11.5px; color: #374151; line-height: 1.5;">
+                      <div style="margin-bottom: 8px;">
+                        <span style="font-weight: 700; color: #111827; text-transform: uppercase; font-size: 10px; letter-spacing: 0.05em; display: block; margin-bottom: 2px;">Title / Area Name</span>
+                        <div style="font-weight: 600; color: #1f2937; font-size: 12px;">${area.area_name || "-"}</div>
+                      </div>
+
+                      ${area.quantity ? `
+                        <div style="margin-bottom: 8px;">
+                          <span style="font-weight: 700; color: #111827; text-transform: uppercase; font-size: 10px; letter-spacing: 0.05em; display: block; margin-bottom: 2px;">Quantity</span>
+                          <div style="color: #4b5563;">${area.quantity}${area.quantity_unit ? ` ${area.quantity_unit}` : ""}</div>
+                        </div>
+                      ` : ""}
+
+                      ${area.defect ? `
+                        <div style="margin-bottom: 8px;">
+                          <span style="font-weight: 700; color: #111827; text-transform: uppercase; font-size: 10px; letter-spacing: 0.05em; display: block; margin-bottom: 2px;">Defect Identified</span>
+                          <div style="color: #4b5563;">${area.defect}</div>
+                        </div>
+                      ` : ""}
+
+                      ${area.location ? `
+                        <div style="margin-bottom: 8px;">
+                          <span style="font-weight: 700; color: #111827; text-transform: uppercase; font-size: 10px; letter-spacing: 0.05em; display: block; margin-bottom: 2px;">Exact Location</span>
+                          <div style="color: #4b5563;">${area.location}</div>
+                        </div>
+                      ` : ""}
+
+                      ${area.corrective_action ? `
+                        <div style="margin-bottom: 8px;">
+                          <span style="font-weight: 700; color: #111827; text-transform: uppercase; font-size: 10px; letter-spacing: 0.05em; display: block; margin-bottom: 2px;">Corrective Action</span>
+                          <div style="color: #4b5563;">${area.corrective_action}</div>
+                        </div>
+                      ` : ""}
+
+                      ${area.materials_included ? `
+                        <div style="margin-bottom: 4px;">
+                          <span style="font-weight: 700; color: #111827; text-transform: uppercase; font-size: 10px; letter-spacing: 0.05em; display: block; margin-bottom: 2px;">Materials Included</span>
+                          <div style="color: #4b5563;">${area.materials_included}</div>
+                        </div>
+                      ` : ""}
+                    </div>
+
+                  </div>
+
+                  <!-- Bottom Row: Four Equal Summary Cards -->
+                  <div style="display: flex; gap: 10px; border-top: 1px solid #e5e7eb; padding-top: 12px; margin-top: 4px;">
+                    
+                    <div style="flex: 1; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 10px; text-align: center;">
+                      <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.05em; margin-bottom: 2px;">Material</div>
+                      <div style="font-size: 11px; font-weight: 700; color: #111827;">${formatCurrency(area.material_cost || 0)}</div>
+                    </div>
+
+                    <div style="flex: 1; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 10px; text-align: center;">
+                      <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.05em; margin-bottom: 2px;">Labor</div>
+                      <div style="font-size: 11px; font-weight: 700; color: #111827;">${formatCurrency(area.labor_cost || 0)}</div>
+                    </div>
+
+                    <div style="flex: 1; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 10px; text-align: center;">
+                      <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.05em; margin-bottom: 2px;">Tax</div>
+                      <div style="font-size: 11px; font-weight: 700; color: #111827;">${formatCurrency(area.tax || 0)}</div>
+                    </div>
+
+                    <div style="flex: 1; background: #111827; border: 1px solid #111827; border-radius: 6px; padding: 8px 10px; text-align: center;">
+                      <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; color: #9ca3af; letter-spacing: 0.05em; margin-bottom: 2px;">Estimated Repair</div>
+                      <div style="font-size: 11.5px; font-weight: 800; color: #ffffff;">${formatCurrency(area.estimated_repair_cost || 0)}</div>
+                    </div>
+
+                  </div>
+
+                </div>
+              `;
+            }).join("")}
+          </div>
+        ` : ""}
+
+        <!-- Standard Line Items (if any) -->
+        ${estimateItems.length > 0 ? `
+          <div class="section">
+            <div class="section-title">Additional Items</div>
             <table>
               <thead>
                 <tr>
@@ -143,52 +339,87 @@ export async function GET(
                 </tr>
               </thead>
               <tbody>
-                ${estimateItems.map((item: { name?: string; description?: string; quantity?: number; unit_price?: number; total?: number }) => `
+                ${estimateItems.map((item: { name?: string; description?: string; quantity?: number; unit?: string | null; unit_price?: number; total?: number }) => `
                   <tr>
                     <td>${item.name || "-"}</td>
                     <td>${item.description || "-"}</td>
-                    <td>${item.quantity || 0}</td>
+                    <td>${item.quantity || 0} ${item.unit || ""}</td>
                     <td>${formatCurrency(item.unit_price || 0)}</td>
                     <td><strong>${formatCurrency(item.total || 0)}</strong></td>
                   </tr>
                 `).join("")}
               </tbody>
             </table>
-          ` : `<div class="empty-note">No items on this estimate.</div>`}
-        </div>
+          </div>
+        ` : ""}
 
+        <!-- Financial Summary -->
         <div class="section">
-          <div class="section-title">Financial Summary</div>
+          <div class="section-title">Summary</div>
           <div class="summary-box">
             <div class="summary-row muted"><span>Subtotal</span><span>${formatCurrency(subtotal)}</span></div>
             ${markupAmount ? `<div class="summary-row muted"><span>Markup</span><span>${formatCurrency(markupAmount)}</span></div>` : ""}
             ${discountAmount ? `<div class="summary-row muted"><span>Discount</span><span>-${formatCurrency(discountAmount)}</span></div>` : ""}
             ${taxAmount ? `<div class="summary-row muted"><span>Tax (${estimate.tax_rate}%)</span><span>${formatCurrency(taxAmount)}</span></div>` : ""}
             ${approvedChangeOrderTotal ? `<div class="summary-row muted"><span>Approved Change Orders</span><span>${formatCurrency(approvedChangeOrderTotal)}</span></div>` : ""}
-            <div class="summary-row"><span>Total Estimate Amount</span><span>${formatCurrency(total)}</span></div>
+            <div class="summary-row"><span>Total</span><span>${formatCurrency(total)}</span></div>
             <div class="summary-row muted"><span>Deposit Required (${company.default_deposit_percentage}%)</span><span>${formatCurrency(depositAmount)}</span></div>
-            <div class="summary-row muted"><span>Balance Due Upon Completion</span><span>${formatCurrency(balanceAmount)}</span></div>
             <div class="summary-row balance"><span>Due Today</span><span>${formatCurrency(depositAmount)}</span></div>
           </div>
         </div>
 
+        <!-- Payment Instructions -->
         <div class="section">
           <div class="section-title">Payment Instructions</div>
-          <div style="font-size:11px; line-height:1.6; white-space: pre-wrap;">${company.payment_instructions}</div>
+          <div style="font-size:11px; line-height:1.6; color: #4b5563; white-space: pre-wrap;">${company.payment_instructions}</div>
         </div>
 
+        <!-- Material Price Notice -->
         <div class="section">
-          <div class="section-title">Terms &amp; Conditions</div>
-          <div style="font-size:10.5px; line-height:1.6; color:#6b7280; white-space: pre-wrap;">${company.terms_conditions}</div>
+          <div class="section-title">Material Price Notice</div>
+          <div style="font-size:10.5px; line-height:1.6; color:#6b7280;">
+            Our price stated in this proposal is based on current material prices. Due to raw material price volatility, material suppliers may adjust pricing without notice. If material costs increase before work begins, the contract price may be adjusted accordingly.
+          </div>
         </div>
 
+ 
+
+        <!-- Warranty -->
         <div class="section">
           <div class="section-title">Warranty</div>
           <div style="font-size:10.5px; line-height:1.6; color:#6b7280; white-space: pre-wrap;">${company.warranty_text}</div>
         </div>
 
+        ${estimatePhotosByType.after.length > 0 ? `
+          <div class="section">
+            <div class="section-title">Completed Photos</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px;">
+              ${estimatePhotosByType.after.map((photo) => `
+                <img src="${photoUrl(photo.storage_path)}" style="width: 140px; height: 100px; object-fit: cover; border-radius: 4px; border: 1px solid #e5e7eb;" alt="After photo" />
+              `).join("")}
+            </div>
+          </div>
+        ` : ""}
+
+        <!-- Additional Terms & Conditions / Material Notice -->
         <div class="section">
-          <div class="section-title">Customer Signature</div>
+          <div class="section-title">Additional Terms &amp; Conditions</div>
+          <div style="font-size:10.5px; line-height:1.6; color:#6b7280; white-space: pre-wrap;">
+**Terms and Conditions**
+The Contractor's standard Terms and Conditions are incorporated herein by reference and made a part of this Proposal/Agreement as if wholly re-written herein. The Terms and Conditions may be reviewed or a copy may be obtained by contacting our office. These Terms and Conditions are the only terms and conditions that apply to this Proposal/Agreement. The Contractor rejects any changes made by the Owner to this Proposal/Agreement unless the Contractor approves such changes in a writing signed by our authorized representative.
+
+Contractor reserves the right to subcontract any or all of the work to one or more of its qualified affiliates.
+
+**Note:** This proposal, unless rescinded, shall be valid for 30 days hereafter and may be withdrawn at any time prior to receipt of its acceptance. Payment due upon receipt of the invoice.
+
+**Total:** ${formatCurrency(total)}
+This total reflects the cost if the proposal is approved in its entirety. If not approving all listed items, please enter a check mark in the corresponding boxes and manually fill in the total dollar amount on this line.
+          </div>
+        </div>
+
+        <!-- Signature -->
+        <div class="section" style="margin-top: 30px;">
+          <div class="section-title">Customer Acceptance &amp; Signature</div>
           <div class="signature-box">${renderSignature(estimate.signature)}</div>
           ${renderCompanySignatureLine(company)}
         </div>

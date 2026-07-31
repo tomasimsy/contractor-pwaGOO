@@ -133,6 +133,46 @@ export interface ProjectFinancials {
   isFullyPaid: boolean;
 }
 
+/**
+ * Return type of FinancialEngine.getEstimateFinancials — the same job-
+ * costing formulas as ProjectFinancials, scoped to ONE estimate instead
+ * of the whole project. Exists because ProjectFinancials aggregates
+ * every estimate/invoice/expense under a project, which is the wrong
+ * number to show on a single Estimate's detail page whenever a project
+ * carries more than one estimate.
+ *
+ * Cost sourcing note: subcontractorCosts/agentCommissionCosts here come
+ * from Expense rows (expenseType "subcontractor"/"agent_commission")
+ * via calculateExpenseTotals — the only REAL, persisted, estimate-
+ * scoped source for those costs today. SubcontractorService/
+ * AgentCommissionService's formal "assignment" objects are project-
+ * scoped only (no estimateId on that schema) AND still in-memory-only
+ * (no Supabase-backed implementation exists yet — see
+ * ServicesProvider.tsx's own doc comment) — so they are deliberately
+ * NOT folded in here; doing so would mix real persisted numbers with
+ * non-functional placeholder data.
+ */
+export interface EstimateFinancials {
+  estimateId: UUID;
+  projectId: UUID;
+  estimateTotal: number;
+  approvedChangeOrderTotal: number;
+  revisedTotal: number;
+  invoicesTotal: number;
+  amountPaid: number;
+  remainingBalance: number;
+  paymentStatus: PaymentStatus;
+  isFullyPaid: boolean;
+  /** Sum of expenseType === "subcontractor" rows recorded against this estimate. */
+  subcontractorCosts: number;
+  /** Sum of expenseType === "agent_commission" rows recorded against this estimate. */
+  agentCommissionCosts: number;
+  totalExpenses: number;
+  grossProfit: number; // revisedTotal - (subcontractorCosts + agentCommissionCosts)
+  netProfit: number; // revisedTotal - totalExpenses
+  profitMargin: number; // percent
+}
+
 /** Return type of FinancialEngine.getCompanyFinancials — a period,
  * cash-basis rollup. Deliberately a DIFFERENT cost model than
  * ProjectFinancials (realized cash paid in the period, not committed

@@ -618,6 +618,7 @@ function createChangeOrderService(store: InMemoryStore, validation: ValidationSe
       totalAmount,
       tax: input.tax,
       approvedAt: null,
+      signature: null,
       createdBy: null,
       createdAt: now(),
       updatedBy: null,
@@ -674,10 +675,16 @@ function createChangeOrderService(store: InMemoryStore, validation: ValidationSe
     await estimateService.recalculateTotal(co.estimateId);
     return { ...result, changeOrder: updated };
   }
-  async function approveChangeOrder(changeOrderId: UUID): Promise<ChangeOrder> {
+  async function approveChangeOrder(changeOrderId: UUID, signature?: ChangeOrder["signature"]): Promise<ChangeOrder> {
     const co = store.changeOrders.get(changeOrderId);
     if (!co) throw new Error("Change order not found");
-    const updated = { ...co, status: "approved" as const, approvedAt: now(), updatedAt: now() };
+    const updated = {
+      ...co,
+      status: "approved" as const,
+      approvedAt: now(),
+      signature: signature !== undefined ? signature : co.signature,
+      updatedAt: now(),
+    };
     store.changeOrders.set(changeOrderId, updated);
     await transactionService.append({
       companyId: co.companyId,
@@ -1241,8 +1248,47 @@ function createExpenseService(store: InMemoryStore, validation: ValidationServic
 }
 
 function createSubcontractorService(store: InMemoryStore, validation: ValidationService, transactionService: TransactionService): SubcontractorService {
-  async function getRoster(companyId: UUID) {
-    return Array.from(store.subcontractors.values()).filter((s) => s.companyId === companyId);
+  async function getRoster(companyId: UUID, includeInactive = true) {
+    return Array.from(store.subcontractors.values()).filter((s) => s.companyId === companyId && (includeInactive || s.isActive) && !s.deletedAt);
+  }
+  async function createSubcontractor(input: { companyId: UUID; name: string; trade?: string | null; phone?: string | null; contactPerson?: string | null; isActive?: boolean }) {
+    const sub: Subcontractor = {
+      id: id(),
+      companyId: input.companyId,
+      name: input.name,
+      trade: input.trade ?? null,
+      phone: input.phone ?? null,
+      contactPerson: input.contactPerson ?? null,
+      isActive: input.isActive ?? true,
+      createdBy: null,
+      createdAt: now(),
+      updatedBy: null,
+      updatedAt: now(),
+      deletedBy: null,
+      deletedAt: null,
+      deleteReason: null,
+    };
+    store.subcontractors.set(sub.id, sub);
+    return sub;
+  }
+  async function updateSubcontractor(subcontractorId: UUID, changes: Partial<{ name: string; trade: string | null; phone: string | null; contactPerson: string | null; isActive: boolean }>) {
+    const sub = store.subcontractors.get(subcontractorId);
+    if (!sub) throw new Error("Subcontractor not found");
+    const updated = { ...sub, ...changes, updatedAt: now() };
+    store.subcontractors.set(subcontractorId, updated);
+    return updated;
+  }
+  async function softDeleteSubcontractor(subcontractorId: UUID, reason: string) {
+    const check = validation.validateDeleteReason(reason);
+    if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
+    const sub = store.subcontractors.get(subcontractorId);
+    if (!sub) throw new Error("Subcontractor not found");
+    store.subcontractors.set(subcontractorId, { ...sub, deletedAt: now(), deleteReason: reason });
+  }
+  async function restoreSubcontractor(subcontractorId: UUID) {
+    const sub = store.subcontractors.get(subcontractorId);
+    if (!sub) throw new Error("Subcontractor not found");
+    store.subcontractors.set(subcontractorId, { ...sub, deletedAt: null, deleteReason: null });
   }
   async function listAssignments(scope: QueryScope) {
     // `!a.deletedAt` is load-bearing, not cosmetic: FinancialEngine
@@ -1298,7 +1344,7 @@ function createSubcontractorService(store: InMemoryStore, validation: Validation
     store.subAssignments.set(assignmentId, updated);
     return updated;
   }
-  async function recordPayment(input: { companyId: UUID; assignmentId: UUID; amount: number; paymentMethod?: string; paymentDate: string; paymentType?: "payment" | "reimbursement"; reimbursementFromAgentId?: UUID | null }) {
+  async function recordPayment(input: { companyId: UUID; assignmentId: UUID; amount: number; paymentMethod?: string; paymentDate: string; paymentType?: "payment" | "reimbursement"; reimbursementFromAgentId?: UUID | null; changeOrderId?: UUID | null }) {
     const assignment = store.subAssignments.get(input.assignmentId);
     if (!assignment) throw new Error("Assignment not found");
     const paymentId = id();
@@ -1325,6 +1371,7 @@ function createSubcontractorService(store: InMemoryStore, validation: Validation
       paymentDate: input.paymentDate,
       paymentType: input.paymentType ?? "payment",
       reimbursementFromAgentId: input.reimbursementFromAgentId ?? null,
+      changeOrderId: input.changeOrderId ?? null,
       createdBy: null,
       createdAt: now(),
       updatedBy: null,
@@ -1350,7 +1397,7 @@ function createSubcontractorService(store: InMemoryStore, validation: Validation
   }
   async function getBalance(assignmentId: UUID) {
     const b = await transactionService.getAssignmentBalance(assignmentId);
-    return { assigned: b.assigned, paid: b.paid, outstanding: b.outstanding };
+    return { assigned: b.assigned, paid: b.paid, committed: b.committed, outstanding: b.outstanding };
   }
   async function getTotalPaidForYear(subcontractorId: UUID, taxYear: number) {
     const assignments = Array.from(store.subAssignments.values()).filter((a) => a.subcontractorId === subcontractorId);
@@ -1363,12 +1410,51 @@ function createSubcontractorService(store: InMemoryStore, validation: Validation
     return total;
   }
 
-  return { getRoster, listAssignments, assignToProject, updateAssignmentAmount, markAssignmentFinal, recordPayment, softDelete, restore, getBalance, getTotalPaidForYear };
+  return {
+    getRoster, createSubcontractor, updateSubcontractor, softDeleteSubcontractor, restoreSubcontractor,
+    listAssignments, assignToProject, updateAssignmentAmount, markAssignmentFinal, recordPayment, softDelete, restore, getBalance, getTotalPaidForYear,
+  };
 }
 
 function createAgentCommissionService(store: InMemoryStore, validation: ValidationService, transactionService: TransactionService): AgentCommissionService {
   async function getRoster(companyId: UUID) {
-    return Array.from(store.agents.values()).filter((a) => a.companyId === companyId);
+    return Array.from(store.agents.values()).filter((a) => a.companyId === companyId && !a.deletedAt);
+  }
+  async function createAgent(input: { companyId: UUID; name: string; commissionRate?: number | null }) {
+    const agent: Agent = {
+      id: id(),
+      companyId: input.companyId,
+      name: input.name,
+      commissionRate: input.commissionRate ?? null,
+      createdBy: null,
+      createdAt: now(),
+      updatedBy: null,
+      updatedAt: now(),
+      deletedBy: null,
+      deletedAt: null,
+      deleteReason: null,
+    };
+    store.agents.set(agent.id, agent);
+    return agent;
+  }
+  async function updateAgent(agentId: UUID, changes: Partial<{ name: string; commissionRate: number | null }>) {
+    const agent = store.agents.get(agentId);
+    if (!agent) throw new Error("Agent not found");
+    const updated = { ...agent, ...changes, updatedAt: now() };
+    store.agents.set(agentId, updated);
+    return updated;
+  }
+  async function softDeleteAgent(agentId: UUID, reason: string) {
+    const check = validation.validateDeleteReason(reason);
+    if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
+    const agent = store.agents.get(agentId);
+    if (!agent) throw new Error("Agent not found");
+    store.agents.set(agentId, { ...agent, deletedAt: now(), deleteReason: reason });
+  }
+  async function restoreAgent(agentId: UUID) {
+    const agent = store.agents.get(agentId);
+    if (!agent) throw new Error("Agent not found");
+    store.agents.set(agentId, { ...agent, deletedAt: null, deleteReason: null });
   }
   async function listAssignments(scope: QueryScope) {
     // See SubcontractorService.listAssignments' comment — same
@@ -1401,7 +1487,7 @@ function createAgentCommissionService(store: InMemoryStore, validation: Validati
     store.agentAssignments.set(assignment.id, assignment);
     return assignment;
   }
-  async function recordPayment(input: { companyId: UUID; agentId: UUID; assignmentId?: UUID | null; amount: number; paymentType: "commission" | "reimbursement"; paymentDate: string; reimbursementFromAgentId?: UUID | null; reimbursesExpenseId?: UUID | null }): Promise<AgentPayment> {
+  async function recordPayment(input: { companyId: UUID; agentId: UUID; assignmentId?: UUID | null; amount: number; paymentType: "commission" | "reimbursement"; paymentDate: string; reimbursementFromAgentId?: UUID | null; reimbursesExpenseId?: UUID | null; changeOrderId?: UUID | null }): Promise<AgentPayment> {
     const payment: AgentPayment & { reimbursesExpenseId: UUID | null } = {
       id: id(),
       companyId: input.companyId,
@@ -1412,6 +1498,7 @@ function createAgentCommissionService(store: InMemoryStore, validation: Validati
       paymentDate: input.paymentDate,
       reimbursementFromAgentId: input.reimbursementFromAgentId ?? null,
       reimbursesExpenseId: input.reimbursesExpenseId ?? null,
+      changeOrderId: input.changeOrderId ?? null,
       createdBy: null,
       createdAt: now(),
       updatedBy: null,
@@ -1504,7 +1591,7 @@ function createAgentCommissionService(store: InMemoryStore, validation: Validati
   }
   async function getBalance(assignmentId: UUID) {
     const b = await transactionService.getAssignmentBalance(assignmentId);
-    return { assigned: b.assigned, paid: b.paid, outstanding: b.outstanding };
+    return { assigned: b.assigned, paid: b.paid, committed: b.committed, outstanding: b.outstanding };
   }
   async function getCompensationSummary(agentId: UUID, taxYear: number) {
     const assignments = Array.from(store.agentAssignments.values()).filter((a) => a.agentId === agentId);
@@ -1518,7 +1605,10 @@ function createAgentCommissionService(store: InMemoryStore, validation: Validati
     return { totalCommissions, totalReimbursements, totalPaid, outstandingPayable, ytdEarnings: totalPaid };
   }
 
-  return { getRoster, listAssignments, assignToProject, recordPayment, softDelete, restore, getBalance, getCompensationSummary };
+  return {
+    getRoster, createAgent, updateAgent, softDeleteAgent, restoreAgent,
+    listAssignments, assignToProject, recordPayment, softDelete, restore, getBalance, getCompensationSummary,
+  };
 }
 
 /**
@@ -1560,6 +1650,7 @@ export function createInMemoryServices(store: InMemoryStore = createInMemoryStor
     estimateService,
     changeOrderService,
     invoiceService,
+    paymentService,
     subcontractorService,
     agentCommissionService,
     transactionService,

@@ -31,7 +31,7 @@ function ChangeOrderDetailContent() {
   const params = useParams();
   const router = useRouter();
   const changeOrderId = params.id as string;
-  const { changeOrderService, projectService, estimateService, auditService } = useServices();
+  const { changeOrderService, projectService, estimateService, auditService, changeOrderWorkflow } = useServices();
   const canApprove = usePermission("estimate", "approve");
 
   const [changeOrder, setChangeOrder] = useState<(ChangeOrder & { lineItems: ChangeOrderLineItem[] }) | null>(null);
@@ -88,7 +88,15 @@ function ChangeOrderDetailContent() {
     if (!changeOrder) return;
     setActionError(null);
     try {
-      await changeOrderService.approveChangeOrder(changeOrder.id);
+      // Routed through the same shared workflow the customer portal
+      // uses (see lib/services/changeOrderWorkflow.ts) — staff approval
+      // just passes no signature. One "what does approving mean" path
+      // for both entry points, matching the estimate-signing pattern.
+      const result = await changeOrderWorkflow.approveChangeOrder(changeOrder.id);
+      if (!result.ok) {
+        setActionError(result.message ?? "Failed to approve change order.");
+        return;
+      }
       await load();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to approve change order.");

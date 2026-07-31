@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabase/env";
 import { mergeCompanyDefaults } from "@/lib/company";
 import { SignEstimateForm } from "@/components/portal/SignEstimateForm";
+import { ChangeOrderApprovalCard, type PortalChangeOrder } from "@/components/portal/ChangeOrderApprovalCard";
 import {
   calculateSubtotal,
   calculateDocumentTotal,
@@ -71,6 +72,16 @@ export default async function CustomerPortalPage({
   const { data } = token ? await supabase.rpc("get_customer_portal", { p_token: token }) : { data: null };
   const payload = data as PortalPayload | null;
   const estimate = payload?.estimate;
+
+  // Separate, purpose-built read (ALL non-deleted change orders, any
+  // status) alongside the existing get_customer_portal RPC, which only
+  // ever returns approved ones — see the migration's comment for why
+  // this is additive rather than a rewrite of that RPC. Not fetched
+  // when there's no estimate/token, same guard as the main payload.
+  const { data: allChangeOrdersData } = token && estimate
+    ? await supabase.rpc("get_portal_change_orders", { p_token: token })
+    : { data: null };
+  const allChangeOrders = (allChangeOrdersData as PortalChangeOrder[] | null) ?? [];
 
   // Missing token, wrong token, and deleted estimate all land here with
   // the same message — this page must not reveal which ids exist.
@@ -193,28 +204,17 @@ export default async function CustomerPortalPage({
       </section>
 
       {/* ---------------- CHANGE ORDERS ---------------- */}
-      {changeOrders.length > 0 && (
+      {allChangeOrders.length > 0 && (
         <section className="mt-8">
-          <h2 className="text-sm font-semibold text-foreground">Approved Change Orders</h2>
+          <h2 className="text-sm font-semibold text-foreground">Change Orders</h2>
           <p className="mb-2 text-xs text-muted-foreground">
-            Additional work approved after the original estimate. Included in the contract total above.
+            Additional work proposed after the original estimate. Approved change orders are included in the contract total above.
           </p>
-          <ul className="divide-y divide-border rounded-xl border border-border">
-            {changeOrders.map((co, i) => (
-              <li key={co.change_order_number ?? i} className="flex items-start justify-between gap-3 px-3 py-2.5 text-sm">
-                <div>
-                  <div className="font-medium text-foreground">{co.change_order_number}</div>
-                  {co.title && <div className="text-xs text-muted-foreground">{co.title}</div>}
-                  {co.approved_at && (
-                    <div className="text-xs text-muted-foreground">Approved {new Date(co.approved_at).toLocaleDateString()}</div>
-                  )}
-                </div>
-                <span className="whitespace-nowrap font-medium text-foreground">
-                  {money((co.total_amount ?? 0) + (co.tax ?? 0))}
-                </span>
-              </li>
+          <div className="space-y-3">
+            {allChangeOrders.map((co) => (
+              <ChangeOrderApprovalCard key={co.id} token={token ?? ""} changeOrder={co} />
             ))}
-          </ul>
+          </div>
         </section>
       )}
 

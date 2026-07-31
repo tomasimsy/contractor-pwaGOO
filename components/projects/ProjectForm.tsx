@@ -10,8 +10,25 @@ import type { Client } from "@/lib/services/clientService";
 
 /** Shared by the Create and Edit project pages — all data access goes
  * through useServices().projectService/clientService, no direct
- * database calls here. */
-export function ProjectForm({ project, defaultClientId }: { project?: Project; defaultClientId?: string }) {
+ * database calls here.
+ *
+ * `onCreated`/`onCancel` let a caller (e.g. an inline "Add New Project"
+ * dialog embedded in another form) reuse this exact same form/
+ * validation/service call without the page-navigation side effects
+ * (`router.push`/`router.back`) that the standalone /projects/new and
+ * /projects/[id]/edit pages rely on. When omitted, behavior is
+ * byte-for-byte unchanged from before these props existed. */
+export function ProjectForm({
+  project,
+  defaultClientId,
+  onCreated,
+  onCancel,
+}: {
+  project?: Project;
+  defaultClientId?: string;
+  onCreated?: (project: Project) => void;
+  onCancel?: () => void;
+}) {
   const router = useRouter();
   const { projectService, clientService } = useServices();
   const { profile } = useAuth();
@@ -46,7 +63,14 @@ export function ProjectForm({ project, defaultClientId }: { project?: Project; d
           startDate: startDate || null,
           endDate: endDate || null,
         });
-        router.push(`/projects/${project.id}`);
+        if (onCreated) {
+          // The edit-path branch above still ran the update; onCreated
+          // callers only ever pass an unset `project`, so this is
+          // unreachable for them — kept for type-safety only.
+        } else {
+          router.push(`/projects/${project.id}`);
+          router.refresh();
+        }
       } else {
         const created = await projectService.create({
           companyId: profile.companyId,
@@ -55,9 +79,13 @@ export function ProjectForm({ project, defaultClientId }: { project?: Project; d
           description: description || undefined,
           address: address || undefined,
         });
-        router.push(`/projects/${created.id}`);
+        if (onCreated) {
+          onCreated(created);
+        } else {
+          router.push(`/projects/${created.id}`);
+          router.refresh();
+        }
       }
-      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save project.");
     } finally {
@@ -125,7 +153,7 @@ export function ProjectForm({ project, defaultClientId }: { project?: Project; d
       </div>
 
       <div className="flex justify-end gap-2 pt-2">
-        <button type="button" onClick={() => router.back()} className="rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted">
+        <button type="button" onClick={onCancel ?? (() => router.back())} className="rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted">
           Cancel
         </button>
         <button type="submit" disabled={saving} className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">

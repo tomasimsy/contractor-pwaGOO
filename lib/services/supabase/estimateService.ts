@@ -93,6 +93,7 @@ interface EstimateRow {
   deleted_at: string | null;
   delete_reason: string | null;
   customer_token: string | null;
+  estimate_type: "standard" | "roofing";
 }
 
 interface EstimateItemRow {
@@ -103,6 +104,7 @@ interface EstimateItemRow {
   description: string | null;
   quantity: number;
   unit_price: number;
+  unit: string | null;
   total: number;
   taxable: boolean;
   deleted_at: string | null;
@@ -126,6 +128,7 @@ function rowToEstimate(row: EstimateRow): Estimate {
     depositAmount: row.deposit_amount ?? 0,
     signature: row.signature,
     customerToken: row.customer_token,
+    estimateType: row.estimate_type,
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedBy: row.updated_by,
@@ -144,6 +147,7 @@ function itemRowToLineItem(row: EstimateItemRow): EstimateLineItem {
     description: row.description,
     quantity: row.quantity,
     unitPrice: row.unit_price,
+    unit: (row.unit as EstimateLineItem["unit"]) ?? null,
     total: row.total,
     taxable: row.taxable,
   };
@@ -191,16 +195,69 @@ export function createSupabaseEstimateService(
    * is no parameter here a caller could use to inject an incorrect or
    * incrementally-adjusted total.
    */
+  /**
+   * Subtotal source for a roofing estimate: the sum of every non-
+   * deleted line item across every non-deleted roofing area on this
+   * estimate (Estimate Roof V2). Reuses calculateSubtotal — the exact
+   * same Layer 0 function estimate_items-based subtotals use — so
+   * markup/discount/tax/total/deposit all still flow through
+   * calculateDocumentTotal() unchanged below. This function ONLY
+   * decides which rows feed the subtotal; it does not reimplement any
+   * part of the calculation itself.
+   */
+  async function calculateRoofingAreasSubtotal(estimateId: UUID): Promise<number> {
+    // Selects estimated_repair_cost alongside id: a Roof Area's repair-
+    // item cost (material + labor + tax, see calculateAreaRepairCost in
+    // financialCalculations.ts, always kept in sync by
+    // RoofingAreaService's create/update) is a SECOND, additive cost
+    // source alongside estimate_area_line_items below — not a
+    // replacement. An area with no line items but a filled-in repair
+    // cost still contributes; an area using only granular line items is
+    // unaffected (estimated_repair_cost defaults to 0). Both sum into
+    // the same subtotal via calculateSubtotal, the one shared Layer 0
+    // formula, so there is no second addition formula living here.
+    const { data: areas, error: areasError } = await supabase
+      .from("estimate_areas")
+      .select("id, estimated_repair_cost")
+      .eq("estimate_id", estimateId)
+      .is("deleted_at", null);
+    if (areasError) throw new Error(`Failed to load roofing areas: ${areasError.message}`);
+
+    const areaRows = (areas || []) as Array<{ id: string; estimated_repair_cost: number | null }>;
+    const areaIds = areaRows.map((a) => a.id);
+    if (areaIds.length === 0) return 0;
+
+    const { data: lineItemRows, error: lineItemsError } = await supabase
+      .from("estimate_area_line_items")
+      .select("total")
+      .in("estimate_area_id", areaIds)
+      .is("deleted_at", null);
+    if (lineItemsError) throw new Error(`Failed to load roofing area line items: ${lineItemsError.message}`);
+
+    const repairCostRows = areaRows.map((a) => ({ total: a.estimated_repair_cost ?? 0 }));
+    return calculateSubtotal([...(lineItemRows || []), ...repairCostRows] as Array<{ total: number }>);
+  }
+
+  async function calculateStandardItemsSubtotal(estimateId: UUID): Promise<number> {
+    const { data: itemRows, error: itemsError } = await supabase.from("estimate_items").select("*").eq("estimate_id", estimateId).is("deleted_at", null);
+    if (itemsError) throw new Error(`Failed to load estimate line items: ${itemsError.message}`);
+    return calculateSubtotal((itemRows as EstimateItemRow[]).map(itemRowToLineItem));
+  }
+
   async function writeRecalculatedTotals(estimateId: UUID): Promise<Estimate> {
     const { data: estimateRow, error } = await supabase.from("estimates").select("*").eq("id", estimateId).single();
     if (error) throw new Error(`Failed to load estimate: ${error.message}`);
     const estimate = rowToEstimate(estimateRow as EstimateRow);
 
-    const { data: itemRows, error: itemsError } = await supabase.from("estimate_items").select("*").eq("estimate_id", estimateId).is("deleted_at", null);
-    if (itemsError) throw new Error(`Failed to load estimate line items: ${itemsError.message}`);
-    const lineItems = (itemRows as EstimateItemRow[]).map(itemRowToLineItem);
-
-    const subtotal = calculateSubtotal(lineItems);
+    // The estimate financial engine (calculateDocumentTotal below) does
+    // not know or care where the subtotal came from — only WHICH rows
+    // feed it differs by estimate_type. Standard estimates: sum of
+    // estimate_items (unchanged). Roofing estimates: sum of every roof
+    // area's line items (Estimate Roof V2) — estimate_items stays
+    // unused/empty for roofing estimates, so this never double-counts.
+    const subtotal = estimate.estimateType === "roofing"
+      ? await calculateRoofingAreasSubtotal(estimateId)
+      : await calculateStandardItemsSubtotal(estimateId);
     const { total } = calculateDocumentTotal(subtotal, estimate.markup, estimate.discount, estimate.taxRate);
 
     const { data, error: updateError } = await supabase.from("estimates").update({ subtotal, total }).eq("id", estimateId).select().single();
@@ -238,7 +295,15 @@ export function createSupabaseEstimateService(
     const lineItems = (itemRows as EstimateItemRow[]).map(itemRowToLineItem);
 
     let estimate = rowToEstimate(estimateRow as EstimateRow);
-    const subtotal = calculateSubtotal(lineItems);
+    // Self-healing comparison basis must match writeRecalculatedTotals'
+    // source selection (roofing → area line items, standard →
+    // estimate_items) — otherwise every getById() on a roofing estimate
+    // would compare its correct, already-persisted subtotal against 0
+    // (since `lineItems`/estimate_items are unused for roofing) and
+    // force a spurious recalculation on every read.
+    const subtotal = estimate.estimateType === "roofing"
+      ? await calculateRoofingAreasSubtotal(estimateId)
+      : calculateSubtotal(lineItems);
     const { total } = calculateDocumentTotal(subtotal, estimate.markup, estimate.discount, estimate.taxRate);
 
     if (needsTotalRecalculation(estimate, { subtotal, total })) {
@@ -276,6 +341,7 @@ export function createSupabaseEstimateService(
     discount: number;
     taxRate: number;
     depositAmount?: number;
+    estimateType?: "standard" | "roofing";
   }): Promise<Estimate> {
     // Project ownership: the project must belong to the caller's own
     // company — mirrors ProjectService's own clientOwnership check.
@@ -317,6 +383,7 @@ export function createSupabaseEstimateService(
           tax_rate: input.taxRate,
           total,
           deposit_amount: input.depositAmount ?? 0,
+          estimate_type: input.estimateType ?? "standard",
           // Portal capability token, minted at creation so every new
           // estimate is shareable immediately. Without this only rows
           // touched by the backfill migration would have one, and any
@@ -347,6 +414,7 @@ export function createSupabaseEstimateService(
               description: li.description,
               quantity: li.quantity,
               unit_price: li.unitPrice,
+              unit: li.unit ?? null,
               total: li.total,
               taxable: li.taxable,
             }))
@@ -392,6 +460,7 @@ export function createSupabaseEstimateService(
           description: li.description,
           quantity: li.quantity,
           unit_price: li.unitPrice,
+          unit: li.unit ?? null,
           total: li.total,
           taxable: li.taxable,
         }))
@@ -404,7 +473,7 @@ export function createSupabaseEstimateService(
 
   async function update(
     estimateId: UUID,
-    changes: Partial<{ title: string | null; description: string | null; projectId: UUID; clientId: UUID | null; markup: number; discount: number; taxRate: number; depositAmount: number }>
+    changes: Partial<{ title: string | null; description: string | null; projectId: UUID; clientId: UUID | null; markup: number; discount: number; taxRate: number; depositAmount: number; estimateType: "standard" | "roofing" }>
   ): Promise<Estimate> {
     // Defense-in-depth: `changes`'s type already excludes subtotal/
     // total, so this can only fire if that type is loosened later (an
@@ -437,6 +506,7 @@ export function createSupabaseEstimateService(
     if (changes.discount !== undefined) payload.discount = changes.discount;
     if (changes.taxRate !== undefined) payload.tax_rate = changes.taxRate;
     if (changes.depositAmount !== undefined) payload.deposit_amount = changes.depositAmount;
+    if (changes.estimateType !== undefined) payload.estimate_type = changes.estimateType;
 
     if (Object.keys(payload).length > 0) {
       const { error } = await supabase.from("estimates").update(payload).eq("id", estimateId);
