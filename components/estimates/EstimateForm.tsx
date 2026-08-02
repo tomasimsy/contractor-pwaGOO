@@ -140,14 +140,24 @@ export function EstimateForm({
   }, [estimate, estimatePhotoService]);
 
   const selectedProject = projects.find((p) => p.id === projectId);
-  // Roofing estimates: subtotal/total come from the backend
-  // (roofingTotals, refreshed after every area/line-item mutation via
-  // refreshRoofingTotals) since they're derived from roofing area line
+  // Roofing estimates: SUBTOTAL comes from the backend (roofingTotals,
+  // refreshed after every area/line-item mutation via
+  // refreshRoofingTotals) since it's derived from roofing area line
   // items, not the `lineItems` state. Standard estimates: computed
-  // locally exactly as before, via the same calculateSubtotal/
-  // calculateDocumentTotal functions EstimateService itself uses.
+  // locally via the same calculateSubtotal EstimateService itself uses.
+  //
+  // TOTAL must NEVER be taken from roofingTotals.total — that figure
+  // was computed server-side from whatever markup/discount/taxRate
+  // were STORED at the time of the last area save, not the values
+  // currently typed into the form below. Previously this used
+  // roofingTotals.total directly for roofing estimates, so editing Tax
+  // Rate/Markup/Discount had no visible effect on the Total preview
+  // until after a save — found live: "when i remove the tax rate, the
+  // total doesn't update." Always recomputing from the live form state
+  // via the same calculateDocumentTotal formula EstimateService uses
+  // fixes this for both estimate types with one formula, not two.
   const subtotal = roofV2 && roofingTotals ? roofingTotals.subtotal : calculateSubtotal(lineItems.map((li) => ({ total: calculateLineItemTotal(li) })));
-  const total = roofV2 && roofingTotals ? roofingTotals.total : calculateDocumentTotal(subtotal, markup, discount, taxRate).total;
+  const total = calculateDocumentTotal(subtotal, markup, discount, taxRate).total;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
