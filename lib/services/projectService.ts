@@ -37,7 +37,16 @@ export interface CreateProjectInput {
 }
 
 export interface ProjectService {
-  getById(projectId: UUID): Promise<Project | null>;
+  /** `includeDeleted` (default false): a soft-deleted project is
+   * "not found" for direct fetch/edit/ownership-check purposes
+   * (consistent with EstimateService/InvoiceService/ChangeOrderService's
+   * getById, which all already filter deleted_at) — but pass `true`
+   * when this project is being looked up purely as CONTEXT for a
+   * different, still-active financial record (e.g. an invoice or
+   * estimate's own detail page showing which project it belongs to).
+   * Financial history is permanent: an invoice must never lose its
+   * project's name just because the project was deleted later. */
+  getById(projectId: UUID, includeDeleted?: boolean): Promise<Project | null>;
   list(scope: QueryScope): Promise<Project[]>;
 
   create(input: CreateProjectInput): Promise<Project>;

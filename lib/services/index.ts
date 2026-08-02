@@ -71,7 +71,7 @@ export type { AgentCommissionService as AgentService } from "./agentCommissionSe
 
 // Layer 3
 export type { FinancialEngine, FinancialEngineDeps } from "./financialEngine";
-export { createFinancialEngine } from "./financialEngine";
+export { createFinancialEngine, isRevenueInvoice } from "./financialEngine";
 // The single canonical estimate-signing workflow — see estimateWorkflow.ts's
 // header for why both staff and the customer portal must call this same
 // function rather than each having their own signing logic.

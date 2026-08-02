@@ -10,15 +10,16 @@
  */
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { HardHat, Plus, Search } from "lucide-react";
+import { HardHat, Plus, Search, Trash2 } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { RequirePermission } from "@/components/layout/RequirePermission";
+import { usePermission } from "@/lib/hooks/usePermission";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
-import type { Subcontractor, SubcontractorAssignment } from "@/lib/services/subcontractorService";
+import type { Subcontractor, SubcontractorAssignment, SubcontractorPayment } from "@/lib/services/subcontractorService";
 import type { Project } from "@/lib/services/projectService";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -27,16 +28,19 @@ type AssignmentRow = SubcontractorAssignment & { subcontractorName: string; trad
 type Balance = { assigned: number; paid: number; committed: number; outstanding: number };
 
 function SubcontractorsContent() {
-  const { subcontractorService, projectService } = useServices();
+  const { subcontractorService, projectService, financialEngine } = useServices();
   const { profile } = useAuth();
+  const canDeletePayment = usePermission("subcontractor_payment", "delete");
 
   const [roster, setRoster] = useState<Subcontractor[]>([]);
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
   const [balances, setBalances] = useState<Record<string, Balance>>({});
+  const [paymentsByAssignment, setPaymentsByAssignment] = useState<Record<string, SubcontractorPayment[]>>({});
   const [projectsById, setProjectsById] = useState<Record<string, Project>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null);
 
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState("");
@@ -55,23 +59,49 @@ function SubcontractorsContent() {
     setLoading(true);
     setError(null);
     try {
-      const [rosterList, assignmentList, projectList] = await Promise.all([
+      const [rosterList, assignmentList, projectList, payables, paymentList] = await Promise.all([
         subcontractorService.getRoster(profile.companyId),
         subcontractorService.listAssignments({ companyId: profile.companyId }),
         projectService.list({ companyId: profile.companyId }),
+        financialEngine.getPayablesSummary({ companyId: profile.companyId }),
+        subcontractorService.listPayments({ companyId: profile.companyId }),
       ]);
       setRoster(rosterList);
       setAssignments(assignmentList);
       setProjectsById(Object.fromEntries(projectList.map((p) => [p.id, p])));
 
-      const balanceEntries = await Promise.all(assignmentList.map(async (a) => [a.id, await subcontractorService.getBalance(a.id)] as const));
+      // Per-assignment balances come from FinancialEngine.getPayablesSummary's
+      // own lines — the same figures Accounting/Dashboard payables read —
+      // rather than re-fetching + re-summing getBalance() per assignment here.
+      const balanceEntries = payables.lines
+        .filter((l) => l.role === "subcontractor")
+        .map((l) => [l.assignmentId, { assigned: l.assigned, paid: l.paid, committed: l.assigned, outstanding: l.outstanding }] as const);
       setBalances(Object.fromEntries(balanceEntries));
+
+      const paymentsMap: Record<string, SubcontractorPayment[]> = {};
+      for (const p of paymentList) (paymentsMap[p.assignmentId] ??= []).push(p);
+      setPaymentsByAssignment(paymentsMap);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load subcontractors.");
     } finally {
       setLoading(false);
     }
-  }, [subcontractorService, projectService, profile]);
+  }, [subcontractorService, projectService, financialEngine, profile]);
+
+  async function handleDeletePayment(payment: SubcontractorPayment) {
+    const reason = window.prompt("Why are you deleting this payment?");
+    if (!reason) return;
+    setDeletingPaymentId(payment.id);
+    setError(null);
+    try {
+      await subcontractorService.softDelete(payment.id, reason);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete payment.");
+    } finally {
+      setDeletingPaymentId(null);
+    }
+  }
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -221,15 +251,40 @@ function SubcontractorsContent() {
                   <ul className="mt-3 divide-y divide-border border-t border-border pt-2">
                     {subAssignments.map((a) => {
                       const b = balances[a.id];
+                      const payments = paymentsByAssignment[a.id] ?? [];
                       return (
-                        <li key={a.id} className="flex items-center justify-between gap-2 py-1.5 text-xs">
-                          <Link href={`/projects/${a.projectId}`} className="font-medium text-primary hover:underline">
-                            {projectsById[a.projectId]?.name ?? "Unknown project"}
-                          </Link>
-                          {b && (
-                            <span className="text-muted-foreground">
-                              Assigned {money(b.assigned)} · Paid {money(b.paid)} · Outstanding <span className="font-semibold text-foreground">{money(b.outstanding)}</span>
-                            </span>
+                        <li key={a.id} className="py-1.5 text-xs">
+                          <div className="flex items-center justify-between gap-2">
+                            <Link href={`/projects/${a.projectId}`} className="font-medium text-primary hover:underline">
+                              {projectsById[a.projectId]?.name ?? "Unknown project"}
+                            </Link>
+                            {b && (
+                              <span className="text-muted-foreground">
+                                Assigned {money(b.assigned)} · Paid {money(b.paid)} · Outstanding <span className="font-semibold text-foreground">{money(b.outstanding)}</span>
+                              </span>
+                            )}
+                          </div>
+                          {payments.length > 0 && (
+                            <ul className="mt-1 space-y-0.5 pl-2">
+                              {payments.map((p) => (
+                                <li key={p.id} className="flex items-center justify-between gap-2 text-muted-foreground">
+                                  <span>
+                                    {p.paymentDate} · {money(p.amount)}{p.paymentType === "reimbursement" ? " · reimbursement" : ""}
+                                  </span>
+                                  {canDeletePayment && (
+                                    <button
+                                      type="button"
+                                      disabled={deletingPaymentId === p.id}
+                                      onClick={() => handleDeletePayment(p)}
+                                      aria-label="Delete payment"
+                                      className="rounded-md p-1 hover:bg-danger/10 hover:text-danger disabled:opacity-50"
+                                    >
+                                      <Trash2 className="size-3" />
+                                    </button>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
                           )}
                         </li>
                       );

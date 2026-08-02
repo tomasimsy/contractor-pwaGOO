@@ -91,8 +91,22 @@ export interface Estimate extends AuditedEntity {
 }
 
 export interface EstimateService {
-  getById(estimateId: UUID): Promise<(Estimate & { lineItems: EstimateLineItem[] }) | null>;
-  listForProject(projectId: UUID): Promise<Estimate[]>;
+  /** `includeDeleted` (default false) — same contract as
+   * ProjectService/ClientService.getById: pass `true` when this
+   * estimate is looked up purely as context for a different,
+   * still-active financial record (e.g. a change order or invoice's
+   * own detail page showing which estimate it came from). Financial
+   * history is permanent. */
+  getById(estimateId: UUID, includeDeleted?: boolean): Promise<(Estimate & { lineItems: EstimateLineItem[] }) | null>;
+  /** `includeDeleted` (default false): callers that resolve a FINANCIAL
+   * relationship (e.g. ExpenseService.listForProject finding which
+   * estimates an expense's estimate_id might reference) must pass
+   * `true` — a soft-deleted estimate is still a valid parent for money
+   * already spent against it. Financial history is permanent and must
+   * never be dropped just because the estimate record itself was
+   * later deleted. UI callers (estimate lists, project detail pages)
+   * should leave this false, unchanged from today's behavior. */
+  listForProject(projectId: UUID, includeDeleted?: boolean): Promise<Estimate[]>;
 
   /** Company-wide estimate list, for the Estimate List page (search
    * across every project, not just one) — same QueryScope contract as
@@ -144,4 +158,11 @@ export interface EstimateService {
    * the service level, regardless of what the calling form already
    * checked. See RELIABILITY.md for why this exists at every layer. */
   softDelete(estimateId: UUID, reason: string): Promise<void>;
+
+  /** Was missing entirely — ProjectService has had restore() since its
+   * own soft-delete pass, but EstimateService never got the matching
+   * half, making a deleted estimate a dead end with no way back
+   * through the UI. Same contract as ProjectService.restore: clears
+   * deleted_at/deleted_by/delete_reason, nothing else. */
+  restore(estimateId: UUID): Promise<void>;
 }

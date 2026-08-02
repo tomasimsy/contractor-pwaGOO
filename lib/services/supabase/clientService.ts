@@ -61,8 +61,10 @@ function rowToClient(row: ClientRow): Client {
 }
 
 export function createSupabaseClientService(supabase: SupabaseClient, validationService: ValidationService, currentUserId: () => Promise<UUID | null>): ClientService {
-  async function getById(clientId: UUID): Promise<Client | null> {
-    const { data, error } = await supabase.from("clients").select("*").eq("id", clientId).maybeSingle();
+  async function getById(clientId: UUID, includeDeleted = false): Promise<Client | null> {
+    let query = supabase.from("clients").select("*").eq("id", clientId);
+    if (!includeDeleted) query = query.is("deleted_at", null);
+    const { data, error } = await query.maybeSingle();
     if (error) throw new Error(`Failed to load client: ${error.message}`);
     return data ? rowToClient(data as ClientRow) : null;
   }

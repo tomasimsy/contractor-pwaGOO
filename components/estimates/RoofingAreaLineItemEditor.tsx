@@ -33,14 +33,24 @@ import type { UUID } from "@/lib/services/types";
 
 export interface RoofingAreaLineItemEditorHandle {
   /**
-   * Saves this area's current line items. Accepts an optional
-   * companyId override for the moment right after a brand-new area's
-   * first save: the area's `companyId` prop won't reflect the just-
-   * assigned real value until the next render commits, but the parent
-   * already has it synchronously from the area create() response — so
-   * it's passed straight through instead of waiting on a stale prop.
+   * Saves this area's current line items. Accepts optional companyId/
+   * areaId overrides for the moment right after a brand-new area's
+   * first save: `roofingAreaService.create()` mints a brand-new
+   * server-side UUID for the area, different from the client-side
+   * draft id this component was mounted/keyed with (see
+   * RoofingAreasEditorV2.handleAddArea) — and the `areaId`/`companyId`
+   * PROPS won't reflect the real, saved values until the next render
+   * commits. The parent already has both synchronously from the
+   * create() response, so they're passed straight through here instead
+   * of this component using its own stale props and inserting line
+   * items against an `estimate_area_id` that was never actually
+   * written to `estimate_areas` (the exact FK-violation bug this
+   * override closes — found 2026-08-02, "Failed to save area line
+   * items ... violates foreign key constraint
+   * estimate_area_line_items_estimate_area_id_fkey" on a brand-new
+   * area's first save).
    */
-  save: (companyIdOverride?: UUID) => Promise<void>;
+  save: (companyIdOverride?: UUID, areaIdOverride?: UUID) => Promise<void>;
 }
 
 export type DraftAreaLineItem = Omit<EstimateAreaLineItemCreateInput, "areaId" | "companyId">;
@@ -116,8 +126,13 @@ export const RoofingAreaLineItemEditor = forwardRef<RoofingAreaLineItemEditorHan
     setItems((prev) => prev.filter((_, i) => i !== index));
   }
 
-  const handleSave = useCallback(async (companyIdOverride?: UUID) => {
+  const handleSave = useCallback(async (companyIdOverride?: UUID, areaIdOverride?: UUID) => {
     const effectiveCompanyId = companyIdOverride ?? companyId;
+    // The real, server-assigned area id — NOT the `areaId` prop when a
+    // brand-new area was just created in this same "Save Area" click
+    // (see the handle's own doc comment for why props lag one render
+    // behind here).
+    const effectiveAreaId = areaIdOverride ?? areaId;
     if (!effectiveCompanyId) {
       // Shouldn't happen through the normal "Save Area" path (the
       // parent always saves the area first and passes its companyId
@@ -127,9 +142,9 @@ export const RoofingAreaLineItemEditor = forwardRef<RoofingAreaLineItemEditorHan
     setError(null);
     try {
       const savedItems = await estimateAreaLineItemService.replaceForArea(
-        areaId,
+        effectiveAreaId,
         effectiveCompanyId,
-        items.map((item, idx) => ({ ...item, areaId, companyId: effectiveCompanyId, sequenceNumber: idx }))
+        items.map((item, idx) => ({ ...item, areaId: effectiveAreaId, companyId: effectiveCompanyId, sequenceNumber: idx }))
       );
       setItems(savedItems.map(toDraft));
       onSaved?.();
@@ -141,7 +156,7 @@ export const RoofingAreaLineItemEditor = forwardRef<RoofingAreaLineItemEditorHan
       // auto-triggers a full-page error screen for any console.error
       // call, even ones already caught and handled, which made a normal
       // "fill in this field" moment look like the app had crashed.
-      console.warn(`Failed to save line items for area ${areaId}:`, err);
+      console.warn(`Failed to save line items for area ${effectiveAreaId}:`, err);
       // Surface the real validation reason (e.g. "Line item name is
       // required") right here, at the point of saving — not as a
       // confusing failure the user sees for the first time after

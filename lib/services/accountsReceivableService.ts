@@ -8,6 +8,7 @@
 import type { UUID, QueryScope } from "./types";
 import type { InvoiceService } from "./invoiceService";
 import type { PaymentService } from "./paymentService";
+import { isRevenueInvoice } from "./financialEngine";
 
 export interface ARAgingLine {
   invoiceId: UUID;
@@ -48,6 +49,13 @@ export function createAccountsReceivableService(deps: {
 
     const lines: ARAgingLine[] = [];
     for (const invoice of invoices) {
+      // Same rule FinancialEngine.isRevenueInvoice applies everywhere
+      // else: a void/cancelled invoice was never real revenue, so it
+      // cannot be a real receivable either — found diverging from
+      // FinancialEngine during the 2026-08-01 financial audit (this
+      // method had only the remainingBalance>0 check below, which a
+      // voided invoice with zero payments still passes).
+      if (!isRevenueInvoice(invoice)) continue;
       const summary = await deps.paymentService.getSummaryForInvoice(invoice.id);
       if (summary.remainingBalance <= 0) continue; // paid/overpaid invoices carry no receivable
 

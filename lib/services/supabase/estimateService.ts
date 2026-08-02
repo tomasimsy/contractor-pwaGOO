@@ -285,8 +285,10 @@ export function createSupabaseEstimateService(
    * viewed once through getById, its stored value is self-corrected
    * for those list views too.
    */
-  async function getById(estimateId: UUID): Promise<(Estimate & { lineItems: EstimateLineItem[] }) | null> {
-    const { data: estimateRow, error } = await supabase.from("estimates").select("*").eq("id", estimateId).is("deleted_at", null).maybeSingle();
+  async function getById(estimateId: UUID, includeDeleted = false): Promise<(Estimate & { lineItems: EstimateLineItem[] }) | null> {
+    let estimateQuery = supabase.from("estimates").select("*").eq("id", estimateId);
+    if (!includeDeleted) estimateQuery = estimateQuery.is("deleted_at", null);
+    const { data: estimateRow, error } = await estimateQuery.maybeSingle();
     if (error) throw new Error(`Failed to load estimate: ${error.message}`);
     if (!estimateRow) return null;
 
@@ -316,8 +318,10 @@ export function createSupabaseEstimateService(
     return { ...estimate, lineItems };
   }
 
-  async function listForProject(projectId: UUID): Promise<Estimate[]> {
-    const { data, error } = await supabase.from("estimates").select("*").eq("project_id", projectId).is("deleted_at", null).order("created_at", { ascending: false });
+  async function listForProject(projectId: UUID, includeDeleted = false): Promise<Estimate[]> {
+    let query = supabase.from("estimates").select("*").eq("project_id", projectId);
+    if (!includeDeleted) query = query.is("deleted_at", null);
+    const { data, error } = await query.order("created_at", { ascending: false });
     if (error) throw new Error(`Failed to list estimates: ${error.message}`);
     return (data as EstimateRow[]).map(rowToEstimate);
   }
@@ -586,9 +590,41 @@ export function createSupabaseEstimateService(
     return rowToEstimate(data as EstimateRow);
   }
 
+  /** Delete protection: financial history is permanent, so an estimate
+   * that already has real financial activity attached must not be
+   * deletable at all — not "deletable but the numbers get weird
+   * later." Direct table existence checks (not a second copy of any
+   * calculation, and not routed through InvoiceService/
+   * ChangeOrderService, which would create a circular constructor
+   * dependency — those services already depend on EstimateService).
+   * Blocks on ANY non-deleted row, regardless of status: a draft
+   * invoice or a pending change order is still real financial
+   * activity someone would lose track of. */
+  async function assertNoFinancialActivity(estimateId: UUID): Promise<void> {
+    const [invoices, changeOrders, expenses] = await Promise.all([
+      supabase.from("invoices").select("id").eq("estimate_id", estimateId).is("deleted_at", null).limit(1),
+      supabase.from("change_orders").select("id").eq("estimate_id", estimateId).is("deleted_at", null).limit(1),
+      supabase.from("estimate_expenses").select("id").eq("estimate_id", estimateId).is("deleted_at", null).limit(1),
+    ]);
+    if (invoices.error) throw new Error(`Failed to check invoices: ${invoices.error.message}`);
+    if (changeOrders.error) throw new Error(`Failed to check change orders: ${changeOrders.error.message}`);
+    if (expenses.error) throw new Error(`Failed to check expenses: ${expenses.error.message}`);
+
+    if ((invoices.data?.length ?? 0) > 0) {
+      throw new Error("Cannot delete this estimate: it has an active invoice (and possibly payments). Delete the invoice first if it was created in error.");
+    }
+    if ((changeOrders.data?.length ?? 0) > 0) {
+      throw new Error("Cannot delete this estimate: it has an active change order.");
+    }
+    if ((expenses.data?.length ?? 0) > 0) {
+      throw new Error("Cannot delete this estimate: it has recorded expenses attached to it.");
+    }
+  }
+
   async function softDelete(estimateId: UUID, reason: string): Promise<void> {
     const validation = validationService.validateDeleteReason(reason);
     if (!validation.valid) throw new Error(validation.issues[0]?.message ?? "A delete reason is required.");
+    await assertNoFinancialActivity(estimateId);
 
     const actorId = await currentUserId();
     const { error } = await supabase
@@ -599,5 +635,10 @@ export function createSupabaseEstimateService(
     if (error) throw new Error(`Failed to delete estimate: ${error.message}`);
   }
 
-  return { getById, listForProject, list, create, updateLineItems, update, recalculateTotal, changeStatus, recordSignature, softDelete };
+  async function restore(estimateId: UUID): Promise<void> {
+    const { error } = await supabase.from("estimates").update({ deleted_at: null, deleted_by: null, delete_reason: null }).eq("id", estimateId);
+    if (error) throw new Error(`Failed to restore estimate: ${error.message}`);
+  }
+
+  return { getById, listForProject, list, create, updateLineItems, update, recalculateTotal, changeStatus, recordSignature, softDelete, restore };
 }

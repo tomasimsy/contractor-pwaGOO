@@ -24,7 +24,13 @@ export interface CreateClientInput {
 }
 
 export interface ClientService {
-  getById(clientId: UUID): Promise<Client | null>;
+  /** `includeDeleted` (default false) — same contract as
+   * ProjectService.getById: a soft-deleted client is "not found" for
+   * direct fetch/edit purposes, but pass `true` when this client is
+   * looked up purely as context for a different, still-active
+   * financial record (e.g. an invoice/estimate's "Bill To" name).
+   * Financial history is permanent. */
+  getById(clientId: UUID, includeDeleted?: boolean): Promise<Client | null>;
   list(scope: QueryScope): Promise<Client[]>;
   create(input: CreateClientInput): Promise<Client>;
   update(clientId: UUID, changes: Partial<Pick<Client, "name" | "email" | "phone" | "address">>): Promise<Client>;

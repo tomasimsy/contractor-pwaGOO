@@ -9,7 +9,7 @@
  * payment: + Cash received" being two separate examples in the brief
  * actually means at the ledger level.
  */
-import type { UUID, AuditedEntity, PaymentStatus, ValidationResult } from "./types";
+import type { UUID, AuditedEntity, PaymentStatus, ValidationResult, QueryScope } from "./types";
 
 export interface CustomerPayment extends AuditedEntity {
   invoiceId: UUID;
@@ -22,6 +22,15 @@ export interface CustomerPayment extends AuditedEntity {
 
 export interface PaymentService {
   listForInvoice(invoiceId: UUID): Promise<CustomerPayment[]>;
+
+  /** Company-wide active payments — the real, persisted source
+   * FinancialEngine.getCompanyFinancials/getTaxSummary use for
+   * cash-basis revenue (added 2026-08-01 to remove those two methods'
+   * dependency on the in-memory transactionService ledger, which no
+   * real payment ever wrote to in production — see
+   * DASHBOARD_AUDIT_REPORT.md). Same `includeDeleted` contract as
+   * every other listForCompany on this codebase. */
+  listForCompany(scope: QueryScope): Promise<CustomerPayment[]>;
 
   /** Runs ValidationService.validatePaymentAmount first — this is
    * where the overpayment warning contractor-pwa only implemented in
@@ -48,7 +57,18 @@ export interface PaymentService {
   /** Sum of active payments + derived status for one invoice — the
    * single implementation InvoiceService.refreshStatus and
    * FinancialEngine both call, instead of each summing
-   * invoice_payments independently. */
+   * invoice_payments independently.
+   *
+   * ONE UNAVOIDABLE EXCEPTION, found during the 2026-08-01 financial
+   * audit: the public/anonymous customer invoice page
+   * (app/invoice/[id]/page.tsx) cannot reach this service at all — it
+   * is server-rendered outside auth, and reads payments through a
+   * `get_public_invoice` Postgres RPC instead. Whenever that RPC is
+   * implemented (it is not yet applied in this project — see that
+   * page's own header), its payment-filtering SQL (`deleted_at is
+   * null`, presumably) must be hand-verified against this method's
+   * own filter, since there is no shared code path to enforce the
+   * match automatically. */
   getSummaryForInvoice(invoiceId: UUID): Promise<{
     totalPaid: number;
     remainingBalance: number;

@@ -196,12 +196,12 @@ function EstimateRoofListContent() {
               <tbody className="divide-y divide-border">
                 {filtered.map((estimate) => (
                   <tr key={estimate.id} className="hover:bg-muted/40">
-                    <td className="px-3 py-2.5">
-                      <Link href={detailHref(estimate)} className="font-medium text-foreground hover:text-primary">
-                        {estimate.estimateNumber ?? estimate.id.slice(0, 8)}
+                                        <td className="px-3 py-2.5 capitalize">
+                      <Link href={`/estimates/${estimate.id}`} className="font-medium text-foreground hover:text-primary">
+                         {estimate.title}
                       </Link>
-                      {estimate.title && <div className="text-xs text-muted-foreground">{estimate.title}</div>}
-                    </td>
+                    {(estimate.estimateNumber || estimate.id) && ( <div className="text-xs text-muted-foreground"> {estimate.estimateNumber ?? estimate.id.slice(0, 8)}  </div> )} </td>
+
                     <td className="px-3 py-2.5 text-muted-foreground">{projectsById[estimate.projectId]?.name ?? "—"}</td>
                     <td className="px-3 py-2.5 text-muted-foreground">{estimate.clientId ? clientsById[estimate.clientId]?.name ?? "—" : "—"}</td>
                     <td className="px-3 py-2.5 text-muted-foreground">{estimate.estimateType === "roofing" ? "Roofing" : "Standard"}</td>

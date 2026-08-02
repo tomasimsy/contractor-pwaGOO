@@ -11,28 +11,33 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ReceiptText, Search } from "lucide-react";
+import { ReceiptText, Search, Trash2 } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RequirePermission } from "@/components/layout/RequirePermission";
+import { usePermission } from "@/lib/hooks/usePermission";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { formatPaymentMethod } from "@/components/payments/paymentMethods";
 import { calculateExpenseTotals } from "@/lib/services/financialCalculations";
 import { EXPENSE_TYPES, EXPENSE_TYPE_LABEL, PAID_BY_LABEL, type Expense, type ExpenseType } from "@/lib/services";
+import type { Estimate } from "@/lib/services/estimateService";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 function ExpensesContent() {
-  const { expenseService } = useServices();
+  const { expenseService, estimateService } = useServices();
   const { profile } = useAuth();
+  const canDelete = usePermission("expense", "delete");
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [estimatesById, setEstimatesById] = useState<Record<string, Estimate>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<ExpenseType | "all">("all");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const companyId = profile?.companyId ?? null;
   const load = useCallback(async () => {
@@ -40,13 +45,33 @@ function ExpensesContent() {
     setLoading(true);
     setError(null);
     try {
-      setExpenses(await expenseService.listForCompany(companyId));
+      const [expenseList, estimateList] = await Promise.all([
+        expenseService.listForCompany(companyId),
+        estimateService.list({ companyId }),
+      ]);
+      setExpenses(expenseList);
+      setEstimatesById(Object.fromEntries(estimateList.map((e) => [e.id, e])));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load expenses.");
     } finally {
       setLoading(false);
     }
-  }, [expenseService, companyId]);
+  }, [expenseService, estimateService, companyId]);
+
+  async function handleDelete(expense: Expense) {
+    const reason = window.prompt("Why are you deleting this expense?");
+    if (!reason) return;
+    setDeletingId(expense.id);
+    setError(null);
+    try {
+      await expenseService.softDelete(expense.id, reason);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete expense.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -143,12 +168,31 @@ function ExpensesContent() {
                   {e.paymentMethod ? ` · ${formatPaymentMethod(e.paymentMethod)}` : ""}
                 </div>
                 {e.description && <div className="mt-0.5 text-xs text-muted-foreground">{e.description}</div>}
+                {e.estimateId && estimatesById[e.estimateId] && (
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    Estimate: {estimatesById[e.estimateId].estimateNumber ?? "—"}
+                    {estimatesById[e.estimateId].title ? ` · ${estimatesById[e.estimateId].title}` : ""}
+                  </div>
+                )}
               </div>
-              {e.projectId && (
-                <Link href={`/projects/${e.projectId}`} className="shrink-0 text-xs font-medium text-primary hover:underline">
-                  Project →
-                </Link>
-              )}
+              <div className="flex shrink-0 items-center gap-3">
+                {e.projectId && (
+                  <Link href={`/projects/${e.projectId}`} className="text-xs font-medium text-primary hover:underline">
+                    Project →
+                  </Link>
+                )}
+                {canDelete && (
+                  <button
+                    type="button"
+                    disabled={deletingId === e.id}
+                    onClick={() => handleDelete(e)}
+                    aria-label="Delete expense"
+                    className="rounded-md p-1 text-muted-foreground hover:bg-danger/10 hover:text-danger disabled:opacity-50"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                )}
+              </div>
             </li>
           ))}
         </ul>

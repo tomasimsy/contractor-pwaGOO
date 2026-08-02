@@ -29,11 +29,13 @@ import { RoofingAreasEditorV2 } from "./RoofingAreasEditorV2";
 import { EstimatePhotosEditor } from "./EstimatePhotosEditor";
 import { Modal } from "@/components/ui/Modal";
 import { ProjectForm } from "@/components/projects/ProjectForm";
+import { ClientForm } from "@/components/clients/ClientForm";
 import { calculateSubtotal, calculateLineItemTotal, calculateDocumentTotal } from "@/lib/services/financialCalculations";
 import type { Estimate, EstimateLineItem } from "@/lib/services/estimateService";
 import type { EstimatePhoto } from "@/lib/services/estimatePhotoService";
 import type { RoofingArea } from "@/lib/services";
 import type { Project } from "@/lib/services/projectService";
+import type { Client } from "@/lib/services/clientService";
 
 const formatMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
@@ -64,12 +66,21 @@ export function EstimateForm({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { estimateService, projectService, roofingAreaService, estimatePhotoService } = useServices();
+  const { estimateService, projectService, clientService, roofingAreaService, estimatePhotoService } = useServices();
   const { profile } = useAuth();
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState(estimate?.projectId ?? searchParams.get("projectId") ?? "");
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
+  const [clients, setClients] = useState<Client[]>([]);
+  // Only consulted when the selected project has no client of its own
+  // (see selectedProject.clientId branch below) — a project WITH a
+  // client keeps the existing auto-loaded, read-only behavior
+  // unchanged; this is purely the fallback picker for a client-less
+  // project, saved as the ESTIMATE's own clientId (estimates already
+  // carry clientId independently of their project — see handleSubmit).
+  const [manualClientId, setManualClientId] = useState(estimate?.clientId ?? "");
+  const [showNewClientModal, setShowNewClientModal] = useState(false);
   const [title, setTitle] = useState(estimate?.title ?? "");
   const [description, setDescription] = useState(estimate?.description ?? "");
   const [estimateType, setEstimateType] = useState<"standard" | "roofing">(estimate?.estimateType ?? (roofV2 ? "roofing" : "standard"));
@@ -97,6 +108,11 @@ export function EstimateForm({
     if (!profile?.companyId) return;
     projectService.list({ companyId: profile.companyId }).then(setProjects);
   }, [projectService, profile?.companyId]);
+
+  useEffect(() => {
+    if (!profile?.companyId) return;
+    clientService.list({ companyId: profile.companyId }).then(setClients);
+  }, [clientService, profile?.companyId]);
 
   useEffect(() => {
     if (!estimate || estimateType !== "roofing") return;
@@ -144,7 +160,7 @@ export function EstimateForm({
           title: title || null,
           description: description || null,
           projectId,
-          clientId: selectedProject?.clientId ?? null,
+          clientId: selectedProject?.clientId ?? (manualClientId || null),
           markup,
           discount,
           taxRate,
@@ -157,7 +173,7 @@ export function EstimateForm({
         const created = await estimateService.create({
           companyId: profile.companyId,
           projectId,
-          clientId: selectedProject?.clientId ?? null,
+          clientId: selectedProject?.clientId ?? (manualClientId || null),
           title: title || undefined,
           description: description || undefined,
           lineItems,
@@ -185,34 +201,54 @@ export function EstimateForm({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <label className="text-xs font-medium text-foreground">Project *</label>
-          <div className="flex gap-2">
-            <select
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-              required
-              className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
-            >
-              <option value="" disabled>Select a project</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => setShowNewProjectModal(true)}
-              className="shrink-0 whitespace-nowrap rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
-            >
-              ➕ Add New Project
-            </button>
-          </div>
-          {projects.length === 0 && <p className="text-xs text-muted-foreground">No projects yet — <Link href="/projects/new" className="text-primary hover:underline">create one first</Link>, or use the button above.</p>}
+          <select
+            value={projectId}
+            onChange={(e) => setProjectId(e.target.value)}
+            required
+            className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+          >
+            <option value="" disabled>Select a project</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setShowNewProjectModal(true)}
+            className="text-xs font-medium text-primary hover:underline"
+          >
+            + Add New Project
+          </button>
+          {projects.length === 0 && <p className="text-xs text-muted-foreground">No projects yet — <Link href="/projects/new" className="text-primary hover:underline">create one first</Link>, or use the link above.</p>}
         </div>
 
         <div className="space-y-1">
           <label className="text-xs font-medium text-foreground">Client</label>
-          <div className="flex h-[34px] items-center rounded-lg border border-input bg-muted px-3 text-sm text-muted-foreground">
-            {selectedProject?.clientId ? "Auto-loaded from project" : "No client on this project"}
-          </div>
+          {selectedProject?.clientId ? (
+            <div className="flex h-[34px] items-center rounded-lg border border-input bg-muted px-3 text-sm text-foreground">
+              {clients.find((c) => c.id === selectedProject.clientId)?.name ?? "Auto-loaded from project"}
+            </div>
+          ) : (
+            <>
+              <select
+                value={manualClientId}
+                onChange={(e) => setManualClientId(e.target.value)}
+                className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+              >
+                <option value="">No client</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setShowNewClientModal(true)}
+                className="text-xs font-medium text-primary hover:underline"
+              >
+                + Add New Client
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -463,6 +499,19 @@ export function EstimateForm({
           setShowNewProjectModal(false);
         }}
         onCancel={() => setShowNewProjectModal(false)}
+      />
+    </Modal>
+
+    <Modal open={showNewClientModal} onClose={() => setShowNewClientModal(false)} title="New Client">
+      <ClientForm
+        client={null}
+        companyId={profile?.companyId ?? ""}
+        onClose={() => setShowNewClientModal(false)}
+        onSaved={(created) => {
+          setClients((prev) => [...prev, created]);
+          setManualClientId(created.id);
+          setShowNewClientModal(false);
+        }}
       />
     </Modal>
     </>

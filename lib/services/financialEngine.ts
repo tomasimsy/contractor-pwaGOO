@@ -22,7 +22,7 @@
  * normalized sources, each owned by its own Layer 2 service:
  *
  *   - Invoices        (InvoiceService.listForProject)        -> what was BILLED
- *   - Payments         (TransactionService "customer_payment") -> what was COLLECTED
+ *   - Payments         (PaymentService.getSummaryForInvoice)   -> what was COLLECTED
  *   - Approved change orders (ChangeOrderService.listApprovedChangeOrders) -> contract growth
  *
  * `revisedTotal = invoicesTotal + approvedChangeOrderTotal`. This
@@ -35,7 +35,7 @@
  *
  * Costs are assembled from four normalized sources, matching the
  * brief exactly:
- *   - Expenses               (materials/labor/other + mileage, from the ledger)
+ *   - Expenses               (materials/labor/other + mileage, from ExpenseService's own persisted rows)
  *   - Subcontractor payments (committed: max(assigned, paid) per assignment)
  *   - Agent commissions      (committed: max(assigned, paid) per assignment)
  *   - Reimbursements         (agent + subcontractor reimbursement-type payments,
@@ -87,7 +87,6 @@ import type {
   PayableLine,
   TaxSummary,
   PaymentStatus,
-  TransactionType,
   Filter,
 } from "./types";
 import { asCommittedCost, asRealizedCost } from "./types";
@@ -123,10 +122,10 @@ import type { FilteringService } from "./filteringService";
 
 export interface FinancialEngine {
   /** Composes ChangeOrderService (approved change orders), InvoiceService
-   * (billed total), TransactionService (payments received + expense/
-   * mileage/reimbursement categories), SubcontractorService, and
-   * AgentCommissionService (committed cost via
-   * TransactionService.getAssignmentBalance) into one number set. The
+   * (billed total), PaymentService (payments received), ExpenseService
+   * (cost + mileage), SubcontractorService, and AgentCommissionService
+   * (committed cost via their own getBalance, computed directly from
+   * persisted rows) into one number set. The
    * ONLY function allowed to assemble a project's profit — every page,
    * PDF export, and report calls this, never its own arithmetic. */
   getProjectFinancials(projectId: UUID): Promise<ProjectFinancials>;
@@ -255,8 +254,6 @@ export interface FinancialEngineDeps {
   filteringService: FilteringService;
 }
 
-const EXPENSE_TYPES: TransactionType[] = ["material_expense", "labor_expense", "other_expense"];
-
 /** Inclusive date-range test on a plain YYYY-MM-DD string. Expense dates
  * are stored as dates, not timestamps, so lexicographic comparison is
  * exact here — no timezone shifting, which is what made the equivalent
@@ -266,13 +263,21 @@ function withinRange(date: string, range: DateRange): boolean {
   return date >= day(range.start) && date <= day(range.end);
 }
 
-function sumByType(
-  ledger: Array<{ type: TransactionType; amount: number }>,
-  types: TransactionType[]
-): number {
-  return ledger
-    .filter((tx) => types.includes(tx.type))
-    .reduce((sum, tx) => sum + tx.amount, 0);
+/** THE one place "does this invoice count as revenue" is decided —
+ * every revenue sum in this engine (project, estimate, company level)
+ * filters through this before adding an invoice's total. `void` and
+ * `cancelled` are both terminal, non-billed-in-effect states (see
+ * validationService.ts's INVOICE_LIFECYCLE_TRANSITIONS doc comment:
+ * void is the escape hatch for an invoice already out in the world,
+ * cancelled is for one never sent) — neither represents money actually
+ * owed or collected, so neither may contribute to revenue. This is
+ * deliberately NOT applied inside InvoiceService.listForProject/
+ * listForCompany, which must keep returning void/cancelled rows for the
+ * UI to display (a voided invoice still needs to be visible, just not
+ * counted) — the exclusion belongs here, in the one place revenue is
+ * assembled, not duplicated into every page that lists invoices. */
+export function isRevenueInvoice(invoice: { lifecycleStatus: string }): boolean {
+  return invoice.lifecycleStatus !== "void" && invoice.lifecycleStatus !== "cancelled";
 }
 
 /**
@@ -282,7 +287,16 @@ function sumByType(
  * composition layer rather than a second place raw queries happen.
  */
 export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngine {
-  const { projectService, estimateService, changeOrderService, invoiceService, paymentService, subcontractorService, agentCommissionService, transactionService, expenseService, filteringService } = deps;
+  // transactionService is accepted on FinancialEngineDeps for API
+  // compatibility with existing construction call sites
+  // (ServicesProvider.tsx, lib/services/testing/inMemoryServices.ts)
+  // but is deliberately UNUSED here — every real cash-flow figure now
+  // reads from PaymentService/SubcontractorService/AgentCommissionService/
+  // ExpenseService's own persisted rows instead (see
+  // getRealizedCashFlows/getMileageCostForProjects and
+  // DASHBOARD_AUDIT_REPORT.md for why the ledger was removed as a
+  // production financial-calculation input).
+  const { projectService, estimateService, changeOrderService, invoiceService, paymentService, subcontractorService, agentCommissionService, expenseService, filteringService } = deps;
 
   /** THE one place a Filter enters this engine's arithmetic: resolves
    * it (if given) against the "projects" entity via FilteringService,
@@ -297,21 +311,26 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
   }
 
   async function getProjectFinancials(projectId: UUID): Promise<ProjectFinancials> {
-    const project = await projectService.getById(projectId);
+    // includeDeleted: true — financial history is permanent. A deleted
+    // (or archived) project must still have its revenue/costs
+    // computable; only the UI decides whether to surface a deleted
+    // project's page, never FinancialEngine.
+    const project = await projectService.getById(projectId, true);
     if (!project) throw new Error(`getProjectFinancials: no project found for id ${projectId}`);
     const scope: QueryScope = { companyId: project.companyId, projectId };
 
-    const [invoices, approvedChangeOrders, ledger, subAssignments, agentAssignments, expenseTotals] = await Promise.all([
+    const [invoices, approvedChangeOrders, subAssignments, agentAssignments, expenseTotals, mileageTrips] = await Promise.all([
       invoiceService.listForProject(projectId),
       changeOrderService.listApprovedChangeOrders(projectId),
-      transactionService.getProjectLedger(projectId),
       subcontractorService.listAssignments(scope),
       agentCommissionService.listAssignments(scope),
       expenseService.getTotalsForProject(projectId),
+      expenseService.listMileageForProject(projectId),
     ]);
 
     // ---------- REVENUE (invoices + payments + approved change orders — never estimates.total) ----------
-    const invoicesTotal = invoices.reduce((sum, inv) => sum + inv.total, 0);
+    // Void/cancelled invoices never count as revenue — see isRevenueInvoice.
+    const invoicesTotal = invoices.filter(isRevenueInvoice).reduce((sum, inv) => sum + inv.total, 0);
     // sumApprovedChangeOrderRevenue's own status==="approved" filter is
     // a no-op here (listApprovedChangeOrders already returned only
     // approved rows) — called anyway so this is the SAME function
@@ -322,10 +341,23 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
 
     // originalEstimateTotal is informational only (quoted vs. billed) —
     // never folded into revisedTotal/grossProfit/netProfit below.
-    const estimates = await estimateService.listForProject(projectId);
+    // includeDeleted: true — financial history is permanent. A quoted
+    // amount doesn't stop having been quoted just because the estimate
+    // record was later deleted; this must stay consistent with every
+    // other "historical totals" lookup in this file.
+    const estimates = await estimateService.listForProject(projectId, true);
     const originalEstimateTotal = estimates.reduce((sum, e) => sum + e.total, 0);
 
-    const amountPaid = asRealizedCost(sumByType(ledger, ["customer_payment"]));
+    // Real, persisted payment data — the SAME PaymentService.
+    // getSummaryForInvoice call getEstimateFinancials already uses, so
+    // a project's collected cash and its own estimates' collected cash
+    // can never disagree about where the number comes from. Previously
+    // sourced from transactionService.getProjectLedger, which no real
+    // payment ever wrote to in production (see DASHBOARD_AUDIT_REPORT.md).
+    const invoicePaymentSummaries = await Promise.all(
+      invoices.filter(isRevenueInvoice).map((inv) => paymentService.getSummaryForInvoice(inv.id))
+    );
+    const amountPaid = asRealizedCost(invoicePaymentSummaries.reduce((sum, s) => sum + s.totalPaid, 0));
     const remainingBalance = calculateRemainingBalance(invoicesTotal, amountPaid);
 
     // ---------- COSTS ----------
@@ -342,7 +374,15 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     // are shaped that way), which a ledger sum keyed on project_id
     // silently dropped.
     const expenseItems = expenseTotals.total;
-    const mileageCosts = sumByType(ledger, ["mileage_expense"]);
+    // Real, persisted mileage rows (ExpenseService owns `mileage_trips`)
+    // — not the ledger, which no real mileage-recording code path ever
+    // wrote to in production. Currently 0 for every project because
+    // mileage tracking has no live table wired yet
+    // (ExpenseService.listMileageForProject returns [] until it is —
+    // see that method's own doc comment); this will start reflecting
+    // real data the moment that table exists, with no further change
+    // needed here.
+    const mileageCosts = mileageTrips.reduce((sum, trip) => sum + trip.reimbursement, 0);
     // An agent-paid expense books TWO ledger rows for one real-world
     // event (see TRANSACTION_LEDGER.md): the expense itself
     // (material/labor/other_expense — already summed into expenseItems
@@ -386,7 +426,8 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     // Outstanding agent = unpaid commission (per assignment) + unpaid
     // reimbursement liability (owed minus paid, company-wide reimbursement
     // rows aren't assignment-scoped so they can't run through
-    // getAssignmentBalance — summed directly from the ledger instead).
+    // getAssignmentBalance — sourced from ExpenseService's own
+    // reimbursementStatus instead, via outstandingReimbursements above).
     const outstandingAgent = asCommittedCost(
       agentBalances.reduce((sum, b) => sum + b.outstanding, 0) + outstandingReimbursements
     );
@@ -459,7 +500,8 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
    * a second, different way.
    */
   async function getEstimateFinancials(estimateId: UUID): Promise<EstimateFinancials> {
-    const estimate = await estimateService.getById(estimateId);
+    // includeDeleted: true — same reasoning as getProjectFinancials.
+    const estimate = await estimateService.getById(estimateId, true);
     if (!estimate) throw new Error(`getEstimateFinancials: no estimate found for id ${estimateId}`);
 
     const scope: QueryScope = { companyId: estimate.companyId, projectId: estimate.projectId };
@@ -471,7 +513,8 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
       agentCommissionService.listAssignments(scope),
     ]);
 
-    const invoicesForEstimate = projectInvoices.filter((inv) => inv.estimateId === estimateId);
+    // Void/cancelled invoices never count as revenue — see isRevenueInvoice.
+    const invoicesForEstimate = projectInvoices.filter((inv) => inv.estimateId === estimateId && isRevenueInvoice(inv));
 
     // Same function getProjectFinancials calls — sumApprovedChangeOrderRevenue
     // filters to approved internally, so passing every change order (not
@@ -529,37 +572,103 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     };
   }
 
-  async function getCompanyFinancials(scope: QueryScope & { dateRange: DateRange }, filter?: Filter): Promise<CompanyFinancials> {
-    const [ledgerAll, invoicesAll, projects, projectIds, companyExpenses] = await Promise.all([
-      transactionService.getCompanyLedger(scope),
+  /** THE one place company-wide, period-scoped, real cash flow is
+   * assembled — shared by getCompanyFinancials and getTaxSummary so
+   * "how much cash actually moved this period, attributed to which
+   * project" is computed exactly once, not twice. Every figure is
+   * sourced from the OWNING service's real, persisted rows —
+   * PaymentService/SubcontractorService/AgentCommissionService — never
+   * transactionService's ledger, which no real payment/subcontractor/
+   * agent-payment write ever reached reliably in production (the
+   * ledger is only a same-session, in-memory double outside tests; see
+   * DASHBOARD_AUDIT_REPORT.md for the audit that found Revenue/Payments
+   * Received permanently reading as ~$0 because of it). Project
+   * attribution for each payment type is resolved here by joining
+   * through the already-fetched invoices/assignments/expenses — a
+   * lookup, not a new calculation. */
+  async function getRealizedCashFlows(scope: QueryScope & { dateRange: DateRange }, filter?: Filter) {
+    const [invoicesAll, projectIds, companyExpenses, customerPaymentsAll, subAssignmentsAll, subPaymentsAll, agentAssignmentsAll, agentPaymentsAll] = await Promise.all([
       invoiceService.listForCompany(scope),
-      projectService.list({ companyId: scope.companyId }),
       resolveProjectIds(scope, filter),
       expenseService.listForCompany(scope.companyId),
+      paymentService.listForCompany(scope),
+      subcontractorService.listAssignments({ companyId: scope.companyId }),
+      subcontractorService.listPayments(scope),
+      agentCommissionService.listAssignments({ companyId: scope.companyId }),
+      agentCommissionService.listPayments(scope),
     ]);
 
-    // A Filter narrows to a project subset; ledger rows with no
-    // project (company-level adjustments) are excluded once any
-    // project filter is active, since they can't be attributed to the
-    // filtered set. Same restriction applied to invoices and to the
-    // project-status counts below, so every number in the returned
-    // CompanyFinancials reflects the SAME filtered project set — no
-    // partial application where revenue is filtered but cost isn't.
-    const ledger = projectIds ? ledgerAll.filter((tx) => tx.projectId !== null && projectIds.has(tx.projectId)) : ledgerAll;
+    const invoiceProjectId = new Map(invoicesAll.map((inv) => [inv.id, inv.projectId] as const));
+    const subAssignmentProjectId = new Map(subAssignmentsAll.map((a) => [a.id, a.projectId] as const));
+    const agentAssignmentProjectId = new Map(agentAssignmentsAll.map((a) => [a.id, a.projectId] as const));
+    const expenseProjectId = new Map(companyExpenses.map((e) => [e.id, e.projectId] as const));
+    const inScope = (projectId: UUID | null | undefined) => !projectIds || (projectId != null && projectIds.has(projectId));
+
+    const customerPayments = customerPaymentsAll.filter(
+      (p) => withinRange(p.paymentDate, scope.dateRange) && inScope(invoiceProjectId.get(p.invoiceId))
+    );
+    const subPayments = subPaymentsAll.filter(
+      (p) => withinRange(p.paymentDate, scope.dateRange) && inScope(subAssignmentProjectId.get(p.assignmentId))
+    );
+    // A reimbursement payment is attributed to a project via the
+    // expense it settles (reimbursesExpenseId) when it has no
+    // assignmentId of its own.
+    const agentPayments = agentPaymentsAll.filter((p) => {
+      if (!withinRange(p.paymentDate, scope.dateRange)) return false;
+      const paymentProjectId = p.assignmentId
+        ? agentAssignmentProjectId.get(p.assignmentId)
+        : p.reimbursesExpenseId
+          ? expenseProjectId.get(p.reimbursesExpenseId)
+          : null;
+      return inScope(paymentProjectId);
+    });
+
+    return { invoicesAll, projectIds, companyExpenses, customerPayments, subPayments, agentPayments };
+  }
+
+  /** Real, persisted mileage cost for a scoped set of projects —
+   * ExpenseService owns `mileage_trips`; there is no company-wide
+   * listing method (nor is one needed while
+   * ExpenseService.listMileageForProject always returns [] — see that
+   * method's own doc comment), so this sums per scoped project. Shared
+   * by getCompanyFinancials and getTaxSummary so mileage is computed
+   * the same way in both. */
+  async function getMileageCostForProjects(projectIds: UUID[]): Promise<number> {
+    const trips = await Promise.all(projectIds.map((id) => expenseService.listMileageForProject(id)));
+    return trips.reduce((sum, t) => sum + t.reduce((s, trip) => s + trip.reimbursement, 0), 0);
+  }
+
+  async function getCompanyFinancials(scope: QueryScope & { dateRange: DateRange }, filter?: Filter): Promise<CompanyFinancials> {
+    const [projects, cashFlows] = await Promise.all([
+      projectService.list({ companyId: scope.companyId }),
+      getRealizedCashFlows(scope, filter),
+    ]);
+    const { invoicesAll, projectIds, companyExpenses, customerPayments, subPayments, agentPayments } = cashFlows;
+
+    // A Filter narrows to a project subset — already applied identically
+    // to every cash-flow source inside getRealizedCashFlows, so no
+    // number in the returned CompanyFinancials reflects a different
+    // filtered set than any other.
     const invoices = projectIds ? invoicesAll.filter((inv) => projectIds.has(inv.projectId)) : invoicesAll;
     const scopedProjects = projectIds ? projects.filter((p) => projectIds.has(p.id)) : projects;
+    const inScope = (projectId: UUID | null | undefined) => !projectIds || (projectId != null && projectIds.has(projectId));
 
     // Cash-basis, period-scoped — see file header for why this is a
     // DIFFERENT model than getProjectFinancials' committed-cost figures.
-    const totalRevenue = asRealizedCost(sumByType(ledger, ["customer_payment"]));
-    const subcontractorPaid = asRealizedCost(sumByType(ledger, ["subcontractor_payment"]));
+    const totalRevenue = asRealizedCost(customerPayments.reduce((sum, p) => sum + p.amount, 0));
+    const subcontractorPaid = asRealizedCost(subPayments.reduce((sum, p) => sum + p.amount, 0));
+
     // Cash actually paid out to agents this period. `agentPaid` is
     // reported as-is (it answers "how much cash went to agents,"
     // which legitimately includes reimbursements), but see
     // `agentCostContribution` below for why only the COMMISSION half
     // of it may enter totalExpenses.
-    const agentReimbursementsSettled = asRealizedCost(sumByType(ledger, ["agent_reimbursement_paid"]));
-    const agentCommissionPaid = asRealizedCost(sumByType(ledger, ["agent_commission"]));
+    const agentReimbursementsSettled = asRealizedCost(
+      agentPayments.filter((p) => p.paymentType === "reimbursement").reduce((sum, p) => sum + p.amount, 0)
+    );
+    const agentCommissionPaid = asRealizedCost(
+      agentPayments.filter((p) => p.paymentType === "commission").reduce((sum, p) => sum + p.amount, 0)
+    );
     const agentPaid = asRealizedCost(agentCommissionPaid + agentReimbursementsSettled);
     // Expenses from the source rows, same as getProjectFinancials — but
     // period-scoped and CASH-BASIS, which is the company-level model
@@ -568,13 +677,10 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     // bill that hasn't been paid yet. Soft-deleted rows never arrive
     // here at all, ExpenseService having already excluded them.
     const periodExpenses = companyExpenses.filter(
-      (e) =>
-        e.isPaid &&
-        withinRange(e.expenseDate, scope.dateRange) &&
-        (!projectIds || (e.projectId !== null && projectIds.has(e.projectId)))
+      (e) => e.isPaid && withinRange(e.expenseDate, scope.dateRange) && inScope(e.projectId)
     );
     const expenseItems = calculateExpenseTotals(periodExpenses).total;
-    const mileageCosts = sumByType(ledger, ["mileage_expense"]);
+    const mileageCosts = await getMileageCostForProjects(scopedProjects.map((p) => p.id));
     // Reimbursing an agent is NOT an additional cost — it's settling a
     // liability for a purchase already counted in `expenseItems` (an
     // agent-paid expense books both an expense row and a reimbursement
@@ -591,8 +697,9 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     const netProfit = totalRevenue - totalExpenses;
     const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
 
-    const totalInvoiced = invoices.reduce((sum, inv) => sum + inv.total, 0);
-    const totalPaid = totalRevenue; // same normalized source (ledger), not invoice.amount_paid
+    // Void/cancelled invoices never count as revenue — see isRevenueInvoice.
+    const totalInvoiced = invoices.filter(isRevenueInvoice).reduce((sum, inv) => sum + inv.total, 0);
+    const totalPaid = totalRevenue; // same normalized source (real payments), not invoice.amount_paid
     const totalOutstanding = totalInvoiced - totalPaid;
 
     // Lifetime outstanding payables — not period-scoped, matches
@@ -658,7 +765,7 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
       // doesn't actually narrow away the QueryScope branch and left
       // `scope.projectId` typed as possibly-undefined below.
       const projectId = scope.projectId;
-      const project = await projectService.getById(projectId);
+      const project = await projectService.getById(projectId, true);
       if (!project) throw new Error(`getProfitSummary: no project found for id ${projectId}`);
       const f = await getProjectFinancials(projectId);
       return {
@@ -742,33 +849,27 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
   }
 
   async function getTaxSummary(scope: QueryScope & { dateRange: DateRange }, taxRate = 0.25, filter?: Filter): Promise<TaxSummary> {
-    const [ledgerAll, projectIds, companyExpenses] = await Promise.all([
-      transactionService.getCompanyLedger(scope),
-      resolveProjectIds(scope, filter),
-      expenseService.listForCompany(scope.companyId),
-    ]);
-    const ledger = projectIds ? ledgerAll.filter((tx) => tx.projectId !== null && projectIds.has(tx.projectId)) : ledgerAll;
+    const { projectIds, companyExpenses, customerPayments, subPayments, agentPayments } = await getRealizedCashFlows(scope, filter);
 
     // Taxable revenue = payments actually RECEIVED, cash-basis — an
     // unpaid invoice is not taxable income, so this deliberately does
     // NOT use invoicesTotal (billed) the way revisedTotal does at the
     // project level.
-    const taxableRevenue = asRealizedCost(sumByType(ledger, ["customer_payment"]));
+    const taxableRevenue = asRealizedCost(customerPayments.reduce((sum, p) => sum + p.amount, 0));
 
     // Same cash-basis, period-scoped expense set getCompanyFinancials
     // uses — one rule, so "deductible expenses" on the tax report and
     // "total expenses" on the dashboard can never disagree for the same
-    // range. Mileage still comes from the ledger (it has its own source
-    // table and its own tax treatment).
+    // range. Mileage is real, persisted data (ExpenseService owns
+    // `mileage_trips`) — same source getCompanyFinancials uses, not the
+    // ledger, which had its own now-removed dependency here.
+    const scopedProjectIds = projectIds ? Array.from(projectIds) : (await projectService.list({ companyId: scope.companyId })).map((p) => p.id);
     const deductibleExpenses =
       calculateExpenseTotals(
         companyExpenses.filter(
-          (e) =>
-            e.isPaid &&
-            withinRange(e.expenseDate, scope.dateRange) &&
-            (!projectIds || (e.projectId !== null && projectIds.has(e.projectId)))
+          (e) => e.isPaid && withinRange(e.expenseDate, scope.dateRange) && (!projectIds || (e.projectId !== null && projectIds.has(e.projectId)))
         )
-      ).total + sumByType(ledger, ["mileage_expense"]);
+      ).total + (await getMileageCostForProjects(scopedProjectIds));
 
     // Approved costs = subcontractor payments + agent commission +
     // agent reimbursement ACTUALLY PAID this period — same reasoning as
@@ -777,7 +878,7 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     // Deductibility of an unpaid liability is between the company and
     // its CPA, not something this engine should presume.
     const approvedCosts = asCommittedCost(
-      sumByType(ledger, ["subcontractor_payment", "agent_commission", "agent_reimbursement_paid"])
+      subPayments.reduce((sum, p) => sum + p.amount, 0) + agentPayments.reduce((sum, p) => sum + p.amount, 0)
     );
 
     const netTaxableIncome = taxableRevenue - deductibleExpenses - approvedCosts;

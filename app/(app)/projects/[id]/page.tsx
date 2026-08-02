@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
-  Pencil, Trash2, FileText, GitPullRequest, Receipt, Wallet, ReceiptText,
+  Pencil, Trash2, Archive, FileText, GitPullRequest, Receipt, Wallet, ReceiptText,
   HardHat, FolderOpen, History, User, MapPin,
 } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -15,11 +15,16 @@ import { RequirePermission } from "@/components/layout/RequirePermission";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { ProjectExpensesGroupedPanel } from "@/components/expenses/ProjectExpensesGroupedPanel";
 import { ProfitSummaryCard } from "@/components/shared/ProfitSummaryCard";
+import { INVOICE_STATUS_TONE } from "@/components/invoices/invoiceStatus";
 import { usePermission } from "@/lib/hooks/usePermission";
 import type { Project } from "@/lib/services/projectService";
 import type { Client } from "@/lib/services/clientService";
 import type { Estimate } from "@/lib/services/estimateService";
 import type { ChangeOrder } from "@/lib/services/changeOrderService";
+import type { Invoice } from "@/lib/services/invoiceService";
+import type { CustomerPayment } from "@/lib/services/paymentService";
+import type { SubcontractorAssignment } from "@/lib/services/subcontractorService";
+import type { AgentAssignment } from "@/lib/services/agentCommissionService";
 import { sumApprovedChangeOrderRevenue, calculateChangeOrderRevenue } from "@/lib/services/financialCalculations";
 import type { AuditLogEntry, ProjectStatus, EstimateStatus, ChangeOrderStatus, ProjectFinancials } from "@/lib/services";
 
@@ -50,11 +55,14 @@ const CHANGE_ORDER_STATUS_TONE: Record<ChangeOrderStatus, "neutral" | "success" 
   invoiced: "success",
 };
 
+type Balance = { assigned: number; paid: number; committed: number; outstanding: number };
+const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+
 function ProjectDetailContent() {
   const params = useParams();
   const router = useRouter();
   const projectId = params.id as string;
-  const { projectService, clientService, estimateService, changeOrderService, auditService, financialEngine } = useServices();
+  const { projectService, clientService, estimateService, changeOrderService, auditService, financialEngine, subcontractorService, agentCommissionService, invoiceService, paymentService } = useServices();
   const canEditExpenses = usePermission("expense", "create");
 
   const [project, setProject] = useState<Project | null>(null);
@@ -64,6 +72,12 @@ function ProjectDetailContent() {
   const [changeOrders, setChangeOrders] = useState<ChangeOrder[]>([]);
   const [activity, setActivity] = useState<AuditLogEntry[]>([]);
   const [financials, setFinancials] = useState<ProjectFinancials | null>(null);
+  const [subAssignments, setSubAssignments] = useState<Array<SubcontractorAssignment & { subcontractorName: string; trade: string | null }>>([]);
+  const [subBalances, setSubBalances] = useState<Record<string, Balance>>({});
+  const [agentAssignments, setAgentAssignments] = useState<Array<AgentAssignment & { agentName: string }>>([]);
+  const [agentBalances, setAgentBalances] = useState<Record<string, Balance>>({});
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [paymentsByInvoice, setPaymentsByInvoice] = useState<Record<string, CustomerPayment[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -106,13 +120,35 @@ function ProjectDetailContent() {
         setActivity(history);
         setEstimates(await estimateService.listForProject(p.id));
         setChangeOrders(await changeOrderService.listForProject(p.id));
+
+        const scope = { companyId: p.companyId, projectId: p.id };
+        const [subs, agents] = await Promise.all([
+          subcontractorService.listAssignments(scope),
+          agentCommissionService.listAssignments(scope),
+        ]);
+        setSubAssignments(subs);
+        setAgentAssignments(agents);
+
+        const [subBalanceEntries, agentBalanceEntries] = await Promise.all([
+          Promise.all(subs.map(async (a) => [a.id, await subcontractorService.getBalance(a.id)] as const)),
+          Promise.all(agents.map(async (a) => [a.id, await agentCommissionService.getBalance(a.id)] as const)),
+        ]);
+        setSubBalances(Object.fromEntries(subBalanceEntries));
+        setAgentBalances(Object.fromEntries(agentBalanceEntries));
+
+        const projectInvoices = await invoiceService.listForProject(p.id);
+        setInvoices(projectInvoices);
+        const paymentEntries = await Promise.all(
+          projectInvoices.map(async (inv) => [inv.id, await paymentService.listForInvoice(inv.id)] as const)
+        );
+        setPaymentsByInvoice(Object.fromEntries(paymentEntries));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load project.");
     } finally {
       setLoading(false);
     }
-  }, [projectService, clientService, estimateService, changeOrderService, auditService, projectId]);
+  }, [projectService, clientService, estimateService, changeOrderService, auditService, subcontractorService, agentCommissionService, invoiceService, paymentService, projectId]);
 
   useEffect(() => {
     // Fetch-on-mount is this effect's entire purpose — synchronizing
@@ -121,13 +157,34 @@ function ProjectDetailContent() {
     load();
   }, [load]);
 
+  // Soft-delete — a real delete (hidden from every list, recoverable
+  // only via /projects/trash's Restore), NOT the same thing as the
+  // "archived" status below. Previously this button was labeled
+  // "Archive" while actually calling softDelete, which made deleted
+  // projects look "archived" when there was no way to see them again.
   async function handleDelete() {
     if (!project) return;
-    const reason = window.prompt(`Why are you archiving "${project.name}"?`);
+    const reason = window.prompt(`Why are you deleting "${project.name}"? (This can be undone from Projects → Deleted.)`);
     if (!reason) return;
     try {
       await projectService.softDelete(project.id, reason);
       router.push("/projects");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete project.");
+    }
+  }
+
+  // Real "archived" status — a non-destructive, reversible-by-status-
+  // change marker for a job that's fully wrapped up, distinct from
+  // deletion. ValidationService.PROJECT_TRANSITIONS only allows this
+  // from "completed"/"cancelled" (archived has no further transitions
+  // out), matching the button's disabled condition below.
+  async function handleArchive() {
+    if (!project) return;
+    setError(null);
+    try {
+      await projectService.changeStatus(project.id, "archived");
+      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to archive project.");
     }
@@ -148,8 +205,23 @@ function ProjectDetailContent() {
             <Link href={`/projects/${project.id}/edit`} className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted">
               <Pencil className="size-3.5" /> Edit
             </Link>
-            <button type="button" onClick={handleDelete} className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-danger hover:bg-danger/10">
-              <Trash2 className="size-3.5" /> Archive
+            {(project.status === "completed" || project.status === "cancelled") && (
+              <button
+                type="button"
+                onClick={handleArchive}
+                title="Mark this completed/cancelled job as archived — reversible only by changing status again, not a deletion."
+                className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
+              >
+                <Archive className="size-3.5" /> Archive
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleDelete}
+              title="Soft-delete — hides this project everywhere; recoverable from Projects → Deleted."
+              className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-danger hover:bg-danger/10"
+            >
+              <Trash2 className="size-3.5" /> Delete
             </button>
           </div>
         }
@@ -168,84 +240,212 @@ function ProjectDetailContent() {
             </dl>
           </Section>
 
-          <Section
-            title="Estimates"
-            icon={FileText}
-            actions={
-              <Link href={`/estimates/new?projectId=${project.id}`} className="text-xs font-medium text-primary hover:underline">
-                + New estimate
-              </Link>
-            }
+<Section
+  title="Estimates"
+  icon={FileText}
+  actions={
+    <Link
+      href={`/estimates/new?projectId=${project.id}`}
+      className="text-xs font-medium text-primary hover:underline"
+    >
+      + New Estimate
+    </Link>
+  }
+>
+  {estimates.length === 0 ? (
+    <EmptyState
+      title="No estimates yet"
+      description="Create the first proposal for this project."
+    />
+  ) : (
+    <div className="overflow-hidden rounded-lg border border-border text-xs">
+      {/* Header */}
+      <div className="grid grid-cols-[1fr_140px_120px_120px] bg-muted px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <div>Estimate</div>
+        <div>Number</div>
+        <div className="text-right">Amount</div>
+        <div className="text-right">Status</div>
+      </div>
+
+      {/* Rows */}
+      {estimates.map((estimate, index) => (
+        <Link
+          key={estimate.id}
+          href={`/estimates/${estimate.id}`}
+          className={`grid grid-cols-[1fr_140px_120px_120px] items-center px-4 py-3 transition-colors hover:bg-muted/50 ${
+            index !== estimates.length - 1 ? "border-t border-border" : ""
+          }`}
+        >
+          <div className="text-xs font-medium text-foreground">
+            {estimate.title}
+          </div>
+
+          <div className="text-xs text-muted-foreground">
+            {estimate.estimateNumber ?? estimate.id.slice(0, 8)}
+          </div>
+
+          <div className="text-right text-xs font-medium text-foreground">
+            {estimate.total.toLocaleString("en-US", {
+              style: "currency",
+              currency: "USD",
+            })}
+          </div>
+
+          <div className="flex justify-end">
+            <Badge
+              className="text-xs"
+              tone={ESTIMATE_STATUS_TONE[estimate.status]}
+            >
+              {estimate.status.replace(/_/g, " ")}
+            </Badge>
+          </div>
+        </Link>
+      ))}
+    </div>
+  )}
+</Section>
+
+<Section
+  title="Change Orders"
+  icon={GitPullRequest}
+  actions={
+    <Link
+      href={`/change-orders/new?projectId=${project.id}`}
+      className="text-xs font-medium text-primary hover:underline"
+    >
+      + New Change Order
+    </Link>
+  }
+>
+  {changeOrders.length === 0 ? (
+    <EmptyState
+      title="No change orders yet"
+      description="Pending, approved, and rejected change orders will appear here."
+    />
+  ) : (
+    <>
+      <div className="overflow-hidden rounded-lg border border-border text-xs">
+        {/* Header */}
+        <div className="grid grid-cols-[140px_1fr_120px_120px] bg-muted px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <div>Number</div>
+          <div>Title</div>
+          <div className="text-right">Amount</div>
+          <div className="text-right">Status</div>
+        </div>
+
+        {/* Rows */}
+        {changeOrders.map((co, index) => (
+          <Link
+            key={co.id}
+            href={`/change-orders/${co.id}`}
+            className={`grid grid-cols-[140px_1fr_120px_120px] items-center px-4 py-3 transition-colors hover:bg-muted/50 ${
+              index !== changeOrders.length - 1 ? "border-t border-border" : ""
+            }`}
           >
-            {estimates.length === 0 ? (
-              <EmptyState title="No estimates yet" description="Create the first proposal for this project." />
+            <div className="text-xs font-medium text-foreground">
+              {co.changeOrderNumber}
+            </div>
+
+            <div className="text-xs text-muted-foreground truncate">
+              {co.title}
+            </div>
+
+            <div className="text-right text-xs font-medium text-foreground">
+              {calculateChangeOrderRevenue(co.totalAmount, co.tax).toLocaleString(
+                "en-US",
+                {
+                  style: "currency",
+                  currency: "USD",
+                }
+              )}
+            </div>
+
+            <div className="flex justify-end">
+              <Badge
+                className="text-xs"
+                tone={CHANGE_ORDER_STATUS_TONE[co.status]}
+              >
+                {co.status}
+              </Badge>
+            </div>
+          </Link>
+        ))}
+      </div>
+
+      {changeOrders.some((c) => c.status === "approved") && (
+        <div className="mt-3 flex items-center justify-between rounded-lg border border-border bg-muted/30 px-4 py-2 text-xs">
+          <span className="font-medium text-muted-foreground">
+            Approved Change Order Revenue
+          </span>
+          <span className="font-semibold text-foreground">
+            {sumApprovedChangeOrderRevenue(changeOrders).toLocaleString(
+              "en-US",
+              {
+                style: "currency",
+                currency: "USD",
+              }
+            )}
+          </span>
+        </div>
+      )}
+    </>
+  )}
+</Section>
+
+          <Section title="Invoices" icon={Receipt}>
+            {invoices.length === 0 ? (
+              <EmptyState title="No invoices yet" description="Invoice status and outstanding balances will appear here once an estimate is converted." />
             ) : (
               <ul className="divide-y divide-border">
-                {estimates.map((estimate) => (
-                  <li key={estimate.id}>
-                    <Link href={`/estimates/${estimate.id}`} className="flex items-center justify-between gap-2 py-2.5 hover:text-primary">
+                {invoices.map((inv) => {
+                  const estimate = inv.estimateId ? estimates.find((e) => e.id === inv.estimateId) : null;
+                  return (
+                    <li key={inv.id} className="flex items-center justify-between gap-2 py-2 text-sm">
                       <div>
-                        <div className="font-medium text-foreground">{estimate.estimateNumber ?? estimate.id.slice(0, 8)}</div>
-                        {estimate.title && <div className="text-xs text-muted-foreground">{estimate.title}</div>}
+                        <Link href={`/invoices/${inv.id}`} className="font-medium text-primary hover:underline">
+                          {inv.invoiceNumber || inv.id.slice(0, 8)}
+                        </Link>
+                        {estimate && (
+                          <div className="text-xs text-muted-foreground">
+                            {estimate.estimateNumber ?? "—"}{estimate.title ? ` · ${estimate.title}` : ""}
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-foreground">{estimate.total.toLocaleString("en-US", { style: "currency", currency: "USD" })}</span>
-                        <Badge tone={ESTIMATE_STATUS_TONE[estimate.status]}>{estimate.status.replace(/_/g, " ")}</Badge>
+                        <Badge tone={INVOICE_STATUS_TONE[inv.status]}>{inv.status.replace(/_/g, " ")}</Badge>
+                        <span className="font-medium text-foreground">{money(inv.total)}</span>
                       </div>
-                    </Link>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </Section>
 
-          <Section
-            title="Change Orders"
-            icon={GitPullRequest}
-            actions={
-              <Link href={`/change-orders/new?projectId=${project.id}`} className="text-xs font-medium text-primary hover:underline">
-                + New change order
-              </Link>
-            }
-          >
-            {changeOrders.length === 0 ? (
-              <EmptyState title="No change orders yet" description="Pending, approved, and rejected change orders will appear here." />
-            ) : (
-              <>
-                <ul className="divide-y divide-border">
-                  {changeOrders.map((co) => (
-                    <li key={co.id}>
-                      <Link href={`/change-orders/${co.id}`} className="flex items-center justify-between gap-2 py-2.5 hover:text-primary">
-                        <div>
-                          <div className="font-medium text-foreground">{co.changeOrderNumber}</div>
-                          <div className="text-xs text-muted-foreground">{co.title}</div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-foreground">{calculateChangeOrderRevenue(co.totalAmount, co.tax).toLocaleString("en-US", { style: "currency", currency: "USD" })}</span>
-                          <Badge tone={CHANGE_ORDER_STATUS_TONE[co.status]}>{co.status}</Badge>
-                        </div>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-                {changeOrders.some((c) => c.status === "approved") && (
-                  <div className="mt-3 flex justify-between border-t border-border pt-2 text-sm">
-                    <span className="text-muted-foreground">Approved change order revenue</span>
-                    <span className="font-semibold text-foreground">
-                      {sumApprovedChangeOrderRevenue(changeOrders).toLocaleString("en-US", { style: "currency", currency: "USD" })}
-                    </span>
-                  </div>
-                )}
-              </>
-            )}
-          </Section>
-
-          <Section title="Invoices" icon={Receipt}>
-            <EmptyState title="No invoices yet" description="Invoice status and outstanding balances will appear here once an estimate is converted." />
-          </Section>
-
           <Section title="Payments" icon={Wallet}>
-            <EmptyState title="No payments recorded" description="Payment history, amount collected, and remaining balance will appear here." />
+            {invoices.every((inv) => (paymentsByInvoice[inv.id] ?? []).length === 0) ? (
+              <EmptyState title="No payments recorded" description="Payment history, amount collected, and remaining balance will appear here." />
+            ) : (
+              <ul className="divide-y divide-border">
+                {invoices.flatMap((inv) => {
+                  const estimate = inv.estimateId ? estimates.find((e) => e.id === inv.estimateId) : null;
+                  return (paymentsByInvoice[inv.id] ?? []).map((payment) => (
+                    <li key={payment.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+                      <div>
+                        <Link href={`/invoices/${inv.id}`} className="font-medium text-primary hover:underline">
+                          {inv.invoiceNumber || inv.id.slice(0, 8)}
+                        </Link>
+                        <div className="text-xs text-muted-foreground">
+                          {payment.paymentDate}
+                          {estimate ? ` · ${estimate.estimateNumber ?? "—"}${estimate.title ? ` · ${estimate.title}` : ""}` : ""}
+                        </div>
+                      </div>
+                      <span className="font-medium text-foreground">{money(payment.amount)}</span>
+                    </li>
+                  ));
+                })}
+              </ul>
+            )}
           </Section>
 
           <ProjectExpensesGroupedPanel
@@ -260,10 +460,51 @@ function ProjectDetailContent() {
 
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             <Section title="Subcontractors" icon={HardHat}>
-              <EmptyState title="None assigned" description="Subcontractors assigned to this project and their payments will appear here." />
+              {subAssignments.length === 0 ? (
+                <EmptyState title="None assigned" description="Subcontractors assigned to this project and their payments will appear here." />
+              ) : (
+                <ul className="divide-y divide-border">
+                  {subAssignments.map((a) => {
+                    const b = subBalances[a.id];
+                    return (
+                      <li key={a.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+                        <div>
+                          <div className="font-medium text-foreground">{a.subcontractorName}</div>
+                          {a.trade && <div className="text-xs text-muted-foreground">{a.trade}</div>}
+                        </div>
+                        {b && (
+                          <div className="text-right text-xs text-muted-foreground">
+                            <div>Assigned {money(b.assigned)}</div>
+                            <div>Paid {money(b.paid)} · Outstanding <span className="font-semibold text-foreground">{money(b.outstanding)}</span></div>
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </Section>
             <Section title="Agents" icon={HardHat}>
-              <EmptyState title="None assigned" description="Agents assigned to this project and their commissions/reimbursements will appear here." />
+              {agentAssignments.length === 0 ? (
+                <EmptyState title="None assigned" description="Agents assigned to this project and their commissions/reimbursements will appear here." />
+              ) : (
+                <ul className="divide-y divide-border">
+                  {agentAssignments.map((a) => {
+                    const b = agentBalances[a.id];
+                    return (
+                      <li key={a.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+                        <div className="font-medium text-foreground">{a.agentName}</div>
+                        {b && (
+                          <div className="text-right text-xs text-muted-foreground">
+                            <div>Assigned {money(b.assigned)}</div>
+                            <div>Paid {money(b.paid)} · Owed <span className="font-semibold text-foreground">{money(b.outstanding)}</span></div>
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </Section>
           </div>
 

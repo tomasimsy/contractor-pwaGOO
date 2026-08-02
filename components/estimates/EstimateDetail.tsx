@@ -85,6 +85,7 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
   const [areaLineItems, setAreaLineItems] = useState<Record<string, EstimateAreaLineItem[]>>({});
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [paymentsByInvoice, setPaymentsByInvoice] = useState<Record<string, CustomerPayment[]>>({});
+  const [paidTotalByInvoice, setPaidTotalByInvoice] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -111,9 +112,12 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
       setEstimate(e);
 
       if (e) {
-        const p = await projectService.getById(e.projectId);
+        // includeDeleted: true on both — this estimate's own project/
+        // client context must never disappear just because either was
+        // later deleted; financial history is permanent.
+        const p = await projectService.getById(e.projectId, true);
         setProject(p);
-        if (e.clientId) setClient(await clientService.getById(e.clientId));
+        if (e.clientId) setClient(await clientService.getById(e.clientId, true));
         setChangeOrders(await changeOrderService.listForEstimate(e.id));
         setActivity(await auditService.getHistory(e.companyId, "estimates", e.id));
 
@@ -137,6 +141,14 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
           estimateInvoices.map(async (inv) => [inv.id, await paymentService.listForInvoice(inv.id)] as const)
         );
         setPaymentsByInvoice(Object.fromEntries(paymentEntries));
+        // totalPaid per invoice comes from PaymentService.getSummaryForInvoice
+        // — the same call FinancialEngine itself uses — rather than
+        // reducing the raw payments array above, so this can never
+        // silently disagree with the figure Dashboard/FinancialEngine show.
+        const paidTotalEntries = await Promise.all(
+          estimateInvoices.map(async (inv) => [inv.id, (await paymentService.getSummaryForInvoice(inv.id)).totalPaid] as const)
+        );
+        setPaidTotalByInvoice(Object.fromEntries(paidTotalEntries));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load estimate.");
@@ -222,10 +234,10 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
       <div className="flex flex-col gap-4 pb-4 sm:flex-row sm:items-center sm:justify-between border-b border-border/60 mb-6">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold tracking-tight text-foreground">{estimate.estimateNumber ?? estimate.id.slice(0, 8)}</h1>
+            <h1 className="text-xl font-bold tracking-tight text-foreground capitalize">{estimate.title || "Untitled Estimate"}</h1>
             <Badge tone={STATUS_TONE[estimate.status]}>{estimate.status.replace(/_/g, " ")}</Badge>
           </div>
-          <p className="text-sm text-muted-foreground mt-0.5">{estimate.title || "Untitled Estimate"}</p>
+          <p className="text-sm text-muted-foreground mt-0.5">{project?.name}  {estimate.estimateNumber ?? estimate.id.slice(0, 8)}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -306,6 +318,12 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground block">Project</span>
                   <span className="text-sm font-medium text-foreground truncate block mt-0.5">
                     {project ? <Link href={`/projects/${project.id}`} className="text-primary hover:underline">{project.name}</Link> : "—"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground block">Title</span>
+                  <span className="text-sm font-medium text-foreground truncate block mt-0.5">
+                    {estimate ? <Link href={`/estimates/${estimate.id}`} className="text-primary hover:underline">{estimate.title}</Link> : "—"}
                   </span>
                 </div>
                 <div>
@@ -478,7 +496,7 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
                         invoiceId={inv.id}
                         companyId={estimate.companyId}
                         invoiceTotal={inv.total}
-                        totalPaid={(paymentsByInvoice[inv.id] ?? []).reduce((sum, p) => sum + p.amount, 0)}
+                        totalPaid={paidTotalByInvoice[inv.id] ?? 0}
                         payments={paymentsByInvoice[inv.id] ?? []}
                         canEdit={canEditPayments}
                         onChanged={async () => {

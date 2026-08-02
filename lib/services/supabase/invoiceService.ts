@@ -487,6 +487,29 @@ export function createSupabaseInvoiceService(
         quantity: li.quantity,
         unitPrice: li.unitPrice,
       }));
+
+      // Each roof area's estimated_repair_cost (materials + labor + tax,
+      // computed by calculateAreaRepairCost and persisted on the area
+      // row) is a SECOND, independent input to a roofing estimate's
+      // subtotal — see EstimateService.calculateRoofingAreasSubtotal,
+      // which sums area line items AND this figure. Line items above
+      // only ever carry the first half; without this, the invoice's
+      // line-item-derived subtotal silently omitted this figure,
+      // producing an invoice worth less than the approved estimate
+      // (found 2026-08-02 — ESTIMATE_TO_INVOICE_CONVERSION_AUDIT.md).
+      // Surfaced as an explicit, visible line — same pattern already
+      // used below for approved change orders and the markup/discount
+      // delta — never folded invisibly into a total.
+      for (const area of areas) {
+        if (area.estimatedRepairCost > 0) {
+          estimateLines.push({
+            name: `${area.areaName} - Estimated Repair Cost`,
+            description: "Materials + labor + tax carried from approved estimate",
+            quantity: 1,
+            unitPrice: area.estimatedRepairCost,
+          });
+        }
+      }
     } else {
       estimateLines = estimate.lineItems.map((li) => ({
         name: li.name,
@@ -671,9 +694,32 @@ export function createSupabaseInvoiceService(
     return rowToInvoice(data as InvoiceRow);
   }
 
+  /** Same delete-protection discipline as ProjectService/EstimateService.
+   * An invoice with active (non-deleted) payments recorded against it
+   * cannot be soft-deleted — those payments are real cash already
+   * collected, and deleting the invoice would silently drop them out of
+   * every revenue calculation that resolves them through this invoice
+   * (e.g. FinancialEngine.getEstimateFinancials, which sums payments via
+   * paymentService.getSummaryForInvoice for each of the estimate's
+   * invoices). Void the invoice instead if it's already out in the
+   * world, or delete the payments first if they were truly recorded in
+   * error. Queries `invoice_payments` directly rather than through
+   * PaymentService — a simple existence check, not a second
+   * calculation, and avoids depending on a service that itself has no
+   * dependency on InvoiceService today but shouldn't gain one just for
+   * this check. */
+  async function assertNoFinancialActivity(invoiceId: UUID): Promise<void> {
+    const { data, error } = await supabase.from("invoice_payments").select("id").eq("invoice_id", invoiceId).is("deleted_at", null).limit(1);
+    if (error) throw new Error(`Failed to check payments: ${error.message}`);
+    if ((data?.length ?? 0) > 0) {
+      throw new Error("Cannot delete this invoice: it has active payments recorded against it. Void it instead, or delete the payments first if they were recorded in error.");
+    }
+  }
+
   async function softDelete(invoiceId: UUID, reason: string): Promise<void> {
     const validation = validationService.validateDeleteReason(reason);
     if (!validation.valid) throw new Error(validation.issues[0]?.message ?? "A delete reason is required.");
+    await assertNoFinancialActivity(invoiceId);
 
     const actorId = await currentUserId();
     const { error } = await supabase
@@ -681,6 +727,16 @@ export function createSupabaseInvoiceService(
       .update({ deleted_at: new Date().toISOString(), deleted_by: actorId, delete_reason: reason })
       .eq("id", invoiceId);
     if (error) throw new Error(`Failed to delete invoice: ${error.message}`);
+  }
+
+  /** Was missing entirely — every other soft-deletable entity
+   * (project/estimate/change order/payment/expense) already has a
+   * restore() half; invoice never got one, making a deleted invoice a
+   * dead end. Same contract as ProjectService.restore: clears
+   * deleted_at/deleted_by/delete_reason, nothing else. */
+  async function restore(invoiceId: UUID): Promise<void> {
+    const { error } = await supabase.from("invoices").update({ deleted_at: null, deleted_by: null, delete_reason: null }).eq("id", invoiceId);
+    if (error) throw new Error(`Failed to restore invoice: ${error.message}`);
   }
 
   return {
@@ -695,5 +751,6 @@ export function createSupabaseInvoiceService(
     changeStatus,
     refreshStatus,
     softDelete,
+    restore,
   };
 }

@@ -159,4 +159,10 @@ export interface InvoiceService {
   /** See EstimateService.softDelete's doc comment — same required-reason
    * enforcement via ValidationService.validateDeleteReason. */
   softDelete(invoiceId: UUID, reason: string): Promise<void>;
+
+  /** Was missing entirely — every other soft-deletable entity already
+   * has a matching restore(); invoice never got one. Same contract as
+   * ProjectService.restore: clears deleted_at/deleted_by/delete_reason,
+   * nothing else. */
+  restore(invoiceId: UUID): Promise<void>;
 }

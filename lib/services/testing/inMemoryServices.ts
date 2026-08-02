@@ -361,8 +361,10 @@ function createTransactionService(store: InMemoryStore, filteringService: Filter
 const subAssignmentPaymentLinks = new Map<UUID, UUID>();
 
 function createProjectService(store: InMemoryStore, validation: ValidationService): ProjectService {
-  async function getById(projectId: UUID) {
-    return store.projects.get(projectId) ?? null;
+  async function getById(projectId: UUID, includeDeleted = false) {
+    const project = store.projects.get(projectId) ?? null;
+    if (project && project.deletedAt && !includeDeleted) return null;
+    return project;
   }
   async function list(scope: QueryScope) {
     return Array.from(store.projects.values()).filter(
@@ -412,6 +414,17 @@ function createProjectService(store: InMemoryStore, validation: ValidationServic
   async function softDelete(projectId: UUID, reason: string) {
     const check = validation.validateDeleteReason(reason);
     if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
+
+    // Same delete-protection discipline as the real Supabase service —
+    // financial history is permanent, so a project with any active
+    // estimate/invoice/expense must not be deletable.
+    const hasEstimate = Array.from(store.estimates.values()).some((e) => e.projectId === projectId && !e.deletedAt);
+    if (hasEstimate) throw new Error("Cannot delete this project: it has active estimates. Delete them first, or use Archive instead once the job is complete/cancelled.");
+    const hasInvoice = Array.from(store.invoices.values()).some((i) => i.projectId === projectId && !i.deletedAt);
+    if (hasInvoice) throw new Error("Cannot delete this project: it has active invoices (and possibly payments).");
+    const hasExpense = Array.from(store.expenses.values()).some((e) => e.projectId === projectId && !e.deletedAt);
+    if (hasExpense) throw new Error("Cannot delete this project: it has recorded expenses attached directly to it.");
+
     await update(projectId, { deletedAt: now(), deleteReason: reason });
   }
   async function restore(projectId: UUID) {
@@ -440,11 +453,13 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
     return { subtotal, total };
   }
 
-  async function getById(estimateId: UUID) {
-    return store.estimates.get(estimateId) ?? null;
+  async function getById(estimateId: UUID, includeDeleted = false) {
+    const estimate = store.estimates.get(estimateId) ?? null;
+    if (estimate && estimate.deletedAt && !includeDeleted) return null;
+    return estimate;
   }
-  async function listForProject(projectId: UUID) {
-    return Array.from(store.estimates.values()).filter((e) => e.projectId === projectId && !e.deletedAt);
+  async function listForProject(projectId: UUID, includeDeleted = false) {
+    return Array.from(store.estimates.values()).filter((e) => e.projectId === projectId && (includeDeleted || !e.deletedAt));
   }
   async function list(scope: QueryScope) {
     return Array.from(store.estimates.values()).filter((e) => e.companyId === scope.companyId && (scope.includeDeleted || !e.deletedAt));
@@ -452,6 +467,7 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
   async function create(input: {
     companyId: UUID; projectId: UUID; clientId: UUID | null; title?: string; description?: string;
     lineItems: Omit<EstimateLineItem, "id" | "total">[]; markup: number; discount: number; taxRate: number; depositAmount?: number;
+    estimateType?: "standard" | "roofing";
   }): Promise<Estimate> {
     for (const li of input.lineItems) {
       const check = validation.validateLineItem(li);
@@ -478,6 +494,7 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
       taxRate: input.taxRate,
       total,
       depositAmount: input.depositAmount ?? 0,
+      estimateType: input.estimateType ?? "standard",
       signature: null,
       customerToken: null,
       createdBy: null,
@@ -562,10 +579,25 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
     if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
     const estimate = store.estimates.get(estimateId);
     if (!estimate) throw new Error("Estimate not found");
+
+    // Same delete-protection discipline as the real Supabase service.
+    const hasInvoice = Array.from(store.invoices.values()).some((i) => i.estimateId === estimateId && !i.deletedAt);
+    if (hasInvoice) throw new Error("Cannot delete this estimate: it has an active invoice (and possibly payments). Delete the invoice first if it was created in error.");
+    const hasChangeOrder = Array.from(store.changeOrders.values()).some((c) => c.estimateId === estimateId && !c.deletedAt);
+    if (hasChangeOrder) throw new Error("Cannot delete this estimate: it has an active change order.");
+    const hasExpense = Array.from(store.expenses.values()).some((e) => e.estimateId === estimateId && !e.deletedAt);
+    if (hasExpense) throw new Error("Cannot delete this estimate: it has recorded expenses attached to it.");
+
     store.estimates.set(estimateId, { ...estimate, deletedAt: now(), deleteReason: reason });
   }
 
-  return { getById, listForProject, list, create, updateLineItems, update, recalculateTotal, changeStatus, recordSignature, softDelete };
+  async function restore(estimateId: UUID) {
+    const estimate = store.estimates.get(estimateId);
+    if (!estimate) throw new Error("Estimate not found");
+    store.estimates.set(estimateId, { ...estimate, deletedAt: null, deleteReason: null });
+  }
+
+  return { getById, listForProject, list, create, updateLineItems, update, recalculateTotal, changeStatus, recordSignature, softDelete, restore };
 }
 
 /** Extracted from EstimateService during the service-layer completion
@@ -706,6 +738,13 @@ function createChangeOrderService(store: InMemoryStore, validation: ValidationSe
     if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
     const co = store.changeOrders.get(changeOrderId);
     if (!co) throw new Error("Change order not found");
+    // Same delete-protection discipline as the real Supabase service —
+    // "approved" stays deletable (its revenue effect is meant to be
+    // reversible), only "invoiced" (already transferred onto an
+    // invoice's own total) is blocked.
+    if (co.status === "invoiced") {
+      throw new Error("Cannot delete this change order: it has already been invoiced, and its amount is now part of that invoice's own total.");
+    }
     store.changeOrders.set(changeOrderId, { ...co, deletedAt: now(), deleteReason: reason });
     await estimateService.recalculateTotal(co.estimateId);
   }
@@ -891,10 +930,23 @@ function createInvoiceService(store: InMemoryStore, transactionService: Transact
   async function softDelete(invoiceId: UUID, reason: string) {
     const invoice = store.invoices.get(invoiceId);
     if (!invoice) throw new Error("Invoice not found");
+    // Same delete-protection discipline as the real Supabase service —
+    // active payments are real cash already collected; deleting the
+    // invoice must not silently drop them out of every calculation that
+    // resolves them through it.
+    const hasActivePayment = Array.from(store.payments.values()).some((p) => p.invoiceId === invoiceId && !p.deletedAt);
+    if (hasActivePayment) {
+      throw new Error("Cannot delete this invoice: it has active payments recorded against it. Void it instead, or delete the payments first if they were recorded in error.");
+    }
     store.invoices.set(invoiceId, { ...invoice, deletedAt: now(), deleteReason: reason });
   }
+  async function restore(invoiceId: UUID) {
+    const invoice = store.invoices.get(invoiceId);
+    if (!invoice) throw new Error("Invoice not found");
+    store.invoices.set(invoiceId, { ...invoice, deletedAt: null, deleteReason: null });
+  }
 
-  return { getById, listForProject, listForCompany, createFromEstimate, createStandalone, updateLineItems, lock, recordSignature, refreshStatus, changeStatus, softDelete };
+  return { getById, listForProject, listForCompany, createFromEstimate, createStandalone, updateLineItems, lock, recordSignature, refreshStatus, changeStatus, softDelete, restore };
 }
 
 function createPaymentService(store: InMemoryStore, validation: ValidationService, transactionService: TransactionService): PaymentService {
@@ -916,6 +968,9 @@ function createPaymentService(store: InMemoryStore, validation: ValidationServic
     // production. getSummaryForInvoice already filtered correctly, so
     // the list and the totals it sat next to could contradict.
     return Array.from(store.payments.values()).filter((p) => p.invoiceId === invoiceId && !p.deletedAt);
+  }
+  async function listForCompany(scope: QueryScope) {
+    return Array.from(store.payments.values()).filter((p) => p.companyId === scope.companyId && (scope.includeDeleted || !p.deletedAt));
   }
   async function record(input: { companyId: UUID; invoiceId: UUID; amount: number; method: string; paymentDate: string; referenceNumber?: string; notes?: string; allowOverpayment?: boolean }) {
     const summary = await getSummaryForInvoice(input.invoiceId);
@@ -985,13 +1040,21 @@ function createPaymentService(store: InMemoryStore, validation: ValidationServic
   async function softDelete(paymentId: UUID, reason: string) {
     const check = validation.validateDeleteReason(reason);
     if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
+    // Same delete-protection discipline as the real Supabase service —
+    // ordinary corrections (bounced cheque, refund, duplicate) stay
+    // allowed; only a payment against an already-voided invoice is
+    // blocked, since that invoice's record is meant to stay frozen.
+    const payment = store.payments.get(paymentId);
+    if (payment && store.invoices.get(payment.invoiceId)?.lifecycleStatus === "void") {
+      throw new Error("Cannot delete this payment: its invoice has been voided, and that invoice's record is meant to stay frozen as-is.");
+    }
     await update(paymentId, { deletedAt: now(), deleteReason: reason });
   }
   async function restore(paymentId: UUID) {
     await update(paymentId, { deletedAt: null, deleteReason: null });
   }
 
-  return { listForInvoice, record, update, softDelete, restore, getSummaryForInvoice };
+  return { listForInvoice, listForCompany, record, update, softDelete, restore, getSummaryForInvoice };
 }
 
 function createExpenseService(store: InMemoryStore, validation: ValidationService, transactionService: TransactionService): ExpenseService {
@@ -1159,6 +1222,14 @@ function createExpenseService(store: InMemoryStore, validation: ValidationServic
   async function softDelete(expenseId: UUID, reason: string) {
     const check = validation.validateDeleteReason(reason);
     if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
+    // Same delete-protection discipline as the real Supabase service —
+    // a still-pending reimbursement stays deletable (a normal
+    // correction before anyone's been paid back); only a SETTLED
+    // reimbursement (real cash already paid out) is blocked.
+    const expense = store.expenses.get(expenseId);
+    if (expense?.reimbursementStatus === "reimbursed") {
+      throw new Error("Cannot delete this expense: its reimbursement has already been paid out. That payout is a real, settled financial fact.");
+    }
     patch(expenseId, { deletedAt: now(), deleteReason: reason });
   }
   async function restore(expenseId: UUID) {
@@ -1383,6 +1454,11 @@ function createSubcontractorService(store: InMemoryStore, validation: Validation
     store.subcontractorPayments.set(paymentId, payment);
     return payment;
   }
+  async function listPayments(scope: QueryScope) {
+    return Array.from(store.subcontractorPayments.values()).filter(
+      (p) => p.companyId === scope.companyId && (scope.includeDeleted || !p.deletedAt)
+    );
+  }
   async function softDelete(paymentId: UUID, reason: string) {
     const check = validation.validateDeleteReason(reason);
     if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
@@ -1412,7 +1488,7 @@ function createSubcontractorService(store: InMemoryStore, validation: Validation
 
   return {
     getRoster, createSubcontractor, updateSubcontractor, softDeleteSubcontractor, restoreSubcontractor,
-    listAssignments, assignToProject, updateAssignmentAmount, markAssignmentFinal, recordPayment, softDelete, restore, getBalance, getTotalPaidForYear,
+    listAssignments, assignToProject, updateAssignmentAmount, markAssignmentFinal, recordPayment, listPayments, softDelete, restore, getBalance, getTotalPaidForYear,
   };
 }
 
@@ -1575,6 +1651,11 @@ function createAgentCommissionService(store: InMemoryStore, validation: Validati
     });
   }
 
+  async function listPayments(scope: QueryScope) {
+    return Array.from(store.agentPayments.values()).filter(
+      (p) => p.companyId === scope.companyId && (scope.includeDeleted || !p.deletedAt)
+    );
+  }
   async function softDelete(paymentId: UUID, reason: string) {
     const check = validation.validateDeleteReason(reason);
     if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
@@ -1607,7 +1688,7 @@ function createAgentCommissionService(store: InMemoryStore, validation: Validati
 
   return {
     getRoster, createAgent, updateAgent, softDeleteAgent, restoreAgent,
-    listAssignments, assignToProject, recordPayment, softDelete, restore, getBalance, getCompensationSummary,
+    listAssignments, assignToProject, recordPayment, listPayments, softDelete, restore, getBalance, getCompensationSummary,
   };
 }
 
@@ -1727,7 +1808,12 @@ export function createInMemoryServices(store: InMemoryStore = createInMemoryStor
     entityTable: "estimates",
     resolveProjectId: async (methodName, args, result) => {
       if (methodName === "create") return (result as { projectId: string }).projectId;
-      const estimate = await estimateService.getById(args[0] as string);
+      // includeDeleted: true — this must still resolve a project to
+      // reconcile after softDelete (the estimate is deleted by the
+      // time this runs) or restore, not just for still-active
+      // estimates. Reconciliation itself must keep running regardless
+      // of the mutation's own deleted state.
+      const estimate = await estimateService.getById(args[0] as string, true);
       return estimate?.projectId ?? null;
     },
   });

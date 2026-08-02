@@ -8,12 +8,14 @@ import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
+import { Modal } from "@/components/ui/Modal";
 import { RequirePermission } from "@/components/layout/RequirePermission";
 import { usePermission } from "@/lib/hooks/usePermission";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { INVOICE_STATUS_TONE, formatMoney } from "@/components/invoices/invoiceStatus";
 import { InvoicePaymentsPanel } from "@/components/payments/InvoicePaymentsPanel";
 import { sumApprovedChangeOrderRevenue, calculateRevisedEstimateTotal, calculateRemainingBalance } from "@/lib/services/financialCalculations";
+import { isRevenueInvoice } from "@/lib/services/financialEngine";
 import { supabase } from "@/lib/supabase/client";
 import type { Invoice, InvoiceLineItem, InvoiceLifecycleStatus } from "@/lib/services/invoiceService";
 import type { CustomerPayment } from "@/lib/services/paymentService";
@@ -46,6 +48,8 @@ function InvoiceDetailContent() {
   const [estimate, setEstimate] = useState<Estimate | null>(null);
   const [changeOrders, setChangeOrders] = useState<ChangeOrder[]>([]);
   const [projectInvoices, setProjectInvoices] = useState<Invoice[]>([]);
+  const [voidConfirmOpen, setVoidConfirmOpen] = useState(false);
+  const [voiding, setVoiding] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -54,8 +58,12 @@ function InvoiceDetailContent() {
       const inv = await invoiceService.getById(invoiceId);
       setInvoice(inv);
       if (inv) {
+        // includeDeleted: true on both lookups — this invoice's project/
+        // client context must never disappear just because either was
+        // later deleted; financial history is permanent (see
+        // ProjectService/ClientService.getById's doc comments).
         const [p, pay, sum, history] = await Promise.all([
-          projectService.getById(inv.projectId),
+          projectService.getById(inv.projectId, true),
           paymentService.listForInvoice(inv.id),
           paymentService.getSummaryForInvoice(inv.id),
           auditService.getHistory(inv.companyId, "invoices", inv.id),
@@ -64,14 +72,17 @@ function InvoiceDetailContent() {
         setPayments(pay);
         setSummary(sum);
         setActivity(history);
-        if (inv.clientId) setClient(await clientService.getById(inv.clientId));
+        if (inv.clientId) setClient(await clientService.getById(inv.clientId, true));
 
         // Contract context — the SAME inputs the Estimate page uses, so
         // both pages derive Contract Total from one place.
         setProjectInvoices(await invoiceService.listForProject(inv.projectId));
         if (inv.estimateId) {
+          // includeDeleted: true — this invoice's own "revised total"
+          // math depends on its source estimate; that must never break
+          // just because the estimate was later deleted.
           const [est, cos] = await Promise.all([
-            estimateService.getById(inv.estimateId),
+            estimateService.getById(inv.estimateId, true),
             changeOrderService.listForEstimate(inv.estimateId),
           ]);
           setEstimate(est);
@@ -102,6 +113,17 @@ function InvoiceDetailContent() {
       await load();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to change status.");
+    }
+  }
+
+  async function handleConfirmVoid() {
+    if (!invoice) return;
+    setVoiding(true);
+    try {
+      await handleStatus("void");
+      setVoidConfirmOpen(false);
+    } finally {
+      setVoiding(false);
     }
   }
 
@@ -153,7 +175,7 @@ function InvoiceDetailContent() {
   const approvedChangeOrderRevenue = sumApprovedChangeOrderRevenue(changeOrders);
   const contractTotal = estimate ? calculateRevisedEstimateTotal(estimate.total, changeOrders) : null;
   const invoicedToDate = projectInvoices
-    .filter((i) => i.lifecycleStatus !== "void" && i.lifecycleStatus !== "cancelled")
+    .filter(isRevenueInvoice)
     .reduce((sum, i) => sum + i.total, 0);
   const contractRemaining = contractTotal !== null ? calculateRemainingBalance(contractTotal, invoicedToDate) : null;
 
@@ -182,7 +204,7 @@ function InvoiceDetailContent() {
               </>
             )}
             {canUpdate && !isDraft && !isTerminal && (
-              <button type="button" onClick={() => handleStatus("void")} className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-danger hover:bg-danger/10">
+              <button type="button" onClick={() => setVoidConfirmOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-danger hover:bg-danger/10">
                 <Ban className="size-3.5" /> Void
               </button>
             )}
@@ -442,6 +464,38 @@ function InvoiceDetailContent() {
           </section>
         </div>
       </div>
+
+      <Modal open={voidConfirmOpen} onClose={() => (voiding ? undefined : setVoidConfirmOpen(false))} title="Void this invoice?">
+        <div className="space-y-4">
+          <p className="text-sm text-foreground">
+            Voiding invoice <span className="font-medium">{invoice.invoiceNumber || invoice.id.slice(0, 8)}</span> removes it from
+            every revenue calculation — Dashboard, Reports, Accounting, and Tax will no longer count its total. This cannot be
+            undone from here; you cannot un-void an invoice.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            The invoice itself, its line items, and any recorded payments are kept exactly as they are — nothing is deleted, and
+            its full history stays visible on this page and in invoice lists.
+          </p>
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => setVoidConfirmOpen(false)}
+              disabled={voiding}
+              className="rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmVoid}
+              disabled={voiding}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-danger px-3 py-1.5 text-sm font-medium text-danger-foreground hover:bg-danger/90 disabled:opacity-50"
+            >
+              <Ban className="size-3.5" /> {voiding ? "Voiding…" : "Void Invoice"}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </PageContainer>
   );
 }

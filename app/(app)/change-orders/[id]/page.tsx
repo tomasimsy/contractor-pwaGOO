@@ -51,9 +51,12 @@ function ChangeOrderDetailContent() {
       setChangeOrder(co);
 
       if (co) {
+        // includeDeleted: true on both — this change order's project/
+        // estimate context must never disappear just because either
+        // was later deleted; financial history is permanent.
         const [p, e, history, siblingChangeOrders] = await Promise.all([
-          projectService.getById(co.projectId),
-          estimateService.getById(co.estimateId),
+          projectService.getById(co.projectId, true),
+          estimateService.getById(co.estimateId, true),
           auditService.getHistory(co.companyId, "change_orders", co.id),
           changeOrderService.listForEstimate(co.estimateId),
         ]);

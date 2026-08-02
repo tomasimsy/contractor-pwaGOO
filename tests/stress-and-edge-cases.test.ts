@@ -521,19 +521,43 @@ describe("CRUD stress", () => {
     check("Financial", "6. Invoice is fully paid after the second payment, rebuilt from both active payments", summary.remainingBalance === 0 && summary.status === "paid", `remainingBalance=${summary.remainingBalance}, status=${summary.status}`);
   });
 
-  test("Cascading deletes: deleting a project does NOT cascade to its estimates/invoices/expenses", async () => {
-    const project = await services.projectService.create({ companyId: COMPANY_ID, clientId: null, name: "Cascade Test" });
+  test("Delete protection: a project with an active estimate cannot be deleted at all (no cascade, no orphaning)", async () => {
+    // Per the deletion-safety audit, this used to succeed and silently
+    // orphan the estimate (still active, but its parent project gone
+    // from every list) — the exact gap this test now proves is closed:
+    // ProjectService.softDelete now blocks outright rather than
+    // allowing a delete that would leave financial history behind an
+    // invisible project.
+    const project = await services.projectService.create({ companyId: COMPANY_ID, clientId: null, name: "Delete Protection Test" });
     const estimate = await services.estimateService.create({
       companyId: COMPANY_ID, projectId: project.id, clientId: null,
       lineItems: [{ category: "material", name: "x", description: null, quantity: 1, unitPrice: 100, taxable: false }],
       markup: 0, discount: 0, taxRate: 0,
     });
-    await services.projectService.softDelete(project.id, "cascade test");
+
+    await expect(services.projectService.softDelete(project.id, "cascade test")).rejects.toThrow(/active estimates/i);
+
+    const projectAfter = await services.projectService.getById(project.id);
+    const estimateAfter = await services.estimateService.getById(estimate.id);
+    const financials = await services.financialEngine.getProjectFinancials(project.id);
+    check("CRUD", "Project is still active — the blocked delete didn't half-apply", projectAfter?.deletedAt == null);
+    check("CRUD", "Estimate is still active — the blocked delete didn't half-apply", estimateAfter?.deletedAt == null);
+    check("Financial", "FinancialEngine still computes cleanly for the (undeleted) project", financials.revisedTotal >= 0);
+  });
+
+  test("Delete protection: an estimate with an active invoice cannot be deleted", async () => {
+    const project = await services.projectService.create({ companyId: COMPANY_ID, clientId: null, name: "Estimate Delete Protection Test" });
+    const estimate = await services.estimateService.create({
+      companyId: COMPANY_ID, projectId: project.id, clientId: null,
+      lineItems: [{ category: "material", name: "x", description: null, quantity: 1, unitPrice: 500, taxable: false }],
+      markup: 0, discount: 0, taxRate: 0,
+    });
+    await services.invoiceService.createFromEstimate(estimate.id, { issueDate: "2026-01-01", dueDate: "2026-01-31" });
+
+    await expect(services.estimateService.softDelete(estimate.id, "test")).rejects.toThrow(/active invoice/i);
 
     const estimateAfter = await services.estimateService.getById(estimate.id);
-    const stillComputable = await services.financialEngine.getProjectFinancials(project.id);
-    check("CRUD", "Estimate is untouched after its parent project is deleted (no cascade)", estimateAfter?.deletedAt == null);
-    warn("CRUD", "No cascading soft-delete from Project to its children", `After deleting project ${project.id}, its estimate/invoices/expenses remain active and FinancialEngine.getProjectFinancials still returns a full computation (revisedTotal=${stillComputable.revisedTotal}) for a project that no longer shows up in ProjectService.list(). This is orphaned-but-still-active data — worth an explicit product decision on whether project deletion should cascade or block if children exist.`);
+    check("CRUD", "Estimate with an active invoice is still active — blocked, not half-deleted", estimateAfter?.deletedAt == null);
   });
 });
 

@@ -110,6 +110,18 @@ export interface SubcontractorService {
     changeOrderId?: UUID | null;
   }): Promise<SubcontractorPayment>;
 
+  /** Company-wide active payments — the real, persisted source
+   * FinancialEngine.getCompanyFinancials/getTaxSummary use for
+   * cash-basis subcontractor cost (added 2026-08-01 alongside
+   * PaymentService.listForCompany, replacing the in-memory
+   * transactionService ledger — see DASHBOARD_AUDIT_REPORT.md).
+   * `scope.projectId` is NOT applied at the query level (payments have
+   * no project_id column of their own — only their assignment does);
+   * FinancialEngine joins through `listAssignments` itself when a
+   * project subset is needed, the same way it already resolves other
+   * project-scoped filters. */
+  listPayments(scope: QueryScope): Promise<SubcontractorPayment[]>;
+
   /** `reason` validated the same way as every other financial record's
    * softDelete (see ValidationService.validateDeleteReason). Excludes
    * the payment from getBalance the same way every other soft-deleted

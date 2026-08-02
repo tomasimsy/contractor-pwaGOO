@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { FolderKanban, Plus, Search } from "lucide-react";
+import { FolderKanban, Plus, Search, Trash2 } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -91,9 +91,15 @@ function ProjectsListContent() {
         title="Projects"
         description="Every job, from kickoff to close-out."
         actions={
-          <Link href="/projects/new" className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-            <Plus className="size-4" /> New Project
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/projects/trash" className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted">
+              <Trash2 className="size-3.5" /> Deleted Projects
+            </Link>
+            <Link href="/projects/new" className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+              <Plus className="size-4" /> New Project
+            </Link>
+            
+          </div>
         }
       />
 

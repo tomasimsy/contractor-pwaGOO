@@ -107,6 +107,18 @@ export interface AgentCommissionService {
   softDelete(paymentId: UUID, reason: string): Promise<void>;
   restore(paymentId: UUID): Promise<void>;
 
+  /** Company-wide active payments (commission + reimbursement) — the
+   * real, persisted source FinancialEngine.getCompanyFinancials/
+   * getTaxSummary use for cash-basis agent cost (added 2026-08-01
+   * alongside PaymentService.listForCompany/SubcontractorService.
+   * listPayments, replacing the in-memory transactionService ledger —
+   * see DASHBOARD_AUDIT_REPORT.md). `scope.projectId` is NOT applied
+   * at the query level — a reimbursement payment may key off
+   * `reimbursesExpenseId` instead of `assignmentId`, so FinancialEngine
+   * joins through `listAssignments`/expenses itself when a project
+   * subset is needed. */
+  listPayments(scope: QueryScope): Promise<AgentPayment[]>;
+
   /** Assigned-vs-paid balance for one assignment, computed DIRECTLY
    * from `estimate_agents.assigned_amount` and the live sum of that
    * assignment's non-deleted, COMMISSION-type `agent_payments` (a

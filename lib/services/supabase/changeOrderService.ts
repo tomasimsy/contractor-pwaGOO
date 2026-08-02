@@ -369,8 +369,21 @@ export function createSupabaseChangeOrderService(
     const validation = validationService.validateDeleteReason(reason);
     if (!validation.valid) throw new Error(validation.issues[0]?.message ?? "A delete reason is required.");
 
-    const { data: currentRow, error: currentError } = await supabase.from("change_orders").select("estimate_id").eq("id", changeOrderId).single();
+    const { data: currentRow, error: currentError } = await supabase.from("change_orders").select("estimate_id, status").eq("id", changeOrderId).single();
     if (currentError) throw new Error(`Failed to load change order: ${currentError.message}`);
+
+    // Same delete-protection discipline as Project/Estimate/Invoice/
+    // Expense — but NOT for "approved": an approved change order's
+    // revenue effect is meant to be reversible by deletion (see
+    // cost-and-profit-integrity.test.ts "Deleting it must take that
+    // revenue back out"), the same as any other still-open financial
+    // fact. "invoiced" is the one truly settled state — its amount has
+    // already been transferred onto an invoice's own line items, so
+    // deleting the change order at that point would leave the invoice's
+    // total unaccounted for by anything.
+    if ((currentRow as { status: string }).status === "invoiced") {
+      throw new Error("Cannot delete this change order: it has already been invoiced, and its amount is now part of that invoice's own total.");
+    }
 
     const actorId = await currentUserId();
     const { error } = await supabase

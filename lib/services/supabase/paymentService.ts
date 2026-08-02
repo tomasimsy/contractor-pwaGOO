@@ -17,7 +17,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CustomerPayment, PaymentService } from "../paymentService";
-import type { UUID, ValidationResult, PaymentStatus } from "../types";
+import type { UUID, ValidationResult, PaymentStatus, QueryScope } from "../types";
 import type { ValidationService } from "../validationService";
 import { calculateRemainingBalance, derivePaymentStatus } from "../financialCalculations";
 
@@ -71,6 +71,14 @@ export function createSupabasePaymentService(
       .eq("invoice_id", invoiceId)
       .is("deleted_at", null)
       .order("payment_date", { ascending: false });
+    if (error) throw new Error(`Failed to list payments: ${error.message}`);
+    return (data as PaymentRow[]).map(rowToPayment);
+  }
+
+  async function listForCompany(scope: QueryScope): Promise<CustomerPayment[]> {
+    let query = supabase.from("invoice_payments").select("*").eq("company_id", scope.companyId);
+    if (!scope.includeDeleted) query = query.is("deleted_at", null);
+    const { data, error } = await query.order("payment_date", { ascending: false });
     if (error) throw new Error(`Failed to list payments: ${error.message}`);
     return (data as PaymentRow[]).map(rowToPayment);
   }
@@ -157,9 +165,33 @@ export function createSupabasePaymentService(
     return payment;
   }
 
+  /** Same delete-protection discipline as Project/Estimate/Invoice/
+   * Expense/ChangeOrder — but scoped to the one case where deleting a
+   * payment would rewrite the history of a document already treated as
+   * closed: once its invoice has been voided, that invoice (and what was
+   * actually collected against it before voiding) is meant to be a
+   * frozen record. Ordinary corrections (bounced cheque, refund,
+   * duplicate entry — see payments-module.test.ts) all happen against
+   * invoices that are still draft/sent/viewed, so this never blocks
+   * them. Queries `invoices` directly rather than through
+   * InvoiceService — a simple existence/status check, not a second
+   * calculation. */
+  async function assertNoFinancialActivity(paymentId: UUID): Promise<void> {
+    const { data: paymentRow, error: paymentError } = await supabase.from("invoice_payments").select("invoice_id").eq("id", paymentId).single();
+    if (paymentError) throw new Error(`Failed to load payment: ${paymentError.message}`);
+
+    const { data: invoiceRow, error: invoiceError } = await supabase.from("invoices").select("lifecycle_status").eq("id", (paymentRow as { invoice_id: string }).invoice_id).maybeSingle();
+    if (invoiceError) throw new Error(`Failed to load invoice: ${invoiceError.message}`);
+
+    if ((invoiceRow as { lifecycle_status: string } | null)?.lifecycle_status === "void") {
+      throw new Error("Cannot delete this payment: its invoice has been voided, and that invoice's record is meant to stay frozen as-is.");
+    }
+  }
+
   async function softDelete(paymentId: UUID, reason: string): Promise<void> {
     const validation = validationService.validateDeleteReason(reason);
     if (!validation.valid) throw new Error(validation.issues[0]?.message ?? "A delete reason is required.");
+    await assertNoFinancialActivity(paymentId);
 
     const actorId = await currentUserId();
     const { error } = await supabase
@@ -178,5 +210,5 @@ export function createSupabasePaymentService(
     if (error) throw new Error(`Failed to restore payment: ${error.message}`);
   }
 
-  return { listForInvoice, record, update, softDelete, restore, getSummaryForInvoice };
+  return { listForInvoice, listForCompany, record, update, softDelete, restore, getSummaryForInvoice };
 }

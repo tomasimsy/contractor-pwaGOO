@@ -1,6 +1,6 @@
 # Stress & Edge-Case Test Report
 
-**68 passed, 7 warnings, 0 failed** (75 checks total)
+**71 passed, 6 warnings, 0 failed** (77 checks total)
 
 ## Financial
 
@@ -48,6 +48,7 @@
 - ✓ 5. Deleting an approved change order never affects remaining balance — remainingBalance=6000
 - ✓ 5. Deleting an approved change order drops the project's revised total back — revisedTotal=10000
 - ✓ 6. Invoice is fully paid after the second payment, rebuilt from both active payments — remainingBalance=0, status=paid
+- ✓ FinancialEngine still computes cleanly for the (undeleted) project
 
 ## CRUD
 
@@ -59,8 +60,9 @@
 - ✓ Deleting an approved change order removes its revenue from the estimate's revised total too — revisedAfterDelete=1000, estimate.total=1000
 - ✓ Restoring re-includes the revenue in project financials — before=250, afterRestore=250
 - ✓ Restoring re-includes the revenue in the estimate's revised total — revisedAfterRestore=1250, revisedBefore=1250
-- ✓ Estimate is untouched after its parent project is deleted (no cascade)
-- ⚠ No cascading soft-delete from Project to its children — After deleting project 29509eb4-26e6-4f94-a513-f89ceb27d458, its estimate/invoices/expenses remain active and FinancialEngine.getProjectFinancials still returns a full computation (revisedTotal=0) for a project that no longer shows up in ProjectService.list(). This is orphaned-but-still-active data — worth an explicit product decision on whether project deletion should cascade or block if children exist.
+- ✓ Project is still active — the blocked delete didn't half-apply
+- ✓ Estimate is still active — the blocked delete didn't half-apply
+- ✓ Estimate with an active invoice is still active — blocked, not half-deleted
 
 ## Concurrency
 
@@ -98,6 +100,5 @@
 - ⚠ **[Financial]** No re-invoicing workflow for a post-conversion estimate change: If a contractor edits an estimate's tax/pricing after it's already been converted to an invoice, there is currently no service method that re-syncs or flags the now-diverged invoice — this test confirms the invoice correctly stays a fixed snapshot, but there's no alert surfaced anywhere that the source estimate has since changed.
 - ⚠ **[Financial]** No floor at zero for over-discounted totals: A discount exceeding subtotal+markup produces a negative estimate total ($-440) — mathematically consistent but no validation currently blocks a discount larger than the amount being discounted; worth a product decision on whether that should be allowed.
 - ⚠ **[Financial]** Zero-dollar invoice reports status "unpaid", not "paid": derivePaymentStatus(0, 0) returns "unpaid" because its "paid" branch requires totalAmount > 0. A $0 invoice arguably has nothing left to collect and could reasonably show as fully paid instead — a semantic call for the business, not a calculation bug (the $0/$0 arithmetic itself is correct).
-- ⚠ **[CRUD]** No cascading soft-delete from Project to its children: After deleting project 29509eb4-26e6-4f94-a513-f89ceb27d458, its estimate/invoices/expenses remain active and FinancialEngine.getProjectFinancials still returns a full computation (revisedTotal=0) for a project that no longer shows up in ProjectService.list(). This is orphaned-but-still-active data — worth an explicit product decision on whether project deletion should cascade or block if children exist.
 - ⚠ **[Concurrency]** No optimistic locking on estimate edits: Two concurrent writers (one editing line items to $500, one changing status to "sent") both succeeded silently — the final line items are ["user-A-edit"]. There is no version/etag check, so a real second user's simultaneous edit can be silently overwritten with no conflict warning to either user.
 - ⚠ **[Data Integrity]** Estimate number scheme is not concurrency-safe by construction: estimateNumber is generated as EST-${store.estimates.size + 1} — a count-based scheme. This test passed only because this in-memory fake happens to run each create() call's synchronous portion to completion before yielding; a real database-backed implementation using the equivalent "SELECT count(*) then use count+1" pattern WOULD produce duplicate numbers under real concurrent writers. A production implementation needs a DB sequence or a unique constraint with retry, not a count.

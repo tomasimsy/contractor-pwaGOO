@@ -291,6 +291,14 @@ export function createSupabaseAgentCommissionService(
     return payment;
   }
 
+  async function listPayments(scope: QueryScope): Promise<AgentPayment[]> {
+    let query = supabase.from("agent_payments").select("*").eq("company_id", scope.companyId);
+    if (!scope.includeDeleted) query = query.is("deleted_at", null);
+    const { data, error } = await query.order("payment_date", { ascending: false });
+    if (error) throw new Error(`Failed to list agent payments: ${error.message}`);
+    return (data as PaymentRow[]).map(rowToPayment);
+  }
+
   async function softDelete(paymentId: UUID, reason: string): Promise<void> {
     const check = validationService.validateDeleteReason(reason);
     if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
@@ -376,6 +384,7 @@ export function createSupabaseAgentCommissionService(
     listAssignments,
     assignToProject,
     recordPayment,
+    listPayments,
     softDelete,
     restore,
     getBalance,

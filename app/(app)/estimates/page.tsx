@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { FileText, Plus, Search } from "lucide-react";
+import { FileText, Plus, Search, Trash2 } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -100,9 +100,14 @@ function EstimatesListContent() {
         title="Estimates"
         description="Every proposal, across every project."
         actions={
-          <Link href="/estimates/new" className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-            <Plus className="size-4" /> New Estimate
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/estimates/trash" className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted">
+              <Trash2 className="size-3.5" /> Deleted Estimates
+            </Link>
+            <Link href="/estimates/new" className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+              <Plus className="size-4" /> New Estimate
+            </Link>
+          </div>
         }
       />
 
@@ -177,12 +182,11 @@ function EstimatesListContent() {
               <tbody className="divide-y divide-border">
                 {filtered.map((estimate) => (
                   <tr key={estimate.id} className="hover:bg-muted/40">
-                    <td className="px-3 py-2.5">
+                    <td className="px-3 py-2.5 capitalize">
                       <Link href={`/estimates/${estimate.id}`} className="font-medium text-foreground hover:text-primary">
-                        {estimate.estimateNumber ?? estimate.id.slice(0, 8)}
+                         {estimate.title}
                       </Link>
-                      {estimate.title && <div className="text-xs text-muted-foreground">{estimate.title}</div>}
-                    </td>
+                    {(estimate.estimateNumber || estimate.id) && ( <div className="text-xs text-muted-foreground"> {estimate.estimateNumber ?? estimate.id.slice(0, 8)}  </div> )} </td>
                     <td className="px-3 py-2.5 text-muted-foreground">{projectsById[estimate.projectId]?.name ?? "—"}</td>
                     <td className="px-3 py-2.5 text-muted-foreground">{estimate.clientId ? clientsById[estimate.clientId]?.name ?? "—" : "—"}</td>
                     <td className="px-3 py-2.5 text-muted-foreground">{estimate.estimateType === "roofing" ? "Roofing" : "Standard"}</td>

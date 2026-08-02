@@ -89,143 +89,249 @@ export const ProjectExpensesGroupedPanel = ({
   };
 
   return (
-    <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          <ReceiptText className="size-4 text-muted-foreground" /> Expenses by Estimate
-        </h2>
-        {canEdit && (
-          <button
-            type="button"
-            onClick={() => {
-              /* TODO: open create dialog */
-            }}
-            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-          >
-            <Plus className="size-3.5" /> Record expense
-          </button>
-        )}
+<section className="rounded-xl border border-border bg-card p-4 sm:p-5">
+  <div className="mb-3 flex items-center justify-between gap-2">
+    <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+      <ReceiptText className="size-4 text-muted-foreground" />
+      Expenses by Estimate
+    </h2>
+
+    {canEdit && (
+      <button
+        type="button"
+        onClick={() => {
+          /* TODO: open create dialog */
+        }}
+        className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+      >
+        <Plus className="size-3.5" />
+        Record Expense
+      </button>
+    )}
+  </div>
+
+  {/* Summary */}
+  <dl className="mb-4 grid grid-cols-2 gap-2 rounded-lg bg-muted/50 p-3 text-xs sm:grid-cols-4">
+    <div>
+      <dt className="text-xs text-muted-foreground">Total Expenses</dt>
+      <dd className="font-semibold text-foreground">{money(totals.total)}</dd>
+    </div>
+
+    <div>
+      <dt className="text-xs text-muted-foreground">Company Paid</dt>
+      <dd className="text-foreground">{money(totals.companyPaid)}</dd>
+    </div>
+
+    <div>
+      <dt className="text-xs text-muted-foreground">Owed Back</dt>
+      <dd
+        className={
+          totals.outstandingReimbursements > 0
+            ? "font-medium text-warning-foreground"
+            : "text-foreground"
+        }
+      >
+        {money(totals.outstandingReimbursements)}
+      </dd>
+    </div>
+
+    <div>
+      <dt className="text-xs text-muted-foreground">Unpaid Bills</dt>
+      <dd
+        className={
+          totals.unpaid > 0
+            ? "font-medium text-warning-foreground"
+            : "text-foreground"
+        }
+      >
+        {money(totals.unpaid)}
+      </dd>
+    </div>
+  </dl>
+
+  {loading ? (
+    <p className="py-4 text-xs text-muted-foreground">
+      Loading expenses…
+    </p>
+  ) : expenses.length === 0 ? (
+    <EmptyState
+      title="No expenses recorded"
+      description="Materials, labor, permits and other project costs will appear here."
+    />
+  ) : (
+    <div className="overflow-hidden rounded-lg border border-border text-xs">
+      {/* Header */}
+      <div className="grid grid-cols-[1fr_120px_120px] bg-muted px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <div>Estimate</div>
+        <div className="text-right">Expenses</div>
+        <div className="text-right">Expand</div>
       </div>
 
-      {/* Project-level summary */}
-      <dl className="mb-4 grid grid-cols-2 gap-2 rounded-lg bg-muted/50 p-3 text-sm sm:grid-cols-4">
-        <div>
-          <dt className="text-xs text-muted-foreground">Total expenses</dt>
-          <dd className="font-semibold text-foreground">{money(totals.total)}</dd>
-        </div>
-        <div>
-          <dt className="text-xs text-muted-foreground">Company paid</dt>
-          <dd className="text-foreground">{money(totals.companyPaid)}</dd>
-        </div>
-        <div>
-          <dt className="text-xs text-muted-foreground">Owed back</dt>
-          <dd className={totals.outstandingReimbursements > 0 ? "font-medium text-warning-foreground" : "text-foreground"}>
-            {money(totals.outstandingReimbursements)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs text-muted-foreground">Unpaid bills</dt>
-          <dd className={totals.unpaid > 0 ? "font-medium text-warning-foreground" : "text-foreground"}>
-            {money(totals.unpaid)}
-          </dd>
-        </div>
-      </dl>
+      {/* Estimate Groups */}
+      {Array.from(groups.estimateGroups.entries()).map(
+        ([estimateId, groupExpenses], index) => {
+          const estimate = estimates.find((e) => e.id === estimateId);
+          const groupTotals = calculateExpenseTotals(groupExpenses);
+          const isExpanded = expandedEstimates.has(estimateId);
 
-      {loading ? (
-        <p className="py-4 text-sm text-muted-foreground">Loading expenses…</p>
-      ) : expenses.length === 0 ? (
-        <EmptyState title="No expenses recorded" description="Materials, labor, permits and other project costs will appear here." />
-      ) : (
-        <div className="divide-y divide-border">
-          {/* Estimate groups */}
-          {Array.from(groups.estimateGroups.entries()).map(([estimateId, groupExpenses]) => {
-            const estimate = estimates.find((e) => e.id === estimateId);
-            const groupTotals = calculateExpenseTotals(groupExpenses);
-            const isExpanded = expandedEstimates.has(estimateId);
-
-            return (
-              <div key={estimateId}>
-                <button
-                  type="button"
-                  onClick={() => toggleEstimate(estimateId)}
-                  className="flex w-full items-center justify-between gap-2 py-3 text-left hover:text-primary"
-                >
-                  <div>
-                    <div className="font-medium text-foreground">
-                      {estimate?.estimateNumber ?? "Estimate"}
-                    </div>
-                    <div className="text-xs text-muted-foreground">{groupTotals.total > 0 ? money(groupTotals.total) : "No expenses"}</div>
+          return (
+            <div
+              key={estimateId}
+              className={index !== 0 ? "border-t border-border" : ""}
+            >
+              <button
+                type="button"
+                onClick={() => toggleEstimate(estimateId)}
+                className="grid w-full grid-cols-[1fr_120px_120px] items-center px-4 py-3 text-left transition-colors hover:bg-muted/50"
+              >
+                <div>
+                  <div className="font-medium text-foreground capitalize">
+                    {estimate?.title || "Untitled Estimate"}
                   </div>
+                  <div className="text-xs text-muted-foreground">
+                    {estimate?.estimateNumber ?? "Estimate"}
+                  </div>
+                </div>
+
+                <div className="text-right font-medium text-foreground">
+                  {money(groupTotals.total)}
+                </div>
+
+                <div className="flex justify-end">
                   <ChevronDown
-                    className={`size-4 shrink-0 text-muted-foreground transition-transform ${
+                    className={`size-4 transition-transform ${
                       isExpanded ? "rotate-180" : ""
                     }`}
                   />
-                </button>
-
-                {isExpanded && (
-                  <ul className="divide-y divide-border/50 bg-muted/20 py-2">
-                    {groupExpenses.map((e) => (
-                      <li key={e.id} className="flex items-start justify-between gap-2 py-2 px-2 text-xs">
-                        <div className="min-w-0">
-                          <div className="font-medium text-foreground">{money(e.amount)}</div>
-                          <div className="mt-0.5 text-muted-foreground">
-                            {EXPENSE_TYPE_LABEL[e.expenseType]}
-                            {e.vendor ? ` · ${e.vendor}` : ""}
-                            {e.paymentMethod ? ` · ${formatPaymentMethod(e.paymentMethod)}` : ""}
-                          </div>
-                          {e.description && <div className="mt-0.5 text-muted-foreground">{e.description}</div>}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            );
-          })}
-
-          {/* Project-level expenses */}
-          {groups.projectLevelExpenses.length > 0 && (
-            <div>
-              <button
-                type="button"
-                onClick={() => toggleEstimate("_project-level")}
-                className="flex w-full items-center justify-between gap-2 py-3 text-left hover:text-primary"
-              >
-                <div>
-                  <div className="font-medium text-foreground">Project-Level Expenses</div>
-                  <div className="text-xs text-muted-foreground">
-                    {money(calculateExpenseTotals(groups.projectLevelExpenses).total)}
-                  </div>
                 </div>
-                <ChevronDown
-                  className={`size-4 shrink-0 text-muted-foreground transition-transform ${
-                    expandedEstimates.has("_project-level") ? "rotate-180" : ""
-                  }`}
-                />
               </button>
 
-              {expandedEstimates.has("_project-level") && (
-                <ul className="divide-y divide-border/50 bg-muted/20 py-2">
-                  {groups.projectLevelExpenses.map((e) => (
-                    <li key={e.id} className="flex items-start justify-between gap-2 py-2 px-2 text-xs">
-                      <div className="min-w-0">
-                        <div className="font-medium text-foreground">{money(e.amount)}</div>
-                        <div className="mt-0.5 text-muted-foreground">
-                          {EXPENSE_TYPE_LABEL[e.expenseType]}
-                          {e.vendor ? ` · ${e.vendor}` : ""}
-                          {e.paymentMethod ? ` · ${formatPaymentMethod(e.paymentMethod)}` : ""}
-                        </div>
-                        {e.description && <div className="mt-0.5 text-muted-foreground">{e.description}</div>}
+              {isExpanded && (
+                <div className="border-t border-border bg-muted/20">
+                  <div className="grid grid-cols-[120px_1fr_120px_140px] bg-muted/50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <div>Amount</div>
+                    <div>Description</div>
+                    <div>Vendor</div>
+                    <div>Payment</div>
+                  </div>
+
+                  {groupExpenses.map((e, i) => (
+                    <div
+                      key={e.id}
+                      className={`grid grid-cols-[120px_1fr_120px_140px] items-start px-4 py-2 ${
+                        i !== 0 ? "border-t border-border/50" : ""
+                      }`}
+                    >
+                      <div className="font-medium text-foreground">
+                        {money(e.amount)}
                       </div>
-                    </li>
+
+                      <div>
+                        <div className="text-foreground">
+                          {EXPENSE_TYPE_LABEL[e.expenseType]}
+                        </div>
+
+                        {e.description && (
+                          <div className="text-muted-foreground">
+                            {e.description}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="text-muted-foreground">
+                        {e.vendor || "—"}
+                      </div>
+
+                      <div className="text-muted-foreground">
+                        {e.paymentMethod
+                          ? formatPaymentMethod(e.paymentMethod)
+                          : "—"}
+                      </div>
+                    </div>
                   ))}
-                </ul>
+                </div>
               )}
+            </div>
+          );
+        }
+      )}
+
+      {/* Project Level */}
+      {groups.projectLevelExpenses.length > 0 && (
+        <div className="border-t border-border">
+          <button
+            type="button"
+            onClick={() => toggleEstimate("_project-level")}
+            className="grid w-full grid-cols-[1fr_120px_120px] items-center px-4 py-3 text-left transition-colors hover:bg-muted/50"
+          >
+            <div className="font-medium text-foreground">
+              Project-Level Expenses
+            </div>
+
+            <div className="text-right font-medium">
+              {money(calculateExpenseTotals(groups.projectLevelExpenses).total)}
+            </div>
+
+            <div className="flex justify-end">
+              <ChevronDown
+                className={`size-4 transition-transform ${
+                  expandedEstimates.has("_project-level")
+                    ? "rotate-180"
+                    : ""
+                }`}
+              />
+            </div>
+          </button>
+
+          {expandedEstimates.has("_project-level") && (
+            <div className="border-t border-border bg-muted/20">
+              <div className="grid grid-cols-[120px_1fr_120px_140px] bg-muted/50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <div>Amount</div>
+                <div>Description</div>
+                <div>Vendor</div>
+                <div>Payment</div>
+              </div>
+
+              {groups.projectLevelExpenses.map((e, i) => (
+                <div
+                  key={e.id}
+                  className={`grid grid-cols-[120px_1fr_120px_140px] items-start px-4 py-2 ${
+                    i !== 0 ? "border-t border-border/50" : ""
+                  }`}
+                >
+                  <div className="font-medium text-foreground">
+                    {money(e.amount)}
+                  </div>
+
+                  <div>
+                    <div className="text-foreground">
+                      {EXPENSE_TYPE_LABEL[e.expenseType]}
+                    </div>
+
+                    {e.description && (
+                      <div className="text-muted-foreground">
+                        {e.description}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="text-muted-foreground">
+                    {e.vendor || "—"}
+                  </div>
+
+                  <div className="text-muted-foreground">
+                    {e.paymentMethod
+                      ? formatPaymentMethod(e.paymentMethod)
+                      : "—"}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
       )}
-    </section>
+    </div>
+  )}
+</section>
   );
 };

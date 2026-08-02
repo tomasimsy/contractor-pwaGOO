@@ -223,9 +223,14 @@ export function RoofingAreasEditorV2({ estimateId, areas, onChange, onSave, onDe
         });
         // One button, two writes: the area's own fields (just saved
         // above) and this area's line items (below), using `saved`'s
-        // real companyId directly rather than waiting for it to arrive
-        // via props on the next render.
-        await lineItemEditorRefs.current[area.id]?.save(saved.companyId);
+        // real companyId AND real id directly rather than waiting for
+        // either to arrive via props on the next render — passing the
+        // stale draft id here (a brand-new area's client-generated
+        // crypto.randomUUID(), never written to `estimate_areas`) was
+        // the exact cause of "violates foreign key constraint
+        // estimate_area_line_items_estimate_area_id_fkey" on a new
+        // area's first save.
+        await lineItemEditorRefs.current[area.id]?.save(saved.companyId, saved.id);
         onAreaLineItemsSaved?.();
         setSavedAreaIds((prev) => new Set([...prev, area.id]));
         setTimeout(() => {

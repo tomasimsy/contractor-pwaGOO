@@ -176,7 +176,18 @@ export function createSupabaseExpenseService(
   async function listForProject(projectId: UUID): Promise<Expense[]> {
     // Both attachment paths. A live row exists with project_id null and
     // estimate_id set; querying project_id alone would lose its cost.
-    const estimates = await estimateService.listForProject(projectId);
+    //
+    // includeDeleted: true is load-bearing, not optional — financial
+    // history is permanent (see this file's header discipline and the
+    // business rule this fixes): an expense attached only via
+    // estimate_id must stay counted even after its parent estimate is
+    // soft-deleted. Excluding deleted estimates here silently dropped
+    // real, non-deleted expense rows from every cost total
+    // (getTotalsForProject -> FinancialEngine.getProjectFinancials ->
+    // Dashboard/Reports) the moment their parent estimate was deleted —
+    // found during the deletion-safety audit, confirmed by reading
+    // this exact call site.
+    const estimates = await estimateService.listForProject(projectId, true);
     const estimateIds = estimates.map((e) => e.id);
 
     const orClause = estimateIds.length
@@ -342,9 +353,25 @@ export function createSupabaseExpenseService(
     return rowToExpense(data as ExpenseRow);
   }
 
+  /** Same delete-protection discipline as Project/Estimate/Invoice —
+   * blocks only once the reimbursement debt this expense created has
+   * actually been SETTLED (reimbursement_status === "reimbursed"), i.e.
+   * real cash has already moved to pay someone back for fronting it.
+   * A still-pending reimbursement is deliberately NOT blocked — deleting
+   * a wrongly-recorded expense before anyone's been paid back is a
+   * normal correction (see "deleting a reimbursable expense removes the
+   * debt too" in expenses-module.test.ts) and must keep working. */
+  async function assertNoFinancialActivity(expenseId: UUID): Promise<void> {
+    const existing = await getById(expenseId);
+    if (existing?.reimbursementStatus === "reimbursed") {
+      throw new Error("Cannot delete this expense: its reimbursement has already been paid out. That payout is a real, settled financial fact.");
+    }
+  }
+
   async function softDelete(expenseId: UUID, reason: string): Promise<void> {
     const validation = validationService.validateDeleteReason(reason);
     if (!validation.valid) throw new Error(validation.issues[0]?.message ?? "A delete reason is required.");
+    await assertNoFinancialActivity(expenseId);
 
     const actorId = await currentUserId();
     const { error } = await supabase

@@ -113,7 +113,7 @@ export function ChangeOrderForm({ changeOrder, lineItems: initialLineItems }: { 
           </select>
         </div>
 
-        <div className="space-y-1">
+        <div className="space-y-1 capitalize">
           <label className="text-xs font-medium text-foreground">Estimate *</label>
           <select
             value={estimateId}
@@ -124,7 +124,7 @@ export function ChangeOrderForm({ changeOrder, lineItems: initialLineItems }: { 
           >
             <option value="" disabled>Select an estimate</option>
             {estimatesForProject.map((e) => (
-              <option key={e.id} value={e.id}>{e.estimateNumber ?? e.id.slice(0, 8)}</option>
+              <option className="" key={e.id} value={e.id}>{e.title} - {e.estimateNumber ?? e.id.slice(0, 8)}</option>
             ))}
           </select>
           {projectId && estimatesForProject.length === 0 && <p className="text-xs text-muted-foreground">No estimates on this project yet.</p>}

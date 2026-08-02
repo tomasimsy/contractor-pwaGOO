@@ -38,9 +38,18 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
-  const isAuthRoute = pathname.startsWith("/login");
+  const isAuthRoute = pathname.startsWith("/login") || pathname.startsWith("/signup");
+  // API routes must never receive an HTML redirect — a fetch() caller
+  // expects JSON (or a real error status), not a 302 into /login's
+  // page markup (which is exactly what "Unexpected token '<'... is not
+  // valid JSON" was — a signup POST redirected here, and the caller
+  // tried to .json() the login page's HTML). Each API route is
+  // responsible for its own auth check (some are intentionally public,
+  // like this signup route and app/api/portal/sign; others read the
+  // session cookie themselves via createServerSupabaseClient).
+  const isApiRoute = pathname.startsWith("/api/");
 
-  if (!user && !isAuthRoute) {
+  if (!user && !isAuthRoute && !isApiRoute) {
     const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);
   }

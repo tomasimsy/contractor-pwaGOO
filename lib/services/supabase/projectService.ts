@@ -98,8 +98,10 @@ export function createSupabaseProjectService(
     if (!validation.valid) throw new Error(validation.issues[0]?.message ?? "This client does not belong to your company.");
   }
 
-  async function getById(projectId: UUID): Promise<Project | null> {
-    const { data, error } = await supabase.from("projects").select("*").eq("id", projectId).maybeSingle();
+  async function getById(projectId: UUID, includeDeleted = false): Promise<Project | null> {
+    let query = supabase.from("projects").select("*").eq("id", projectId);
+    if (!includeDeleted) query = query.is("deleted_at", null);
+    const { data, error } = await query.maybeSingle();
     if (error) throw new Error(`Failed to load project: ${error.message}`);
     return data ? rowToProject(data as ProjectRow) : null;
   }
@@ -181,9 +183,36 @@ export function createSupabaseProjectService(
     return { valid: true, issues: [], project };
   }
 
+  /** Same delete-protection discipline as EstimateService.
+   * assertNoFinancialActivity — direct table existence checks (not a
+   * second calculation, not routed through EstimateService/
+   * InvoiceService/ExpenseService, all of which already depend on
+   * ProjectService — a circular constructor dependency otherwise). */
+  async function assertNoFinancialActivity(projectId: UUID): Promise<void> {
+    const [estimates, invoices, expenses] = await Promise.all([
+      supabase.from("estimates").select("id").eq("project_id", projectId).is("deleted_at", null).limit(1),
+      supabase.from("invoices").select("id").eq("project_id", projectId).is("deleted_at", null).limit(1),
+      supabase.from("estimate_expenses").select("id").eq("project_id", projectId).is("deleted_at", null).limit(1),
+    ]);
+    if (estimates.error) throw new Error(`Failed to check estimates: ${estimates.error.message}`);
+    if (invoices.error) throw new Error(`Failed to check invoices: ${invoices.error.message}`);
+    if (expenses.error) throw new Error(`Failed to check expenses: ${expenses.error.message}`);
+
+    if ((estimates.data?.length ?? 0) > 0) {
+      throw new Error("Cannot delete this project: it has active estimates. Delete them first, or use Archive instead once the job is complete/cancelled.");
+    }
+    if ((invoices.data?.length ?? 0) > 0) {
+      throw new Error("Cannot delete this project: it has active invoices (and possibly payments).");
+    }
+    if ((expenses.data?.length ?? 0) > 0) {
+      throw new Error("Cannot delete this project: it has recorded expenses attached directly to it.");
+    }
+  }
+
   async function softDelete(projectId: UUID, reason: string): Promise<void> {
     const validation = validationService.validateDeleteReason(reason);
     if (!validation.valid) throw new Error(validation.issues?.[0]?.message ?? "A delete reason is required.");
+    await assertNoFinancialActivity(projectId);
 
     const actorId = await currentUserId();
     const { error } = await supabase

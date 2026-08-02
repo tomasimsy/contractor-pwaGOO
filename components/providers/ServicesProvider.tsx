@@ -7,6 +7,8 @@ import { createEstimatePhotoService } from "@/lib/services/supabase/estimatePhot
 import { createRoofingAreaService } from "@/lib/services/supabase/roofingAreaService";
 import { createSupabaseEstimateAreaLineItemService } from "@/lib/services/supabase/estimateAreaLineItemService";
 import { createSupabaseExpenseService } from "@/lib/services/supabase/expenseService";
+import { createSupabaseCompanyService } from "@/lib/services/supabase/companyService";
+import { createSupabaseCompanyDocumentService } from "@/lib/services/supabase/companyDocumentService";
 import { createFinancialEngine } from "@/lib/services";
 import type { ClientService } from "@/lib/services/clientService";
 import type { ProjectService } from "@/lib/services/projectService";
@@ -21,6 +23,8 @@ import type { ExpenseService } from "@/lib/services/expenseService";
 import type { SubcontractorService } from "@/lib/services/subcontractorService";
 import type { AgentCommissionService } from "@/lib/services/agentCommissionService";
 import type { FinancialEngine } from "@/lib/services/financialEngine";
+import type { CompanyService } from "@/lib/services/companyService";
+import type { CompanyDocumentService } from "@/lib/services/companyDocumentService";
 import type { AuditService } from "@/lib/services";
 import type { EstimateWorkflow } from "@/lib/services/estimateWorkflow";
 import type { ChangeOrderWorkflow } from "@/lib/services/changeOrderWorkflow";
@@ -40,6 +44,8 @@ export interface AppServices extends InMemoryServices {
   subcontractorService: SubcontractorService;
   agentCommissionService: AgentCommissionService;
   financialEngine: FinancialEngine;
+  companyService: CompanyService;
+  companyDocumentService: CompanyDocumentService;
   auditService: AuditService;
   /** The single canonical estimate-signing workflow (sign/unsign) — see
    * lib/services/estimateWorkflow.ts. The portal reaches the exact same
@@ -67,16 +73,24 @@ export interface AppServices extends InMemoryServices {
  * `subcontractor_payments`/`agents`+`estimate_agents`+`agent_payments`
  * tables in the shared Supabase project (see .env.local). Only
  * `transactionService` and `filteringService` remain
- * `createInMemoryServices()` doubles — no real ledger table exists yet
- * (see subcontractorService.ts's file header for why assignment
- * balances no longer depend on it).
+ * `createInMemoryServices()` doubles — no real ledger table exists yet.
+ * `transactionService` is still passed to `createFinancialEngine`
+ * below purely for its type signature (`FinancialEngineDeps` requires
+ * it) — as of the 2026-08-01 Dashboard audit fix, FinancialEngine no
+ * longer calls it for any actual number (see financialEngine.ts's
+ * `getRealizedCashFlows`/`getMileageCostForProjects` and
+ * DASHBOARD_AUDIT_REPORT.md). Before that fix, Revenue and Payments
+ * Received read from this in-memory ledger, which no real
+ * PaymentService write ever reached — they were permanently ~$0 in
+ * production regardless of real `invoice_payments` rows.
  *
- * FINANCIAL ENGINE — now fully real for every cost source it composes:
- * revenue, billed totals, approved change orders, expenses, and
- * subcontractor/agent assignment costs (via SubcontractorService.
- * getBalance/AgentCommissionService.getBalance, computed directly from
- * persisted rows, not the in-memory ledger) all reflect the live
- * database.
+ * FINANCIAL ENGINE — fully real for every figure it composes: revenue,
+ * payments received, billed totals, approved change orders, expenses
+ * (incl. mileage), and subcontractor/agent costs (via
+ * PaymentService.getSummaryForInvoice / SubcontractorService.
+ * getBalance+listPayments / AgentCommissionService.getBalance+
+ * listPayments / ExpenseService, all computed directly from persisted
+ * rows) all reflect the live database.
  */
 async function currentUserId(): Promise<string | null> {
   const { data } = await supabase.auth.getUser();
@@ -105,6 +119,8 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
     const estimatePhotoService = createEstimatePhotoService(supabase);
     const roofingAreaService = createRoofingAreaService(supabase);
     const estimateAreaLineItemService = createSupabaseEstimateAreaLineItemService(supabase, inMemory.validationService);
+    const companyService = createSupabaseCompanyService(supabase, currentUserId);
+    const companyDocumentService = createSupabaseCompanyDocumentService(supabase, inMemory.validationService, currentUserId);
 
     // Rebuilt over the real services rather than reusing
     // inMemory.financialEngine, which was closed over the in-memory
@@ -141,6 +157,8 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
       subcontractorService,
       agentCommissionService,
       financialEngine,
+      companyService,
+      companyDocumentService,
       estimateWorkflow,
       changeOrderWorkflow,
     };
