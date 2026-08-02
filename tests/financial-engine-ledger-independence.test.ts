@@ -143,3 +143,71 @@ describe("FinancialEngine no longer depends on transactionService for real money
     expect(tax.deductibleExpenses).toBe(300);
   });
 });
+
+/**
+ * Regression test for the 2026-08-02 Dashboard audit fix: both sides of
+ * CompanyFinancials.totalOutstanding must span the SAME date window.
+ * `totalPaid` was always period-scoped, but `totalInvoiced` summed every
+ * invoice ever issued (invoiceService.listForCompany applies no date
+ * filter), so the Dashboard's "Outstanding Invoices" tile showed
+ * all-time billings minus one period's payments — a figure that matched
+ * nothing else in the app and only ever grew.
+ */
+describe("CompanyFinancials.totalOutstanding is period-scoped on both sides", () => {
+  test("an invoice issued outside the requested range is excluded from totalInvoiced/totalOutstanding", async () => {
+    const project = await services.projectService.create({ companyId: COMPANY_ID, clientId: "client-1", name: "Windowing" });
+    const estimate = await services.estimateService.create({
+      companyId: COMPANY_ID, projectId: project.id, clientId: "client-1",
+      lineItems: [{ category: "material", name: "Scope", description: "", quantity: 1, unitPrice: 1000, taxable: false }],
+      markup: 0, discount: 0, taxRate: 0,
+    });
+    await services.estimateService.changeStatus(estimate.id, "sent");
+    await services.estimateService.changeStatus(estimate.id, "approved");
+
+    // Issued in JANUARY.
+    const januaryInvoice = await services.invoiceService.createFromEstimate(estimate.id, {
+      issueDate: "2026-01-15",
+      dueDate: "2026-02-15",
+    });
+    await services.invoiceService.changeStatus(januaryInvoice.id, "sent");
+
+    // Ask for MARCH only — January's invoice must not appear.
+    const march = { start: new Date("2026-03-01"), end: new Date("2026-03-31") };
+    const marchFinancials = await services.financialEngine.getCompanyFinancials({ companyId: COMPANY_ID, dateRange: march });
+    expect(marchFinancials.totalInvoiced).toBe(0);
+    expect(marchFinancials.totalOutstanding).toBe(0);
+
+    // Ask for January — it must appear, in full and unpaid.
+    const january = { start: new Date("2026-01-01"), end: new Date("2026-01-31") };
+    const januaryFinancials = await services.financialEngine.getCompanyFinancials({ companyId: COMPANY_ID, dateRange: january });
+    expect(januaryFinancials.totalInvoiced).toBe(1000);
+    expect(januaryFinancials.totalPaid).toBe(0);
+    expect(januaryFinancials.totalOutstanding).toBe(1000);
+  });
+
+  test("outstanding nets an in-range payment against the same period's invoice", async () => {
+    const project = await services.projectService.create({ companyId: COMPANY_ID, clientId: "client-1", name: "Netting" });
+    const estimate = await services.estimateService.create({
+      companyId: COMPANY_ID, projectId: project.id, clientId: "client-1",
+      lineItems: [{ category: "material", name: "Scope", description: "", quantity: 1, unitPrice: 800, taxable: false }],
+      markup: 0, discount: 0, taxRate: 0,
+    });
+    await services.estimateService.changeStatus(estimate.id, "sent");
+    await services.estimateService.changeStatus(estimate.id, "approved");
+
+    const invoice = await services.invoiceService.createFromEstimate(estimate.id, {
+      issueDate: "2026-04-05",
+      dueDate: "2026-05-05",
+    });
+    await services.invoiceService.changeStatus(invoice.id, "sent");
+    await services.paymentService.record({
+      companyId: COMPANY_ID, invoiceId: invoice.id, amount: 300, method: "check", paymentDate: "2026-04-20",
+    });
+
+    const april = { start: new Date("2026-04-01"), end: new Date("2026-04-30") };
+    const f = await services.financialEngine.getCompanyFinancials({ companyId: COMPANY_ID, dateRange: april });
+    expect(f.totalInvoiced).toBe(800);
+    expect(f.totalPaid).toBe(300);
+    expect(f.totalOutstanding).toBe(500);
+  });
+});

@@ -27,24 +27,30 @@ export function AgentMultiSelect({
   const [isSearching, setIsSearching] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Search agents as the query changes
+  // Load agents as the query changes — INCLUDING when it's empty, which
+  // the adapter treats as "list them all" (createAgentDirectory.search
+  // only adds an ilike filter for a non-blank query). Previously an
+  // empty query short-circuited to `[]`, so the user had to type
+  // something before any agent appeared even though the full roster was
+  // one call away.
   useEffect(() => {
-    if (!query.trim()) {
-      setResults([]);
-      return;
-    }
-
     setIsSearching(true);
+    let cancelled = false;
     adapter
       .search(query)
       .then((res) => {
+        if (cancelled) return;
         setResults(res);
         setIsSearching(false);
       })
       .catch((err) => {
+        if (cancelled) return;
         console.error("Agent search error:", err);
         setIsSearching(false);
       });
+    return () => {
+      cancelled = true;
+    };
   }, [query, adapter]);
 
   const selectedIds = useMemo(() => new Set(selectedAgents.map((a) => a.id)), [selectedAgents]);
@@ -67,12 +73,22 @@ export function AgentMultiSelect({
     [selectedIds, onAddAgent]
   );
 
+  /** The agent directory implements `createWithFields` (name + phone +
+   * email + commission %), not the simpler `create` — gating on
+   * `adapter.create` alone meant the "Create …" affordance never
+   * rendered for agents at all. Accept either, same as CreateOrSelect
+   * does. */
+  const canCreate = !!(adapter.create || adapter.createWithFields);
+
   const handleCreateNew = useCallback(async () => {
-    if (!query.trim()) return;
+    const name = query.trim();
+    if (!name) return;
 
     try {
       setIsSearching(true);
-      const newAgent = await adapter.create?.({ name: query.trim() });
+      const newAgent = adapter.createWithFields
+        ? await adapter.createWithFields({ name })
+        : await adapter.create?.({ name });
       if (newAgent) {
         handleAddAgent(newAgent);
       }
@@ -99,10 +115,10 @@ export function AgentMultiSelect({
           className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:border-ring"
         />
 
-        {isOpen && (query.trim() || availableResults.length > 0) && (
+        {isOpen && (
           <div className="absolute top-full left-0 right-0 z-10 mt-1 rounded-lg border border-input bg-card shadow-lg">
             {isSearching ? (
-              <div className="px-3 py-2 text-xs text-muted-foreground">Searching…</div>
+              <div className="px-3 py-2 text-xs text-muted-foreground">Loading agents…</div>
             ) : availableResults.length > 0 ? (
               <>
                 <ul className="divide-y divide-border">
@@ -122,7 +138,7 @@ export function AgentMultiSelect({
                     </li>
                   ))}
                 </ul>
-                {query.trim() && adapter.create && (
+                {query.trim() && canCreate && (
                   <button
                     type="button"
                     onClick={() => {
@@ -132,13 +148,13 @@ export function AgentMultiSelect({
                     className="w-full px-3 py-2 text-left text-sm font-medium text-primary hover:bg-muted flex items-center gap-2"
                   >
                     <Plus className="size-3" />
-                    Create "{query.trim()}"
+                    Create &quot;{query.trim()}&quot;
                   </button>
                 )}
               </>
-            ) : query.trim() ? (
+            ) : (
               <div className="px-3 py-2 text-sm text-muted-foreground">
-                {adapter.create ? (
+                {canCreate && query.trim() ? (
                   <button
                     type="button"
                     onClick={() => {
@@ -148,13 +164,13 @@ export function AgentMultiSelect({
                     className="text-primary font-medium hover:underline flex items-center gap-1"
                   >
                     <Plus className="size-3" />
-                    Create "{query.trim()}"
+                    Create &quot;{query.trim()}&quot;
                   </button>
                 ) : (
                   "No agents found"
                 )}
               </div>
-            ) : null}
+            )}
           </div>
         )}
 

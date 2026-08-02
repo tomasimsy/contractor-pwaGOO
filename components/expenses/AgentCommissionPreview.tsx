@@ -3,35 +3,46 @@
 /**
  * Agent commission profit preview and allocation.
  *
- * Shows: project revenue - other expenses = remaining profit
- * Then splits remaining profit among selected agents at a fixed %.
+ * PURE DISPLAY — computes no money of its own. Every figure below comes
+ * from FinancialEngine via `calculateAgentCommissionSplit`
+ * (financialCalculations.ts), the same Layer 0 function ExpenseDialog
+ * calls to decide what to actually persist. Previously this component
+ * re-derived `remainingProfit`/`totalCommission`/`perAgentCommission`
+ * inline while ExpenseDialog derived them AGAIN before submitting —
+ * two copies of the same formula that could disagree.
  *
- * Each agent gets an equal split of the commission percentage:
- * Example: $1000 remaining, 40% commission, 2 agents = $200 per agent.
+ * The revenue basis is the ESTIMATE, not the project: a commission is
+ * earned on the job that was sold, and a project can carry several
+ * estimates (see EstimateService's header). `EstimateFinancials.netProfit`
+ * is already "revised revenue − every cost recorded against this
+ * estimate (materials, labor, subcontractors, change orders …)", which
+ * is precisely the commissionable base — so it is read, never rebuilt.
  */
 import { AlertCircle, Trash2 } from "lucide-react";
+import type { AgentCommissionSplit } from "@/lib/services/financialCalculations";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 export function AgentCommissionPreview({
-  projectRevenue,
-  otherExpenses,
+  estimateRevenue,
+  estimateExpenses,
+  split,
   selectedAgents,
   commissionPercent,
   onRemoveAgent,
 }: {
-  projectRevenue: number;
-  otherExpenses: number;
+  /** EstimateFinancials.revisedTotal — shown for context only. */
+  estimateRevenue: number;
+  /** EstimateFinancials.totalExpenses — shown for context only. */
+  estimateExpenses: number;
+  /** The one computed result, from FinancialEngine. */
+  split: AgentCommissionSplit;
   selectedAgents: Array<{ id: string; label: string }>;
   commissionPercent: number | null;
   onRemoveAgent: (agentId: string) => void;
 }) {
-  const remainingProfit = projectRevenue - otherExpenses;
-  const totalCommission = remainingProfit * (commissionPercent ?? 0) / 100;
-  const perAgentCommission = selectedAgents.length > 0 ? totalCommission / selectedAgents.length : 0;
-  const companyRemaining = remainingProfit - totalCommission;
-
-  const isExceeded = totalCommission > remainingProfit;
+  const { remainingProfit, totalCommission, perAgentCommission, companyRemaining, exceedsRemainingProfit } = split;
+  const isExceeded = exceedsRemainingProfit;
 
   return (
     <fieldset className="space-y-3 rounded-lg border border-border p-3">
@@ -40,12 +51,12 @@ export function AgentCommissionPreview({
       {/* Revenue breakdown */}
       <div className="space-y-1 text-sm">
         <div className="flex items-center justify-between">
-          <span className="text-muted-foreground">Project Revenue</span>
-          <span className="font-medium text-foreground">{money(projectRevenue)}</span>
+          <span className="text-muted-foreground">Estimate Revenue</span>
+          <span className="font-medium text-foreground">{money(estimateRevenue)}</span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-muted-foreground">Other Expenses</span>
-          <span className="font-medium text-foreground">−{money(otherExpenses)}</span>
+          <span className="text-muted-foreground">Estimate Expenses</span>
+          <span className="font-medium text-foreground">−{money(estimateExpenses)}</span>
         </div>
         <div className="border-t border-border pt-1">
           <div className="flex items-center justify-between">

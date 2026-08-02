@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Modal } from "@/components/ui/Modal";
+import { ClientForm } from "@/components/clients/ClientForm";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
 import type { Project } from "@/lib/services/projectService";
@@ -42,6 +43,7 @@ export function ProjectForm({
   const [endDate, setEndDate] = useState(project?.endDate ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showNewClientModal, setShowNewClientModal] = useState(false);
 
   useEffect(() => {
     if (!profile?.companyId) return;
@@ -94,6 +96,7 @@ export function ProjectForm({
   }
 
   return (
+    <>
     <form onSubmit={handleSubmit} className="max-w-2xl space-y-4 rounded-xl border border-border bg-card p-4 sm:p-6">
       {error && <div className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</div>}
 
@@ -109,17 +112,29 @@ export function ProjectForm({
 
       <div className="space-y-1">
         <label className="text-xs font-medium text-foreground">Client</label>
-        <select
-          value={clientId ?? ""}
-          onChange={(e) => setClientId(e.target.value)}
-          className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
-        >
-          <option value="">No client</option>
-          {clients.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
-        {clients.length === 0 && <p className="text-xs text-muted-foreground">No clients yet — <Link href="/clients" className="text-primary hover:underline">create one first</Link>.</p>}
+        <div className="flex items-center gap-2">
+          <select
+            value={clientId ?? ""}
+            onChange={(e) => setClientId(e.target.value)}
+            className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+          >
+            <option value="">No client</option>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+          {/* Same inline-create pattern EstimateForm already uses for
+              its own Client field — creating one here must not lose the
+              half-filled project form to a navigation. */}
+          <button
+            type="button"
+            onClick={() => setShowNewClientModal(true)}
+            className="shrink-0 whitespace-nowrap rounded-lg border border-input px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+          >
+            + New Client
+          </button>
+        </div>
+        {clients.length === 0 && <p className="text-xs text-muted-foreground">No clients yet — add one with &ldquo;+ New Client&rdquo;.</p>}
       </div>
 
       <div className="space-y-1">
@@ -161,5 +176,22 @@ export function ProjectForm({
         </button>
       </div>
     </form>
+
+    <Modal open={showNewClientModal} onClose={() => setShowNewClientModal(false)} title="New Client">
+      <ClientForm
+        client={null}
+        companyId={profile?.companyId ?? ""}
+        onClose={() => setShowNewClientModal(false)}
+        onSaved={(created) => {
+          // Refresh the dropdown and auto-select the new client — the
+          // created record comes straight back from ClientForm's
+          // onSaved, so no refetch-and-guess is needed.
+          setClients((prev) => [...prev, created]);
+          setClientId(created.id);
+          setShowNewClientModal(false);
+        }}
+      />
+    </Modal>
+    </>
   );
 }

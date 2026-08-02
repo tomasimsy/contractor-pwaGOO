@@ -42,7 +42,7 @@ import {
   type ExpenseType,
   type PaidByType,
   type ExpensePayeeType,
-  type ProjectFinancials,
+  type EstimateFinancials,
 } from "@/lib/services";
 
 /** Which directory a given expense type should offer, and what the
@@ -101,19 +101,35 @@ export function ExpenseDialog({
 
   // Agent commission fields
   const [selectedAgents, setSelectedAgents] = useState<Array<{ id: string; label: string }>>([]);
-  const [commissionPercent, setCommissionPercent] = useState<40 | 60 | null>(null);
-  const [projectFinancials, setProjectFinancials] = useState<ProjectFinancials | null>(null);
+  const [commissionPercent, setCommissionPercent] = useState<30 | 70 | null>(null);
+  // ESTIMATE financials, not project: a commission is earned on the job
+  // that was sold, and a project can carry several estimates (see
+  // EstimateService's header). `netProfit` here is already "revised
+  // revenue − every cost recorded against this estimate (materials,
+  // labor, subcontractors, change orders …)" — exactly the
+  // commissionable base, computed by FinancialEngine, never rebuilt.
+  const [estimateFinancials, setEstimateFinancials] = useState<EstimateFinancials | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch project financials when showing agent commission preview
+  const commissionEstimateId = estimateId ?? expense?.estimateId ?? null;
+
   useEffect(() => {
-    if (projectId && expenseType === "agent_commission" && !projectFinancials) {
+    if (commissionEstimateId && expenseType === "agent_commission" && !estimateFinancials) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      financialEngine.getProjectFinancials(projectId).then(setProjectFinancials).catch(console.error);
+      financialEngine.getEstimateFinancials(commissionEstimateId).then(setEstimateFinancials).catch(console.error);
     }
-  }, [projectId, expenseType, projectFinancials, financialEngine]);
+  }, [commissionEstimateId, expenseType, estimateFinancials, financialEngine]);
+
+  /** The ONE commission calculation, from FinancialEngine — the same
+   * object feeds the preview below and the amounts actually persisted
+   * in handleSubmit, so what the user approves is what gets saved. */
+  const commissionSplit = financialEngine.calculateAgentCommissionSplit(
+    estimateFinancials?.netProfit ?? 0,
+    commissionPercent,
+    selectedAgents.length
+  );
 
   const payeeKind = PAYEE_KIND[expenseType];
   const reimbursable = reimbursableOverride ?? paidByType !== "company";
@@ -149,20 +165,20 @@ async function handleSubmit(e: React.FormEvent) {
       return;
     }
     if (!commissionPercent) {
-      setError("Select a commission percentage (40% or 60%).");
+      setError("Select a commission percentage (30% or 70%).");
       return;
     }
-    if (!projectFinancials) {
-      setError("Unable to calculate remaining profit. Please try again.");
+    if (!estimateFinancials) {
+      setError(
+        commissionEstimateId
+          ? "Unable to calculate remaining profit. Please try again."
+          : "Agent commission must be recorded against an estimate — open this from an estimate to allocate one."
+      );
       return;
     }
 
-    // Validate that commission doesn't exceed remaining profit
-    const otherExpenses = projectFinancials.totalExpenses;
-    const remainingProfit = projectFinancials.revisedTotal - otherExpenses;
-    const totalCommission = remainingProfit * (commissionPercent / 100);
-
-    if (totalCommission < 0 || remainingProfit < 0) {
+    // Same commissionSplit the preview showed — no second derivation.
+    if (commissionSplit.remainingProfit < 0 || commissionSplit.exceedsRemainingProfit) {
       setError("Commission exceeds remaining profit. Adjust expenses or profit before allocating commissions.");
       return;
     }
@@ -189,15 +205,14 @@ async function handleSubmit(e: React.FormEvent) {
 
   try {
     // Handle agent commission: create one expense per agent
-    if (expenseType === "agent_commission" && projectFinancials && commissionPercent && selectedAgents.length > 0) {
-      const otherExpenses = projectFinancials.totalExpenses;
-      const remainingProfit = projectFinancials.revisedTotal - otherExpenses;
-      const commissionPerAgent = (remainingProfit * (commissionPercent / 100)) / selectedAgents.length;
+    if (expenseType === "agent_commission" && estimateFinancials && commissionPercent && selectedAgents.length > 0) {
+      // FinancialEngine's figure, identical to the one previewed above.
+      const commissionPerAgent = commissionSplit.perAgentCommission;
 
       let allOk = true;
       for (const agent of selectedAgents) {
         const ok = await onSubmit({
-          estimateId: estimateId ?? expense?.estimateId ?? null,
+          estimateId: commissionEstimateId,
           expenseType: "agent_commission",
           amount: commissionPerAgent,
           expenseDate,
@@ -253,7 +268,7 @@ async function handleSubmit(e: React.FormEvent) {
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-border bg-card p-4 sm:rounded-2xl sm:p-5">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">{isEdit ? "Edit Expense" : "Record Expense"}</h2>
+          <h2 className="text-sm font-semibold text-foreground">{isEdit ? "Edit Expense" : "Record Expensexx"}</h2>
           <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1 text-muted-foreground hover:bg-muted">
             <X className="size-4" />
           </button>
@@ -393,7 +408,7 @@ async function handleSubmit(e: React.FormEvent) {
           </fieldset>
 
           {/* Agent commission allocation */}
-          {expenseType === "agent_commission" && projectFinancials && (
+          {expenseType === "agent_commission" && estimateFinancials && (
             <div className="space-y-3">
               <fieldset className="space-y-2 rounded-lg border border-border p-3">
                 <legend className="px-1 text-xs font-medium text-foreground">Select Agents</legend>
@@ -418,18 +433,18 @@ async function handleSubmit(e: React.FormEvent) {
                   <label className="flex items-center gap-2">
                     <input
                       type="radio"
-                      checked={commissionPercent === 40}
-                      onChange={() => setCommissionPercent(40)}
+                      checked={commissionPercent === 30}
+                      onChange={() => setCommissionPercent(30)}
                     />
-                    <span className="text-sm text-foreground">40% Agent / 60% Company</span>
+                    <span className="text-sm text-foreground">30% Agent / 70% Company</span>
                   </label>
                   <label className="flex items-center gap-2">
                     <input
                       type="radio"
-                      checked={commissionPercent === 60}
-                      onChange={() => setCommissionPercent(60)}
+                      checked={commissionPercent === 70}
+                      onChange={() => setCommissionPercent(70)}
                     />
-                    <span className="text-sm text-foreground">60% Agent / 40% Company</span>
+                    <span className="text-sm text-foreground">70% Agent / 30% Company</span>
                   </label>
                 </div>
               </fieldset>
@@ -437,8 +452,9 @@ async function handleSubmit(e: React.FormEvent) {
               {/* Commission preview */}
               {selectedAgents.length > 0 && commissionPercent && (
                 <AgentCommissionPreview
-                  projectRevenue={projectFinancials.revisedTotal}
-                  otherExpenses={projectFinancials.totalExpenses}
+                  estimateRevenue={estimateFinancials.revisedTotal}
+                  estimateExpenses={estimateFinancials.totalExpenses}
+                  split={commissionSplit}
                   selectedAgents={selectedAgents}
                   commissionPercent={commissionPercent}
                   onRemoveAgent={(agentId) => {

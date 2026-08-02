@@ -310,6 +310,115 @@ export function calculateCommittedCostBalance(assigned: number, paid: number): C
   };
 }
 
+/** The four normalized cost sources a job's total cost is assembled
+ * from — exactly the four listed in FinancialEngine's own file header.
+ * Both project-level and estimate-level financials feed this same
+ * shape. */
+export interface JobCostInputs {
+  /** Every active expense row's amount (materials/labor/permit/…),
+   * from ExpenseService — the source rows, never a ledger sum. */
+  expenseItems: number;
+  /** Mileage reimbursement, from ExpenseService's `mileage_trips`. */
+  mileageCosts: number;
+  /** COMMITTED subcontractor cost — `max(assigned, paid)` per
+   * assignment. An assignment is a real cost the moment it's made, so
+   * this is the assignment figure, NOT the sum of its payments;
+   * counting the payments as well would double-count the same money. */
+  subcontractorCosts: number;
+  /** COMMITTED agent commission cost — same committed model. Excludes
+   * reimbursement settlements, which repay an expense already counted
+   * in `expenseItems`. */
+  agentCosts: number;
+}
+
+export interface JobProfit extends JobCostInputs {
+  totalExpenses: number;
+  grossProfit: number;
+  netProfit: number;
+  /** Percent. Zero when there's no revenue to take a margin of. */
+  profitMargin: number;
+}
+
+/**
+ * THE definition of total cost and profit for a job — used by BOTH
+ * FinancialEngine.getProjectFinancials and getEstimateFinancials so a
+ * project and its estimates can never disagree about what "total cost"
+ * or "net profit" mean.
+ *
+ * Before this existed the two methods each composed their own:
+ * getProjectFinancials summed all four sources, while
+ * getEstimateFinancials summed ONLY `expenseItems` — so an estimate's
+ * netProfit silently ignored mileage, subcontractor and agent cost and
+ * read higher than the same job's project-level netProfit. The four-
+ * source rule (this function) is the intended one: it's what
+ * FinancialEngine's file header documents, and what the Estimate page's
+ * own "Project Total Cost" tile already claimed to be showing.
+ *
+ *   totalExpenses = expenseItems + mileageCosts + subcontractorCosts + agentCosts
+ *   grossProfit   = revenue − (subcontractorCosts + agentCosts)
+ *   netProfit     = revenue − totalExpenses
+ *
+ * `grossProfit` deliberately subtracts only the two contracted-labour
+ * costs — it answers "what's left after the people doing the work are
+ * paid", before materials and overhead. That formula was already
+ * identical in both methods; it's kept here so it stays that way.
+ */
+export function calculateJobProfit(revenue: number, costs: JobCostInputs): JobProfit {
+  const totalExpenses = costs.expenseItems + costs.mileageCosts + costs.subcontractorCosts + costs.agentCosts;
+  const grossProfit = revenue - (costs.subcontractorCosts + costs.agentCosts);
+  const netProfit = revenue - totalExpenses;
+  return {
+    ...costs,
+    totalExpenses,
+    grossProfit,
+    netProfit,
+    profitMargin: revenue > 0 ? (netProfit / revenue) * 100 : 0,
+  };
+}
+
+export interface AgentCommissionSplit {
+  /** Revenue left over after every cost recorded against the estimate —
+   * the commissionable base. */
+  remainingProfit: number;
+  totalCommission: number;
+  /** Equal share per agent; 0 when no agents are selected. */
+  perAgentCommission: number;
+  /** What the company keeps after paying every selected agent. */
+  companyRemaining: number;
+  /** True when the commission would exceed what's actually left. */
+  exceedsRemainingProfit: boolean;
+}
+
+/** THE agent-commission allocation formula — an equal split of a
+ * percentage of whatever profit remains on the ESTIMATE (not the
+ * project: a commission is earned on the job that was sold, and a
+ * project can carry several estimates).
+ *
+ * `remainingProfit` is passed in as EstimateFinancials.netProfit
+ * (revised revenue − every cost recorded against that estimate:
+ * materials, labor, subcontractors, change orders, …), which
+ * FinancialEngine already computes — this function never rebuilds it.
+ *
+ * Lives at Layer 0 because BOTH the preview (AgentCommissionPreview)
+ * and the write path (ExpenseDialog, deciding what amount to persist
+ * per agent) need identical numbers. They each had their own copy of
+ * this arithmetic before, so the figure a user approved in the preview
+ * was not guaranteed to be the figure that got saved. */
+export function calculateAgentCommissionSplit(
+  remainingProfit: number,
+  commissionPercent: number | null,
+  agentCount: number
+): AgentCommissionSplit {
+  const totalCommission = remainingProfit * ((commissionPercent ?? 0) / 100);
+  return {
+    remainingProfit,
+    totalCommission,
+    perAgentCommission: agentCount > 0 ? totalCommission / agentCount : 0,
+    companyRemaining: remainingProfit - totalCommission,
+    exceedsRemainingProfit: totalCommission > remainingProfit,
+  };
+}
+
 /** An agent's total outstanding balance = commission earned (committed,
  * from calculateCommittedCostBalance) + reimbursements owed (sum of
  * that agent's pending-reimbursement Expense rows — ExpenseService

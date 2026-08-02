@@ -563,8 +563,21 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
               requires scrolling past Roof Areas/Line Items/Financial
               Summary first — same panels, just tabbed instead of
               stacked (see SubAgentTabsPanel). */}
+          {/* Subcontractor/agent payments are their own domain models,
+              but they DO appear in the unified Costs list above (via
+              FinancialEngine.getEstimateCostEntries) — so refresh that
+              list too, not just the profit figures, whenever one is
+              recorded. */}
           {estimate.projectId && (
-            <SubAgentTabsPanel ref={subAgentTabsRef} companyId={estimate.companyId} projectId={estimate.projectId} onChanged={loadFinancials} />
+            <SubAgentTabsPanel
+              ref={subAgentTabsRef}
+              companyId={estimate.companyId}
+              projectId={estimate.projectId}
+              onChanged={async () => {
+                await loadFinancials();
+                await expensesPanelRef.current?.refresh();
+              }}
+            />
           )}
 
           <section className="rounded-xl border border-border bg-card p-5 shadow-xs">

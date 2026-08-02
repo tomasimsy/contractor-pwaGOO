@@ -152,6 +152,49 @@ export interface ProjectFinancials {
  * NOT folded in here; doing so would mix real persisted numbers with
  * non-functional placeholder data.
  */
+/** Which domain model a unified cost row came from. The three stay
+ * SEPARATE services/tables on purpose (an expense is a cost incurred; a
+ * subcontractor/agent assignment is a commitment with its own
+ * assigned-vs-paid-vs-outstanding lifecycle) — this is a read-side
+ * projection over all three, not a merge of them. */
+export type CostEntrySource = "expense" | "subcontractor" | "agent";
+
+/**
+ * How FinancialEngine treats a given row when it computes cost. Exposed
+ * so a unified list can never be naively summed into a "total" that
+ * disagrees with getProjectFinancials/getEstimateFinancials:
+ *
+ *  - "cost"       the row IS a project cost (an expense row).
+ *  - "payment"    cash paid against a commitment ALREADY counted as cost
+ *                 at assignment time (subcontractor payments, agent
+ *                 commission payments). Counting these again would
+ *                 double-count — see getProjectFinancials' committed-cost
+ *                 model (`max(assigned, paid)` per assignment).
+ *  - "settlement" repays whoever fronted an expense that is already
+ *                 counted (agent reimbursement payments). Never an
+ *                 additional cost — see FinancialEngine's own note on the
+ *                 $300-becomes-$600 double-count this rule prevents.
+ */
+export type CostEntryTreatment = "cost" | "payment" | "settlement";
+
+/** One row in the unified cost view — a READ-ONLY projection assembled
+ * by FinancialEngine.getEstimateCostEntries/getProjectCostEntries from
+ * the three existing services. No new table, no duplicated record: each
+ * entry's `id` is the id of the real row in its own domain table. */
+export interface CostEntry {
+  id: UUID;
+  source: CostEntrySource;
+  treatment: CostEntryTreatment;
+  /** YYYY-MM-DD — the business date, so all three sort chronologically. */
+  date: string;
+  /** Who was paid / the vendor. */
+  label: string;
+  /** Human-readable category within the source ("Materials", "Payment"…). */
+  category: string;
+  description: string | null;
+  amount: number;
+}
+
 export interface EstimateFinancials {
   estimateId: UUID;
   projectId: UUID;
@@ -163,10 +206,29 @@ export interface EstimateFinancials {
   remainingBalance: number;
   paymentStatus: PaymentStatus;
   isFullyPaid: boolean;
-  /** Sum of expenseType === "subcontractor" rows recorded against this estimate. */
+  /** COMMITTED subcontractor cost — `max(assigned, paid)` per
+   * assignment, from SubcontractorService.getBalance. NOT a sum of
+   * expenseType === "subcontractor" rows (an older doc here claimed
+   * that; the code has used assignment balances since those services
+   * became real). Project-scoped: assignments belong to a project, not
+   * an estimate, so a project's assignments count toward every estimate
+   * on it — the same scoping getProjectFinancials uses. */
   subcontractorCosts: number;
-  /** Sum of expenseType === "agent_commission" rows recorded against this estimate. */
+  /** COMMITTED agent commission cost — same committed model and same
+   * project scoping as subcontractorCosts. */
   agentCommissionCosts: number;
+  /** Every active expense row on this estimate (ExpenseService's own
+   * total). This is the "expense rows only" figure — `totalExpenses`
+   * below is the full four-source job cost. */
+  expenseItems: number;
+  /** Mileage reimbursement (ExpenseService's `mileage_trips`),
+   * project-scoped like the assignment costs above. */
+  mileageCosts: number;
+  /** expenseItems + mileageCosts + subcontractorCosts + agentCommissionCosts
+   * — the SAME four-source definition ProjectFinancials.totalExpenses
+   * uses, via the shared calculateJobProfit (financialCalculations.ts).
+   * Previously this counted expense rows ONLY, so an estimate's cost and
+   * profit disagreed with its own project's. */
   totalExpenses: number;
   grossProfit: number; // revisedTotal - (subcontractorCosts + agentCommissionCosts)
   netProfit: number; // revisedTotal - totalExpenses

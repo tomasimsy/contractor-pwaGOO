@@ -30,7 +30,7 @@ const money = (n: number) => n.toLocaleString("en-US", { style: "currency", curr
 
 export default function DashboardPage() {
   const { profile } = useAuth();
-  const [preset, setPreset] = useState<DateRangePreset>("this_month");
+  const [preset, setPreset] = useState<DateRangePreset>("this_year");
   const {
     loading, error, refresh, financials, projects, estimates, invoices, monthly,
     pendingEstimatesCount, signedEstimatesCount, activeProjectsCount,
