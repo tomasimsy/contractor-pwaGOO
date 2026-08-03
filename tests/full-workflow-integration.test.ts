@@ -47,15 +47,21 @@ async function verifyAllModulesAgree(services: InMemoryServices, projectId: stri
 
   // Payables (Agent Payables / Subcontractor Payables) line totals must
   // sum to the reported totals, and must independently reconcile
-  // against TransactionService.getAssignmentBalance per line.
+  // against FinancialEngine.getPayeeBalances — which reads the expense
+  // rows, the one place a payment exists.
   const payables = await services.financialEngine.getPayablesSummary({ companyId: COMPANY_ID, projectId });
   const subLines = payables.lines.filter((l) => l.role === "subcontractor");
   const agentLines = payables.lines.filter((l) => l.role === "agent");
   expect(subLines.reduce((s, l) => s + l.outstanding, 0)).toBeCloseTo(payables.totalOutstandingSubcontractor, 6);
   expect(agentLines.reduce((s, l) => s + l.outstanding, 0)).toBeCloseTo(payables.totalOutstandingAgent, 6);
-  for (const line of payables.lines) {
-    const balance = await services.transactionService.getAssignmentBalance(line.assignmentId);
-    expect(line.outstanding, `Payables line for ${line.payeeName} must match TransactionService.getAssignmentBalance`).toBeCloseTo(balance.outstanding, 6);
+  for (const role of ["subcontractor", "agent"] as const) {
+    const payeeBalances = await services.financialEngine.getPayeeBalances({ companyId: COMPANY_ID, projectId }, role);
+    for (const balance of payeeBalances) {
+      const lineTotal = payables.lines
+        .filter((l) => l.role === role && l.payeeId === balance.payeeId)
+        .reduce((s, l) => s + l.outstanding, 0);
+      expect(lineTotal, `Payables lines for ${balance.payeeName} must match FinancialEngine.getPayeeBalances`).toBeCloseTo(balance.outstanding, 6);
+    }
   }
 
   // The full automated reconciliation sweep — reuses everything built
@@ -211,7 +217,11 @@ describe("Full workflow integration", () => {
 
     await verifyAllModulesAgree(services, projectId);
 
-    await services.agentCommissionService.recordPayment({ companyId: COMPANY_ID, agentId: "agent-1", assignmentId: agentAssignmentId, amount: 500, paymentType: "commission", paymentDate: "2026-01-15" });
+    // Paying the agent writes an EXPENSE — one payment, one record.
+    await services.expenseService.create({
+      companyId: COMPANY_ID, projectId, expenseType: "agent_commission", amount: 500,
+      expenseDate: "2026-01-15", vendor: "Agent One", payeeType: "agent", payeeId: "agent-1",
+    });
 
     const { dashboard, payables } = await verifyAllModulesAgree(services, projectId);
     expect(dashboard.agentCosts).toBe(500);
@@ -224,7 +234,10 @@ describe("Full workflow integration", () => {
 
     await verifyAllModulesAgree(services, projectId);
 
-    await services.subcontractorService.recordPayment({ companyId: COMPANY_ID, assignmentId: subAssignmentId, amount: 3000, paymentDate: "2026-01-16" });
+    await services.expenseService.create({
+      companyId: COMPANY_ID, projectId, expenseType: "subcontractor", amount: 3000,
+      expenseDate: "2026-01-16", vendor: "Sub One", payeeType: "subcontractor", payeeId: "sub-1",
+    });
 
     const { dashboard, payables } = await verifyAllModulesAgree(services, projectId);
     expect(dashboard.subcontractorCosts).toBe(3000);

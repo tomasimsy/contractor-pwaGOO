@@ -16,28 +16,26 @@ import { RequirePermission } from "@/components/layout/RequirePermission";
 import { usePermission } from "@/lib/hooks/usePermission";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
-import type { Agent, AgentAssignment, AgentPayment } from "@/lib/services/agentCommissionService";
+import type { Agent, AgentAssignment } from "@/lib/services/agentCommissionService";
+import type { PayeeBalance } from "@/lib/services";
 import type { Project } from "@/lib/services/projectService";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 type AssignmentRow = AgentAssignment & { agentName: string };
-type Balance = { assigned: number; paid: number; committed: number; outstanding: number };
 
 function AgentsContent() {
   const { agentCommissionService, projectService, financialEngine } = useServices();
   const { profile } = useAuth();
-  const canDeletePayment = usePermission("agent_payment", "delete");
 
   const [roster, setRoster] = useState<Agent[]>([]);
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
-  const [balances, setBalances] = useState<Record<string, Balance>>({});
-  const [paymentsByAssignment, setPaymentsByAssignment] = useState<Record<string, AgentPayment[]>>({});
+  /** Keyed by AGENT id — one payee, one balance. */
+  const [balances, setBalances] = useState<Record<string, PayeeBalance>>({});
   const [projectsById, setProjectsById] = useState<Record<string, Project>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null);
 
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState("");
@@ -52,51 +50,26 @@ function AgentsContent() {
     setLoading(true);
     setError(null);
     try {
-      const [rosterList, assignmentList, projectList, payables, paymentList] = await Promise.all([
+      // ONE PAYMENT = ONE EXPENSE RECORD. A commission paid to an agent
+      // is an expense row, so committed/paid/outstanding all come from
+      // FinancialEngine.getPayeeBalances — the SAME records project and
+      // estimate financials read.
+      const [rosterList, assignmentList, projectList, payeeBalances] = await Promise.all([
         agentCommissionService.getRoster(profile.companyId),
         agentCommissionService.listAssignments({ companyId: profile.companyId }),
         projectService.list({ companyId: profile.companyId }),
-        financialEngine.getPayablesSummary({ companyId: profile.companyId }),
-        agentCommissionService.listPayments({ companyId: profile.companyId }),
+        financialEngine.getPayeeBalances({ companyId: profile.companyId }, "agent"),
       ]);
       setRoster(rosterList);
       setAssignments(assignmentList);
       setProjectsById(Object.fromEntries(projectList.map((p) => [p.id, p])));
-
-      // Per-assignment balances come from FinancialEngine.getPayablesSummary's
-      // own lines — the same figures Accounting/Dashboard payables read —
-      // rather than re-fetching + re-summing getBalance() per assignment here.
-      const balanceEntries = payables.lines
-        .filter((l) => l.role === "agent")
-        .map((l) => [l.assignmentId, { assigned: l.assigned, paid: l.paid, committed: l.assigned, outstanding: l.outstanding }] as const);
-      setBalances(Object.fromEntries(balanceEntries));
-
-      const paymentsMap: Record<string, AgentPayment[]> = {};
-      for (const p of paymentList) {
-        if (p.assignmentId) (paymentsMap[p.assignmentId] ??= []).push(p);
-      }
-      setPaymentsByAssignment(paymentsMap);
+      setBalances(Object.fromEntries(payeeBalances.map((b) => [b.payeeId, b] as const)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load agents.");
     } finally {
       setLoading(false);
     }
   }, [agentCommissionService, projectService, financialEngine, profile]);
-
-  async function handleDeletePayment(payment: AgentPayment) {
-    const reason = window.prompt("Why are you deleting this payment?");
-    if (!reason) return;
-    setDeletingPaymentId(payment.id);
-    setError(null);
-    try {
-      await agentCommissionService.softDelete(payment.id, reason);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete payment.");
-    } finally {
-      setDeletingPaymentId(null);
-    }
-  }
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -169,8 +142,11 @@ function AgentsContent() {
       ) : (
         <div className="space-y-3">
           {filtered.map((agent) => {
-            const agentAssignments = assignmentsByAgent[agent.id] ?? [];
-            const totalOutstanding = agentAssignments.reduce((sum, a) => sum + (balances[a.id]?.outstanding ?? 0), 0);
+            const balance = balances[agent.id];
+            const totalOutstanding = balance?.outstanding ?? 0;
+            const relatedProjectIds = Array.from(
+              new Set([...(assignmentsByAgent[agent.id] ?? []).map((a) => a.projectId), ...(balance?.projectIds ?? [])])
+            );
             const isEditing = editingId === agent.id;
             return (
               <div key={agent.id} className="rounded-xl border border-border bg-card p-4">
@@ -218,50 +194,38 @@ function AgentsContent() {
                   </div>
                 )}
 
-                {agentAssignments.length > 0 && (
-                  <ul className="mt-3 divide-y divide-border border-t border-border pt-2">
-                    {agentAssignments.map((a) => {
-                      const b = balances[a.id];
-                      const payments = paymentsByAssignment[a.id] ?? [];
-                      return (
-                        <li key={a.id} className="py-1.5 text-xs">
-                          <div className="flex items-center justify-between gap-2">
-                            <Link href={`/projects/${a.projectId}`} className="font-medium text-primary hover:underline">
-                              {projectsById[a.projectId]?.name ?? "Unknown project"}
-                            </Link>
-                            {b && (
-                              <span className="text-muted-foreground">
-                                Assigned {money(b.assigned)} · Paid {money(b.paid)} · Owed <span className="font-semibold text-foreground">{money(b.outstanding)}</span>
-                              </span>
-                            )}
-                          </div>
-                          {payments.length > 0 && (
-                            <ul className="mt-1 space-y-0.5 pl-2">
-                              {payments.map((p) => (
-                                <li key={p.id} className="flex items-center justify-between gap-2 text-muted-foreground">
-                                  <span>
-                                    {p.paymentDate} · {money(p.amount)}{p.paymentType === "reimbursement" ? " · reimbursement" : " · commission"}
-                                  </span>
-                                  {canDeletePayment && (
-                                    <button
-                                      type="button"
-                                      disabled={deletingPaymentId === p.id}
-                                      onClick={() => handleDeletePayment(p)}
-                                      aria-label="Delete payment"
-                                      className="rounded-md p-1 hover:bg-danger/10 hover:text-danger disabled:opacity-50"
-                                    >
-                                      <Trash2 className="size-3" />
-                                    </button>
-                                  )}
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
+                {balance && (
+                  <div className="mt-3 grid grid-cols-3 gap-2 border-t border-border pt-2 text-xs">
+                    <div>
+                      <div className="text-muted-foreground">Total committed</div>
+                      <div className="font-semibold text-foreground">{money(balance.contracted)}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">Total paid</div>
+                      <div className="font-semibold text-foreground">{money(balance.paid)}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">Outstanding</div>
+                      <div className={balance.outstanding > 0 ? "font-semibold text-warning-foreground" : "font-semibold text-foreground"}>
+                        {money(balance.outstanding)}
+                      </div>
+                    </div>
+                  </div>
                 )}
+
+                {relatedProjectIds.length > 0 && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+                    <span className="text-muted-foreground">Projects:</span>
+                    {relatedProjectIds.map((pid) => (
+                      <Link key={pid} href={`/projects/${pid}`} className="font-medium text-primary hover:underline">
+                        {projectsById[pid]?.name ?? "Unknown project"}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+
+                {/* Commissions are expense rows now — managed on the
+                    Expenses page, the one place a cost record lives. */}
               </div>
             );
           })}

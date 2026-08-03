@@ -90,20 +90,25 @@ describe("full financial workflow", () => {
       companyId: COMPANY_ID, projectId, expenseType: "materials", amount: 2000, expenseDate: "2026-01-06", vendor: "Supply Co",
     });
 
-    // 7. Pay subcontractor $3,000
+    // 7. Pay subcontractor $3,000 — the assignment records the CONTRACT,
+    //    the expense row records the money. One payment, one expense.
     const subAssignment = await services.subcontractorService.assignToProject({
       companyId: COMPANY_ID, projectId, subcontractorId: "sub-1", contractedAmount: 3000,
     });
     subAssignmentId = subAssignment.id;
-    await services.subcontractorService.recordPayment({ companyId: COMPANY_ID, assignmentId: subAssignmentId, amount: 3000, paymentDate: "2026-01-07" });
+    await services.expenseService.create({
+      companyId: COMPANY_ID, projectId, expenseType: "subcontractor", amount: 3000,
+      expenseDate: "2026-01-07", vendor: "Sub One", payeeType: "subcontractor", payeeId: "sub-1",
+    });
 
     // 8. Pay agent $500
     const agentAssignment = await services.agentCommissionService.assignToProject({
       companyId: COMPANY_ID, projectId, agentId: "agent-1", assignedAmount: 500,
     });
     agentAssignmentId = agentAssignment.id;
-    await services.agentCommissionService.recordPayment({
-      companyId: COMPANY_ID, agentId: "agent-1", assignmentId: agentAssignmentId, amount: 500, paymentType: "commission", paymentDate: "2026-01-08",
+    await services.expenseService.create({
+      companyId: COMPANY_ID, projectId, expenseType: "agent_commission", amount: 500,
+      expenseDate: "2026-01-08", vendor: "Agent One", payeeType: "agent", payeeId: "agent-1",
     });
   });
 
@@ -117,10 +122,11 @@ describe("full financial workflow", () => {
     expect(f.amountPaid).toBe(5000);
     expect(f.remainingBalance).toBe(5000); // 10000 invoiced - 5000 paid
 
-    expect(f.expenseItems).toBe(2000);
-    expect(f.subcontractorCosts).toBe(3000); // committed = max(assigned 3000, paid 3000)
+    // Every cost is an expense row: 2000 materials + 3000 sub + 500 agent.
+    expect(f.expenseItems).toBe(5500);
+    expect(f.subcontractorCosts).toBe(3000); // a BUCKET of the 5500, not an addend
     expect(f.agentCosts).toBe(500);
-    expect(f.totalExpenses).toBe(5500); // 2000 + 3000 + 500
+    expect(f.totalExpenses).toBe(5500);
 
     expect(f.grossProfit).toBe(8500); // 12000 - (3000 + 500)
     expect(f.netProfit).toBe(6500); // 12000 - 5500
@@ -138,11 +144,13 @@ describe("full financial workflow", () => {
     expect(paymentSummary.remainingBalance).toBe(5000);
     expect(paymentSummary.status).toBe("partial");
 
-    const subBalance = await services.subcontractorService.getBalance(subAssignmentId);
-    expect(subBalance).toEqual({ assigned: 3000, paid: 3000, committed: 3000, outstanding: 0 });
+    // Payee balances come from the engine, which reads the expense
+    // rows — the assignment services no longer hold payment records.
+    const [subBalance] = await services.financialEngine.getPayeeBalances({ companyId: COMPANY_ID, projectId }, "subcontractor");
+    expect(subBalance).toMatchObject({ payeeId: "sub-1", contracted: 3000, paid: 3000, outstanding: 0 });
 
-    const agentBalance = await services.agentCommissionService.getBalance(agentAssignmentId);
-    expect(agentBalance).toEqual({ assigned: 500, paid: 500, committed: 500, outstanding: 0 });
+    const [agentBalance] = await services.financialEngine.getPayeeBalances({ companyId: COMPANY_ID, projectId }, "agent");
+    expect(agentBalance).toMatchObject({ payeeId: "agent-1", contracted: 500, paid: 500, outstanding: 0 });
   });
 
   test("payables summary agrees with the individual balances above", async () => {
@@ -162,7 +170,7 @@ describe("full financial workflow", () => {
     expect(f.totalRevenue).toBe(5000); // cash actually received, not the 10000 billed
     expect(f.subcontractorPaid).toBe(3000);
     expect(f.agentPaid).toBe(500);
-    expect(f.expenseItems).toBe(2000);
+    expect(f.expenseItems).toBe(5500); // every paid row in the period
     expect(f.totalExpenses).toBe(5500);
     expect(f.netProfit).toBe(-500); // period cash-basis: 5000 in, 5500 out — DIFFERENT from project netProfit (6500), correctly, per FinancialEngine's two-model design
     expect(f.totalInvoiced).toBe(10000);
@@ -181,8 +189,8 @@ describe("full financial workflow", () => {
 
     // Tax numbers, independently verified against the raw ledger:
     expect(tax.taxableRevenue).toBe(5000); // customer_payment only — an unpaid invoice is not taxable income
-    expect(tax.deductibleExpenses).toBe(2000);
-    expect(tax.approvedCosts).toBe(3500); // subcontractor 3000 + agent commission 500, both actually PAID this period
+    expect(tax.deductibleExpenses).toBe(5500); // every expense row paid in the period
+    expect(tax.approvedCosts).toBe(3500); // the sub + agent SHARE of that 5500, reported as a breakdown
     expect(tax.netTaxableIncome).toBe(-500);
     expect(tax.estimatedTaxLiability).toBe(0); // no liability on negative taxable income
 

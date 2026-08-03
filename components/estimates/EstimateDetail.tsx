@@ -310,43 +310,82 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
           {/* Consolidated Section Card: Project Info, Line Items, and Change Orders */}
           <section className="rounded-xl border border-border bg-card p-5 shadow-xs space-y-6">
             
-            {/* Quick Info Bar / Project Info */}
-            <div>
-              <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">Project Details</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div>
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground block">Project</span>
-                  <span className="text-sm font-medium text-foreground truncate block mt-0.5">
-                    {project ? <Link href={`/projects/${project.id}`} className="text-primary hover:underline">{project.name}</Link> : "—"}
-                  </span>
+            {/* Quick Info Bar / Project Info
+                Lifted out of the plain-heading treatment it shared with
+                Line Items below: in light mode --card and --background
+                are BOTH #ffffff, so a card on the page had only a
+                hairline border to distinguish it and this section read
+                as part of the wall of white. It now sits on --muted
+                (#f4f4f5 light / #27272a dark — a real step away from
+                the card in either theme) behind a primary accent rail,
+                so it registers as the estimate's context header rather
+                than one more list. Same fields, same links, same data —
+                only the hierarchy changed: the project name is the
+                headline, the client reads as a relationship beneath it,
+                and the remaining facts drop to a secondary meta row. */}
+            <div className="-mx-5 -mt-5 rounded-t-xl border-b border-border bg-muted/70 px-5 py-4 sm:border-l-4 sm:border-l-primary sm:pl-[calc(1.25rem-4px)]">
+              <h2 className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                <FolderOpen className="size-3.5 text-primary" /> Project Details
+              </h2>
+
+              {/* Primary focus: which project this estimate belongs to. */}
+              <div className="mt-2 min-w-0">
+                <div className="text-xl font-bold leading-tight text-foreground break-words sm:text-2xl">
+                  {project ? (
+                    <Link href={`/projects/${project.id}`} className="hover:text-primary hover:underline">
+                      {project.name}
+                    </Link>
+                  ) : (
+                    <span className="text-muted-foreground">No project</span>
+                  )}
                 </div>
-                <div>
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground block">Title</span>
-                  <span className="text-sm font-medium text-foreground truncate block mt-0.5">
-                    {estimate ? <Link href={`/estimates/${estimate.id}`} className="text-primary hover:underline">{estimate.title}</Link> : "—"}
-                  </span>
+                {/* The project -> client relationship, as one scannable
+                    line instead of two unrelated grid cells. */}
+                <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
+                  <User className="size-3.5 shrink-0" />
+                  <span>for</span>
+                  {client ? (
+                    <Link href={`/clients/${client.id}`} className="font-semibold text-foreground hover:text-primary hover:underline">
+                      {client.name}
+                    </Link>
+                  ) : (
+                    <span className="font-medium">No client</span>
+                  )}
                 </div>
-                <div>
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground block">Client</span>
-                  <span className="text-sm font-medium text-foreground truncate block mt-0.5">
-                    {client ? <Link href={`/clients/${client.id}`} className="text-primary hover:underline">{client.name}</Link> : "None"}
-                  </span>
+              </div>
+
+              {/* Secondary facts. */}
+              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-border/70 pt-3 sm:grid-cols-3">
+                <div className="min-w-0">
+                  <dt className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Title</dt>
+                  {/* Guard on the TITLE, not on `estimate` (which is
+                      always present here): estimates created before the
+                      title became required have none, and the old check
+                      rendered an empty cell that read as a broken
+                      field rather than an absent value. */}
+                  <dd className="mt-0.5 truncate text-sm font-medium text-foreground">
+                    {estimate.title?.trim() ? (
+                      <Link href={`/estimates/${estimate.id}`} className="hover:text-primary hover:underline">{estimate.title}</Link>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </dd>
                 </div>
-                <div>
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground block">Created</span>
-                  <span className="text-sm font-medium text-foreground block mt-0.5">{new Date(estimate.createdAt).toLocaleDateString()}</span>
+                <div className="min-w-0">
+                  <dt className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Created</dt>
+                  <dd className="mt-0.5 text-sm font-medium text-foreground">{new Date(estimate.createdAt).toLocaleDateString()}</dd>
                 </div>
-                <div>
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground block">Type</span>
-                  <span className="text-sm font-medium text-foreground capitalize block mt-0.5">{estimate.estimateType || "Standard"}</span>
+                <div className="min-w-0">
+                  <dt className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Type</dt>
+                  <dd className="mt-0.5 text-sm font-medium capitalize text-foreground">{estimate.estimateType || "Standard"}</dd>
                 </div>
                 {estimate.description && (
-                  <div className="col-span-full pt-2 border-t border-border/50 mt-1">
-                    <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground block">Description</span>
-                    <p className="text-xs text-foreground/80 mt-0.5 whitespace-pre-wrap">{estimate.description}</p>
+                  <div className="col-span-full border-t border-border/70 pt-2">
+                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Description</dt>
+                    <dd className="mt-0.5 whitespace-pre-wrap text-xs text-foreground/80">{estimate.description}</dd>
                   </div>
                 )}
-              </div>
+              </dl>
             </div>
 
             {/* Roof Areas (If applicable) */}
@@ -365,13 +404,33 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
               </div>
             )}
 
+            {/* ============================================================
+                THE SCOPE & PRICING GROUP — Line Items + Change Orders.
+                ============================================================
+                These two belong together: change orders are amendments
+                to the line items above them, and their money lands in
+                the same "Revised total" the totals box shows. They used
+                to be two sibling blocks separated only by a top border,
+                spaced identically to every other section, so they read
+                as two unrelated lists that happened to be adjacent.
+
+                Now they share ONE bordered container on a single muted
+                surface, so the eye takes the whole thing as one unit.
+                Change Orders stays CONNECTED (same container, divided by
+                a full-bleed border, no gap between them) but is tinted a
+                step darker and carries its own icon header, so it is
+                still clearly a distinct sub-section rather than more
+                line items. Content, links and figures are unchanged.
+                ============================================================ */}
+            <div className="overflow-hidden rounded-xl border border-border bg-muted/40">
+
             {/* Line Items & Totals */}
-            <div className="pt-4 border-t border-border/60">
+            <div className="p-4">
               <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">Line Items</h2>
               {estimate.lineItems.length === 0 ? (
                 <EmptyState title="No line items" description="Edit this estimate to add items." />
               ) : (
-                <div className="overflow-x-auto rounded-lg border border-border/80">
+                <div className="overflow-x-auto rounded-lg border border-border/80 bg-card">
                   <table className="w-full text-xs">
                     <thead className="bg-muted/60 text-muted-foreground border-b border-border">
                       <tr>
@@ -400,8 +459,11 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
                 </div>
               )}
 
-              {/* Compact Financial Totals Breakdown */}
-              <div className="mt-4 rounded-lg bg-muted/40 p-3 space-y-1.5 text-xs">
+              {/* Compact Financial Totals Breakdown. On bg-card with a
+                  border now: its old bg-muted/40 was the same value as
+                  the group surface it now sits on, so it would have
+                  vanished into it. */}
+              <div className="mt-4 rounded-lg border border-border/80 bg-card p-3 space-y-1.5 text-xs">
                 <div className="flex justify-between text-muted-foreground"><span>Subtotal</span><span>{formatMoney(estimate.subtotal)}</span></div>
                 {estimate.markup !== 0 && <div className="flex justify-between text-muted-foreground"><span>Markup</span><span>{formatMoney(estimate.markup)}</span></div>}
                 {estimate.discount !== 0 && <div className="flex justify-between text-muted-foreground"><span>Discount</span><span>-{formatMoney(estimate.discount)}</span></div>}
@@ -423,9 +485,11 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
               </div>
             </div>
 
-            {/* Change Orders */}
-            <div className="pt-4 border-t border-border/60">
-              <div className="mb-3 flex items-center justify-between gap-2">
+            {/* Change Orders — attached directly to Line Items above:
+                same container, full-bleed divider, no gap. Tinted a
+                step darker so it still reads as its own sub-section. */}
+            <div className="border-t border-border bg-muted/70 p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   <GitPullRequest className="size-4 text-primary" /> Change Orders ({changeOrders.length})
                 </h2>
@@ -436,7 +500,7 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
               {changeOrders.length === 0 ? (
                 <p className="text-xs text-muted-foreground italic py-1">No change orders recorded yet.</p>
               ) : (
-                <ul className="divide-y divide-border/60">
+                <ul className="divide-y divide-border/60 rounded-lg border border-border/80 bg-card px-3">
                   {changeOrders.map((co) => (
                     <li key={co.id}>
                       <Link href={`/change-orders/${co.id}`} className="flex items-center justify-between gap-2 py-2.5 hover:text-primary transition-colors">
@@ -454,14 +518,12 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
               )}
             </div>
 
+            </div>
+            {/* /scope & pricing group */}
+
           </section>
 
-          {/* Financial Summary — a primary section, kept prominent and
-              placed ahead of the secondary Invoices/Expenses cards
-              below (visual hierarchy: Roof Areas -> Financial Summary
-              -> Expenses/Invoices/Payments). Same EstimateFinancials
-              object the top summary strip reads from. */}
-          <EstimateProfitSummaryCard financials={financials} />
+
 
           {/* Side-by-Side Compact Cards for Invoices/Payments and Expenses — secondary, compact */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -539,6 +601,7 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
 
           </div>
 
+
           {/* Attachments (Docs & Photos) — secondary, compact */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <section className="rounded-lg border border-border/60 bg-card p-3.5">
@@ -554,6 +617,13 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
               <p className="text-xs text-muted-foreground italic">No attached photos.</p>
             </section>
           </div>
+
+                    {/* Financial Summary — a primary section, kept prominent and
+              placed ahead of the secondary Invoices/Expenses cards
+              below (visual hierarchy: Roof Areas -> Financial Summary
+              -> Expenses/Invoices/Payments). Same EstimateFinancials
+              object the top summary strip reads from. */}
+          <EstimateProfitSummaryCard financials={financials} />
         </div>
 
         {/* Right Sidebar (Sub/Agent, Portal, Client & Signature, Activity Timeline) */}

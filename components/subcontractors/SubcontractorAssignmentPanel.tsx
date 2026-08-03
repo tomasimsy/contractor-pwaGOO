@@ -2,10 +2,18 @@
 
 /**
  * Assignment + cost tracking + payments for subcontractors on one
- * project. Every "assigned/paid/committed/outstanding" figure shown is
- * `balances[assignment.id]`, populated by SubcontractorService.
- * getBalance — computed directly from persisted assignment/payment
- * rows (never a running total kept in this component's own state).
+ * project.
+ *
+ * ONE PAYMENT = ONE EXPENSE RECORD. "Pay" here writes the same
+ * `estimate_expenses` row ExpenseDialog writes — typed `subcontractor`
+ * and tagged with this payee — so it appears on the Expenses page and in
+ * estimate/project/dashboard financials automatically. There is no
+ * separate subcontractor-payment cost source.
+ *
+ * Every contracted/paid/outstanding figure is
+ * `balances[assignment.subcontractorId]`, from
+ * FinancialEngine.getPayeeBalances, which reads those same expense rows.
+ * Keyed by PAYEE (not assignment) because one payee has one balance.
  */
 import { useState } from "react";
 import { HardHat, Plus } from "lucide-react";
@@ -128,7 +136,7 @@ export function SubcontractorAssignmentPanel({
       ) : (
         <ul className="divide-y divide-border">
           {assignments.map((a) => {
-            const balance = balances[a.id];
+            const balance = balances[a.subcontractorId];
             return (
               <li key={a.id} className="space-y-2 py-2.5 text-xs">
                 <div className="flex items-center justify-between gap-2">
@@ -138,7 +146,7 @@ export function SubcontractorAssignmentPanel({
                   </div>
                   {balance && (
                     <div className="text-right text-[11px] text-muted-foreground">
-                      Asg {money(balance.assigned)} · Paid {money(balance.paid)}
+                      Contracted {money(balance.contracted)} · Paid {money(balance.paid)}
                       <div className="font-semibold text-foreground">Out {money(balance.outstanding)}</div>
                     </div>
                   )}
@@ -154,7 +162,12 @@ export function SubcontractorAssignmentPanel({
                     type="button"
                     disabled={!paymentAmounts[a.id]}
                     onClick={async () => {
-                      await recordPayment(a.id, paymentAmounts[a.id] ?? 0, new Date().toISOString().slice(0, 10));
+                      await recordPayment(
+                        a.subcontractorId,
+                        a.subcontractorName,
+                        paymentAmounts[a.id] ?? 0,
+                        new Date().toISOString().slice(0, 10)
+                      );
                       onChanged?.();
                       setPaymentAmounts({ ...paymentAmounts, [a.id]: 0 });
                     }}

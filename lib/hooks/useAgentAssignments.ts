@@ -1,25 +1,30 @@
 "use client";
 
 /**
- * Orchestration only. Commission vs. reimbursement is not a branch
- * this hook interprets — it's the `paymentType` passed straight to
- * AgentCommissionService.recordPayment, which is what decides the
- * ledger consequence ("agent_commission" cost vs.
- * "agent_reimbursement_paid" settling a liability — see
- * TRANSACTION_LEDGER.md). `reimbursesExpenseId` is required by that
- * service whenever paymentType is "reimbursement"; this hook just
- * passes through whatever the form collected.
+ * Orchestration only. Nothing is computed here.
+ *
+ * ONE PAYMENT = ONE EXPENSE RECORD. A COMMISSION payment writes an
+ * `estimate_expenses` row through ExpenseService — the exact record
+ * ExpenseDialog creates, typed `agent_commission` and tagged with this
+ * agent — so it appears everywhere expenses do.
+ *
+ * A REIMBURSEMENT is deliberately NOT a new expense: it repays an
+ * expense that already exists and is already counted. Settling one
+ * therefore marks that original row reimbursed
+ * (ExpenseService.markReimbursed) rather than writing a second record,
+ * which is what keeps a fronted purchase from being counted twice.
  */
 import { useCallback, useState } from "react";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useRefreshableResource } from "./useAsyncResource";
-import type { Agent, AgentAssignment, Expense } from "../services";
+import type { Agent, AgentAssignment, Expense, PayeeBalance } from "../services";
 
 export function useAgentAssignments(companyId: string, projectId: string) {
-  const { agentCommissionService, expenseService } = useServices();
+  const { agentCommissionService, expenseService, financialEngine } = useServices();
   const [roster, setRoster] = useState<Agent[]>([]);
   const [assignments, setAssignments] = useState<Array<AgentAssignment & { agentName: string }>>([]);
-  const [balances, setBalances] = useState<Record<string, { assigned: number; paid: number; committed: number; outstanding: number }>>({});
+  /** Keyed by AGENT id (not assignment id) — one payee, one balance. */
+  const [balances, setBalances] = useState<Record<string, PayeeBalance>>({});
   const [pendingReimbursements, setPendingReimbursements] = useState<Record<string, Expense[]>>({});
   /** Sum of each agent's pendingReimbursements — "Reimbursements Owed"
    * in the balance breakdown. Derived from the exact same ExpenseService
@@ -42,8 +47,8 @@ export function useAgentAssignments(companyId: string, projectId: string) {
     setRoster(rosterList);
     setAssignments(assignmentList);
 
-    const balanceEntries = await Promise.all(assignmentList.map(async (a) => [a.id, await agentCommissionService.getBalance(a.id)] as const));
-    setBalances(Object.fromEntries(balanceEntries));
+    const payeeBalances = await financialEngine.getPayeeBalances({ companyId, projectId }, "agent");
+    setBalances(Object.fromEntries(payeeBalances.map((b) => [b.payeeId, b] as const)));
 
     // Expenses this agent covered that are still owed back to them —
     // populates the reimbursement picker so a payment can be linked to
@@ -63,7 +68,7 @@ export function useAgentAssignments(companyId: string, projectId: string) {
       rosterList.map(async (agent) => [agent.id, await agentCommissionService.getCompensationSummary(agent.id, currentYear)] as const)
     );
     setCompensationByAgent(Object.fromEntries(compensationEntries));
-  }, [agentCommissionService, expenseService, companyId, projectId]);
+  }, [agentCommissionService, expenseService, financialEngine, companyId, projectId]);
 
   const assign = useCallback(
     async (agentId: string, assignedAmount: number, notes?: string) => {
@@ -73,34 +78,40 @@ export function useAgentAssignments(companyId: string, projectId: string) {
     [agentCommissionService, companyId, projectId, refresh]
   );
 
+  /** Commission = a real cost, so it becomes an expense row — the same
+   * record ExpenseDialog writes, typed `agent_commission`. */
   const recordCommissionPayment = useCallback(
-    async (agentId: string, assignmentId: string, amount: number) => {
-      await agentCommissionService.recordPayment({
+    async (agentId: string, agentName: string, amount: number, estimateId?: string | null) => {
+      await expenseService.create({
         companyId,
-        agentId,
-        assignmentId,
+        projectId,
+        estimateId: estimateId ?? null,
+        expenseType: "agent_commission",
         amount,
-        paymentType: "commission",
-        paymentDate: new Date().toISOString().slice(0, 10),
+        expenseDate: new Date().toISOString().slice(0, 10),
+        vendor: agentName,
+        payeeType: "agent",
+        payeeId: agentId,
+        paidByType: "company",
+        isPaid: true,
+        reimbursable: false,
       });
       await refresh();
     },
-    [agentCommissionService, companyId, refresh]
+    [expenseService, companyId, projectId, refresh]
   );
 
+  /** Settles an EXISTING expense the agent fronted — marks that row
+   * reimbursed rather than writing a second record. Writing a new
+   * expense here would count the same purchase twice (see this file's
+   * header, and FinancialEngine's own note on the $300-becomes-$600
+   * double-count). */
   const recordReimbursementPayment = useCallback(
-    async (agentId: string, amount: number, reimbursesExpenseId: string) => {
-      await agentCommissionService.recordPayment({
-        companyId,
-        agentId,
-        amount,
-        paymentType: "reimbursement",
-        paymentDate: new Date().toISOString().slice(0, 10),
-        reimbursesExpenseId,
-      });
+    async (_agentId: string, _amount: number, reimbursesExpenseId: string) => {
+      await expenseService.markReimbursed(reimbursesExpenseId);
       await refresh();
     },
-    [agentCommissionService, companyId, refresh]
+    [expenseService, refresh]
   );
 
   const createAgent = useCallback(

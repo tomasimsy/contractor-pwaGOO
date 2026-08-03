@@ -148,12 +148,16 @@ export const AgentAssignmentPanel = forwardRef<AgentAssignmentPanelRef, {
       ) : (
         <ul className="divide-y divide-border">
           {assignments.map((a) => {
-            const balance = balances[a.id];
+            // Keyed by AGENT, not assignment — one payee, one balance.
+            const balance = balances[a.agentId];
             const owedExpenses = pendingReimbursements[a.agentId] ?? [];
             const reimbursementsOwed = reimbursementsOwedByAgent[a.agentId] ?? 0;
-            const compensation = compensationByAgent[a.agentId];
-            const commissionEarned = balance?.committed ?? 0;
-            const paymentsMade = (balance?.paid ?? 0) + (compensation?.totalReimbursements ?? 0);
+            // Commission earned = what was CONTRACTED via assignment;
+            // payments made = the expense rows actually written. Both from
+            // FinancialEngine.getPayeeBalances — no agent_payments table
+            // is consulted, because a commission payment IS an expense now.
+            const commissionEarned = balance?.contracted ?? 0;
+            const paymentsMade = balance?.paid ?? 0;
             const totalOutstanding = calculateAgentOutstandingBalance(commissionEarned, reimbursementsOwed, paymentsMade);
 
             return (
@@ -184,7 +188,7 @@ export const AgentAssignmentPanel = forwardRef<AgentAssignmentPanelRef, {
                     type="button"
                     disabled={!commissionAmounts[a.id]}
                     onClick={async () => {
-                      await recordCommissionPayment(a.agentId, a.id, commissionAmounts[a.id] ?? 0);
+                      await recordCommissionPayment(a.agentId, a.agentName, commissionAmounts[a.id] ?? 0);
                       onChanged?.();
                       setCommissionAmounts({ ...commissionAmounts, [a.id]: 0 });
                     }}

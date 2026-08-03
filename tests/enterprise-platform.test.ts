@@ -110,8 +110,13 @@ describe("Enterprise platform: accounting, payroll, multi-location, reporting", 
         id: "sub-1", companyId: COMPANY_ID, name: "Ace Roofing", trade: "roofing", phone: null, contactPerson: null, isActive: true,
         createdBy: null, createdAt: new Date().toISOString(), updatedBy: null, updatedAt: new Date().toISOString(), deletedBy: null, deletedAt: null, deleteReason: null,
       });
-      const assignment = await services.subcontractorService.assignToProject({ companyId: COMPANY_ID, projectId: projectA, subcontractorId: "sub-1", contractedAmount: 4000 });
-      await services.subcontractorService.recordPayment({ companyId: COMPANY_ID, assignmentId: assignment.id, amount: 1000, paymentDate: "2026-01-15" });
+      await services.subcontractorService.assignToProject({ companyId: COMPANY_ID, projectId: projectA, subcontractorId: "sub-1", contractedAmount: 4000 });
+      // ONE PAYMENT = ONE EXPENSE RECORD — the $1,000 paid against the
+      // $4,000 contract is an expense row, not a payment table entry.
+      await services.expenseService.create({
+        companyId: COMPANY_ID, projectId: projectA, expenseType: "subcontractor", amount: 1000,
+        expenseDate: "2026-01-15", payeeType: "subcontractor", payeeId: "sub-1",
+      });
 
       const [apReport, payablesSummary] = await Promise.all([
         services.accountsPayableService.getPayablesReport({ companyId: COMPANY_ID }),

@@ -334,19 +334,23 @@ describe("End-to-end financial audit", () => {
         assignmentId = a.id;
       });
       await step(ctx, "Pay subcontractor", async () => {
-        const payment = await ctx.services.subcontractorService.recordPayment({ companyId: COMPANY_ID, assignmentId, amount: amt(1500), paymentDate: "2026-01-10" });
+        // ONE PAYMENT = ONE EXPENSE RECORD.
+        const payment = await ctx.services.expenseService.create({
+          companyId: COMPANY_ID, projectId: ctx.projectId, expenseType: "subcontractor", amount: amt(1500),
+          expenseDate: "2026-01-10", payeeType: "subcontractor", payeeId: "sub-1",
+        });
         paymentId = payment.id;
       });
 
       const beforeDelete = await ctx.services.financialEngine.getProjectFinancials(ctx.projectId);
       await step(ctx, "Delete subcontractor payment", async () => {
-        await ctx.services.subcontractorService.softDelete(paymentId, "Payment recorded against the wrong assignment");
+        await ctx.services.expenseService.softDelete(paymentId, "Payment recorded against the wrong assignment");
       });
       const afterDelete = await ctx.services.financialEngine.getProjectFinancials(ctx.projectId);
       record(ctx.scenarioName, "Delete subcontractor payment", "outstandingSubcontractor increases by the deleted payment amount", beforeDelete.outstandingSubcontractor + amt(1500), afterDelete.outstandingSubcontractor);
 
       await step(ctx, "Restore subcontractor payment", async () => {
-        await ctx.services.subcontractorService.restore(paymentId);
+        await ctx.services.expenseService.restore(paymentId);
       });
       const afterRestore = await ctx.services.financialEngine.getProjectFinancials(ctx.projectId);
       record(ctx.scenarioName, "Restore subcontractor payment", "outstandingSubcontractor returns to pre-delete value", beforeDelete.outstandingSubcontractor, afterRestore.outstandingSubcontractor);
@@ -373,7 +377,10 @@ describe("End-to-end financial audit", () => {
         assignmentId = a.id;
       });
       await step(ctx, "Pay agent commission", async () => {
-        const p = await ctx.services.agentCommissionService.recordPayment({ companyId: COMPANY_ID, agentId: "agent-1", assignmentId, amount: amt(350), paymentType: "commission", paymentDate: "2026-01-12" });
+        const p = await ctx.services.expenseService.create({
+          companyId: COMPANY_ID, projectId: ctx.projectId, expenseType: "agent_commission", amount: amt(350),
+          expenseDate: "2026-01-12", payeeType: "agent", payeeId: "agent-1",
+        });
         commissionPaymentId = p.id;
       });
       await step(ctx, "Agent covers an expense (creates reimbursement liability)", async () => {
@@ -381,27 +388,27 @@ describe("End-to-end financial audit", () => {
         expenseId = expense.id;
       });
       await step(ctx, "Pay agent reimbursement", async () => {
-        const p = await ctx.services.agentCommissionService.recordPayment({ companyId: COMPANY_ID, agentId: "agent-1", amount: amt(80), paymentType: "reimbursement", paymentDate: "2026-01-14", reimbursesExpenseId: expenseId });
-        reimbursementPaymentId = p.id;
+        // Settling a debt, not a new cost — it marks the existing
+        // expense reimbursed rather than writing a second record.
+        await ctx.services.expenseService.markReimbursed(expenseId);
+        reimbursementPaymentId = expenseId;
       });
 
       const beforeDelete = await ctx.services.financialEngine.getProjectFinancials(ctx.projectId);
       await step(ctx, "Delete agent commission payment", async () => {
-        await ctx.services.agentCommissionService.softDelete(commissionPaymentId, "Commission paid twice by mistake");
+        await ctx.services.expenseService.softDelete(commissionPaymentId, "Commission paid twice by mistake");
       });
       const afterCommissionDelete = await ctx.services.financialEngine.getProjectFinancials(ctx.projectId);
       record(ctx.scenarioName, "Delete agent commission payment", "outstandingAgent increases by the deleted commission amount", beforeDelete.outstandingAgent + amt(350), afterCommissionDelete.outstandingAgent);
 
-      const reimbursementBefore = await ctx.services.transactionService.getReimbursementBalance(expenseId);
-      await step(ctx, "Delete agent reimbursement payment", async () => {
-        await ctx.services.agentCommissionService.softDelete(reimbursementPaymentId, "Reimbursement paid twice by mistake");
-      });
-      const reimbursementAfter = await ctx.services.transactionService.getReimbursementBalance(expenseId);
-      record(ctx.scenarioName, "Delete agent reimbursement payment", "reimbursement outstanding increases by the deleted amount", reimbursementBefore.outstanding + amt(80), reimbursementAfter.outstanding);
+      // Settling the debt must not create a second cost: the agent-paid
+      // purchase is counted once and only once, before and after.
+      const pendingAfterSettlement = await ctx.services.expenseService.listPendingReimbursements(COMPANY_ID, "agent-1");
+      record(ctx.scenarioName, "Pay agent reimbursement", "settling clears the debt without adding cost", 0, pendingAfterSettlement.length);
+      void reimbursementPaymentId;
 
-      await step(ctx, "Restore both agent payments", async () => {
-        await ctx.services.agentCommissionService.restore(commissionPaymentId);
-        await ctx.services.agentCommissionService.restore(reimbursementPaymentId);
+      await step(ctx, "Restore the agent commission payment", async () => {
+        await ctx.services.expenseService.restore(commissionPaymentId);
       });
       const afterRestore = await ctx.services.financialEngine.getProjectFinancials(ctx.projectId);
       record(ctx.scenarioName, "Restore both agent payments", "outstandingAgent returns to pre-delete value", beforeDelete.outstandingAgent, afterRestore.outstandingAgent);

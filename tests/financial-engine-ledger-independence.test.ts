@@ -53,11 +53,13 @@ async function seedProjectWithRevenueAndCosts() {
   await services.invoiceService.changeStatus(invoice.id, "sent");
   await services.paymentService.record({ companyId: COMPANY_ID, invoiceId: invoice.id, amount: 4000, method: "check", paymentDate: "2026-01-10" });
 
-  const subAssignment = await services.subcontractorService.assignToProject({ companyId: COMPANY_ID, projectId: project.id, subcontractorId: "sub-1", contractedAmount: 1000 });
-  await services.subcontractorService.recordPayment({ companyId: COMPANY_ID, assignmentId: subAssignment.id, amount: 1000, paymentDate: "2026-01-11" });
+  // ONE PAYMENT = ONE EXPENSE RECORD: assignments hold the contract,
+  // the expense rows hold the cash.
+  await services.subcontractorService.assignToProject({ companyId: COMPANY_ID, projectId: project.id, subcontractorId: "sub-1", contractedAmount: 1000 });
+  await services.expenseService.create({ companyId: COMPANY_ID, projectId: project.id, expenseType: "subcontractor", amount: 1000, expenseDate: "2026-01-11", payeeType: "subcontractor", payeeId: "sub-1", isPaid: true });
 
-  const agentAssignment = await services.agentCommissionService.assignToProject({ companyId: COMPANY_ID, projectId: project.id, agentId: "agent-1", assignedAmount: 500 });
-  await services.agentCommissionService.recordPayment({ companyId: COMPANY_ID, agentId: "agent-1", assignmentId: agentAssignment.id, amount: 500, paymentType: "commission", paymentDate: "2026-01-12" });
+  await services.agentCommissionService.assignToProject({ companyId: COMPANY_ID, projectId: project.id, agentId: "agent-1", assignedAmount: 500 });
+  await services.expenseService.create({ companyId: COMPANY_ID, projectId: project.id, expenseType: "agent_commission", amount: 500, expenseDate: "2026-01-12", payeeType: "agent", payeeId: "agent-1", isPaid: true });
 
   await services.expenseService.create({ companyId: COMPANY_ID, projectId: project.id, expenseType: "materials", amount: 300, expenseDate: "2026-01-05", isPaid: true });
 
@@ -90,7 +92,8 @@ describe("FinancialEngine no longer depends on transactionService for real money
     expect(company.agentCommissionPaid).toBe(500);
     expect(company.totalInvoiced).toBe(10000);
     expect(company.totalOutstanding).toBe(6000);
-    expect(company.expenseItems).toBe(300);
+    // Every row: 300 materials + 1000 sub + 500 commission.
+    expect(company.expenseItems).toBe(1800);
     expect(company.netProfit).toBe(company.totalRevenue - company.totalExpenses);
   });
 
@@ -138,9 +141,11 @@ describe("FinancialEngine no longer depends on transactionService for real money
     const wideRange = { start: new Date("2000-01-01"), end: new Date("2100-01-01") };
     const tax = await poisonedEngine.getTaxSummary({ companyId: COMPANY_ID, dateRange: wideRange });
     expect(tax.taxableRevenue).toBe(4000);
-    // approvedCosts = subcontractor payment (1000) + agent commission payment (500)
+    // approvedCosts is the sub (1000) + commission (500) SHARE of the
+    // deductible rows, not a separate cost added on top of them.
     expect(tax.approvedCosts).toBe(1500);
-    expect(tax.deductibleExpenses).toBe(300);
+    expect(tax.deductibleExpenses).toBe(1800);
+    expect(tax.netTaxableIncome).toBe(4000 - 1800);
   });
 });
 

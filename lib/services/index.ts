@@ -77,6 +77,10 @@ export { createFinancialEngine, isRevenueInvoice } from "./financialEngine";
 // function rather than each having their own signing logic.
 export type { EstimateWorkflow, EstimateWorkflowDeps, EstimateWorkflowResult } from "./estimateWorkflow";
 export { createEstimateWorkflow, signEstimate, unsignEstimate } from "./estimateWorkflow";
+// The single canonical "which project does a new estimate belong to"
+// rule — see estimateCreationWorkflow.ts's header.
+export type { CreateEstimateWorkflowInput, CreateEstimateWorkflowResult } from "./estimateCreationWorkflow";
+export { createEstimateForClient, resolveProjectForClient, defaultProjectName, isOpenProject } from "./estimateCreationWorkflow";
 // "FinancialService" is the name used in the brief; FinancialEngine is
 // the name already in use throughout this codebase and its docs
 // (SERVICE_LAYER_DESIGN.md, TRANSACTION_LEDGER.md, FILTER_SYSTEM.md).

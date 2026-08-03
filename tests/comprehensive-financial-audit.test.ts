@@ -71,7 +71,11 @@ async function assertAllSurfacesAgree(svc: InMemoryServices, projectId: string, 
   expect(company.totalOutstanding).toBeCloseTo(company.totalInvoiced - company.totalPaid, 6);
 
   const tax = await svc.financialEngine.getTaxSummary({ companyId, dateRange: wideRange });
-  expect(tax.netTaxableIncome).toBeCloseTo(tax.taxableRevenue - tax.deductibleExpenses - tax.approvedCosts, 6);
+  // approvedCosts (subcontractor + agent commission) is a BREAKDOWN of
+  // deductibleExpenses under ONE PAYMENT = ONE EXPENSE RECORD, so it is
+  // deliberately not subtracted a second time here.
+  expect(tax.netTaxableIncome).toBeCloseTo(tax.taxableRevenue - tax.deductibleExpenses, 6);
+  expect(tax.approvedCosts).toBeLessThanOrEqual(tax.deductibleExpenses);
 
   return { pf, company, tax };
 }
@@ -310,31 +314,44 @@ describe("Expenses: every cost category FinancialEngine composes", () => {
     expect(pf.expenseItems).toBe(1000); // unpaid material cost still counts — committed-cost model
   });
 
-  test("subcontractor payments: committed cost = max(assigned, paid), never double the cash paid", async () => {
+  test("subcontractor payments: cost is the cash paid, the rest stays outstanding", async () => {
     const project = await seedProject(services, COMPANY_A, "client-1");
-    const assignment = await services.subcontractorService.assignToProject({
+    await services.subcontractorService.assignToProject({
       companyId: COMPANY_A, projectId: project.id, subcontractorId: "sub-1", contractedAmount: 5000,
     });
     let { pf } = await assertAllSurfacesAgree(services, project.id, COMPANY_A);
-    expect(pf.subcontractorCosts).toBe(5000); // committed at assignment, before any cash moves
+    // Contracted, not yet paid: owed in full, and not yet a cost.
+    expect(pf.subcontractorCosts).toBe(0);
+    expect(pf.outstandingSubcontractor).toBe(5000);
 
-    await services.subcontractorService.recordPayment({
-      companyId: COMPANY_A, assignmentId: assignment.id, amount: 5000, paymentDate: "2026-01-10",
+    // ONE PAYMENT = ONE EXPENSE RECORD.
+    await services.expenseService.create({
+      companyId: COMPANY_A, projectId: project.id, expenseType: "subcontractor", amount: 5000,
+      expenseDate: "2026-01-10", payeeType: "subcontractor", payeeId: "sub-1",
     });
     ({ pf } = await assertAllSurfacesAgree(services, project.id, COMPANY_A));
-    expect(pf.subcontractorCosts).toBe(5000); // paying it does not double the cost
+    expect(pf.subcontractorCosts).toBe(5000); // counted once, as one expense row
+    expect(pf.expenseItems).toBe(5000); // …and it IS that expense row
+    expect(pf.totalExpenses).toBe(5000);
     expect(pf.outstandingSubcontractor).toBe(0);
   });
 
-  test("agent commissions: committed cost, outstanding tracked separately from reimbursements", async () => {
+  test("agent commissions: owed on assignment, cost once actually paid", async () => {
     const project = await seedProject(services, COMPANY_A, "client-1");
-    const assignment = await services.agentCommissionService.assignToProject({
+    await services.agentCommissionService.assignToProject({
       companyId: COMPANY_A, projectId: project.id, agentId: "agent-1", assignedAmount: 1200,
     });
-    const { pf } = await assertAllSurfacesAgree(services, project.id, COMPANY_A);
-    expect(pf.agentCosts).toBe(1200);
+    let { pf } = await assertAllSurfacesAgree(services, project.id, COMPANY_A);
+    expect(pf.agentCosts).toBe(0);
     expect(pf.outstandingAgent).toBe(1200);
-    void assignment;
+
+    await services.expenseService.create({
+      companyId: COMPANY_A, projectId: project.id, expenseType: "agent_commission", amount: 1200,
+      expenseDate: "2026-01-10", payeeType: "agent", payeeId: "agent-1",
+    });
+    ({ pf } = await assertAllSurfacesAgree(services, project.id, COMPANY_A));
+    expect(pf.agentCosts).toBe(1200);
+    expect(pf.outstandingAgent).toBe(0);
   });
 
   test("reimbursements: an agent-funded expense books ONE cost, never a second one when reimbursed", async () => {

@@ -315,19 +315,20 @@ export function calculateCommittedCostBalance(assigned: number, paid: number): C
  * Both project-level and estimate-level financials feed this same
  * shape. */
 export interface JobCostInputs {
-  /** Every active expense row's amount (materials/labor/permit/…),
-   * from ExpenseService — the source rows, never a ledger sum. */
+  /** EVERY active expense row's amount — materials, labor, permit AND
+   * the subcontractor / agent_commission rows. One payment is one
+   * expense record (ExpenseService is the only cost-record system), so
+   * this single figure already contains all contracted-labour cost. */
   expenseItems: number;
-  /** Mileage reimbursement, from ExpenseService's `mileage_trips`. */
+  /** Mileage reimbursement, from ExpenseService's `mileage_trips`.
+   * The only cost that is NOT an expense row. */
   mileageCosts: number;
-  /** COMMITTED subcontractor cost — `max(assigned, paid)` per
-   * assignment. An assignment is a real cost the moment it's made, so
-   * this is the assignment figure, NOT the sum of its payments;
-   * counting the payments as well would double-count the same money. */
+  /** Sum of expenseType === "subcontractor" rows. A BREAKDOWN of
+   * `expenseItems`, not an addition to it — adding it would count the
+   * same payment twice. Used only for grossProfit and for display. */
   subcontractorCosts: number;
-  /** COMMITTED agent commission cost — same committed model. Excludes
-   * reimbursement settlements, which repay an expense already counted
-   * in `expenseItems`. */
+  /** Sum of expenseType === "agent_commission" rows. Same breakdown-not-
+   * addition rule as subcontractorCosts. */
   agentCosts: number;
 }
 
@@ -345,26 +346,32 @@ export interface JobProfit extends JobCostInputs {
  * project and its estimates can never disagree about what "total cost"
  * or "net profit" mean.
  *
- * Before this existed the two methods each composed their own:
- * getProjectFinancials summed all four sources, while
- * getEstimateFinancials summed ONLY `expenseItems` — so an estimate's
- * netProfit silently ignored mileage, subcontractor and agent cost and
- * read higher than the same job's project-level netProfit. The four-
- * source rule (this function) is the intended one: it's what
- * FinancialEngine's file header documents, and what the Estimate page's
- * own "Project Total Cost" tile already claimed to be showing.
+ * ONE PAYMENT = ONE EXPENSE RECORD. Every cost — including subcontractor
+ * payments and agent commissions — is an `estimate_expenses` row written
+ * through ExpenseService. `subcontractorCosts`/`agentCosts` are therefore
+ * SUBSETS of `expenseItems` (its `byType` buckets), never separate addends:
  *
- *   totalExpenses = expenseItems + mileageCosts + subcontractorCosts + agentCosts
+ *   totalExpenses = expenseItems + mileageCosts
  *   grossProfit   = revenue − (subcontractorCosts + agentCosts)
  *   netProfit     = revenue − totalExpenses
  *
+ * This restores the design `EXPENSE_TYPES`' own doc describes — the
+ * `subcontractor`/`agent_commission` types exist so those modules "read
+ * these rows as their cost source rather than introducing a parallel
+ * calculation." An earlier revision instead added assignment COMMITTED
+ * cost (`max(assigned, paid)`) on top of `expenseItems`, which counted
+ * the same payment twice whenever it was recorded as both. Assignments
+ * are still tracked — they define the CONTRACTED amount, and outstanding
+ * is `contracted − paid` — but they contribute no cost of their own.
+ *
  * `grossProfit` deliberately subtracts only the two contracted-labour
- * costs — it answers "what's left after the people doing the work are
- * paid", before materials and overhead. That formula was already
- * identical in both methods; it's kept here so it stays that way.
+ * costs — what's left after the people doing the work are paid, before
+ * materials and overhead.
  */
 export function calculateJobProfit(revenue: number, costs: JobCostInputs): JobProfit {
-  const totalExpenses = costs.expenseItems + costs.mileageCosts + costs.subcontractorCosts + costs.agentCosts;
+  // sub/agent are buckets INSIDE expenseItems — adding them here is the
+  // double-count this model exists to prevent.
+  const totalExpenses = costs.expenseItems + costs.mileageCosts;
   const grossProfit = revenue - (costs.subcontractorCosts + costs.agentCosts);
   const netProfit = revenue - totalExpenses;
   return {

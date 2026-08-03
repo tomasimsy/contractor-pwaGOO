@@ -1,22 +1,28 @@
 "use client";
 
 /**
- * Orchestration only. "Cost tracking" (assigned vs. paid vs.
- * outstanding) is never computed here — it's
- * TransactionService.getAssignmentBalance via SubcontractorService.
- * getBalance, called on demand, not re-derived from a payments array
- * this hook happens to be holding.
+ * Orchestration only. Nothing is computed here.
+ *
+ * ONE PAYMENT = ONE EXPENSE RECORD. Paying a subcontractor writes an
+ * `estimate_expenses` row through ExpenseService — the exact record
+ * ExpenseDialog creates, tagged with this subcontractor as payee — so
+ * the payment shows up everywhere expenses do (Expenses page, estimate
+ * and project financials, Dashboard, Reports) with no parallel payment
+ * table to reconcile. Balances come from FinancialEngine.getPayeeBalances,
+ * which reads those same expense rows.
  */
 import { useCallback, useState } from "react";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useRefreshableResource } from "./useAsyncResource";
-import type { Subcontractor, SubcontractorAssignment } from "../services";
+import type { PayeeBalance, Subcontractor, SubcontractorAssignment } from "../services";
 
 export function useSubcontractorAssignments(companyId: string, projectId: string) {
-  const { subcontractorService } = useServices();
+  const { subcontractorService, expenseService, financialEngine } = useServices();
   const [roster, setRoster] = useState<Subcontractor[]>([]);
   const [assignments, setAssignments] = useState<Array<SubcontractorAssignment & { subcontractorName: string; trade: string | null }>>([]);
-  const [balances, setBalances] = useState<Record<string, { assigned: number; paid: number; committed: number; outstanding: number }>>({});
+  /** Keyed by SUBCONTRACTOR id (not assignment id) — a payee with two
+   * assignments on one project has one running balance. */
+  const [balances, setBalances] = useState<Record<string, PayeeBalance>>({});
 
   // Previously a bare useEffect with no error handling at all — a
   // failed refresh (e.g. the service call rejecting) was an uncaught
@@ -31,9 +37,9 @@ export function useSubcontractorAssignments(companyId: string, projectId: string
     ]);
     setRoster(rosterList);
     setAssignments(assignmentList);
-    const balanceEntries = await Promise.all(assignmentList.map(async (a) => [a.id, await subcontractorService.getBalance(a.id)] as const));
-    setBalances(Object.fromEntries(balanceEntries));
-  }, [subcontractorService, companyId, projectId]);
+    const payeeBalances = await financialEngine.getPayeeBalances({ companyId, projectId }, "subcontractor");
+    setBalances(Object.fromEntries(payeeBalances.map((b) => [b.payeeId, b] as const)));
+  }, [subcontractorService, financialEngine, companyId, projectId]);
 
   const assign = useCallback(
     async (subcontractorId: string, contractedAmount: number, notes?: string) => {
@@ -43,12 +49,30 @@ export function useSubcontractorAssignments(companyId: string, projectId: string
     [subcontractorService, companyId, projectId, refresh]
   );
 
+  /** Records the payment as an EXPENSE — same record ExpenseDialog
+   * writes, typed `subcontractor` and tagged with this payee. Takes the
+   * subcontractor directly (not an assignment) because the expense row
+   * is attributed to the person, and a payee may be paid without a
+   * formal assignment. */
   const recordPayment = useCallback(
-    async (assignmentId: string, amount: number, paymentDate: string, paymentType: "payment" | "reimbursement" = "payment") => {
-      await subcontractorService.recordPayment({ companyId, assignmentId, amount, paymentDate, paymentType });
+    async (subcontractorId: string, subcontractorName: string, amount: number, paymentDate: string, estimateId?: string | null) => {
+      await expenseService.create({
+        companyId,
+        projectId,
+        estimateId: estimateId ?? null,
+        expenseType: "subcontractor",
+        amount,
+        expenseDate: paymentDate,
+        vendor: subcontractorName,
+        payeeType: "subcontractor",
+        payeeId: subcontractorId,
+        paidByType: "company",
+        isPaid: true,
+        reimbursable: false,
+      });
       await refresh();
     },
-    [subcontractorService, companyId, refresh]
+    [expenseService, companyId, projectId, refresh]
   );
 
   const markFinal = useCallback(

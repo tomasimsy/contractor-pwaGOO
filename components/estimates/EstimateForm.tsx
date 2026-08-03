@@ -19,7 +19,6 @@
  * ad hoc here.
  */
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
@@ -31,6 +30,7 @@ import { Modal } from "@/components/ui/Modal";
 import { ProjectForm } from "@/components/projects/ProjectForm";
 import { ClientForm } from "@/components/clients/ClientForm";
 import { calculateSubtotal, calculateLineItemTotal, calculateDocumentTotal } from "@/lib/services/financialCalculations";
+import { createEstimateForClient } from "@/lib/services/estimateCreationWorkflow";
 import type { Estimate, EstimateLineItem } from "@/lib/services/estimateService";
 import type { EstimatePhoto } from "@/lib/services/estimatePhotoService";
 import type { RoofingArea } from "@/lib/services";
@@ -161,13 +161,20 @@ export function EstimateForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!profile?.companyId || !projectId) return;
+    // A project is no longer required up front: with a client chosen
+    // and no project, createEstimateForClient resolves (or creates)
+    // one. One of the two must be present.
+    if (!profile?.companyId || (!projectId && !manualClientId)) return;
+    if (!title.trim()) {
+      setError("An estimate needs a title.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
       if (estimate) {
         await estimateService.update(estimate.id, {
-          title: title || null,
+          title: title.trim(),
           description: description || null,
           projectId,
           clientId: selectedProject?.clientId ?? (manualClientId || null),
@@ -180,20 +187,30 @@ export function EstimateForm({
         await estimateService.updateLineItems(estimate.id, lineItems);
         router.push(`${basePath}/${estimate.id}`);
       } else {
-        const created = await estimateService.create({
-          companyId: profile.companyId,
-          projectId,
-          clientId: selectedProject?.clientId ?? (manualClientId || null),
-          title: title || undefined,
-          description: description || undefined,
-          lineItems,
-          markup,
-          discount,
-          taxRate,
-          depositAmount,
-          estimateType,
-        });
-        router.push(`${basePath}/${created.id}/edit`);
+        const clientId = selectedProject?.clientId ?? (manualClientId || null);
+        const { redirectTo, projectCreated, project } = await createEstimateForClient(
+          { projectService, estimateService },
+          {
+            companyId: profile.companyId,
+            // Empty string means "none selected" in this <select>.
+            projectId: projectId || null,
+            clientId,
+            clientName: clients.find((c) => c.id === clientId)?.name ?? null,
+            title: title.trim(),
+            description: description || undefined,
+            lineItems,
+            markup,
+            discount,
+            taxRate,
+            depositAmount,
+            estimateType,
+          },
+          basePath
+        );
+        // Keep the picker honest for anyone who navigates back: an
+        // auto-created project is a real project and belongs in the list.
+        if (projectCreated && project) setProjects((prev) => [...prev, project]);
+        router.push(redirectTo);
       }
       router.refresh();
     } catch (err) {
@@ -210,14 +227,13 @@ export function EstimateForm({
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1">
-          <label className="text-xs font-medium text-foreground">Project *</label>
+          <label className="text-xs font-medium text-foreground">Project</label>
           <select
             value={projectId}
             onChange={(e) => setProjectId(e.target.value)}
-            required
             className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
           >
-            <option value="" disabled>Select a project</option>
+            <option value="">Auto — use the client’s project</option>
             {projects.map((p) => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
@@ -229,7 +245,7 @@ export function EstimateForm({
           >
             + Add New Project
           </button>
-          {projects.length === 0 && <p className="text-xs text-muted-foreground">No projects yet — <Link href="/projects/new" className="text-primary hover:underline">create one first</Link>, or use the link above.</p>}
+          <p className="text-xs text-muted-foreground">Leave on Auto and the client’s project is used, or created for them.</p>
         </div>
 
         <div className="space-y-1">
@@ -263,11 +279,12 @@ export function EstimateForm({
       </div>
 
       <div className="space-y-1">
-        <label className="text-xs font-medium text-foreground">Title</label>
+        <label className="text-xs font-medium text-foreground">Title *</label>
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Optional short title for this estimate"
+          required
+          placeholder="Short title for this estimate"
           className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
         />
       </div>
@@ -495,7 +512,7 @@ export function EstimateForm({
         <button type="button" onClick={() => router.back()} className="rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted">
           Cancel
         </button>
-        <button type="submit" disabled={saving || !projectId} className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+        <button type="submit" disabled={saving || !title.trim() || (!projectId && !manualClientId)} className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
           {saving ? "Saving…" : estimate ? "Save changes" : "Create estimate"}
         </button>
       </div>

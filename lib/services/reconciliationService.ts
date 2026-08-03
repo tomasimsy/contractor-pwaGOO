@@ -253,19 +253,21 @@ export function createReconciliationService(deps: ReconciliationServiceDeps): Re
           difference: expense.amount - netCost,
         });
       }
-      if (expense.paidByAgentId) {
-        const balance = await transactionService.getReimbursementBalance(expense.id);
-        if (balance.owed > 0 && balance.outstanding === balance.owed) {
-          findings.push({
-            severity: "warning",
-            scope: "project",
-            scopeId: projectId,
-            message: `Expense ${expense.id} has a $${balance.owed} agent reimbursement liability with nothing paid yet.`,
-            expected: 0,
-            actual: balance.outstanding,
-            difference: balance.outstanding,
-          });
-        }
+      // An agent-funded purchase is a debt to the agent until settled.
+      // The expense row's OWN reimbursementStatus is the authority:
+      // settling writes no payment record of its own (ONE PAYMENT = ONE
+      // EXPENSE RECORD), so the ledger's reimbursement balance would
+      // report every settled debt as still outstanding.
+      if (expense.paidByAgentId && expense.reimbursable && expense.reimbursementStatus !== "reimbursed") {
+        findings.push({
+          severity: "warning",
+          scope: "project",
+          scopeId: projectId,
+          message: `Expense ${expense.id} has a $${expense.amount} agent reimbursement liability with nothing paid yet.`,
+          expected: 0,
+          actual: expense.amount,
+          difference: expense.amount,
+        });
       }
     }
 
@@ -343,22 +345,33 @@ export function createReconciliationService(deps: ReconciliationServiceDeps): Re
       }
     }
 
-    // Payables — FinancialEngine.getPayablesSummary line-by-line against
-    // TransactionService.getAssignmentBalance for the same assignment,
-    // for both subcontractors and agents.
+    // Payables — FinancialEngine.getPayablesSummary against
+    // FinancialEngine.getPayeeBalances, per payee, for both roles.
+    //
+    // Deliberately NOT against TransactionService.getAssignmentBalance
+    // any more: under ONE PAYMENT = ONE EXPENSE RECORD a payment is an
+    // expense row, so the ledger holds no assignment payments to
+    // balance against and that check would flag every fully-paid payee
+    // as unpaid. Payables lines are per ASSIGNMENT while a payment
+    // names a PAYEE, so the comparison is made per payee.
     const payables = await deps.financialEngine.getPayablesSummary({ companyId: project.companyId, projectId });
-    for (const line of payables.lines) {
-      const balance = await transactionService.getAssignmentBalance(line.assignmentId);
-      if (balance.outstanding !== line.outstanding) {
-        findings.push({
-          severity: "error",
-          scope: "project",
-          scopeId: projectId,
-          message: `Payables line for ${line.role} "${line.payeeName}" shows outstanding $${line.outstanding}, but TransactionService.getAssignmentBalance computes $${balance.outstanding} for the same assignment.`,
-          expected: balance.outstanding,
-          actual: line.outstanding,
-          difference: line.outstanding - balance.outstanding,
-        });
+    for (const role of ["subcontractor", "agent"] as const) {
+      const payeeBalances = await deps.financialEngine.getPayeeBalances({ companyId: project.companyId, projectId }, role);
+      for (const balance of payeeBalances) {
+        const lineOutstanding = payables.lines
+          .filter((l) => l.role === role && l.payeeId === balance.payeeId)
+          .reduce((sum, l) => sum + l.outstanding, 0);
+        if (lineOutstanding !== balance.outstanding) {
+          findings.push({
+            severity: "error",
+            scope: "project",
+            scopeId: projectId,
+            message: `Payables lines for ${role} "${balance.payeeName}" show outstanding $${lineOutstanding}, but FinancialEngine.getPayeeBalances computes $${balance.outstanding} from the expense rows.`,
+            expected: balance.outstanding,
+            actual: lineOutstanding,
+            difference: lineOutstanding - balance.outstanding,
+          });
+        }
       }
     }
     // Cross-check the roster itself: every subcontractor/agent

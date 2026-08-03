@@ -2,11 +2,12 @@
  * FinancialEngine.getEstimateCostEntries / getProjectCostEntries — the
  * unified cost view behind the Estimate Details "Costs" list.
  *
- * The point of these tests is the invariant that makes the unified view
- * SAFE: it is a read-side projection over three separate domain models,
- * so it must show every record exactly once AND must never be summable
- * into a cost total that contradicts getProjectFinancials' committed-cost
- * model. `treatment` is what encodes that, and it's pinned here.
+ * ONE PAYMENT = ONE EXPENSE RECORD, so this list is a projection over a
+ * SINGLE model: expense rows. A subcontractor payment and an agent
+ * commission are expense rows too, distinguished by `expenseType` and
+ * labeled through `source`. That is what makes the list safe to sum:
+ * summing every row now equals the engine's own expense total, because
+ * no cost lives anywhere else.
  */
 import { describe, test, expect, beforeEach } from "vitest";
 import { createInMemoryServices, createInMemoryStore, type InMemoryStore, type InMemoryServices } from "../lib/services/testing/inMemoryServices";
@@ -42,19 +43,24 @@ describe("Unified cost entries", () => {
       expenseType: "materials", amount: 300, expenseDate: "2026-01-05", vendor: "Supply Co",
     });
 
-    const subAssignment = await services.subcontractorService.assignToProject({
+    // Paying a subcontractor / an agent writes an EXPENSE, same as any
+    // other cost — that is the whole point of the model.
+    await services.subcontractorService.assignToProject({
       companyId: COMPANY_ID, projectId: project.id, subcontractorId: "sub-1", contractedAmount: 2000,
     });
-    await services.subcontractorService.recordPayment({
-      companyId: COMPANY_ID, assignmentId: subAssignment.id, amount: 800, paymentDate: "2026-01-10",
+    await services.expenseService.create({
+      companyId: COMPANY_ID, projectId: project.id, estimateId: estimate.id,
+      expenseType: "subcontractor", amount: 800, expenseDate: "2026-01-10",
+      vendor: "Sub One", payeeType: "subcontractor", payeeId: "sub-1",
     });
 
-    const agentAssignment = await services.agentCommissionService.assignToProject({
+    await services.agentCommissionService.assignToProject({
       companyId: COMPANY_ID, projectId: project.id, agentId: "agent-1", assignedAmount: 500,
     });
-    await services.agentCommissionService.recordPayment({
-      companyId: COMPANY_ID, agentId: "agent-1", assignmentId: agentAssignment.id,
-      amount: 500, paymentType: "commission", paymentDate: "2026-01-20",
+    await services.expenseService.create({
+      companyId: COMPANY_ID, projectId: project.id, estimateId: estimate.id,
+      expenseType: "agent_commission", amount: 500, expenseDate: "2026-01-20",
+      vendor: "Agent One", payeeType: "agent", payeeId: "agent-1",
     });
 
     const entries = await services.financialEngine.getEstimateCostEntries(estimate.id);
@@ -75,49 +81,53 @@ describe("Unified cost entries", () => {
 
     const subRow = entries.find((e) => e.source === "subcontractor")!;
     expect(subRow.amount).toBe(800);
-    // A payment against a commitment already counted at assignment time.
-    expect(subRow.treatment).toBe("payment");
+    expect(subRow.category).toBe("Subcontractor");
+    // Real cash out the door — a cost like any other.
+    expect(subRow.treatment).toBe("cost");
 
     const agentRow = entries.find((e) => e.source === "agent")!;
     expect(agentRow.amount).toBe(500);
-    expect(agentRow.category).toBe("Commission");
-    expect(agentRow.treatment).toBe("payment");
+    expect(agentRow.category).toBe("Agent Commission");
+    expect(agentRow.treatment).toBe("cost");
   });
 
-  test("does not double-count: only cost-treated rows reconcile with FinancialEngine's expense total", async () => {
+  test("does not double-count: summing every row equals FinancialEngine's expense total", async () => {
     const { project, estimate } = await seedJob();
 
     await services.expenseService.create({
       companyId: COMPANY_ID, projectId: project.id, estimateId: estimate.id,
       expenseType: "materials", amount: 300, expenseDate: "2026-01-05",
     });
-    const subAssignment = await services.subcontractorService.assignToProject({
+    // Contracted for 2000, paid 800 so far. The CONTRACT is not cost;
+    // the 800 paid is.
+    await services.subcontractorService.assignToProject({
       companyId: COMPANY_ID, projectId: project.id, subcontractorId: "sub-1", contractedAmount: 2000,
     });
-    await services.subcontractorService.recordPayment({
-      companyId: COMPANY_ID, assignmentId: subAssignment.id, amount: 800, paymentDate: "2026-01-10",
+    await services.expenseService.create({
+      companyId: COMPANY_ID, projectId: project.id, estimateId: estimate.id,
+      expenseType: "subcontractor", amount: 800, expenseDate: "2026-01-10",
+      payeeType: "subcontractor", payeeId: "sub-1",
     });
 
     const entries = await services.financialEngine.getEstimateCostEntries(estimate.id);
     const financials = await services.financialEngine.getEstimateFinancials(estimate.id);
 
-    // Cost-treated rows are exactly the EXPENSE ROWS — `expenseItems`,
-    // one of the four sources that make up totalExpenses.
-    const costRowsTotal = entries.filter((e) => e.treatment === "cost").reduce((s, e) => s + e.amount, 0);
-    expect(costRowsTotal).toBe(financials.expenseItems);
-    expect(financials.expenseItems).toBe(300);
+    // Every row is a cost row, and every row is an expense row.
+    expect(entries.every((e) => e.treatment === "cost")).toBe(true);
+    expect(financials.expenseItems).toBe(1100); // 300 materials + 800 sub
 
-    // The $800 payment sits INSIDE the $2,000 committed subcontractor
-    // cost — it is not $800 of extra cost. Total cost is the four-source
-    // sum, so the payment never lands twice.
-    expect(financials.subcontractorCosts).toBe(2000);
-    expect(financials.totalExpenses).toBe(2300); // 300 expenses + 2000 committed sub
+    // The 800 paid is the subcontractor BUCKET of those 1100 — a
+    // breakdown, not an addition. The unpaid 1200 of the contract is
+    // outstanding, not cost.
+    expect(financials.subcontractorCosts).toBe(800);
+    expect(financials.totalExpenses).toBe(1100);
+
+    // Summing the list is now the cost total — nothing lives elsewhere.
     const naiveTotal = entries.reduce((s, e) => s + e.amount, 0);
-    expect(naiveTotal).toBe(1100); // 300 + 800 — summing rows is NOT the cost total
-    expect(naiveTotal).not.toBe(financials.totalExpenses);
+    expect(naiveTotal).toBe(financials.totalExpenses);
   });
 
-  test("an agent reimbursement is treated as a settlement, never as new cost", async () => {
+  test("reimbursing an agent settles a debt and writes no second cost row", async () => {
     const { project, estimate } = await seedJob();
 
     // Agent fronts a purchase — one cost, plus a debt to the agent.
@@ -129,25 +139,22 @@ describe("Unified cost entries", () => {
     await services.agentCommissionService.assignToProject({
       companyId: COMPANY_ID, projectId: project.id, agentId: "agent-1", assignedAmount: 500,
     });
-    // Paying the agent back settles that debt — it is NOT a second $300.
-    await services.agentCommissionService.recordPayment({
-      companyId: COMPANY_ID, agentId: "agent-1", amount: 300,
-      paymentType: "reimbursement", paymentDate: "2026-02-10", reimbursesExpenseId: expense.id,
-    });
+
+    // Paying the agent back SETTLES that debt on the existing row. It
+    // writes no record of its own, so it cannot become a second $300.
+    await services.expenseService.markReimbursed(expense.id);
 
     const entries = await services.financialEngine.getEstimateCostEntries(estimate.id);
-    const reimbursementRow = entries.find((e) => e.source === "agent" && e.category === "Reimbursement")!;
-    expect(reimbursementRow).toBeDefined();
-    expect(reimbursementRow.treatment).toBe("settlement");
+    expect(entries).toHaveLength(1);
+    expect(entries[0].amount).toBe(300);
+    expect(entries[0].treatment).toBe("cost");
 
-    // The purchase is still counted exactly once — the $300 repayment
-    // adds nothing. (totalExpenses also carries the $500 committed agent
-    // commission, which is a separate cost from the reimbursed purchase.)
+    // The purchase is counted exactly once. The $500 commission is not
+    // cost yet — nobody has been paid it.
     const financials = await services.financialEngine.getEstimateFinancials(estimate.id);
     expect(financials.expenseItems).toBe(300);
-    expect(financials.agentCommissionCosts).toBe(500);
-    expect(financials.totalExpenses).toBe(800); // 300 + 500, NOT 300 + 500 + 300
-    expect(entries.filter((e) => e.treatment === "cost").reduce((s, e) => s + e.amount, 0)).toBe(300);
+    expect(financials.agentCommissionCosts).toBe(0);
+    expect(financials.totalExpenses).toBe(300);
   });
 
   test("payments belonging to another project never leak into this one's list", async () => {
@@ -155,11 +162,13 @@ describe("Unified cost entries", () => {
 
     // A second project with its own subcontractor payment.
     const otherProject = await services.projectService.create({ companyId: COMPANY_ID, clientId: "client-2", name: "Other Job" });
-    const otherAssignment = await services.subcontractorService.assignToProject({
+    await services.subcontractorService.assignToProject({
       companyId: COMPANY_ID, projectId: otherProject.id, subcontractorId: "sub-9", contractedAmount: 999,
     });
-    await services.subcontractorService.recordPayment({
-      companyId: COMPANY_ID, assignmentId: otherAssignment.id, amount: 999, paymentDate: "2026-01-15",
+    await services.expenseService.create({
+      companyId: COMPANY_ID, projectId: otherProject.id, estimateId: null,
+      expenseType: "subcontractor", amount: 999, expenseDate: "2026-01-15",
+      payeeType: "subcontractor", payeeId: "sub-9",
     });
 
     const entries = await services.financialEngine.getEstimateCostEntries(estimate.id);

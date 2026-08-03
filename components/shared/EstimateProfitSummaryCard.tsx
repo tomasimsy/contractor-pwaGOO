@@ -45,30 +45,38 @@ export function EstimateProfitSummaryCard({ financials }: { financials: Estimate
       </p>
 
       <div className="divide-y divide-border">
-        <div className="pb-2">
+        {/* Money Earned Section */}
+        <div className="pb-2 bg-emerald-500/5 -mx-4 px-4 py-2 rounded-lg transition-colors">
+          <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Revenue & Earnings</div>
           <Row label="Estimate total" value={f.estimateTotal} />
           <Row label="Approved change orders" value={f.approvedChangeOrderTotal} />
           <Row label="Revised contract total" value={f.revisedTotal} strong />
         </div>
 
-        <div className="py-2">
+        {/* Money Received Section */}
+        <div className="py-2 mt-2 bg-blue-500/5 -mx-4 px-4 py-2 rounded-lg transition-colors">
+          <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">Customer Collections</div>
           <Row label="Customer payments received" value={f.amountPaid} />
           <Row label="Remaining customer balance" value={f.remainingBalance} tone={f.remainingBalance > 0 ? "bad" : undefined} />
         </div>
 
-        <div className="py-2">
+        {/* Money Spent Section */}
+        <div className="py-2 mt-2 bg-amber-500/5 -mx-4 px-4 py-2 rounded-lg transition-colors">
+          <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">Costs & Expenses</div>
           <Row label="Subcontractor costs" value={f.subcontractorCosts} />
           <Row label="Agent commissions" value={f.agentCommissionCosts} />
           <Row label="Total expenses" value={f.totalExpenses} />
           <Row label="Total job cost" value={f.totalExpenses} strong />
         </div>
 
-        <div className="pt-2">
+        {/* Profitability Section */}
+        <div className="pt-2 mt-2 bg-purple-500/5 -mx-4 px-4 py-2 rounded-lg transition-colors">
+          <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">Profitability</div>
           <Row label="Gross profit" value={f.grossProfit} tone={f.grossProfit >= 0 ? "good" : "bad"} strong />
           <Row label="Net profit" value={f.netProfit} tone={isProfit ? "good" : "bad"} strong />
           <div className="flex items-center justify-between gap-2 py-1 text-sm">
             <span className="text-muted-foreground">Profit margin</span>
-            <span className={isProfit ? "text-success" : "text-danger"}>{f.profitMargin.toFixed(1)}%</span>
+            <span className={isProfit ? "text-success font-semibold" : "text-danger font-semibold"}>{f.profitMargin.toFixed(1)}%</span>
           </div>
           <div className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm font-semibold">
             <span className="text-muted-foreground">Status</span>

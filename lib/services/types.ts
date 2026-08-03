@@ -195,6 +195,27 @@ export interface CostEntry {
   amount: number;
 }
 
+/** Per-payee money view for a subcontractor or agent — the shape
+ * /subcontractors, /agents and both assignment panels all render.
+ *
+ * `contracted` comes from assignments (the commitment). `paid` comes
+ * from EXPENSE ROWS — one payment is one expense record, so there is no
+ * separate payment table to consult and no way for the two to disagree.
+ * Assignments contribute no cost; only `paid` does. */
+export interface PayeeBalance {
+  payeeId: UUID;
+  payeeName: string;
+  role: "subcontractor" | "agent";
+  /** Sum of this payee's assignment amounts in scope. */
+  contracted: number;
+  /** Sum of this payee's expense rows in scope — the real cost. */
+  paid: number;
+  /** max(0, contracted − paid). Zero when there is no contract. */
+  outstanding: number;
+  /** Projects this payee has an assignment on or was paid against. */
+  projectIds: UUID[];
+}
+
 export interface EstimateFinancials {
   estimateId: UUID;
   projectId: UUID;

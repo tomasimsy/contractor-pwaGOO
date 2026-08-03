@@ -39,6 +39,28 @@ beforeEach(() => {
   services = createInMemoryServices(store);
 });
 
+/** Record a payment to a subcontractor / agent. ONE PAYMENT = ONE
+ * EXPENSE RECORD, so this is just an expense row typed and tagged with
+ * its payee — the same call ExpenseDialog and the assignment panels
+ * make. */
+async function payPayee(
+  projectId: string,
+  role: "subcontractor" | "agent",
+  payeeId: string,
+  amount: number,
+  expenseDate: string
+) {
+  return services.expenseService.create({
+    companyId: COMPANY_ID,
+    projectId,
+    expenseType: role === "subcontractor" ? "subcontractor" : "agent_commission",
+    amount,
+    expenseDate,
+    payeeType: role,
+    payeeId,
+  });
+}
+
 /** A project with a $10,000 invoiced estimate — a realistic revenue
  * baseline so profit assertions below are about COST changes only. */
 async function seedProjectWithRevenue(name = "Cost Integrity Project") {
@@ -134,26 +156,27 @@ describe("Subcontractor integrity: assigned -> paid -> remaining owed", () => {
       companyId: COMPANY_ID, projectId: project.id, subcontractorId: "sub-1", contractedAmount: 3000,
     });
 
-    let balance = await services.subcontractorService.getBalance(assignment.id);
-    expect(balance).toMatchObject({ assigned: 3000, paid: 0, outstanding: 3000 });
+    const readBalance = async () =>
+      (await services.financialEngine.getPayeeBalances({ companyId: COMPANY_ID, projectId: project.id }, "subcontractor"))[0];
 
-    await services.subcontractorService.recordPayment({
-      companyId: COMPANY_ID, assignmentId: assignment.id, amount: 1200, paymentDate: "2026-01-10",
-    });
-    balance = await services.subcontractorService.getBalance(assignment.id);
-    expect(balance).toMatchObject({ assigned: 3000, paid: 1200, outstanding: 1800 });
+    // Contracted but unpaid: owed in full, and not yet a cost.
+    expect(await readBalance()).toMatchObject({ contracted: 3000, paid: 0, outstanding: 3000 });
+    expect((await services.financialEngine.getProjectFinancials(project.id)).subcontractorCosts).toBe(0);
 
-    await services.subcontractorService.recordPayment({
-      companyId: COMPANY_ID, assignmentId: assignment.id, amount: 1800, paymentDate: "2026-01-20",
-    });
-    balance = await services.subcontractorService.getBalance(assignment.id);
-    expect(balance).toMatchObject({ assigned: 3000, paid: 3000, outstanding: 0 });
+    await payPayee(project.id, "subcontractor", "sub-1", 1200, "2026-01-10");
+    expect(await readBalance()).toMatchObject({ contracted: 3000, paid: 1200, outstanding: 1800 });
 
-    // Committed cost is the contracted amount ONCE — not assigned plus
-    // each payment as it lands.
+    await payPayee(project.id, "subcontractor", "sub-1", 1800, "2026-01-20");
+    expect(await readBalance()).toMatchObject({ contracted: 3000, paid: 3000, outstanding: 0 });
+
+    // Cost is the cash paid, counted once — 1200 + 1800, never the
+    // contract PLUS each payment as it lands.
     const financials = await services.financialEngine.getProjectFinancials(project.id);
     expect(financials.subcontractorCosts).toBe(3000);
+    expect(financials.expenseItems).toBe(3000);
+    expect(financials.totalExpenses).toBe(3000);
     expect(financials.netProfit).toBe(10000 - 3000);
+    void assignment;
   });
 
   test("deleting a subcontractor payment restores the outstanding balance", async () => {
@@ -172,24 +195,43 @@ describe("Subcontractor integrity: assigned -> paid -> remaining owed", () => {
     expect(balance).toMatchObject({ assigned: 3000, paid: 0, outstanding: 3000 });
   });
 
-  test("deleting a subcontractor ASSIGNMENT removes its cost from profit and every payables report", async () => {
+  test("deleting a subcontractor ASSIGNMENT removes its commitment from every payables report", async () => {
     // Regression: listAssignments didn't filter deletedAt, so the full
-    // contracted amount stayed in project cost forever.
+    // contracted amount stayed owed forever.
     const { project } = await seedProjectWithRevenue();
     const assignment = await services.subcontractorService.assignToProject({
       companyId: COMPANY_ID, projectId: project.id, subcontractorId: "sub-1", contractedAmount: 5000,
     });
-    expect((await services.financialEngine.getProjectFinancials(project.id)).subcontractorCosts).toBe(5000);
+    // The commitment is owed, but no cash has moved, so it is not cost.
+    expect((await services.financialEngine.getProjectFinancials(project.id)).outstandingSubcontractor).toBe(5000);
+    expect((await services.financialEngine.getProjectFinancials(project.id)).subcontractorCosts).toBe(0);
 
     store.subAssignments.set(assignment.id, { ...store.subAssignments.get(assignment.id)!, deletedAt: new Date().toISOString() });
 
     const financials = await services.financialEngine.getProjectFinancials(project.id);
+    expect(financials.outstandingSubcontractor).toBe(0);
     expect(financials.subcontractorCosts).toBe(0);
     expect(financials.netProfit).toBe(10000);
 
     const payables = await services.financialEngine.getPayablesSummary({ companyId: COMPANY_ID });
     expect(payables.lines.filter((l) => l.assignmentId === assignment.id)).toHaveLength(0);
     expect(payables.totalOutstandingSubcontractor).toBe(0);
+  });
+
+  test("deleting a subcontractor PAYMENT expense restores the outstanding balance and removes the cost", async () => {
+    const { project } = await seedProjectWithRevenue();
+    await services.subcontractorService.assignToProject({
+      companyId: COMPANY_ID, projectId: project.id, subcontractorId: "sub-1", contractedAmount: 3000,
+    });
+    const payment = await payPayee(project.id, "subcontractor", "sub-1", 3000, "2026-01-10");
+    expect((await services.financialEngine.getProjectFinancials(project.id)).outstandingSubcontractor).toBe(0);
+
+    await services.expenseService.softDelete(payment.id, "Paid the wrong subcontractor");
+
+    const financials = await services.financialEngine.getProjectFinancials(project.id);
+    expect(financials.subcontractorCosts).toBe(0);
+    expect(financials.outstandingSubcontractor).toBe(3000);
+    expect(financials.netProfit).toBe(10000);
   });
 });
 
@@ -211,16 +253,24 @@ describe("Agent commission integrity: earned -> paid -> remaining", () => {
     expect(await services.agentCommissionService.getBalance(assignment.id)).toMatchObject({ assigned: 800, paid: 0, outstanding: 800 });
   });
 
-  test("deleting an agent ASSIGNMENT removes its commission cost from profit", async () => {
+  test("deleting an agent ASSIGNMENT removes its commitment, and deleting the payment removes the cost", async () => {
     const { project } = await seedProjectWithRevenue();
     const assignment = await services.agentCommissionService.assignToProject({
       companyId: COMPANY_ID, projectId: project.id, agentId: "agent-1", assignedAmount: 800,
     });
+    const commission = await payPayee(project.id, "agent", "agent-1", 800, "2026-01-15");
     expect((await services.financialEngine.getProjectFinancials(project.id)).agentCosts).toBe(800);
 
+    // Removing the ASSIGNMENT drops the commitment. The commission was
+    // already PAID, so it stays a cost — the money really did leave.
     store.agentAssignments.set(assignment.id, { ...store.agentAssignments.get(assignment.id)!, deletedAt: new Date().toISOString() });
+    let financials = await services.financialEngine.getProjectFinancials(project.id);
+    expect(financials.agentCosts).toBe(800);
+    expect(financials.outstandingAgent).toBe(0);
 
-    const financials = await services.financialEngine.getProjectFinancials(project.id);
+    // Removing the PAYMENT is what removes the cost.
+    await services.expenseService.softDelete(commission.id, "Commission run reversed");
+    financials = await services.financialEngine.getProjectFinancials(project.id);
     expect(financials.agentCosts).toBe(0);
     expect(financials.netProfit).toBe(10000);
   });
@@ -331,14 +381,17 @@ describe("Project profit: Revised Revenue - Real Project Costs", () => {
     await services.expenseService.create({
       companyId: COMPANY_ID, projectId: project.id, expenseType: "materials", amount: 500, expenseDate: "2026-01-05",
     });
-    const subAssignment = await services.subcontractorService.assignToProject({
+    await services.subcontractorService.assignToProject({
       companyId: COMPANY_ID, projectId: project.id, subcontractorId: "sub-1", contractedAmount: 2000,
     });
     await services.agentCommissionService.assignToProject({
       companyId: COMPANY_ID, projectId: project.id, agentId: "agent-1", assignedAmount: 700,
     });
+    // Both are PAID — cash out the door, so both are expense rows.
+    await payPayee(project.id, "subcontractor", "sub-1", 2000, "2026-01-06");
+    await payPayee(project.id, "agent", "agent-1", 700, "2026-01-07");
 
-    // Revenue 10,000 - (500 expense + 2,000 sub + 700 commission)
+    // Revenue 10,000 - (500 materials + 2,000 sub + 700 commission)
     let f = await services.financialEngine.getProjectFinancials(project.id);
     expect(f.revisedTotal).toBe(10000);
     expect(f.totalExpenses).toBe(3200);
@@ -359,12 +412,11 @@ describe("Project profit: Revised Revenue - Real Project Costs", () => {
     expect(f.revisedTotal).toBe(10000);
     expect(f.netProfit).toBe(6800);
 
-    // Paying the subcontractor moves cash but must NOT change committed
-    // cost or profit — it was already counted at assignment time.
-    await services.subcontractorService.recordPayment({
-      companyId: COMPANY_ID, assignmentId: subAssignment.id, amount: 2000, paymentDate: "2026-02-01",
-    });
+    // Everything contracted has now been paid, so nothing is left
+    // outstanding and cost is unchanged — no payment is counted twice.
     f = await services.financialEngine.getProjectFinancials(project.id);
+    expect(f.outstandingSubcontractor).toBe(0);
+    expect(f.outstandingAgent).toBe(0);
     expect(f.totalExpenses).toBe(3200);
     expect(f.netProfit).toBe(6800);
   });
@@ -394,9 +446,7 @@ describe("Cross-view reconciliation: every surface reports the same numbers", ()
     const subAssignment = await services.subcontractorService.assignToProject({
       companyId: COMPANY_ID, projectId: project.id, subcontractorId: "sub-1", contractedAmount: 2000,
     });
-    await services.subcontractorService.recordPayment({
-      companyId: COMPANY_ID, assignmentId: subAssignment.id, amount: 500, paymentDate: "2026-01-20",
-    });
+    await payPayee(project.id, "subcontractor", "sub-1", 500, "2026-01-20");
     const agentAssignment = await services.agentCommissionService.assignToProject({
       companyId: COMPANY_ID, projectId: project.id, agentId: "agent-1", assignedAmount: 700,
     });
@@ -419,18 +469,22 @@ describe("Cross-view reconciliation: every surface reports the same numbers", ()
     expect(financials.outstandingAgent).toBe(700); // nothing paid yet
     expect(payables.totalOutstandingAgent).toBe(700);
 
-    // Profit agrees across both entry points.
+    // Profit agrees across both entry points. Cost is the cash that
+    // actually moved: 500 materials + 500 paid to the subcontractor.
+    // The unpaid 1,500 of the contract and the unpaid 700 commission
+    // are OUTSTANDING, not cost.
     expect(profit.netProfit).toBe(financials.netProfit);
-    expect(financials.netProfit).toBe(11000 - (500 + 2000 + 700));
+    expect(financials.netProfit).toBe(11000 - (500 + 500));
 
-    // The subcontractor's own balance view matches the payables line.
+    // The subcontractor's payee balance matches the payables line.
     const line = payables.lines.find((l) => l.assignmentId === subAssignment.id)!;
-    const balance = await services.subcontractorService.getBalance(subAssignment.id);
+    const [balance] = await services.financialEngine.getPayeeBalances({ companyId: COMPANY_ID, projectId: project.id }, "subcontractor");
     expect(line.outstanding).toBe(balance.outstanding);
     expect(line.paid).toBe(balance.paid);
 
     const agentLine = payables.lines.find((l) => l.assignmentId === agentAssignment.id)!;
-    expect(agentLine.outstanding).toBe((await services.agentCommissionService.getBalance(agentAssignment.id)).outstanding);
+    const [agentBalance] = await services.financialEngine.getPayeeBalances({ companyId: COMPANY_ID, projectId: project.id }, "agent");
+    expect(agentLine.outstanding).toBe(agentBalance.outstanding);
   });
 
   test("the ledger reconciles cleanly against source records after the full cost lifecycle", async () => {
