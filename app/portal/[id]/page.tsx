@@ -14,30 +14,6 @@ import {
   deriveInvoiceStatus,
 } from "@/lib/services/financialCalculations";
 
-/**
- * CUSTOMER PORTAL — public, no login.
- *
- * Outside app/(app) on purpose: no authenticated shell, no
- * AuthProvider, no RequirePermission. Server-rendered so the anon key
- * never reaches the browser.
- *
- * One token-scoped RPC (`get_customer_portal`) returns the whole job:
- * estimate, approved change orders, and the invoices raised against it.
- * Read-only except for estimate signing.
- *
- * FINANCIALS: every figure below is derived with the SAME shared
- * functions the staff Estimate and Invoice pages use —
- * calculateDocumentTotal, sumApprovedChangeOrderRevenue,
- * calculateRevisedEstimateTotal, calculateInvoiceTotal,
- * calculateRemainingBalance, deriveInvoiceStatus. Nothing is summed
- * ad hoc here, so the portal cannot show a customer a number that
- * disagrees with what staff see.
- *
- * MODULARITY: the payload is a plain object of independent sections, so
- * adding Payments (pay-now), Documents, Notifications, or Messaging
- * means adding a key to the RPC and a section here — no restructuring.
- */
-
 type PortalPayload = {
   estimate?: {
     id: string; estimate_number: string | null; title: string | null; description: string | null;
@@ -65,7 +41,7 @@ export default async function CustomerPortalPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ token?: string }>;
 }) {
-  await params; // the id is cosmetic; the TOKEN is what authorises
+  await params;
   const { token } = await searchParams;
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -73,25 +49,25 @@ export default async function CustomerPortalPage({
   const payload = data as PortalPayload | null;
   const estimate = payload?.estimate;
 
-  // Separate, purpose-built read (ALL non-deleted change orders, any
-  // status) alongside the existing get_customer_portal RPC, which only
-  // ever returns approved ones — see the migration's comment for why
-  // this is additive rather than a rewrite of that RPC. Not fetched
-  // when there's no estimate/token, same guard as the main payload.
   const { data: allChangeOrdersData } = token && estimate
     ? await supabase.rpc("get_portal_change_orders", { p_token: token })
     : { data: null };
   const allChangeOrders = (allChangeOrdersData as PortalChangeOrder[] | null) ?? [];
 
-  // Missing token, wrong token, and deleted estimate all land here with
-  // the same message — this page must not reveal which ids exist.
   if (!estimate) {
     return (
-      <main className="mx-auto max-w-md px-6 py-20 text-center">
-        <h1 className="text-xl font-semibold text-foreground">This link isn&apos;t available</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          It may have expired or been removed. Please contact us for an updated link.
-        </p>
+      <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-6 text-center bg-background">
+        <div className="rounded-2xl border border-border/60 bg-card p-8 shadow-sm">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h1 className="text-lg font-semibold text-foreground">This link isn&apos;t available</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            It may have expired or been removed. Please contact us for an updated link.
+          </p>
+        </div>
       </main>
     );
   }
@@ -103,7 +79,6 @@ export default async function CustomerPortalPage({
   const invoices = payload?.invoices ?? [];
   const today = new Date().toISOString().slice(0, 10);
 
-  // ---- Estimate figures: identical derivation to the staff page ----
   const itemsSubtotal = calculateSubtotal(lineItems.map((i) => ({ total: i.total ?? 0 })));
   const storedSubtotal = estimate.subtotal ?? itemsSubtotal;
   const { total: computedTotal } = calculateDocumentTotal(
@@ -111,7 +86,6 @@ export default async function CustomerPortalPage({
   );
   const estimateTotal = estimate.total ?? computedTotal;
 
-  // Approved-only; the filter lives inside the shared function.
   const coShape = changeOrders.map((co) => ({
     status: "approved" as const, totalAmount: co.total_amount ?? 0, tax: co.tax ?? 0,
   }));
@@ -121,173 +95,292 @@ export default async function CustomerPortalPage({
   const isSigned = !!estimate.signature?.value;
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-6 sm:px-6 sm:py-10">
-      {/* Mobile-first: single column, generous tap targets, tables scroll */}
-      <header className="border-b border-border pb-5">
-        <h1 className="text-base font-semibold text-foreground sm:text-lg">{company.company_name}</h1>
-        <p className="text-xs text-muted-foreground">
-          {company.company_phone} · {company.company_email}
-        </p>
-        {client?.name && <p className="mt-3 text-sm text-foreground">Prepared for {client.name}</p>}
-      </header>
+    <div className="min-h-screen bg-muted/20 pb-16">
+      <main className="mx-auto max-w-xl px-4 py-6 sm:px-6 sm:py-10 space-y-6">
+        
+        {/* HEADER / BRANDING (2 COLUMNS: COMPANY LEFT, CUSTOMER RIGHT) */}
+        <header className="overflow-hidden rounded-2xl border border-border/60 bg-card p-5 shadow-sm space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+              Portal Overview
+            </span>
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+              Customer Portal
+            </div>
+          </div>
 
-      {/* ---------------- ESTIMATE ---------------- */}
-      <section className="pt-6">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-lg font-bold tracking-wide text-foreground">ESTIMATE</h2>
-          <span className="text-sm text-muted-foreground">#{estimate.estimate_number ?? "—"}</span>
-        </div>
-        {estimate.title && <p className="mt-1 text-sm font-medium text-foreground">{estimate.title}</p>}
-        {estimate.description && (
-          <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{estimate.description}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-border/60">
+            {/* COMPANY INFO (LEFT) */}
+            <div className="space-y-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                Company
+              </span>
+              <h1 className="text-sm font-bold text-foreground">
+                {company.company_name}
+              </h1>
+              {company.company_phone && (
+                <p className="text-xs text-muted-foreground">{company.company_phone}</p>
+              )}
+              {company.company_email && (
+                <p className="text-xs text-muted-foreground">{company.company_email}</p>
+              )}
+            </div>
+
+            {/* CUSTOMER INFO (RIGHT) */}
+            {client && (
+              <div className="space-y-1 sm:border-l sm:border-border/60 sm:pl-4">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Prepared For
+                </span>
+                <p className="text-sm font-semibold text-foreground">
+                  {client.name}
+                </p>
+                {client.phone && (
+                  <p className="text-xs text-muted-foreground">{client.phone}</p>
+                )}
+                {client.email && (
+                  <p className="text-xs text-muted-foreground">{client.email}</p>
+                )}
+                {client.address && (
+                  <p className="mt-1 whitespace-pre-line text-xs text-muted-foreground">
+                    {client.address}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </header>
+
+        {/* ESTIMATE CARD */}
+        <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm space-y-4">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Estimate</h2>
+                <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-mono font-semibold text-foreground">
+                  #{estimate.estimate_number ?? "—"}
+                </span>
+              </div>
+              {estimate.title && (
+                <h3 className="mt-1 text-base font-semibold text-foreground">{estimate.title}</h3>
+              )}
+            </div>
+            
+            <div className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
+              isSigned 
+                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20" 
+                : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+            }`}>
+              {isSigned ? (
+                <>
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                  Approved
+                </>
+              ) : (
+                <>
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  Pending Approval
+                </>
+              )}
+            </div>
+          </div>
+
+          {estimate.description && (
+            <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed bg-muted/40 p-3 rounded-xl border border-border/40">
+              {estimate.description}
+            </p>
+          )}
+
+          <div className="overflow-hidden rounded-xl border border-border/60">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 border-b border-border/60">
+                <tr>
+                  <th className="px-3.5 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Item</th>
+                  <th className="px-3.5 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Qty</th>
+                  <th className="px-3.5 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {lineItems.length === 0 ? (
+                  <tr><td colSpan={3} className="px-3 py-6 text-center text-xs text-muted-foreground">No items listed.</td></tr>
+                ) : lineItems.map((item) => (
+                  <tr key={item.id} className="hover:bg-muted/20 transition-colors">
+                    <td className="px-3.5 py-3">
+                      <div className="font-medium text-foreground text-xs sm:text-sm">{item.name}</div>
+                      {item.description && <div className="text-[11px] text-muted-foreground mt-0.5">{item.description}</div>}
+                    </td>
+                    <td className="px-3.5 py-3 text-right text-xs text-muted-foreground font-medium">{item.quantity ?? 0}</td>
+                    <td className="px-3.5 py-3 text-right font-semibold text-foreground text-xs sm:text-sm">{money(item.total ?? 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="rounded-xl bg-muted/40 p-4 space-y-2 text-sm border border-border/40">
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>Estimate total</span>
+              <span className="font-medium text-foreground">{money(estimateTotal)}</span>
+            </div>
+            {approvedChangeOrderRevenue !== 0 && (
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Approved change orders</span>
+                <span className="font-medium text-foreground">{money(approvedChangeOrderRevenue)}</span>
+              </div>
+            )}
+            <div className="flex justify-between border-t border-border/60 pt-2 text-sm font-bold text-foreground">
+              <span>Contract total</span>
+              <span className="text-base text-primary">{money(contractTotal)}</span>
+            </div>
+          </div>
+
+          <div>
+            <Link
+              href={`/api/estimates/${estimate.id}/pdf?customerToken=${encodeURIComponent(token ?? "")}`}
+              target="_blank"
+              className="inline-flex w-full min-h-11 items-center justify-center gap-2 rounded-xl border border-border/80 bg-card px-4 text-xs font-semibold text-foreground shadow-xs hover:bg-muted/50 transition-colors"
+            >
+              <svg className="h-4 w-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Download estimate PDF
+            </Link>
+          </div>
+        </section>
+
+        {/* CHANGE ORDERS */}
+        {allChangeOrders.length > 0 && (
+          <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm space-y-3">
+            <div>
+              <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Change Orders</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Additional work proposed after the original estimate. Approved items update the contract total automatically.
+              </p>
+            </div>
+            <div className="space-y-3 pt-1">
+              {allChangeOrders.map((co) => (
+                <ChangeOrderApprovalCard key={co.id} token={token ?? ""} changeOrder={co} />
+              ))}
+            </div>
+          </section>
         )}
 
-        <div className="mt-4 overflow-x-auto rounded-xl border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50">
-              <tr>
-                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Item</th>
-                <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Qty</th>
-                <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {lineItems.length === 0 ? (
-                <tr><td colSpan={3} className="px-3 py-6 text-center text-sm text-muted-foreground">No items listed.</td></tr>
-              ) : lineItems.map((item) => (
-                <tr key={item.id}>
-                  <td className="px-3 py-2">
-                    <div className="font-medium text-foreground">{item.name}</div>
-                    {item.description && <div className="text-xs text-muted-foreground">{item.description}</div>}
-                  </td>
-                  <td className="px-3 py-2 text-right text-muted-foreground">{item.quantity ?? 0}</td>
-                  <td className="px-3 py-2 text-right font-medium text-foreground">{money(item.total ?? 0)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {/* INVOICES SECTION */}
+        {invoices.length > 0 && (
+          <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm space-y-4">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Invoices</h2>
+            <div className="space-y-3">
+              {invoices.map((inv) => {
+                const pays = inv.payments ?? [];
+                const paid = pays.reduce((s, p) => s + (p.amount ?? 0), 0);
+                const invTotal = inv.total ?? calculateInvoiceTotal(inv.subtotal ?? 0, inv.tax ?? 0);
+                const balance = calculateRemainingBalance(invTotal, paid);
+                const status = deriveInvoiceStatus({
+                  lifecycleStatus: "sent",
+                  total: invTotal,
+                  amountPaid: paid,
+                  dueDate: inv.due_date,
+                  today,
+                });
+                
+                const isPaidInFull = status === "paid";
+                
+                return (
+                  <div key={inv.id} className="rounded-xl border border-border/60 bg-muted/20 p-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-mono text-xs font-bold text-foreground">
+                        #{inv.invoice_number ?? inv.id.slice(0, 8)}
+                      </span>
+                      <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                        isPaidInFull 
+                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20" 
+                          : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                      }`}>
+                        {status.replace(/_/g, " ")}
+                      </span>
+                    </div>
 
-        <div className="mt-3 space-y-1 rounded-xl bg-muted/50 px-4 py-3 text-sm">
-          <div className="flex justify-between text-muted-foreground"><span>Estimate total</span><span>{money(estimateTotal)}</span></div>
-          {approvedChangeOrderRevenue !== 0 && (
-            <div className="flex justify-between text-muted-foreground">
-              <span>Approved change orders</span><span>{money(approvedChangeOrderRevenue)}</span>
+                    <div className="text-[11px] text-muted-foreground flex items-center gap-2">
+                      <span>Issued: {inv.issue_date ?? "—"}</span>
+                      <span>·</span>
+                      <span>Due: {inv.due_date ?? "—"}</span>
+                    </div>
+
+                    <div className="space-y-1 text-xs bg-card p-3 rounded-lg border border-border/40">
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>Total</span>
+                        <span className="font-medium text-foreground">{money(invTotal)}</span>
+                      </div>
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>Paid</span>
+                        <span className="font-medium text-emerald-600 dark:text-emerald-400">−{money(paid)}</span>
+                      </div>
+                      <div className="flex justify-between border-t border-border/60 pt-1.5 font-bold text-foreground text-sm">
+                        <span>Balance due</span>
+                        <span className="text-primary">{money(balance)}</span>
+                      </div>
+                    </div>
+
+                    {inv.customer_token && (
+                      <div className="flex flex-wrap items-center gap-3 pt-1">
+                        <Link
+                          href={`/invoice/${inv.id}?token=${encodeURIComponent(inv.customer_token)}`}
+                          className="inline-flex min-h-9 items-center text-xs font-semibold text-primary hover:underline"
+                        >
+                          View invoice &rarr;
+                        </Link>
+                        <Link
+                          href={`/api/invoices/${inv.id}/pdf?customerToken=${encodeURIComponent(inv.customer_token)}`}
+                          target="_blank"
+                          className="inline-flex min-h-9 items-center text-xs font-semibold text-muted-foreground hover:text-foreground"
+                        >
+                          Download PDF
+                        </Link>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          )}
-          <div className="flex justify-between border-t border-border pt-1 text-base font-bold text-foreground">
-            <span>Contract total</span><span>{money(contractTotal)}</span>
+          </section>
+        )}
+
+        {/* PAYMENT INSTRUCTIONS */}
+        {company.payment_instructions && (
+          <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm space-y-2">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Payment Instructions</h2>
+            <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed bg-muted/40 p-3 rounded-xl border border-border/40">
+              {company.payment_instructions}
+            </p>
+          </section>
+        )}
+
+        {/* SIGNATURE / APPROVAL SECTION */}
+        <section className={`rounded-2xl border p-5 shadow-sm transition-colors ${
+          isSigned 
+            ? "border-emerald-500/30 bg-emerald-500/[0.02]" 
+            : "border-border/60 bg-card"
+        }`}>
+          <div className="mb-3">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              {isSigned ? "Approval Status" : "Authorize Estimate"}
+            </h2>
           </div>
-        </div>
-
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Link
-            href={`/api/estimates/${estimate.id}/pdf?customerToken=${encodeURIComponent(token ?? "")}`}
-            target="_blank"
-            className="inline-flex min-h-11 items-center rounded-lg border border-input px-4 text-sm font-medium text-foreground hover:bg-muted"
-          >
-            Download estimate PDF
-          </Link>
-        </div>
-      </section>
-
-      {/* ---------------- SIGN ---------------- */}
-      <section className="mt-6 rounded-xl border border-border p-4">
-        <h2 className="mb-2 text-sm font-semibold text-foreground">
-          {isSigned ? "Your Approval" : "Approve This Estimate"}
-        </h2>
-        <SignEstimateForm
-          token={token ?? ""}
-          signedValue={estimate.signature?.value ?? null}
-          signedDate={estimate.signature?.date ?? null}
-        />
-      </section>
-
-      {/* ---------------- CHANGE ORDERS ---------------- */}
-      {allChangeOrders.length > 0 && (
-        <section className="mt-8">
-          <h2 className="text-sm font-semibold text-foreground">Change Orders</h2>
-          <p className="mb-2 text-xs text-muted-foreground">
-            Additional work proposed after the original estimate. Approved change orders are included in the contract total above.
-          </p>
-          <div className="space-y-3">
-            {allChangeOrders.map((co) => (
-              <ChangeOrderApprovalCard key={co.id} token={token ?? ""} changeOrder={co} />
-            ))}
-          </div>
+          <SignEstimateForm
+            token={token ?? ""}
+            signedValue={estimate.signature?.value ?? null}
+            signedDate={estimate.signature?.date ?? null}
+          />
         </section>
-      )}
 
-      {/* ---------------- INVOICES ---------------- */}
-      {invoices.length > 0 && (
-        <section className="mt-8">
-          <h2 className="mb-2 text-sm font-semibold text-foreground">Invoices</h2>
-          <div className="space-y-3">
-            {invoices.map((inv) => {
-              const pays = inv.payments ?? [];
-              const paid = pays.reduce((s, p) => s + (p.amount ?? 0), 0);
-              const invTotal = inv.total ?? calculateInvoiceTotal(inv.subtotal ?? 0, inv.tax ?? 0);
-              const balance = calculateRemainingBalance(invTotal, paid);
-              const status = deriveInvoiceStatus({
-                lifecycleStatus: "sent",
-                total: invTotal,
-                amountPaid: paid,
-                dueDate: inv.due_date,
-                today,
-              });
-              return (
-                <div key={inv.id} className="rounded-xl border border-border p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-medium text-foreground">#{inv.invoice_number ?? inv.id.slice(0, 8)}</span>
-                    <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold uppercase text-muted-foreground">
-                      {status.replace(/_/g, " ")}
-                    </span>
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    Issued {inv.issue_date ?? "—"} · Due {inv.due_date ?? "—"}
-                  </div>
-                  <div className="mt-2 space-y-0.5 text-sm">
-                    <div className="flex justify-between text-muted-foreground"><span>Total</span><span>{money(invTotal)}</span></div>
-                    <div className="flex justify-between text-muted-foreground"><span>Paid</span><span>−{money(paid)}</span></div>
-                    <div className="flex justify-between border-t border-border pt-1 font-semibold text-foreground">
-                      <span>Balance due</span><span>{money(balance)}</span>
-                    </div>
-                  </div>
-                  {inv.customer_token && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <Link
-                        href={`/invoice/${inv.id}?token=${encodeURIComponent(inv.customer_token)}`}
-                        className="inline-flex min-h-11 items-center text-sm font-medium text-primary hover:underline"
-                      >
-                        View invoice →
-                      </Link>
-                      <Link
-                        href={`/api/invoices/${inv.id}/pdf?customerToken=${encodeURIComponent(inv.customer_token)}`}
-                        target="_blank"
-                        className="inline-flex min-h-11 items-center text-sm font-medium text-primary hover:underline"
-                      >
-                        Download PDF
-                      </Link>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
+        {/* FOOTER */}
+        <footer className="pt-4 text-center text-xs text-muted-foreground space-y-1">
+          <p className="font-medium text-foreground">{company.company_name} {company.company_phone ? `· ${company.company_phone}` : ""}</p>
+          {company.footer_message && <p className="text-[11px]">{company.footer_message}</p>}
+        </footer>
 
-      {company.payment_instructions && (
-        <section className="mt-8">
-          <h2 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Payment Instructions</h2>
-          <p className="whitespace-pre-wrap text-sm text-muted-foreground">{company.payment_instructions}</p>
-        </section>
-      )}
-
-      <footer className="mt-10 border-t border-border pt-4 text-center text-xs text-muted-foreground">
-        <p>{company.company_name} · {company.company_phone}</p>
-        <p className="mt-1">{company.footer_message}</p>
-      </footer>
-    </main>
+      </main>
+    </div>
   );
 }

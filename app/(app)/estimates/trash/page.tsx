@@ -1,17 +1,11 @@
 "use client";
 
 /**
- * Deleted (soft-deleted) estimates — recovery view mirroring
- * app/(app)/projects/trash/page.tsx exactly. EstimateService.restore()
- * existed at the interface level but nothing in the UI ever called
- * it, and the main /estimates list's list() call always excludes
- * soft-deleted rows unless `includeDeleted` is passed. No new service
- * method — same list() contract every other estimate page already
- * uses.
+ * Deleted (soft-deleted) estimates — high-density compact mobile-friendly list with green accents.
  */
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft, RotateCcw, Trash2 } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -49,7 +43,6 @@ function TrashedEstimatesContent() {
   }, [estimateService, projectService, profile]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 
@@ -70,43 +63,112 @@ function TrashedEstimatesContent() {
     <PageContainer>
       <PageHeader
         title="Deleted Estimates"
-        description="Soft-deleted estimates — nothing here was permanently removed. Restore any of these to bring it back to the main Estimates list."
+        description="Soft-deleted estimates — restore any of these to bring it back to the main Estimates list."
         actions={
-          <Link href="/estimates" className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted">
-            <ArrowLeft className="size-3.5" /> Back to Estimates
+          <Link href="/estimates" className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-600/30 bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white shadow-xs hover:bg-emerald-700 transition-colors">
+            <ArrowLeft className="size-3.5" /> <span className="hidden sm:inline">Back to Estimates</span>
           </Link>
         }
       />
 
-      {error && <div className="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</div>}
+      {error && <div className="mb-2 rounded-lg bg-danger/10 px-3 py-1.5 text-xs text-danger">{error}</div>}
 
       {loading ? (
-        <div className="py-12 text-center text-sm text-muted-foreground">Loading…</div>
+        <div className="py-8 text-center text-xs text-muted-foreground">Loading…</div>
       ) : estimates.length === 0 ? (
         <EmptyState icon={Trash2} title="Nothing deleted" description="Deleted estimates will show up here, with a one-click restore." />
       ) : (
-        <ul className="divide-y divide-border rounded-xl border border-border">
-          {estimates.map((estimate) => (
-            <li key={estimate.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-              <div>
-                <div className="font-medium text-foreground">{estimate.title || estimate.estimateNumber || "Untitled estimate"}</div>
-                <div className="text-xs text-muted-foreground">
-                  {estimate.projectId ? projectsById[estimate.projectId]?.name ?? "Unknown project" : "No project"}
-                  {" · "}Deleted {estimate.deletedAt ? new Date(estimate.deletedAt).toLocaleDateString() : "—"}
+        <>
+          {/* Desktop & Tablet High-Density Compact Table */}
+          <div className="hidden overflow-x-auto rounded-lg border border-border bg-card sm:block shadow-xs">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/50 text-muted-foreground border-b border-border">
+                <tr>
+                  <th className="px-3 py-1.5 text-left font-semibold uppercase tracking-wider text-[10px]">Estimate Name / #</th>
+                  <th className="px-3 py-1.5 text-left font-semibold uppercase tracking-wider text-[10px]">Project</th>
+                  <th className="px-3 py-1.5 text-left font-semibold uppercase tracking-wider text-[10px]">Deleted Date</th>
+                  <th className="px-3 py-1.5 text-left font-semibold uppercase tracking-wider text-[10px]">Reason</th>
+                  <th className="px-3 py-1.5 text-right font-semibold uppercase tracking-wider text-[10px]">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {estimates.map((estimate) => (
+                  <tr key={estimate.id} className="hover:bg-muted/40 transition-colors">
+                    <td className="px-3 py-1.5">
+                      <span className="font-semibold text-foreground">
+                        {estimate.title?.trim() || "Untitled"}
+                      </span>
+                      <span className="text-muted-foreground ml-1.5 text-[11px]">
+                        ({estimate.estimateNumber ?? estimate.id.slice(0, 8)})
+                      </span>
+                    </td>
+                    <td className="px-3 py-1.5 text-foreground font-medium">
+                      {estimate.projectId ? projectsById[estimate.projectId]?.name ?? "Unknown project" : "No project"}
+                    </td>
+                    <td className="px-3 py-1.5 text-muted-foreground whitespace-nowrap">
+                      {estimate.deletedAt ? new Date(estimate.deletedAt).toLocaleDateString() : "—"}
+                    </td>
+                    <td className="px-3 py-1.5 text-muted-foreground italic truncate max-w-[140px]">
+                      {estimate.deleteReason ? `"${estimate.deleteReason}"` : "—"}
+                    </td>
+                    <td className="px-3 py-1.5 text-right whitespace-nowrap">
+                      <button
+                        type="button"
+                        disabled={restoringId === estimate.id}
+                        onClick={() => handleRestore(estimate)}
+                        className="inline-flex items-center gap-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0.5 text-[11px] font-medium shadow-xs disabled:opacity-50 transition-colors"
+                      >
+                        <RotateCcw className={`size-3 ${restoringId === estimate.id ? "animate-spin" : ""}`} />
+                        {restoringId === estimate.id ? "Restoring…" : "Restore"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile Ultra-Compact List Layout */}
+          <div className="space-y-1.5 sm:hidden">
+            {estimates.map((estimate) => (
+              <div key={estimate.id} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-xs">
+                <div className="min-w-0 space-y-0.5">
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <span className="font-semibold text-foreground truncate">
+                      {estimate.title?.trim() || "Untitled"}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground shrink-0">
+                      ({estimate.estimateNumber ?? estimate.id.slice(0, 6)})
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                    <span className="text-foreground font-medium truncate max-w-[120px]">
+                      {estimate.projectId ? projectsById[estimate.projectId]?.name ?? "Unknown project" : "No project"}
+                    </span>
+                    <span>·</span>
+                    <span>{estimate.deletedAt ? new Date(estimate.deletedAt).toLocaleDateString() : "—"}</span>
+                    {estimate.deleteReason && (
+                      <>
+                        <span>·</span>
+                        <span className="italic truncate max-w-[90px]">&ldquo;{estimate.deleteReason}&rdquo;</span>
+                      </>
+                    )}
+                  </div>
                 </div>
-                {estimate.deleteReason && <div className="mt-0.5 text-xs italic text-muted-foreground">"{estimate.deleteReason}"</div>}
+
+                <button
+                  type="button"
+                  disabled={restoringId === estimate.id}
+                  onClick={() => handleRestore(estimate)}
+                  className="inline-flex items-center gap-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 text-[11px] font-medium shadow-xs disabled:opacity-50 transition-colors shrink-0"
+                >
+                  <RotateCcw className={`size-3 ${restoringId === estimate.id ? "animate-spin" : ""}`} />
+                  {restoringId === estimate.id ? "…" : "Restore"}
+                </button>
               </div>
-              <button
-                type="button"
-                disabled={restoringId === estimate.id}
-                onClick={() => handleRestore(estimate)}
-                className="rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
-              >
-                {restoringId === estimate.id ? "Restoring…" : "Restore"}
-              </button>
-            </li>
-          ))}
-        </ul>
+            ))}
+          </div>
+        </>
       )}
     </PageContainer>
   );

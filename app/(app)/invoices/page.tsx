@@ -81,113 +81,299 @@ function InvoicesListContent() {
     });
   }, [invoices, statusFilter, search, sortKey, projectsById, clientsById]);
 
-  return (
-    <PageContainer>
-      <PageHeader
-        title="Invoices"
-        description="Bill clients and track what's owed."
-        actions={
-          <Link href="/invoices/new" className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-            <Plus className="size-4" /> New Invoice
-          </Link>
-        }
-      />
-
-      {error && <div className="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</div>}
-
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[180px] max-w-sm">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search invoice #, project, client…"
-            className="h-9 w-full rounded-lg border border-input bg-background pl-8 pr-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
-          />
-        </div>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-          className="h-9 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+return (
+  <PageContainer>
+    <PageHeader
+      title="Invoices"
+      description="Bill clients and track what's owed."
+      actions={
+        <Link
+          href="/invoices/new"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
         >
-          <option value="all">All statuses</option>
-          {STATUS_OPTIONS.map((s) => (
-            <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
-          ))}
-        </select>
-        <select
-          value={sortKey}
-          onChange={(e) => setSortKey(e.target.value as SortKey)}
-          className="h-9 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
-        >
-          <option value="createdAt">Newest first</option>
-          <option value="dueDate">Due date</option>
-          <option value="total">Total (high–low)</option>
-        </select>
+          <Plus className="size-4" /> New Invoice
+        </Link>
+      }
+    />
+
+    {error && (
+      <div className="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
+        {error}
+      </div>
+    )}
+
+    <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="relative flex-1 min-w-[180px] max-w-sm">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search invoice #, project, client…"
+          className="h-9 w-full rounded-lg border border-input bg-background pl-8 pr-3 text-sm"
+        />
       </div>
 
-      {loading ? (
-        <div className="py-12 text-center text-sm text-muted-foreground">Loading…</div>
-      ) : filtered.length === 0 ? (
-        <EmptyState
-          icon={Receipt}
-          title={invoices.length === 0 ? "No invoices yet" : "No invoices match your filters"}
-          description={invoices.length === 0 ? "Create one from an approved estimate, or bill a project directly." : "Try a different search or status filter."}
-        />
-      ) : (
-        <>
-          <div className="hidden overflow-x-auto rounded-xl border border-border sm:block">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50">
-                <tr>
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Invoice #</th>
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Project</th>
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Client</th>
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</th>
-                  <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total</th>
-                  <th className="hidden px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground md:table-cell">Due</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filtered.map((invoice) => (
-                  <tr key={invoice.id} className="hover:bg-muted/40">
-                    <td className="px-3 py-2.5">
-                      <Link href={`/invoices/${invoice.id}`} className="font-medium text-foreground hover:text-primary">
-                        {invoice.invoiceNumber || invoice.id.slice(0, 8)}
+
+      <select
+        value={statusFilter}
+        onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+        className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
+      >
+        <option value="all">All statuses</option>
+        {STATUS_OPTIONS.map((s) => (
+          <option key={s} value={s}>
+            {s.replace(/_/g, " ")}
+          </option>
+        ))}
+      </select>
+
+
+      <select
+        value={sortKey}
+        onChange={(e) => setSortKey(e.target.value as SortKey)}
+        className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
+      >
+        <option value="createdAt">Newest first</option>
+        <option value="dueDate">Due date</option>
+        <option value="total">Total (high–low)</option>
+      </select>
+    </div>
+
+
+    {loading ? (
+      <div className="py-12 text-center text-sm text-muted-foreground">
+        Loading…
+      </div>
+    ) : filtered.length === 0 ? (
+      <EmptyState
+        icon={Receipt}
+        title={invoices.length === 0 ? "No invoices yet" : "No invoices match your filters"}
+        description="Create an invoice from an approved estimate."
+      />
+    ) : (
+      <>
+        {/* DESKTOP */}
+        <div className="hidden overflow-x-auto rounded-xl border border-border sm:block">
+          <table className="w-full text-sm">
+
+            <thead className="bg-muted/50">
+              <tr>
+                {[
+                  "Invoice #",
+                  "Project",
+                  "Client",
+                  "Status",
+                  "Amount",
+                  "Due",
+                ].map((title) => (
+                  <th
+                    key={title}
+                    className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                  >
+                    {title}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+
+
+            <tbody className="divide-y divide-border">
+
+              {filtered.map((invoice) => {
+
+                const accent =
+                  invoice.status === "paid"
+                    ? "border-l-emerald-500"
+                    : invoice.status === "partially_paid"
+                    ? "border-l-amber-500"
+                    : invoice.status === "overdue"
+                    ? "border-l-rose-500"
+                    : "border-l-slate-400";
+
+
+                return (
+                  <tr
+                    key={invoice.id}
+                    className={`
+                      border-l-4
+                      ${accent}
+                      hover:bg-muted/30
+                      transition
+                    `}
+                  >
+
+                    <td className="px-4 py-3">
+                      <Link
+                        href={`/invoices/${invoice.id}`}
+                        className="font-semibold text-foreground hover:text-primary"
+                      >
+                        {invoice.invoiceNumber || invoice.id.slice(0,8)}
                       </Link>
                     </td>
-                    <td className="px-3 py-2.5 text-muted-foreground">{projectsById[invoice.projectId]?.name ?? "—"}</td>
-                    <td className="px-3 py-2.5 text-muted-foreground">{invoice.clientId ? clientsById[invoice.clientId]?.name ?? "—" : "—"}</td>
-                    <td className="px-3 py-2.5">
-                      <Badge tone={INVOICE_STATUS_TONE[invoice.status]}>{invoice.status.replace(/_/g, " ")}</Badge>
+
+
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {projectsById[invoice.projectId]?.name ?? "—"}
                     </td>
-                    <td className="px-3 py-2.5 text-right font-medium text-foreground">{formatMoney(invoice.total)}</td>
-                    <td className="hidden px-3 py-2.5 text-xs text-muted-foreground md:table-cell">{invoice.dueDate ?? "—"}</td>
+
+
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {invoice.clientId
+                        ? clientsById[invoice.clientId]?.name ?? "—"
+                        : "—"}
+                    </td>
+
+
+                    <td className="px-4 py-3">
+                      <Badge tone={INVOICE_STATUS_TONE[invoice.status]}>
+                        {invoice.status.replace(/_/g," ")}
+                      </Badge>
+                    </td>
+
+
+                    <td className="px-4 py-3 text-right font-bold text-foreground">
+                      {formatMoney(invoice.total)}
+                    </td>
+
+
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {invoice.dueDate ?? "—"}
+                    </td>
+
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                );
+              })}
+
+            </tbody>
+
+          </table>
+        </div>
+
+
+
+        {/* MOBILE */}
+        {/* MOBILE */}
+<div className="space-y-2 sm:hidden">
+  {filtered.map((invoice) => {
+
+    const style =
+      invoice.status === "paid"
+        ? {
+            strip: "bg-emerald-800",
+            amount: "text-emerald-700 dark:text-emerald-400",
+          }
+        : invoice.status === "partially_paid"
+        ? {
+            strip: "bg-amber-700",
+            amount: "text-amber-700 dark:text-amber-400",
+          }
+        : invoice.status === "overdue"
+        ? {
+            strip: "bg-rose-700",
+            amount: "text-rose-700 dark:text-rose-400",
+          }
+        : {
+            strip: "bg-slate-700",
+            amount: "text-foreground",
+          };
+
+
+    return (
+      <Link
+        key={invoice.id}
+        href={`/invoices/${invoice.id}`}
+        className="
+          block
+          overflow-hidden
+          rounded-lg
+          border
+          border-border
+          bg-card
+          shadow-sm
+          transition
+          hover:shadow-md
+        "
+      >
+
+        {/* Header */}
+        <div className={`${style.strip} px-3 py-2`}>
+          <div className="flex items-center justify-between gap-3">
+
+            <div className="min-w-0">
+              <div className="truncate text-sm font-bold uppercase text-white">
+                {invoice.invoiceNumber || invoice.id.slice(0, 8)}
+              </div>
+
+              <div className="truncate text-xs uppercase text-emerald-100">
+                {projectsById[invoice.projectId]?.name ?? "NO PROJECT"}
+              </div>
+            </div>
+
+
+            <div className="shrink-0 text-right">
+
+              <div className="text-base font-bold text-white">
+                {formatMoney(invoice.total)}
+              </div>
+
+              <div className="text-[10px] font-semibold uppercase text-emerald-100">
+                {invoice.status.replace(/_/g, " ")}
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+
+
+        {/* Body */}
+        <div className="px-3 py-2.5">
+
+          <div className="flex items-center justify-between">
+
+            <div className="truncate text-sm font-medium text-foreground">
+              {invoice.clientId
+                ? clientsById[invoice.clientId]?.name ?? "NO CLIENT"
+                : "NO CLIENT"}
+            </div>
+
+
+            <div className={`text-sm font-bold ${style.amount}`}>
+              {invoice.status === "paid"
+                ? "PAID"
+                : invoice.status === "partially_paid"
+                ? "BALANCE DUE"
+                : invoice.status === "overdue"
+                ? "OVERDUE"
+                : "OPEN"}
+            </div>
+
           </div>
 
-          <div className="space-y-2 sm:hidden">
-            {filtered.map((invoice) => (
-              <Link key={invoice.id} href={`/invoices/${invoice.id}`} className="block rounded-xl border border-border bg-card p-3 hover:border-primary/40">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium text-foreground">{invoice.invoiceNumber || invoice.id.slice(0, 8)}</span>
-                  <Badge tone={INVOICE_STATUS_TONE[invoice.status]}>{invoice.status.replace(/_/g, " ")}</Badge>
-                </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {projectsById[invoice.projectId]?.name ?? "—"} · {invoice.clientId ? clientsById[invoice.clientId]?.name ?? "—" : "No client"}
-                </div>
-                <div className="mt-1 text-sm font-semibold text-foreground">{formatMoney(invoice.total)}</div>
-              </Link>
-            ))}
-          </div>
-        </>
-      )}
-    </PageContainer>
-  );
+
+          {invoice.dueDate && (
+            <div className="mt-2 flex justify-between border-t border-border pt-2 text-xs uppercase text-muted-foreground">
+              <span>DUE</span>
+              <span className="font-medium text-foreground">
+                {invoice.dueDate}
+              </span>
+            </div>
+          )}
+
+        </div>
+
+      </Link>
+    );
+  })}
+</div>
+
+      </>
+    )}
+
+  </PageContainer>
+);
 }
 
 export default function InvoicesPage() {

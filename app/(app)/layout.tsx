@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 
 /**
  * Shell for every authenticated route: desktop Sidebar + AppHeader
@@ -37,7 +38,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <AppHeader />
-        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+       <main className="flex-1 px-4 py-6 pb-24 sm:px-6 lg:px-8">
+        {children}
+      </main>
+
+      <MobileBottomNav />
       </div>
     </div>
   );

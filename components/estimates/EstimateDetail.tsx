@@ -231,41 +231,43 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
   return (
     <PageContainer>
       {/* Top Toolbar / Header */}
-      <div className="flex flex-col gap-4 pb-4 sm:flex-row sm:items-center sm:justify-between border-b border-border/60 mb-6">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold tracking-tight text-foreground capitalize">{estimate.title || "Untitled Estimate"}</h1>
-            <Badge tone={STATUS_TONE[estimate.status]}>{estimate.status.replace(/_/g, " ")}</Badge>
-          </div>
-          <p className="text-sm text-muted-foreground mt-0.5">{project?.name}  {estimate.estimateNumber ?? estimate.id.slice(0, 8)}</p>
+<div className="flex items-center justify-between gap-3 pb-3 mb-4 border-b border-border/60">
+        <div className="min-w-0 flex items-center gap-2">
+          <h1 className="text-base sm:text-lg font-bold tracking-tight text-foreground capitalize truncate">{estimate.title || "Untitled Estimate"}</h1>
+          <Badge tone={STATUS_TONE[estimate.status]} className="shrink-0">{estimate.status.replace(/_/g, " ")}</Badge>
+          <span className="hidden md:inline text-xs text-muted-foreground truncate">· {project?.name} {estimate.estimateNumber ?? estimate.id.slice(0, 8)}</span>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={() => expensesPanelRef.current?.openNewExpense()}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
+            className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
+            title="Expense"
           >
             <Receipt className="size-3.5" />
-            Expense
+            <span className="hidden sm:inline">Expense</span>
           </button>
           <button
             type="button"
             onClick={() => paymentsPanelRef.current?.openNewPayment()}
             disabled={invoices.length === 0 || !canEditPayments}
-            title={invoices.length === 0 ? "Sign estimate to generate invoice." : undefined}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            title={invoices.length === 0 ? "Sign estimate to generate invoice." : "Payment"}
+            className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50 transition-colors"
           >
             <Wallet className="size-3.5" />
-            Payment
+            <span className="hidden sm:inline">Payment</span>
           </button>
-          <button type="button" onClick={handleDownloadPdf} className="inline-flex items-center gap-1.5 rounded-lg border border-input bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors">
-            <Download className="size-3.5" /> PDF
+          <button type="button" onClick={handleDownloadPdf} className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors" title="PDF">
+            <Download className="size-3.5" />
+            <span className="hidden sm:inline">PDF</span>
           </button>
-          <Link href={`${editBasePath}/${estimate.id}/edit`} className="inline-flex items-center gap-1.5 rounded-lg border border-input bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors">
-            <Pencil className="size-3.5" /> Edit
+          <Link href={`${editBasePath}/${estimate.id}/edit`} className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors" title="Edit">
+            <Pencil className="size-3.5" />
+            <span className="hidden sm:inline">Edit</span>
           </Link>
-          <button type="button" onClick={handleDelete} className="inline-flex items-center gap-1.5 rounded-lg border border-input bg-card px-3 py-1.5 text-xs font-medium text-danger hover:bg-danger/10 transition-colors">
-            <Trash2 className="size-3.5" /> Delete
+          <button type="button" onClick={handleDelete} className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-danger hover:bg-danger/10 transition-colors" title="Delete">
+            <Trash2 className="size-3.5" />
+            <span className="hidden sm:inline">Delete</span>
           </button>
         </div>
       </div>
@@ -279,24 +281,24 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
           the exact same figure EstimateProfitSummaryCard's own "Total
           job cost" row shows further down — one number, shown twice at
           different points of emphasis, not two calculations. */}
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-lg border border-border/60 bg-card px-3.5 py-3">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Estimate Total</div>
-          <div className="mt-0.5 text-lg font-bold text-foreground">{formatMoney(estimate.total)}</div>
+<     div className="mb-4 grid grid-cols-4 gap-2 sm:gap-3">
+        <div className="rounded-lg border border-border/60 bg-card px-2.5 py-2 sm:px-3.5 sm:py-2.5">
+          <div className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-muted-foreground truncate">Estimate Total</div>
+          <div className="mt-0.5 text-sm sm:text-lg font-bold text-foreground truncate">{formatMoney(estimate.total)}</div>
         </div>
-        <div className="rounded-lg border border-border/60 bg-card px-3.5 py-3">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Project Total Cost</div>
-          <div className="mt-0.5 text-lg font-bold text-foreground">{financials ? formatMoney(financials.totalExpenses) : "—"}</div>
+        <div className="rounded-lg border border-border/60 bg-card px-2.5 py-2 sm:px-3.5 sm:py-2.5">
+          <div className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-muted-foreground truncate">Project Total Cost</div>
+          <div className="mt-0.5 text-sm sm:text-lg font-bold text-foreground truncate">{financials ? formatMoney(financials.totalExpenses) : "—"}</div>
         </div>
-        <div className="rounded-lg border border-border/60 bg-card px-3.5 py-3">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Net Profit</div>
-          <div className={`mt-0.5 text-lg font-bold ${financials ? (financials.netProfit >= 0 ? "text-success" : "text-danger") : "text-foreground"}`}>
+        <div className="rounded-lg border border-border/60 bg-card px-2.5 py-2 sm:px-3.5 sm:py-2.5">
+          <div className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-muted-foreground truncate">Net Profit</div>
+          <div className={`mt-0.5 text-sm sm:text-lg font-bold truncate ${financials ? (financials.netProfit >= 0 ? "text-success" : "text-danger") : "text-foreground"}`}>
             {financials ? formatMoney(financials.netProfit) : "—"}
           </div>
         </div>
-        <div className="rounded-lg border border-border/60 bg-card px-3.5 py-3">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Status</div>
-          <div className={`mt-0.5 text-lg font-bold ${financials ? (financials.netProfit >= 0 ? "text-success" : "text-danger") : "text-foreground"}`}>
+        <div className="rounded-lg border border-border/60 bg-card px-2.5 py-2 sm:px-3.5 sm:py-2.5">
+          <div className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-muted-foreground truncate">Status</div>
+          <div className={`mt-0.5 text-sm sm:text-lg font-bold truncate ${financials ? (financials.netProfit >= 0 ? "text-success" : "text-danger") : "text-foreground"}`}>
             {financials ? (financials.netProfit >= 0 ? "Profit" : "Loss") : "—"}
           </div>
         </div>
@@ -308,44 +310,30 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
         <div className="space-y-6 lg:col-span-8">
           
           {/* Consolidated Section Card: Project Info, Line Items, and Change Orders */}
-          <section className="rounded-xl border border-border bg-card p-5 shadow-xs space-y-6">
+<section className="rounded-2xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950 p-4 sm:p-6 shadow-md space-y-6 text-emerald-950 dark:text-emerald-50">
             
-            {/* Quick Info Bar / Project Info
-                Lifted out of the plain-heading treatment it shared with
-                Line Items below: in light mode --card and --background
-                are BOTH #ffffff, so a card on the page had only a
-                hairline border to distinguish it and this section read
-                as part of the wall of white. It now sits on --muted
-                (#f4f4f5 light / #27272a dark — a real step away from
-                the card in either theme) behind a primary accent rail,
-                so it registers as the estimate's context header rather
-                than one more list. Same fields, same links, same data —
-                only the hierarchy changed: the project name is the
-                headline, the client reads as a relationship beneath it,
-                and the remaining facts drop to a secondary meta row. */}
-            <div className="-mx-5 -mt-5 rounded-t-xl border-b border-border bg-muted/70 px-5 py-4 sm:border-l-4 sm:border-l-primary sm:pl-[calc(1.25rem-4px)]">
-              <h2 className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                <FolderOpen className="size-3.5 text-primary" /> Project Details
+            {/* Quick Info Bar / Project Details — Compact mobile layout with clear hierarchy */}
+            <div className="-mx-4 -mt-4 sm:-mx-6 sm:-mt-6 rounded-t-2xl border-b border-emerald-200 dark:border-emerald-800 bg-emerald-100/70 dark:bg-emerald-900/90 px-4 py-3.5 sm:px-6 sm:py-5   sm:pl-[calc(1.5rem-6px)]">
+              <h2 className="flex items-center gap-1.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                <FolderOpen className="size-3.5 sm:size-4 text-emerald-700 dark:text-emerald-400" /> Project Details
               </h2>
 
-              {/* Primary focus: which project this estimate belongs to. */}
-              <div className="mt-2 min-w-0">
-                <div className="text-xl font-bold leading-tight text-foreground break-words sm:text-2xl">
+              <div className="mt-1.5 sm:mt-2.5 min-w-0">
+                <div className="text-xl sm:text-2xl lg:text-3xl font-extrabold leading-tight text-emerald-950 dark:text-white break-words">
                   {project ? (
-                    <Link href={`/projects/${project.id}`} className="hover:text-primary hover:underline">
+                    <Link href={`/projects/${project.id}`} className="hover:text-emerald-700 dark:hover:text-emerald-300 hover:underline">
                       {project.name}
                     </Link>
                   ) : (
-                    <span className="text-muted-foreground">No project</span>
+                    <span className="text-emerald-600 dark:text-emerald-400">No project</span>
                   )}
                 </div>
-                {/* The project -> client relationship, as one scannable
-                    line instead of two unrelated grid cells. */}
-                <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
-                  <User className="size-3.5 shrink-0" />
+                
+                <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs sm:text-sm text-emerald-800 dark:text-emerald-200">
+                  <User className="size-3.5 shrink-0 text-emerald-700 dark:text-emerald-400" />
                   <span>for</span>
                   {client ? (
-                    <Link href={`/clients/${client.id}`} className="font-semibold text-foreground hover:text-primary hover:underline">
+                    <Link href={`/clients/${client.id}`} className="font-semibold text-emerald-950 dark:text-white hover:text-emerald-700 dark:hover:text-emerald-300 hover:underline">
                       {client.name}
                     </Link>
                   ) : (
@@ -354,35 +342,29 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
                 </div>
               </div>
 
-              {/* Secondary facts. */}
-              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-border/70 pt-3 sm:grid-cols-3">
+              <dl className="mt-3 sm:mt-4 grid grid-cols-3 gap-x-3 gap-y-2 border-t border-emerald-200 dark:border-emerald-800/80 pt-2.5 sm:pt-4">
                 <div className="min-w-0">
-                  <dt className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Title</dt>
-                  {/* Guard on the TITLE, not on `estimate` (which is
-                      always present here): estimates created before the
-                      title became required have none, and the old check
-                      rendered an empty cell that read as a broken
-                      field rather than an absent value. */}
-                  <dd className="mt-0.5 truncate text-sm font-medium text-foreground">
+                  <dt className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Title</dt>
+                  <dd className="mt-0.5 truncate text-xs sm:text-sm font-medium text-emerald-950 dark:text-white">
                     {estimate.title?.trim() ? (
-                      <Link href={`/estimates/${estimate.id}`} className="hover:text-primary hover:underline">{estimate.title}</Link>
+                      <Link href={`/estimates/${estimate.id}`} className="hover:text-emerald-700 dark:hover:text-emerald-300 hover:underline">{estimate.title}</Link>
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <span className="text-emerald-600 dark:text-emerald-400">—</span>
                     )}
                   </dd>
                 </div>
                 <div className="min-w-0">
-                  <dt className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Created</dt>
-                  <dd className="mt-0.5 text-sm font-medium text-foreground">{new Date(estimate.createdAt).toLocaleDateString()}</dd>
+                  <dt className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Created</dt>
+                  <dd className="mt-0.5 text-xs sm:text-sm font-medium text-emerald-950 dark:text-white">{new Date(estimate.createdAt).toLocaleDateString()}</dd>
                 </div>
                 <div className="min-w-0">
-                  <dt className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Type</dt>
-                  <dd className="mt-0.5 text-sm font-medium capitalize text-foreground">{estimate.estimateType || "Standard"}</dd>
+                  <dt className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Type</dt>
+                  <dd className="mt-0.5 text-xs sm:text-sm font-medium capitalize text-emerald-950 dark:text-white">{estimate.estimateType || "Standard"}</dd>
                 </div>
                 {estimate.description && (
-                  <div className="col-span-full border-t border-border/70 pt-2">
-                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Description</dt>
-                    <dd className="mt-0.5 whitespace-pre-wrap text-xs text-foreground/80">{estimate.description}</dd>
+                  <div className="col-span-full border-t border-emerald-200 dark:border-emerald-800/80 pt-2 sm:pt-3">
+                    <dt className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Description</dt>
+                    <dd className="mt-0.5 whitespace-pre-wrap text-[11px] sm:text-xs text-emerald-900/80 dark:text-emerald-100/90 leading-relaxed break-words">{estimate.description}</dd>
                   </div>
                 )}
               </dl>
@@ -390,9 +372,9 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
 
             {/* Roof Areas (If applicable) */}
             {estimate.estimateType === "roofing" && roofingAreas.length > 0 && (
-              <div className="pt-4 border-t border-border/60">
-                <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  <Home className="size-4 text-primary" /> Roof Areas ({roofingAreas.length})
+              <div className="pt-2 border-t border-emerald-200 dark:border-emerald-800/60">
+                <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                  <Home className="size-4 text-emerald-700 dark:text-emerald-400" /> Roof Areas ({roofingAreas.length})
                 </h3>
                 <div className="space-y-4">
                   {roofingAreas.map((area, idx) => {
@@ -404,54 +386,39 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
               </div>
             )}
 
-            {/* ============================================================
-                THE SCOPE & PRICING GROUP — Line Items + Change Orders.
-                ============================================================
-                These two belong together: change orders are amendments
-                to the line items above them, and their money lands in
-                the same "Revised total" the totals box shows. They used
-                to be two sibling blocks separated only by a top border,
-                spaced identically to every other section, so they read
-                as two unrelated lists that happened to be adjacent.
+            {/* THE SCOPE & PRICING GROUP — Structured in a high-contrast container */}
+            <div className="overflow-hidden rounded-xl border border-emerald-200 dark:border-emerald-800 bg-white/60 dark:bg-emerald-900/30 space-y-5 p-1">
 
-                Now they share ONE bordered container on a single muted
-                surface, so the eye takes the whole thing as one unit.
-                Change Orders stays CONNECTED (same container, divided by
-                a full-bleed border, no gap between them) but is tinted a
-                step darker and carries its own icon header, so it is
-                still clearly a distinct sub-section rather than more
-                line items. Content, links and figures are unchanged.
-                ============================================================ */}
-            <div className="overflow-hidden rounded-xl border border-border bg-muted/40">
-
-            {/* Line Items & Totals */}
-            <div className="p-4">
-              <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">Line Items</h2>
+            {/* Line Items & Totals Content Area */}
+            <div className="p-3 sm:p-4 bg-emerald-100/40 dark:bg-emerald-950/40 rounded-lg">
+              <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+                Line Items
+              </h2>
               {estimate.lineItems.length === 0 ? (
                 <EmptyState title="No line items" description="Edit this estimate to add items." />
               ) : (
-                <div className="overflow-x-auto rounded-lg border border-border/80 bg-card">
-                  <table className="w-full text-xs">
-                    <thead className="bg-muted/60 text-muted-foreground border-b border-border">
+                <div className="overflow-x-auto rounded-lg border border-emerald-200 dark:border-emerald-800/80 bg-white dark:bg-emerald-950">
+                  <table className="w-full text-xs text-emerald-950 dark:text-emerald-100">
+                    <thead className="bg-emerald-100/80 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border-b border-emerald-200 dark:border-emerald-800">
                       <tr>
-                        <th className="px-3 py-2.5 text-left font-semibold uppercase tracking-wider">Item</th>
-                        <th className="px-3 py-2.5 text-center font-semibold uppercase tracking-wider">Qty</th>
-                        <th className="px-3 py-2.5 text-center font-semibold uppercase tracking-wider">Unit</th>
-                        <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wider">Price</th>
-                        <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wider">Total</th>
+                        <th className="px-3.5 py-3 text-left font-semibold uppercase tracking-wider">Item</th>
+                        <th className="px-3.5 py-3 text-center font-semibold uppercase tracking-wider">Qty</th>
+                        <th className="px-3.5 py-3 text-center font-semibold uppercase tracking-wider">Unit</th>
+                        <th className="px-3.5 py-3 text-right font-semibold uppercase tracking-wider">Price</th>
+                        <th className="px-3.5 py-3 text-right font-semibold uppercase tracking-wider">Total</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-border/60">
+                    <tbody className="divide-y divide-emerald-100 dark:divide-emerald-900/80">
                       {estimate.lineItems.map((item) => (
-                        <tr key={item.id} className="hover:bg-muted/30 transition-colors">
-                          <td className="px-3 py-2.5">
-                            <div className="font-semibold text-foreground">{item.name}</div>
-                            {item.description && <div className="text-[11px] text-muted-foreground">{item.description}</div>}
+                        <tr key={item.id} className="hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors">
+                          <td className="px-3.5 py-3">
+                            <div className="font-semibold text-emerald-950 dark:text-white">{item.name}</div>
+                            {item.description && <div className="text-[11px] text-emerald-700/80 dark:text-emerald-300/80">{item.description}</div>}
                           </td>
-                          <td className="px-3 py-2.5 text-center text-muted-foreground">{item.quantity}</td>
-                          <td className="px-3 py-2.5 text-center text-muted-foreground">{item.unit ?? "—"}</td>
-                          <td className="px-3 py-2.5 text-right text-muted-foreground">{formatMoney(item.unitPrice)}</td>
-                          <td className="px-3 py-2.5 text-right font-semibold text-foreground">{formatMoney(item.total)}</td>
+                          <td className="px-3.5 py-3 text-center text-emerald-800 dark:text-emerald-200">{item.quantity}</td>
+                          <td className="px-3.5 py-3 text-center text-emerald-800 dark:text-emerald-200">{item.unit ?? "—"}</td>
+                          <td className="px-3.5 py-3 text-right text-emerald-800 dark:text-emerald-200">{formatMoney(item.unitPrice)}</td>
+                          <td className="px-3.5 py-3 text-right font-semibold text-emerald-950 dark:text-white">{formatMoney(item.total)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -459,56 +426,51 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
                 </div>
               )}
 
-              {/* Compact Financial Totals Breakdown. On bg-card with a
-                  border now: its old bg-muted/40 was the same value as
-                  the group surface it now sits on, so it would have
-                  vanished into it. */}
-              <div className="mt-4 rounded-lg border border-border/80 bg-card p-3 space-y-1.5 text-xs">
-                <div className="flex justify-between text-muted-foreground"><span>Subtotal</span><span>{formatMoney(estimate.subtotal)}</span></div>
-                {estimate.markup !== 0 && <div className="flex justify-between text-muted-foreground"><span>Markup</span><span>{formatMoney(estimate.markup)}</span></div>}
-                {estimate.discount !== 0 && <div className="flex justify-between text-muted-foreground"><span>Discount</span><span>-{formatMoney(estimate.discount)}</span></div>}
-                {estimate.taxRate !== 0 && <div className="flex justify-between text-muted-foreground"><span>Tax ({estimate.taxRate}%)</span></div>}
-                <div className="flex justify-between border-t border-border/80 pt-2 font-bold text-sm text-foreground"><span>Total</span><span>{formatMoney(estimate.total)}</span></div>
-                {estimate.depositAmount > 0 && <div className="flex justify-between text-muted-foreground pt-1"><span>Requested deposit</span><span>{formatMoney(estimate.depositAmount)}</span></div>}
+              {/* Standout Financial Totals Breakdown */}
+              <div className="mt-4 rounded-xl border border-emerald-200 dark:border-emerald-700/80 bg-white dark:bg-emerald-900/70 p-3 sm:p-4 space-y-2 text-xs shadow-xs dark:shadow-inner">
+                <div className="flex justify-between text-emerald-800 dark:text-emerald-200"><span>Subtotal</span><span className="text-emerald-950 dark:text-white">{formatMoney(estimate.subtotal)}</span></div>
+                {estimate.markup !== 0 && <div className="flex justify-between text-emerald-800 dark:text-emerald-200"><span>Markup</span><span className="text-emerald-950 dark:text-white">{formatMoney(estimate.markup)}</span></div>}
+                {estimate.discount !== 0 && <div className="flex justify-between text-emerald-800 dark:text-emerald-200"><span>Discount</span><span className="text-emerald-950 dark:text-white">-{formatMoney(estimate.discount)}</span></div>}
+                {estimate.taxRate !== 0 && <div className="flex justify-between text-emerald-800 dark:text-emerald-200"><span>Tax ({estimate.taxRate}%)</span></div>}
+                <div className="flex justify-between border-t border-emerald-200 dark:border-emerald-700 pt-2.5 font-bold text-sm text-emerald-950 dark:text-white"><span>Total</span><span>{formatMoney(estimate.total)}</span></div>
+                {estimate.depositAmount > 0 && <div className="flex justify-between text-emerald-800 dark:text-emerald-200 pt-1"><span>Requested deposit</span><span className="text-emerald-950 dark:text-white">{formatMoney(estimate.depositAmount)}</span></div>}
                 {hasApprovedChangeOrders && (
                   <>
-                    <div className="flex justify-between text-muted-foreground">
+                    <div className="flex justify-between text-emerald-800 dark:text-emerald-200 pt-1">
                       <span>Approved change orders</span>
-                      <span>{formatMoney(approvedChangeOrderRevenue)}</span>
+                      <span className="text-emerald-950 dark:text-white">{formatMoney(approvedChangeOrderRevenue)}</span>
                     </div>
-                    <div className="flex justify-between border-t border-border/80 pt-1 font-bold text-primary">
+                    <div className="flex justify-between border-t border-emerald-200 dark:border-emerald-700 pt-2 font-bold text-emerald-700 dark:text-emerald-300 text-sm">
                       <span>Revised total</span>
-                      <span>{formatMoney(revisedTotal)}</span>
+                      <span className="text-emerald-950 dark:text-white">{formatMoney(revisedTotal)}</span>
                     </div>
                   </>
                 )}
               </div>
             </div>
 
-            {/* Change Orders — attached directly to Line Items above:
-                same container, full-bleed divider, no gap. Tinted a
-                step darker so it still reads as its own sub-section. */}
-            <div className="border-t border-border bg-muted/70 p-4">
+            {/* Change Orders — Visually stepped back as a secondary block */}
+            <div className="border-t border-emerald-200 dark:border-emerald-800/80 bg-emerald-50/50 dark:bg-emerald-950/20 p-3 sm:p-4 rounded-lg">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  <GitPullRequest className="size-4 text-primary" /> Change Orders ({changeOrders.length})
+                <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
+                  <GitPullRequest className="size-4 text-emerald-700 dark:text-emerald-400" /> Change Orders ({changeOrders.length})
                 </h2>
-                <Link href={`/change-orders/new?projectId=${estimate.projectId}&estimateId=${estimate.id}`} className="text-xs font-semibold text-primary hover:underline">
+                <Link href={`/change-orders/new?projectId=${estimate.projectId}&estimateId=${estimate.id}`} className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:text-emerald-950 dark:hover:text-white hover:underline">
                   + New change order
                 </Link>
               </div>
               {changeOrders.length === 0 ? (
-                <p className="text-xs text-muted-foreground italic py-1">No change orders recorded yet.</p>
+                <p className="text-xs text-emerald-700/80 dark:text-emerald-400/80 italic py-1">No change orders recorded yet.</p>
               ) : (
-                <ul className="divide-y divide-border/60 rounded-lg border border-border/80 bg-card px-3">
+                <ul className="divide-y divide-emerald-100 dark:divide-emerald-900 rounded-lg border border-emerald-200 dark:border-emerald-800/80 bg-white dark:bg-emerald-950/60 px-3">
                   {changeOrders.map((co) => (
                     <li key={co.id}>
-                      <Link href={`/change-orders/${co.id}`} className="flex items-center justify-between gap-2 py-2.5 hover:text-primary transition-colors">
+                      <Link href={`/change-orders/${co.id}`} className="flex items-center justify-between gap-2 py-2.5 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors">
                         <div>
-                          <div className="text-xs font-semibold text-foreground">{co.changeOrderNumber} - {co.title}</div>
+                          <div className="text-xs font-semibold text-emerald-950 dark:text-white">{co.changeOrderNumber} - {co.title}</div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-semibold text-foreground">{formatMoney(calculateChangeOrderRevenue(co.totalAmount, co.tax))}</span>
+                          <span className="text-xs font-semibold text-emerald-950 dark:text-white">{formatMoney(calculateChangeOrderRevenue(co.totalAmount, co.tax))}</span>
                           <Badge tone={CHANGE_ORDER_STATUS_TONE[co.status]}>{co.status}</Badge>
                         </div>
                       </Link>
