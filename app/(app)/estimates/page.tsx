@@ -264,7 +264,7 @@ function EstimatesListContent() {
         : {
             border: "border-l-emerald-700",
             badge:
-              "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
+              "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
             label: "Draft",
           };
 
