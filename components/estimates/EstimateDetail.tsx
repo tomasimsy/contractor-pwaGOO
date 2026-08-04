@@ -282,9 +282,28 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
           job cost" row shows further down — one number, shown twice at
           different points of emphasis, not two calculations. */}
 <     div className="mb-4 grid grid-cols-4 gap-2 sm:gap-3">
+        {/* Shows the REVISED total once a change order is approved.
+            The original quote alone was the loudest number on the page
+            and the only one that ignored approved change orders, while
+            the invoice, revised-total row and net profit right beside
+            it all counted them — so a $24 estimate with a $100 approved
+            change order billed the customer $124 under a headline
+            reading "$24". Same figure the Line Items block already
+            shows (revisedTotal, from calculateRevisedEstimateTotal),
+            not a second calculation; the original stays visible
+            underneath so the quoted-vs-revised comparison isn't lost. */}
         <div className="rounded-lg border border-border/60 bg-card px-2.5 py-2 sm:px-3.5 sm:py-2.5">
-          <div className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-muted-foreground truncate">Estimate Total</div>
-          <div className="mt-0.5 text-sm sm:text-lg font-bold text-foreground truncate">{formatMoney(estimate.total)}</div>
+          <div className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-muted-foreground truncate">
+            {hasApprovedChangeOrders ? "Revised Total" : "Estimate Total"}
+          </div>
+          <div className="mt-0.5 text-sm sm:text-lg font-bold text-foreground truncate">
+            {formatMoney(hasApprovedChangeOrders ? revisedTotal : estimate.total)}
+          </div>
+          {hasApprovedChangeOrders && (
+            <div className="text-[9px] sm:text-[10px] text-muted-foreground truncate">
+              quoted {formatMoney(estimate.total)}
+            </div>
+          )}
         </div>
         <div className="rounded-lg border border-border/60 bg-card px-2.5 py-2 sm:px-3.5 sm:py-2.5">
           <div className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-muted-foreground truncate">Project Total Cost</div>

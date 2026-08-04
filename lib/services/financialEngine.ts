@@ -25,13 +25,22 @@
  *   - Payments         (PaymentService.getSummaryForInvoice)   -> what was COLLECTED
  *   - Approved change orders (ChangeOrderService.listApprovedChangeOrders) -> contract growth
  *
- * `revisedTotal = invoicesTotal + approvedChangeOrderTotal`. This
- * replaces contractor-pwa's `resolveProjectTotal(estimate.total,
+ * `revisedTotal = invoicesTotal + UNBILLED approvedChangeOrderTotal`.
+ * This replaces contractor-pwa's `resolveProjectTotal(estimate.total,
  * invoice.total)`, which read a cached, app-cascaded field on the
  * estimate — exactly the "duplicated estimate field" this rebuild
  * removes. `originalEstimateTotal` is still returned, but ONLY as a
  * quoted-vs-billed comparison figure; it must never be summed into
  * revenue or profit.
+ *
+ * The word UNBILLED is load-bearing. Approving a change order now bills
+ * it on the estimate's invoice as a line item (changeOrderInvoiceSync —
+ * the customer must actually receive a bill for the extra work), so
+ * that money is already inside `invoicesTotal`. Adding the same change
+ * order again from ChangeOrderService would double-count it. Each
+ * approved change order therefore contributes EXACTLY ONCE: as an
+ * invoice line once billed, as a standalone revenue input until then
+ * (or again, if the invoice carrying it is later voided).
  *
  * Costs are assembled from four normalized sources, matching the
  * brief exactly:
@@ -114,6 +123,7 @@ import {
   type AgentCommissionSplit,
   type ChangeOrderRevenueLike,
 } from "./financialCalculations";
+import { billedChangeOrderIds } from "./changeOrderInvoiceSync";
 import type { ProjectService } from "./projectService";
 import type { EstimateService } from "./estimateService";
 import type { ChangeOrderService } from "./changeOrderService";
@@ -418,7 +428,28 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     // approved rows) — called anyway so this is the SAME function
     // every page-level "approved change order revenue" figure calls,
     // not a second independent copy of totalAmount+tax.
-    const approvedChangeOrderTotal = sumApprovedChangeOrderRevenue(approvedChangeOrders);
+    //
+    // …but only for change orders NOT already billed on an invoice.
+    // Approving a change order now folds it into the estimate's invoice
+    // as a line item (changeOrderInvoiceSync — the customer has to
+    // actually be billed for the extra work). Once that happens the
+    // money is already inside `invoicesTotal`, so adding it here too
+    // would count the same dollars twice. Each approved change order
+    // contributes exactly once: as an invoice line once billed, as a
+    // standalone revenue input until then.
+    //
+    // The line-item fetch is skipped entirely when there are no
+    // approved change orders — the overwhelmingly common case — so
+    // this costs nothing on the hot path. listForProject does not
+    // return line items; only getById does.
+    const billed = approvedChangeOrders.length > 0
+      ? billedChangeOrderIds(
+          (await Promise.all(invoices.filter(isRevenueInvoice).map((inv) => invoiceService.getById(inv.id))))
+            .map((inv) => inv?.lineItems ?? [])
+        )
+      : new Set<UUID>();
+    const unbilledApprovedChangeOrders = approvedChangeOrders.filter((co) => !billed.has(co.id));
+    const approvedChangeOrderTotal = sumApprovedChangeOrderRevenue(unbilledApprovedChangeOrders);
     const revisedTotal = invoicesTotal + approvedChangeOrderTotal;
 
     // originalEstimateTotal is informational only (quoted vs. billed) —

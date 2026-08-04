@@ -25,8 +25,8 @@
  *
  * So this file and FinancialEngine change together. Once a change
  * order is BILLED on an active invoice, the engine stops adding it
- * separately (see isChangeOrderBilled / the engine's
- * unbilledApprovedChangeOrders). Each approved change order is counted
+ * separately (see billedChangeOrderIds, which the engine applies to
+ * its approved list). Each approved change order is counted
  * exactly once, either as an invoice line (billed) or as a standalone
  * revenue input (not yet billed) — never both, never neither.
  *
@@ -83,16 +83,23 @@ export function changeOrderIdFromLine(line: { description: string | null }): UUI
 }
 
 /**
- * Is this change order already billed on one of these invoices?
+ * Every change order id billed somewhere in these line-item sets.
  *
- * THE guard against double-counting revenue — FinancialEngine calls
- * this to decide whether a change order still needs adding on top of
- * invoicesTotal. Void and cancelled invoices are excluded by the
- * caller (they are not revenue), so a change order billed only on a
- * voided invoice correctly returns to "unbilled".
+ * THE guard against double-counting revenue — FinancialEngine uses
+ * this to decide which approved change orders still need adding on top
+ * of invoicesTotal. Callers pass only REVENUE invoices (void/cancelled
+ * excluded), so a change order billed solely on a voided invoice
+ * correctly returns to "unbilled" and starts counting again.
  */
-export function isChangeOrderBilled(changeOrderId: UUID, invoices: Array<{ lineItems?: InvoiceLineItem[] }>): boolean {
-  return invoices.some((inv) => (inv.lineItems ?? []).some((li) => changeOrderIdFromLine(li) === changeOrderId));
+export function billedChangeOrderIds(lineItemSets: InvoiceLineItem[][]): Set<UUID> {
+  const billed = new Set<UUID>();
+  for (const lines of lineItemSets) {
+    for (const li of lines) {
+      const id = changeOrderIdFromLine(li);
+      if (id) billed.add(id);
+    }
+  }
+  return billed;
 }
 
 export interface ChangeOrderSyncDeps {
@@ -153,7 +160,12 @@ export async function syncInvoiceWithApprovedChangeOrders(
   // Oldest first: the auto-generated invoice from signing is the one
   // that represents this estimate's billing. Deterministic, so
   // repeated runs always target the same document.
-  const invoice = [...syncable].sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+  const target = [...syncable].sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+  // listForProject returns invoices WITHOUT their line items — only
+  // getById carries them, and this workflow is entirely about line
+  // items.
+  const invoice = await invoiceService.getById(target.id);
+  if (!invoice) return { ok: false, message: "Invoice not found." };
 
   const approved = (await changeOrderService.listForEstimate(estimateId)).filter(
     (co) => co.status === "approved" && !co.deletedAt
@@ -164,7 +176,7 @@ export async function syncInvoiceWithApprovedChangeOrders(
   //    the change-order lines from scratch (rather than appending) is
   //    what makes this idempotent and what lets an un-approved or
   //    deleted change order drop back off the invoice.
-  const scopeLines = (invoice.lineItems ?? []).filter((li) => changeOrderIdFromLine(li) === null);
+  const scopeLines = invoice.lineItems.filter((li) => changeOrderIdFromLine(li) === null);
   const changeOrderLines = approved.map((co) => toLineItem(co));
   const nextLines = [...scopeLines, ...changeOrderLines].map((li) => ({
     name: li.name,
@@ -175,7 +187,7 @@ export async function syncInvoiceWithApprovedChangeOrders(
 
   // Nothing would change — don't write, so an invoice with no approved
   // change orders is never touched at all.
-  if (!linesDiffer(invoice.lineItems ?? [], nextLines)) {
+  if (!linesDiffer(invoice.lineItems, nextLines)) {
     return {
       ok: true,
       invoice,

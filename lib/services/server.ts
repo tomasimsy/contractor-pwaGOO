@@ -116,7 +116,7 @@ export function createServerAppServices(
   const agentCommissionService = createSupabaseAgentCommissionService(supabase, validationService, currentUserId, transactionService, expenseService);
 
   const estimateWorkflow = createEstimateWorkflow({ estimateService, invoiceService, paymentService });
-  const changeOrderWorkflow = createChangeOrderWorkflow({ changeOrderService });
+  const changeOrderWorkflow = createChangeOrderWorkflow({ changeOrderService, estimateService, invoiceService });
 
   return {
     clientService,

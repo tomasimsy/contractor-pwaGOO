@@ -81,6 +81,15 @@ export { createEstimateWorkflow, signEstimate, unsignEstimate } from "./estimate
 // rule — see estimateCreationWorkflow.ts's header.
 export type { CreateEstimateWorkflowInput, CreateEstimateWorkflowResult } from "./estimateCreationWorkflow";
 export { createEstimateForClient, resolveProjectForClient, defaultProjectName, isOpenProject } from "./estimateCreationWorkflow";
+// Approved change orders must reach the customer's invoice — and must
+// not then be counted twice as revenue. See changeOrderInvoiceSync.ts.
+export type { ChangeOrderSyncDeps, ChangeOrderSyncResult } from "./changeOrderInvoiceSync";
+export {
+  syncInvoiceWithApprovedChangeOrders,
+  billedChangeOrderIds,
+  changeOrderIdFromLine,
+  changeOrderLineDescription,
+} from "./changeOrderInvoiceSync";
 // "FinancialService" is the name used in the brief; FinancialEngine is
 // the name already in use throughout this codebase and its docs
 // (SERVICE_LAYER_DESIGN.md, TRANSACTION_LEDGER.md, FILTER_SYSTEM.md).

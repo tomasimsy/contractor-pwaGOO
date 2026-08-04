@@ -69,12 +69,18 @@ export interface Invoice extends AuditedEntity {
   /** DERIVED — never set directly. Always
    * calculateInvoiceTotal(subtotal, tax) = subtotal + tax (an invoice
    * has no markup/discount/tax-RATE concept, unlike an estimate, so
-   * this is its own formula, not calculateDocumentTotal). Change
-   * orders NEVER contribute to this field, approved or otherwise —
-   * their project-level revenue effect is entirely separate (see
-   * FinancialEngine.getProjectFinancials' revisedTotal, which sums
-   * invoices + approved change orders as two independent inputs,
-   * never folding one into the other's stored total). */
+   * this is its own formula, not calculateDocumentTotal).
+   *
+   * An APPROVED change order DOES contribute to this field, as an
+   * ordinary line item added by changeOrderInvoiceSync — the customer
+   * has to be billed for extra work they approved, and previously they
+   * were not. (This reverses the earlier rule, which kept change
+   * orders out of every invoice total; that left the customer billed
+   * for the original scope while internal reports counted the larger
+   * one.) FinancialEngine.getProjectFinancials compensates on the
+   * revenue side: it adds only change orders NOT yet billed on an
+   * invoice, so the same money is never counted twice. See that file's
+   * header and changeOrderInvoiceSync.ts. */
   total: number;
   issueDate: string | null;
   dueDate: string | null;
