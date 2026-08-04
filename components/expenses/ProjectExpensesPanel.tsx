@@ -1,27 +1,29 @@
 "use client";
 
 /**
- * Unified cost history for one project (or estimate) — standard
- * expenses, subcontractor payments and agent payments in ONE
- * chronological list, plus record/edit/delete for the expense rows.
+ * Unified cost history for one project (or estimate) — every cost in
+ * ONE chronological list, with record/edit/delete on all of them.
+ *
+ * ONE PAYMENT = ONE EXPENSE RECORD. Materials, labor, a subcontractor
+ * payment and an agent commission are all rows in `estimate_expenses`,
+ * distinguished by `expenseType` and labeled here by `source`. That is
+ * why EVERY row in this list is editable and deletable: they are the
+ * same kind of record, so treating a subcontractor payment as
+ * read-only would leave real money with no way to correct it.
+ *
+ * (This panel previously showed subcontractor/agent rows read-only,
+ * back when they were separate payment tables owned by their own
+ * assignment workflows. They no longer are, but the guard survived the
+ * model change — so those rows silently lost their action buttons.)
  *
  * Owns no arithmetic. The totals tiles come from
  * ExpenseService.getTotalsForProject via useExpenses (the SAME call
  * FinancialEngine makes for `totalExpenses`), and the LIST itself comes
  * from FinancialEngine.getEstimateCostEntries/getProjectCostEntries —
  * so what's listed and what's counted are one computation rendered
- * twice, never two that happen to agree.
- *
- * WHY THE LIST ISN'T SUMMED HERE
- * The three sources use two different cost models on purpose: an
- * expense row IS a cost, while a subcontractor/agent assignment is a
- * COMMITMENT already counted at `max(assigned, paid)` — so its payments
- * are cash movements, not additional cost, and an agent reimbursement
- * merely settles an expense already counted. Summing the rows would
- * double-count exactly the money FinancialEngine's committed-cost model
- * exists to count once. Each row therefore carries a `treatment` and
- * only cost-treated rows feed the totals above (which the engine, not
- * this component, computes).
+ * twice, never two that happen to agree. Deleting goes through
+ * useExpenses.remove -> ExpenseService.softDelete: a soft delete with a
+ * required reason, the same path every other financial record uses.
  *
  * `onChanged` lets the parent page re-read its own financials after any
  * mutation, so profit updates in the same interaction as the expense.
@@ -108,6 +110,10 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
   }));
 
   const [actionError, setActionError] = useState<string | null>(null);
+  /** Which row is mid-mutation — disables its buttons so a double
+   * click can't fire two deletes, and shows the row as busy. Same
+   * pattern as the payments panel. */
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   /** Expense rows keep their edit/delete/reimburse actions, so the
    * projection is joined back to the real Expense objects by id. */
@@ -122,26 +128,42 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
     return ok;
   }
 
-  async function handleDelete(expense: Expense) {
-    if (!window.confirm(`Delete this ${money(expense.amount)} expense?`)) return;
+  async function handleDelete(expense: Expense, sourceLabel: string) {
+    // Names what is actually being removed — "Delete this $2,000
+    // Subcontractor cost?" rather than a generic "expense", since a
+    // subcontractor payment and a bag of nails now look alike here.
+    if (!window.confirm(`Delete this ${money(expense.amount)} ${sourceLabel.toLowerCase()} cost? This can be restored later.`)) return;
     setActionError(null);
+    setBusyId(expense.id);
     try {
+      // Soft delete with a reason, via the shared service — the same
+      // path used everywhere else. `remove` re-reads both the rows and
+      // the TOTALS, so the tiles above update from the service rather
+      // than from any arithmetic done here.
       await remove(expense.id, "User deleted via UI");
+      // The grouped/unified list…
       await loadEntries();
+      // …and the parent's own financials (project + dashboard
+      // summaries), so profit moves in the same interaction.
       await onChanged?.();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Could not delete this expense.");
+      setActionError(err instanceof Error ? err.message : "Could not delete this cost.");
+    } finally {
+      setBusyId(null);
     }
   }
 
   async function handleReimburse(expense: Expense) {
     setActionError(null);
+    setBusyId(expense.id);
     try {
       await markReimbursed(expense.id);
       await loadEntries();
       await onChanged?.();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Could not mark this reimbursed.");
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -199,14 +221,18 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
           {entries.map((entry) => {
             const meta = SOURCE_META[entry.source];
             const SourceIcon = meta.icon;
-            // Only expense rows are editable here — a subcontractor or
-            // agent payment is owned by its own assignment workflow
-            // (with its own outstanding balance), and is shown read-only
-            // so this list never becomes a second way to mutate it.
-            const expense = entry.source === "expense" ? expenseById.get(entry.id) : undefined;
+            // Every entry is an expense row — including subcontractor
+            // and agent ones — so every entry resolves to a real
+            // Expense and gets the same actions. Guarding on
+            // `source === "expense"` here is what used to hide
+            // edit/delete from subcontractor and agent costs.
+            const expense = expenseById.get(entry.id);
 
             return (
-              <li key={`${entry.source}-${entry.id}`} className="flex items-start justify-between gap-2 py-2.5 text-sm">
+              <li
+                key={`${entry.source}-${entry.id}`}
+                className={`flex items-start justify-between gap-2 py-2.5 text-sm ${busyId === entry.id ? "opacity-50" : ""}`}
+              >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="font-medium text-foreground">{money(entry.amount)}</span>
@@ -214,19 +240,6 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
                       <SourceIcon className="size-3" /> {meta.label}
                     </span>
                     <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{entry.category}</span>
-                    {/* Says plainly why a row that shows money is not
-                        additional cost — the alternative is a reader
-                        summing this list and disagreeing with profit. */}
-                    {entry.treatment === "payment" && (
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground" title="Cash paid against a commitment already counted as cost when it was assigned.">
-                        Paid against commitment
-                      </span>
-                    )}
-                    {entry.treatment === "settlement" && (
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground" title="Repays someone who fronted an expense that is already counted — not an additional cost.">
-                        Settles an expense
-                      </span>
-                    )}
                     {expense?.reimbursable && expense.reimbursementStatus === "pending" && (
                       <span className="rounded-full bg-warning/15 px-2 py-0.5 text-xs text-warning-foreground">
                         Owed to {PAID_BY_LABEL[expense.paidByType].toLowerCase()}
@@ -254,19 +267,24 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
                       <button
                         type="button"
                         onClick={() => handleReimburse(expense)}
+                        disabled={busyId === expense.id}
                         aria-label="Mark reimbursed"
                         title="Mark reimbursed"
-                        className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
                       >
                         <RotateCcw className="size-3.5" />
                       </button>
                     )}
-                    <button type="button" onClick={() => setDialogFor(expense)} aria-label="Edit expense"
-                      className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground">
+                    <button type="button" onClick={() => setDialogFor(expense)}
+                      disabled={busyId === expense.id}
+                      aria-label={`Edit ${meta.label} cost`} title={`Edit ${meta.label} cost`}
+                      className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50">
                       <Pencil className="size-3.5" />
                     </button>
-                    <button type="button" onClick={() => handleDelete(expense)} aria-label="Delete expense"
-                      className="rounded-lg p-1.5 text-muted-foreground hover:bg-danger/10 hover:text-danger">
+                    <button type="button" onClick={() => handleDelete(expense, meta.label)}
+                      disabled={busyId === expense.id}
+                      aria-label={`Delete ${meta.label} cost`} title={`Delete ${meta.label} cost`}
+                      className="rounded-lg p-1.5 text-muted-foreground hover:bg-danger/10 hover:text-danger disabled:opacity-50">
                       <Trash2 className="size-3.5" />
                     </button>
                   </div>

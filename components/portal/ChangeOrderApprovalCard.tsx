@@ -79,48 +79,46 @@ export function ChangeOrderApprovalCard({ token, changeOrder }: { token: string;
   }
 
   return (
-    <div className="rounded-xl border border-border p-3">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <div className="font-medium text-foreground">{changeOrder.change_order_number}</div>
-          {changeOrder.title && <div className="text-xs text-muted-foreground">{changeOrder.title}</div>}
+<div className="rounded-lg border border-border p-2.5 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 truncate">
+          <span className="font-semibold text-foreground">{changeOrder.change_order_number}</span>
+          {changeOrder.title && <span className="text-muted-foreground truncate">· {changeOrder.title}</span>}
         </div>
-        <span className={`whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase ${STATUS_STYLE[status] ?? STATUS_STYLE.draft}`}>
-          {status}
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="font-semibold text-foreground">{money(costImpact)}</span>
+          <span className={`rounded-full px-2 py-0.2 text-[10px] font-semibold uppercase ${STATUS_STYLE[status] ?? STATUS_STYLE.draft}`}>
+            {status}
+          </span>
+        </div>
       </div>
 
       {changeOrder.description && (
-        <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{changeOrder.description}</p>
+        <p className="mt-1 text-muted-foreground line-clamp-2">{changeOrder.description}</p>
       )}
 
-      <div className="mt-2 flex items-center justify-between text-sm">
-        <span className="text-muted-foreground">Cost impact</span>
-        <span className="font-semibold text-foreground">{money(costImpact)}</span>
-      </div>
-
       {status === "approved" && changeOrder.approved_at && (
-        <p className="mt-2 text-xs text-muted-foreground">
+        <div className="mt-1 text-[11px] text-muted-foreground">
           Approved {new Date(changeOrder.approved_at).toLocaleDateString()}
-          {changeOrder.signature?.value ? " · signed by you" : ""}
-        </p>
+          {changeOrder.signature?.value ? "  " : ""}
+        </div>
       )}
 
       {isPending && (
-        <div className="mt-3 border-t border-border pt-3">
+        <div className="mt-2 border-t border-border pt-2">
           {!reviewing ? (
             <button
               type="button"
               onClick={() => setReviewing(true)}
-              className="inline-flex min-h-10 items-center rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              className="inline-flex h-7 items-center rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
             >
               Review &amp; Approve
             </button>
           ) : (
-            <div className="space-y-2">
-              {error && <div className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</div>}
-              <p className="text-xs text-muted-foreground">
-                By signing you approve this change order and its {money(costImpact)} cost impact.
+            <div className="space-y-1.5">
+              {error && <div className="rounded bg-danger/10 px-2 py-1 text-[11px] text-danger">{error}</div>}
+              <p className="text-[11px] text-muted-foreground">
+                Approve change order and {money(costImpact)} impact by signing below.
               </p>
               <SignaturePad
                 onSave={handleApprove}

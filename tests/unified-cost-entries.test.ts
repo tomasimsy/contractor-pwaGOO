@@ -201,4 +201,105 @@ describe("Unified cost entries", () => {
     const projectEntries = await services.financialEngine.getProjectCostEntries(project.id);
     expect(projectEntries.filter((e) => e.source === "expense").map((e) => e.amount).sort()).toEqual([100, 200]);
   });
+
+  test("EVERY cost entry resolves to a real, deletable expense row", async () => {
+    // What ProjectExpensesPanel relies on to show edit/delete on every
+    // row. The panel joins entries back to Expense objects BY ID; if a
+    // subcontractor or agent entry had no matching expense row, its
+    // action buttons would silently disappear — which is exactly the
+    // bug that shipped when the panel still guarded on
+    // `source === "expense"`.
+    const { project, estimate } = await seedJob();
+
+    await services.expenseService.create({
+      companyId: COMPANY_ID, projectId: project.id, estimateId: estimate.id,
+      expenseType: "materials", amount: 300, expenseDate: "2026-01-05",
+    });
+    await services.expenseService.create({
+      companyId: COMPANY_ID, projectId: project.id, estimateId: estimate.id,
+      expenseType: "subcontractor", amount: 800, expenseDate: "2026-01-10",
+      payeeType: "subcontractor", payeeId: "sub-1",
+    });
+    await services.expenseService.create({
+      companyId: COMPANY_ID, projectId: project.id, estimateId: estimate.id,
+      expenseType: "agent_commission", amount: 500, expenseDate: "2026-01-20",
+      payeeType: "agent", payeeId: "agent-1",
+    });
+
+    const entries = await services.financialEngine.getEstimateCostEntries(estimate.id);
+    const expensesById = new Map(
+      (await services.expenseService.listForEstimate(estimate.id)).map((e) => [e.id, e] as const)
+    );
+
+    expect(entries).toHaveLength(3);
+    for (const entry of entries) {
+      expect(expensesById.get(entry.id), `${entry.source} entry must join to an expense row`).toBeDefined();
+    }
+    // Specifically the two that used to be read-only.
+    expect(entries.filter((e) => e.source === "subcontractor" || e.source === "agent")).toHaveLength(2);
+  });
+
+  test("deleting a subcontractor cost drops it from BOTH the list and the totals", async () => {
+    const { project, estimate } = await seedJob();
+
+    await services.expenseService.create({
+      companyId: COMPANY_ID, projectId: project.id, estimateId: estimate.id,
+      expenseType: "materials", amount: 300, expenseDate: "2026-01-05",
+    });
+    const subCost = await services.expenseService.create({
+      companyId: COMPANY_ID, projectId: project.id, estimateId: estimate.id,
+      expenseType: "subcontractor", amount: 800, expenseDate: "2026-01-10",
+      payeeType: "subcontractor", payeeId: "sub-1",
+    });
+    const agentCost = await services.expenseService.create({
+      companyId: COMPANY_ID, projectId: project.id, estimateId: estimate.id,
+      expenseType: "agent_commission", amount: 500, expenseDate: "2026-01-20",
+      payeeType: "agent", payeeId: "agent-1",
+    });
+
+    expect((await services.financialEngine.getEstimateFinancials(estimate.id)).totalExpenses).toBe(1600);
+
+    // Soft delete, the same call useExpenses.remove makes.
+    await services.expenseService.softDelete(subCost.id, "Recorded against the wrong subcontractor");
+
+    const afterSub = await services.financialEngine.getEstimateCostEntries(estimate.id);
+    expect(afterSub.some((e) => e.id === subCost.id)).toBe(false);
+    expect(afterSub).toHaveLength(2);
+
+    const financialsAfterSub = await services.financialEngine.getEstimateFinancials(estimate.id);
+    expect(financialsAfterSub.totalExpenses).toBe(800); // 300 + 500
+    expect(financialsAfterSub.subcontractorCosts).toBe(0); // gone from the grouped bucket too
+
+    // …and the agent one behaves identically.
+    await services.expenseService.softDelete(agentCost.id, "Commission run reversed");
+
+    const afterAgent = await services.financialEngine.getEstimateCostEntries(estimate.id);
+    expect(afterAgent).toHaveLength(1);
+    const finalFinancials = await services.financialEngine.getEstimateFinancials(estimate.id);
+    expect(finalFinancials.totalExpenses).toBe(300);
+    expect(finalFinancials.agentCommissionCosts).toBe(0);
+
+    // Soft, not hard — restorable, and still in history.
+    await services.expenseService.restore(subCost.id);
+    expect((await services.financialEngine.getEstimateFinancials(estimate.id)).totalExpenses).toBe(1100);
+  });
+
+  test("a deleted subcontractor cost also leaves the PROJECT-level totals", async () => {
+    // The dashboard/project summaries read these, so they must move too.
+    const { project, estimate } = await seedJob();
+    const subCost = await services.expenseService.create({
+      companyId: COMPANY_ID, projectId: project.id, estimateId: estimate.id,
+      expenseType: "subcontractor", amount: 800, expenseDate: "2026-01-10",
+      payeeType: "subcontractor", payeeId: "sub-1",
+    });
+
+    expect((await services.financialEngine.getProjectFinancials(project.id)).totalExpenses).toBe(800);
+    expect((await services.expenseService.getTotalsForProject(project.id)).total).toBe(800);
+
+    await services.expenseService.softDelete(subCost.id, "Duplicate entry");
+
+    expect((await services.financialEngine.getProjectFinancials(project.id)).totalExpenses).toBe(0);
+    expect((await services.expenseService.getTotalsForProject(project.id)).total).toBe(0);
+    expect(await services.financialEngine.getProjectCostEntries(project.id)).toHaveLength(0);
+  });
 });
