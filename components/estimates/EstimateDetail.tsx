@@ -332,62 +332,102 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
 <section className="rounded-2xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950 p-4 sm:p-6 shadow-md space-y-6 text-emerald-950 dark:text-emerald-50">
             
             {/* Quick Info Bar / Project Details — Compact mobile layout with clear hierarchy */}
-            <div className="-mx-4 -mt-4 sm:-mx-6 sm:-mt-6 rounded-t-2xl border-b border-emerald-200 dark:border-emerald-800 bg-emerald-100/70 dark:bg-emerald-900/90 px-4 py-3.5 sm:px-6 sm:py-5   sm:pl-[calc(1.5rem-6px)]">
-              <h2 className="flex items-center gap-1.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-                <FolderOpen className="size-3.5 sm:size-4 text-emerald-700 dark:text-emerald-400" /> Project Details
-              </h2>
+            <div className="-mx-4 -mt-4 sm:-mx-6 sm:-mt-6 rounded-t-2xl border-b border-emerald-200 dark:border-emerald-800 bg-emerald-100/70 dark:bg-emerald-900/90 px-4 py-3 sm:px-6 sm:py-4 sm:pl-[calc(1.5rem-6px)]">
+  <h2 className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+    <FolderOpen className="size-3.5 text-emerald-700 dark:text-emerald-400" />
+    Project Details
+  </h2>
 
-              <div className="mt-1.5 sm:mt-2.5 min-w-0">
-                <div className="text-xl sm:text-2xl lg:text-3xl font-extrabold leading-tight text-emerald-950 dark:text-white break-words">
-                  {project ? (
-                    <Link href={`/projects/${project.id}`} className="hover:text-emerald-700 dark:hover:text-emerald-300 hover:underline">
-                      {project.name}
-                    </Link>
-                  ) : (
-                    <span className="text-emerald-600 dark:text-emerald-400">No project</span>
-                  )}
-                </div>
-                
-                <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs sm:text-sm text-emerald-800 dark:text-emerald-200">
-                  <User className="size-3.5 shrink-0 text-emerald-700 dark:text-emerald-400" />
-                  <span>for</span>
-                  {client ? (
-                    <Link href={`/clients/${client.id}`} className="font-semibold text-emerald-950 dark:text-white hover:text-emerald-700 dark:hover:text-emerald-300 hover:underline">
-                      {client.name}
-                    </Link>
-                  ) : (
-                    <span className="font-medium">No client</span>
-                  )}
-                </div>
-              </div>
+  {/* Project + Client */}
+  <div className="mt-1.5 min-w-0">
+    <div className="text-xl sm:text-2xl font-extrabold leading-tight text-emerald-950 dark:text-white break-words">
+      {project ? (
+        <Link
+          href={`/projects/${project.id}`}
+          className="hover:text-emerald-700 dark:hover:text-emerald-300 hover:underline"
+        >
+          {project.name}
+        </Link>
+      ) : (
+        <span className="text-emerald-600 dark:text-emerald-400">
+          No project
+        </span>
+      )}
+    </div>
 
-              <dl className="mt-3 sm:mt-4 grid grid-cols-3 gap-x-3 gap-y-2 border-t border-emerald-200 dark:border-emerald-800/80 pt-2.5 sm:pt-4">
-                <div className="min-w-0">
-                  <dt className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Title</dt>
-                  <dd className="mt-0.5 truncate text-xs sm:text-sm font-medium text-emerald-950 dark:text-white">
-                    {estimate.title?.trim() ? (
-                      <Link href={`/estimates/${estimate.id}`} className="hover:text-emerald-700 dark:hover:text-emerald-300 hover:underline">{estimate.title}</Link>
-                    ) : (
-                      <span className="text-emerald-600 dark:text-emerald-400">—</span>
-                    )}
-                  </dd>
-                </div>
-                <div className="min-w-0">
-                  <dt className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Created</dt>
-                  <dd className="mt-0.5 text-xs sm:text-sm font-medium text-emerald-950 dark:text-white">{new Date(estimate.createdAt).toLocaleDateString()}</dd>
-                </div>
-                <div className="min-w-0">
-                  <dt className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Type</dt>
-                  <dd className="mt-0.5 text-xs sm:text-sm font-medium capitalize text-emerald-950 dark:text-white">{estimate.estimateType || "Standard"}</dd>
-                </div>
-                {estimate.description && (
-                  <div className="col-span-full border-t border-emerald-200 dark:border-emerald-800/80 pt-2 sm:pt-3">
-                    <dt className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Description</dt>
-                    <dd className="mt-0.5 whitespace-pre-wrap text-[11px] sm:text-xs text-emerald-900/80 dark:text-emerald-100/90 leading-relaxed break-words">{estimate.description}</dd>
-                  </div>
-                )}
-              </dl>
-            </div>
+    <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-emerald-800 dark:text-emerald-200">
+      <User className="size-3 shrink-0 text-emerald-700 dark:text-emerald-400" />
+
+      {client ? (
+        <>
+          <Link
+            href={`/clients/${client.id}`}
+            className="font-semibold text-emerald-950 dark:text-white hover:underline"
+          >
+            {client.name}
+          </Link>
+
+          {client.phone && (
+            <>
+              <span>·</span>
+              <a href={`tel:${client.phone}`} className="hover:underline">
+                {client.phone}
+              </a>
+            </>
+          )}
+
+          {client.address && (
+            <>
+              <span>·</span>
+              <span className="max-w-[300px] truncate">
+                {client.address.replace(/\s*\n\s*/g, ", ")}
+              </span>
+            </>
+          )}
+        </>
+      ) : (
+        <span>No client</span>
+      )}
+    </div>
+  </div>
+
+  {/* Compact metadata */}
+  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 border-t border-emerald-200 pt-2 text-xs dark:border-emerald-800/80">
+    <div>
+      <span className="text-emerald-700 dark:text-emerald-400">Title:</span>{" "}
+      <span className="font-medium text-emerald-950 dark:text-white">
+        {estimate.title || "—"}
+      </span>
+    </div>
+
+    <div>
+      <span className="text-emerald-700 dark:text-emerald-400">Created:</span>{" "}
+      <span className="font-medium text-emerald-950 dark:text-white">
+        {new Date(estimate.createdAt).toLocaleDateString()}
+      </span>
+    </div>
+
+    <div>
+      <span className="text-emerald-700 dark:text-emerald-400">Type:</span>{" "}
+      <span className="font-medium capitalize text-emerald-950 dark:text-white">
+        {estimate.estimateType || "Standard"}
+      </span>
+    </div>
+  </div>
+
+  {/* Compact description */}
+{estimate.description && (
+  <div className="mt-2 border-t border-emerald-200 pt-2 dark:border-emerald-800/80">
+    <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+      Description
+    </div>
+
+    <div className="mt-0.5 whitespace-pre-wrap text-xs leading-relaxed text-emerald-900/80 dark:text-emerald-100/90 break-words">
+      {estimate.description}
+    </div>
+  </div>
+)}
+</div>
 
             {/* Roof Areas (If applicable) */}
             {estimate.estimateType === "roofing" && roofingAreas.length > 0 && (
