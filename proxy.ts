@@ -65,5 +65,19 @@ export const config = {
   // Everything except static assets, images, and favicon — running
   // proxy on those would needlessly delay/block them (see proxy.md's
   // own "Good to know" warning about exactly this).
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  //
+  // The PWA entries (sw.js, manifest.webmanifest, offline, icons/) are
+  // excluded for a stronger reason than performance: without them this
+  // middleware 302s each one to /login for any signed-out visitor.
+  // A service worker script that answers with the login page's HTML
+  // fails registration outright on MIME type, and a manifest that 302s
+  // means the browser never sees a valid manifest and the app is never
+  // offered for install — which is most visible precisely where it
+  // matters, on the logged-out landing page. None of these four carry
+  // user data, so serving them unauthenticated changes no boundary:
+  // proxy.ts still guards every real route, and Supabase RLS remains
+  // the actual enforcement layer.
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|sw\\.js|manifest\\.webmanifest|offline|icons/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+  ],
 };
