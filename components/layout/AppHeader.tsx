@@ -35,13 +35,13 @@ export function AppHeader() {
             <Breadcrumbs />
           </div>
 
-          <div className="flex flex-1 justify-center lg:flex-none">
+          {/* <div className="flex flex-1 justify-center lg:flex-none">
             <GlobalSearch />
-          </div>
+          </div> */}
 
           <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
             <CompanySwitcher />
-            <LocationSwitcher />
+            {/* <LocationSwitcher /> */}
             <ThemeSwitcher />
             <NotificationsMenu />
             <div className="ml-1 h-6 w-px bg-border" aria-hidden="true" />

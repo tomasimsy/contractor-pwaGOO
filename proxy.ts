@@ -39,6 +39,26 @@ export async function proxy(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
   const isAuthRoute = pathname.startsWith("/login") || pathname.startsWith("/signup");
+
+  // The ONLY two public pages: the customer portal and the public
+  // invoice view. Both are reached from a share link (Copy link, Send
+  // via SMS, Email customer — see components/portal/SharePortalPanel)
+  // by someone who by definition has no account here.
+  //
+  // Without this they fell into the `!user` branch below and were 302'd
+  // to /login, so every share link this app produced was unusable for
+  // its actual recipient — verified: GET /portal/<id>?token=<valid>
+  // answered 307 -> /login.
+  //
+  // Letting them through does NOT make their DATA public. Neither page
+  // trusts the URL: each uses the ANON key and reads through a
+  // token-scoped RPC (get_customer_portal / get_public_invoice) that
+  // does the authorization itself. Verified against the live database —
+  // correct token returns the record, a wrong token returns null, and a
+  // direct anon read of `estimates` returns []. The secret token in the
+  // query string is the credential; this middleware was never what
+  // protected them.
+  const isPublicShareRoute = pathname.startsWith("/portal/") || pathname.startsWith("/invoice/");
   // API routes must never receive an HTML redirect — a fetch() caller
   // expects JSON (or a real error status), not a 302 into /login's
   // page markup (which is exactly what "Unexpected token '<'... is not
@@ -49,7 +69,7 @@ export async function proxy(request: NextRequest) {
   // session cookie themselves via createServerSupabaseClient).
   const isApiRoute = pathname.startsWith("/api/");
 
-  if (!user && !isAuthRoute && !isApiRoute) {
+  if (!user && !isAuthRoute && !isApiRoute && !isPublicShareRoute) {
     const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);
   }
