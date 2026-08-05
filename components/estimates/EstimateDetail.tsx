@@ -74,6 +74,9 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
   const canEditExpenses = usePermission("expense", "create");
   const canEditPayments = usePermission("payment", "create");
 
+  const [isLineItemsOpen, setIsLineItemsOpen] = useState(true);
+const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
+
   const expensesPanelRef = useRef<ProjectExpensesPanelRef>(null);
   const paymentsPanelRef = useRef<InvoicePaymentsPanelRef>(null);
   const subAgentTabsRef = useRef<SubAgentTabsPanelRef>(null);
@@ -511,99 +514,204 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
             <div className="overflow-hidden rounded-xl border border-emerald-200 dark:border-emerald-800 bg-white/60 dark:bg-emerald-900/30 space-y-5 p-1">
 
             {/* Line Items & Totals Content Area */}
-            <div className="p-3 sm:p-4 bg-emerald-100/40 dark:bg-emerald-950/40 rounded-lg">
-              <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
-                Line Items
-              </h2>
-              {panelsLoading && scopeLines.length === 0 ? (
-                <SkeletonLines rows={3} className="py-2" />
-              ) : scopeLines.length === 0 ? (
-                <EmptyState title="No line items" description="Edit this estimate to add items." />
-              ) : (
-                <div className="overflow-x-auto rounded-lg border border-emerald-200 dark:border-emerald-800/80 bg-white dark:bg-emerald-950">
-                  <table className="w-full text-xs text-emerald-950 dark:text-emerald-100">
-                    <thead className="bg-emerald-100/80 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border-b border-emerald-200 dark:border-emerald-800">
-                      <tr>
-                        <th className="px-3.5 py-3 text-left font-semibold uppercase tracking-wider">Item</th>
-                        <th className="px-3.5 py-3 text-center font-semibold uppercase tracking-wider">Qty</th>
-                        <th className="px-3.5 py-3 text-center font-semibold uppercase tracking-wider">Unit</th>
-                        <th className="px-3.5 py-3 text-right font-semibold uppercase tracking-wider">Price</th>
-                        <th className="px-3.5 py-3 text-right font-semibold uppercase tracking-wider">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-emerald-100 dark:divide-emerald-900/80">
-                      {scopeLines.map((item) => (
-                        <tr key={item.id} className="hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors">
-                          <td className="px-3.5 py-3">
-                            <div className="font-semibold text-emerald-950 dark:text-white">{item.name}</div>
-                            {item.description && <div className="text-[11px] text-emerald-700/80 dark:text-emerald-300/80">{item.description}</div>}
-                          </td>
-                          <td className="px-3.5 py-3 text-center text-emerald-800 dark:text-emerald-200">{item.quantity}</td>
-                          <td className="px-3.5 py-3 text-center text-emerald-800 dark:text-emerald-200">{item.unit ?? "—"}</td>
-                          <td className="px-3.5 py-3 text-right text-emerald-800 dark:text-emerald-200">{formatMoney(item.unitPrice)}</td>
-                          <td className="px-3.5 py-3 text-right font-semibold text-emerald-950 dark:text-white">{formatMoney(item.total)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+  <div className="p-3 sm:p-4 bg-emerald-100/40 dark:bg-emerald-950/40 rounded-lg">
+  {/* Header with toggle */}
+  <div
+    className="flex items-center justify-between cursor-pointer select-none"
+    onClick={() => setIsLineItemsOpen(!isLineItemsOpen)}
+  >
+    <h2 className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+      Line Items
+      <span className="text-[10px] font-normal text-emerald-600 dark:text-emerald-400">
+        ({scopeLines.length})
+      </span>
+    </h2>
+    <button
+      type="button"
+      className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-200 transition-transform"
+      aria-label={isLineItemsOpen ? "Collapse" : "Expand"}
+    >
+      <svg
+        className={`w-4 h-4 transition-transform duration-200 ${isLineItemsOpen ? "rotate-180" : ""}`}
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
+    </button>
+  </div>
 
-              {/* Standout Financial Totals Breakdown */}
-              <div className="mt-4 rounded-xl border border-emerald-200 dark:border-emerald-700/80 bg-white dark:bg-emerald-900/70 p-3 sm:p-4 space-y-2 text-xs shadow-xs dark:shadow-inner">
-                <div className="flex justify-between text-emerald-800 dark:text-emerald-200"><span>Subtotal</span><span className="text-emerald-950 dark:text-white">{formatMoney(estimate.subtotal)}</span></div>
-                {estimate.markup !== 0 && <div className="flex justify-between text-emerald-800 dark:text-emerald-200"><span>Markup</span><span className="text-emerald-950 dark:text-white">{formatMoney(estimate.markup)}</span></div>}
-                {estimate.discount !== 0 && <div className="flex justify-between text-emerald-800 dark:text-emerald-200"><span>Discount</span><span className="text-emerald-950 dark:text-white">-{formatMoney(estimate.discount)}</span></div>}
-                {estimate.taxRate !== 0 && <div className="flex justify-between text-emerald-800 dark:text-emerald-200"><span>Tax ({estimate.taxRate}%)</span></div>}
-                <div className="flex justify-between border-t border-emerald-200 dark:border-emerald-700 pt-2.5 font-bold text-sm text-emerald-950 dark:text-white"><span>Total</span><span>{formatMoney(estimate.total)}</span></div>
-                {estimate.depositAmount > 0 && <div className="flex justify-between text-emerald-800 dark:text-emerald-200 pt-1"><span>Requested deposit</span><span className="text-emerald-950 dark:text-white">{formatMoney(estimate.depositAmount)}</span></div>}
-                {hasApprovedChangeOrders && (
-                  <>
-                    <div className="flex justify-between text-emerald-800 dark:text-emerald-200 pt-1">
-                      <span>Approved change orders</span>
-                      <span className="text-emerald-950 dark:text-white">{formatMoney(approvedChangeOrderRevenue)}</span>
-                    </div>
-                    <div className="flex justify-between border-t border-emerald-200 dark:border-emerald-700 pt-2 font-bold text-emerald-700 dark:text-emerald-300 text-sm">
-                      <span>Revised total</span>
-                      <span className="text-emerald-950 dark:text-white">{formatMoney(revisedTotal)}</span>
-                    </div>
-                  </>
-                )}
-              </div>
+  {/* Collapsible content */}
+  <div
+    className={`overflow-hidden transition-all duration-200 ease-in-out ${
+      isLineItemsOpen ? "max-h-[2000px] opacity-100 mt-3" : "max-h-0 opacity-0 mt-0"
+    }`}
+  >
+    {panelsLoading && scopeLines.length === 0 ? (
+      <SkeletonLines rows={3} className="py-2" />
+    ) : scopeLines.length === 0 ? (
+      <EmptyState title="No line items" description="Edit this estimate to add items." />
+    ) : (
+      <>
+        <div className="overflow-x-auto rounded-lg border border-emerald-200 dark:border-emerald-800/80 bg-white dark:bg-emerald-950">
+          <table className="w-full text-xs text-emerald-950 dark:text-emerald-100">
+            <thead className="bg-emerald-100/80 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border-b border-emerald-200 dark:border-emerald-800">
+              <tr>
+                <th className="px-2 py-1.5 text-left font-semibold uppercase tracking-wider">Item</th>
+                <th className="px-2 py-1.5 text-center font-semibold uppercase tracking-wider">Qty</th>
+                <th className="px-2 py-1.5 text-center font-semibold uppercase tracking-wider">Unit</th>
+                <th className="px-2 py-1.5 text-right font-semibold uppercase tracking-wider">Price</th>
+                <th className="px-2 py-1.5 text-right font-semibold uppercase tracking-wider">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-emerald-100 dark:divide-emerald-900/80">
+              {scopeLines.map((item) => (
+                <tr key={item.id} className="hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors">
+                  <td className="px-2 py-1.5">
+                    <div className="font-semibold text-emerald-950 dark:text-white">{item.name}</div>
+                    {item.description && (
+                      <div
+                        className="text-[11px] text-emerald-700/80 dark:text-emerald-300/80 truncate max-w-[180px]"
+                        title={item.description}
+                      >
+                        {item.description}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-2 py-1.5 text-center text-emerald-800 dark:text-emerald-200">{item.quantity}</td>
+                  <td className="px-2 py-1.5 text-center text-emerald-800 dark:text-emerald-200">{item.unit ?? "—"}</td>
+                  <td className="px-2 py-1.5 text-right text-emerald-800 dark:text-emerald-200">{formatMoney(item.unitPrice)}</td>
+                  <td className="px-2 py-1.5 text-right font-semibold text-emerald-950 dark:text-white">{formatMoney(item.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Totals – more compact */}
+        <div className="mt-3 rounded-xl border border-emerald-200 dark:border-emerald-700/80 bg-white dark:bg-emerald-900/70 p-2 sm:p-3 space-y-1.5 text-xs shadow-xs dark:shadow-inner">
+          <div className="flex justify-between text-emerald-800 dark:text-emerald-200">
+            <span>Subtotal</span>
+            <span className="text-emerald-950 dark:text-white">{formatMoney(estimate.subtotal)}</span>
+          </div>
+          {estimate.markup !== 0 && (
+            <div className="flex justify-between text-emerald-800 dark:text-emerald-200">
+              <span>Markup</span>
+              <span className="text-emerald-950 dark:text-white">{formatMoney(estimate.markup)}</span>
             </div>
+          )}
+          {estimate.discount !== 0 && (
+            <div className="flex justify-between text-emerald-800 dark:text-emerald-200">
+              <span>Discount</span>
+              <span className="text-emerald-950 dark:text-white">-{formatMoney(estimate.discount)}</span>
+            </div>
+          )}
+          {estimate.taxRate !== 0 && (
+            <div className="flex justify-between text-emerald-800 dark:text-emerald-200">
+              <span>Tax ({estimate.taxRate}%)</span>
+            </div>
+          )}
+          <div className="flex justify-between border-t border-emerald-200 dark:border-emerald-700 pt-2 font-bold text-sm text-emerald-950 dark:text-white">
+            <span>Total</span>
+            <span>{formatMoney(estimate.total)}</span>
+          </div>
+          {estimate.depositAmount > 0 && (
+            <div className="flex justify-between text-emerald-800 dark:text-emerald-200 pt-1">
+              <span>Requested deposit</span>
+              <span className="text-emerald-950 dark:text-white">{formatMoney(estimate.depositAmount)}</span>
+            </div>
+          )}
+          {hasApprovedChangeOrders && (
+            <>
+              <div className="flex justify-between text-emerald-800 dark:text-emerald-200 pt-1">
+                <span>Approved change orders</span>
+                <span className="text-emerald-950 dark:text-white">{formatMoney(approvedChangeOrderRevenue)}</span>
+              </div>
+              <div className="flex justify-between border-t border-emerald-200 dark:border-emerald-700 pt-2 font-bold text-emerald-700 dark:text-emerald-300 text-sm">
+                <span>Revised total</span>
+                <span className="text-emerald-950 dark:text-white">{formatMoney(revisedTotal)}</span>
+              </div>
+            </>
+          )}
+        </div>
+      </>
+    )}
+  </div>
+</div>
 
             {/* Change Orders — Visually stepped back as a secondary block */}
-            <div className="border-t border-emerald-200 dark:border-emerald-800/80 bg-emerald-50/50 dark:bg-emerald-950/20 p-3 sm:p-4 rounded-lg">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
-                  <GitPullRequest className="size-4 text-emerald-700 dark:text-emerald-400" /> Change Orders ({changeOrders.length})
-                </h2>
-                <Link href={`/change-orders/new?projectId=${estimate.projectId}&estimateId=${estimate.id}`} className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:text-emerald-950 dark:hover:text-white hover:underline">
-                  + New change order
-                </Link>
+<div className="border-t border-emerald-200 dark:border-emerald-800/80 bg-emerald-50/50 dark:bg-emerald-950/20 p-3 sm:p-4 rounded-lg">
+  {/* Header – always visible, clickable toggle */}
+  <div
+    className="flex flex-wrap items-center justify-between gap-2 cursor-pointer select-none"
+    onClick={() => setChangeOrdersOpen(!changeOrdersOpen)}
+  >
+    <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
+      <GitPullRequest className="size-4 text-emerald-700 dark:text-emerald-400" />
+      Change Orders ({changeOrders.length})
+    </h2>
+    <div className="flex items-center gap-2">
+      <Link
+        href={`/change-orders/new?projectId=${estimate.projectId}&estimateId=${estimate.id}`}
+        className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:text-emerald-950 dark:hover:text-white hover:underline"
+        onClick={(e) => e.stopPropagation()} // Prevent toggle when clicking the link
+      >
+        + New change order
+      </Link>
+      <button
+        type="button"
+        className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-200 transition-transform"
+        aria-label={changeOrdersOpen ? "Collapse" : "Expand"}
+      >
+        <svg
+          className={`w-4 h-4 transition-transform duration-200 ${changeOrdersOpen ? "rotate-180" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  {/* Collapsible content – the list or empty state */}
+  <div
+    className={`overflow-hidden transition-all duration-200 ease-in-out ${
+      changeOrdersOpen ? "max-h-[2000px] opacity-100 mt-3" : "max-h-0 opacity-0 mt-0"
+    }`}
+  >
+    {panelsLoading && changeOrders.length === 0 ? (
+      <SkeletonLines rows={2} className="py-1" />
+    ) : changeOrders.length === 0 ? (
+      <p className="text-xs text-emerald-700/80 dark:text-emerald-400/80 italic py-1">No change orders recorded yet.</p>
+    ) : (
+      <ul className="divide-y divide-emerald-100 dark:divide-emerald-900 rounded-lg border border-emerald-200 dark:border-emerald-800/80 bg-white dark:bg-emerald-950/60 px-3">
+        {changeOrders.map((co) => (
+          <li key={co.id}>
+            <Link
+              href={`/change-orders/${co.id}`}
+              className="flex items-center justify-between gap-2 py-2.5 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
+            >
+              <div>
+                <div className="text-xs font-semibold text-emerald-950 dark:text-white">
+                  {co.changeOrderNumber} - {co.title}
+                </div>
               </div>
-              {panelsLoading && changeOrders.length === 0 ? (
-                <SkeletonLines rows={2} className="py-1" />
-              ) : changeOrders.length === 0 ? (
-                <p className="text-xs text-emerald-700/80 dark:text-emerald-400/80 italic py-1">No change orders recorded yet.</p>
-              ) : (
-                <ul className="divide-y divide-emerald-100 dark:divide-emerald-900 rounded-lg border border-emerald-200 dark:border-emerald-800/80 bg-white dark:bg-emerald-950/60 px-3">
-                  {changeOrders.map((co) => (
-                    <li key={co.id}>
-                      <Link href={`/change-orders/${co.id}`} className="flex items-center justify-between gap-2 py-2.5 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors">
-                        <div>
-                          <div className="text-xs font-semibold text-emerald-950 dark:text-white">{co.changeOrderNumber} - {co.title}</div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-semibold text-emerald-950 dark:text-white">{formatMoney(calculateChangeOrderRevenue(co.totalAmount, co.tax))}</span>
-                          <Badge tone={CHANGE_ORDER_STATUS_TONE[co.status]}>{co.status}</Badge>
-                        </div>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-emerald-950 dark:text-white">
+                  {formatMoney(calculateChangeOrderRevenue(co.totalAmount, co.tax))}
+                </span>
+                <Badge tone={CHANGE_ORDER_STATUS_TONE[co.status]}>{co.status}</Badge>
+              </div>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    )}
+  </div>
+</div>
 
             </div>
             {/* /scope & pricing group */}

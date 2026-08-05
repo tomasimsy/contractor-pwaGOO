@@ -24,8 +24,8 @@
  *   area id — saving Area 2 only ever adds/removes area 2's id from
  *   these sets, never affecting Area 1/3's rendered button state.
  */
-import { useState, useCallback, useRef, useEffect } from "react";
-import { Plus, Trash2, Upload } from "lucide-react";
+import { useState, useCallback, useRef, useEffect, useImperativeHandle, forwardRef } from "react";
+import { Plus, Trash2, Upload, Camera } from "lucide-react";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { RoofingAreaLineItemEditor, type RoofingAreaLineItemEditorHandle } from "./RoofingAreaLineItemEditor";
 import { calculateAreaRepairCost } from "@/lib/services/financialCalculations";
@@ -78,7 +78,22 @@ export interface RoofingAreasEditorV2Props {
   onAreaLineItemsSaved?: () => void;
 }
 
-export function RoofingAreasEditorV2({ estimateId, areas, onChange, onSave, onDelete, onAreaLineItemsSaved }: RoofingAreasEditorV2Props) {
+/** Lets the PARENT FORM save every area in one action.
+ *
+ * Needed because saving an area is not something the parent can do on
+ * its own: each area's LINE ITEMS save through refs held inside this
+ * component (lineItemEditorRefs), and those need the freshly-saved
+ * area's server-assigned companyId/id. Without this handle, a
+ * form-level "Save changes" would persist the estimate and silently
+ * drop every roof-area edit. Same pattern as ProjectExpensesPanelRef. */
+export interface RoofingAreasEditorV2Ref {
+  saveAll: () => Promise<void>;
+}
+
+function RoofingAreasEditorV2Inner(
+  { estimateId, areas, onChange, onSave, onDelete, onAreaLineItemsSaved }: RoofingAreasEditorV2Props,
+  ref: React.ForwardedRef<RoofingAreasEditorV2Ref>
+) {
   const { roofingAreaService } = useServices();
   const [savingAreaIds, setSavingAreaIds] = useState<Set<UUID>>(new Set());
   const [deletingAreaIds, setDeletingAreaIds] = useState<Set<UUID>>(new Set());
@@ -87,7 +102,7 @@ export function RoofingAreasEditorV2({ estimateId, areas, onChange, onSave, onDe
   const [areaPhotos, setAreaPhotos] = useState<{ [areaId: string]: { before: RoofingPhoto[]; after: RoofingPhoto[] } }>({});
   const lineItemEditorRefs = useRef<{ [areaId: string]: RoofingAreaLineItemEditorHandle | null }>({});
   const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
-
+const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
   useEffect(() => {
     const loadPhotos = async () => {
       const photos: { [areaId: string]: { before: RoofingPhoto[]; after: RoofingPhoto[] } } = {};
@@ -192,6 +207,59 @@ export function RoofingAreasEditorV2({ estimateId, areas, onChange, onSave, onDe
     [areas, onChange]
   );
 
+  /** The save for ONE area, without UI chrome — throws instead of
+   * alerting so a caller can decide how to surface it. */
+  const saveOneArea = useCallback(
+    async (area: RoofingArea) => {
+      if (!area.areaName.trim()) {
+        throw new Error(`Area ${(area.sequenceNumber ?? 0) + 1}: a name is required before saving.`);
+      }
+      const saved = await onSave({
+        id: area.id,
+        estimateId: area.estimateId,
+        companyId: area.companyId,
+        areaName: area.areaName,
+        sequenceNumber: area.sequenceNumber,
+        scopeItems: area.scopeItems,
+        areaTotal: area.areaTotal,
+        measurements: area.measurements ?? null,
+        inspectionNotes: area.inspectionNotes ?? null,
+        notes: area.notes ?? null,
+        quantity: area.quantity ?? 1,
+        quantityUnit: area.quantityUnit ?? null,
+        defect: area.defect ?? null,
+        location: area.location ?? null,
+        correctiveAction: area.correctiveAction ?? null,
+        materialsIncluded: area.materialsIncluded ?? null,
+        materialCost: area.materialCost ?? 0,
+        laborCost: area.laborCost ?? 0,
+        tax: area.tax ?? 0,
+      });
+      // The step the parent cannot reach on its own.
+      await lineItemEditorRefs.current[area.id]?.save(saved.companyId, saved.id);
+      return saved;
+    },
+    [onSave]
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      async saveAll() {
+        // SEQUENTIAL, not parallel: every area save recalculates the
+        // same estimate's totals, and concurrent recalculation races.
+        // Throws on the first failure so the form surfaces the error
+        // and does NOT navigate away — a partial save that looked
+        // successful would be the worst outcome.
+        for (const area of areas) {
+          await saveOneArea(area);
+        }
+        if (areas.length > 0) onAreaLineItemsSaved?.();
+      },
+    }),
+    [areas, saveOneArea, onAreaLineItemsSaved]
+  );
+
   const handleSaveArea = useCallback(
     async (area: RoofingArea) => {
       if (!area.areaName.trim()) {
@@ -287,8 +355,8 @@ export function RoofingAreasEditorV2({ estimateId, areas, onChange, onSave, onDe
 
   if (areas.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-gray-300 p-8 text-center">
-        <p className="text-sm text-gray-600 mb-3">No roof areas yet</p>
+      <div className="rounded-lg border border-dashed border-input p-8 text-center">
+        <p className="text-sm text-muted-foreground mb-3">No roof areas yet</p>
         <button
           type="button"
           onClick={handleAddArea}
@@ -304,277 +372,316 @@ export function RoofingAreasEditorV2({ estimateId, areas, onChange, onSave, onDe
   return (
     <div className="space-y-3">
       {areas.map((area, idx) => (
-        <div key={area.id} className="rounded-lg border border-gray-200 bg-white p-4">
-          <div className="flex items-start justify-between gap-3 mb-3">
-            <h3 className="font-medium text-gray-900">
-              Area {idx + 1}: {area.areaName}
+        /* Each area is a TINTED card with a solid header bar. Every
+           area card used to be `bg-white` on a white page, so two
+           adjacent areas were indistinguishable — reported live: "I
+           still can't distinguish between 2 areas, both are white."
+           The card now sits on `bg-muted` with its FIELDS on `bg-card`,
+           inverting the usual nesting so the boundary is obvious, and
+           the numbered header makes "which area am I in" readable at a
+           glance while scrolling. Tokens only — no `dark:` variants,
+           which key off the OS rather than this app's data-theme. */
+        <div key={area.id} className="overflow-hidden rounded-xl border border-primary  shadow-sm">
+          <div className="flex items-start justify-between gap-3 bg-primary px-4 py-3  ">
+            <h3 className="flex items-center gap-2 font-semibold text-primary-foreground">
+              <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-foreground/20 text-xs font-bold">
+                {idx + 1}
+              </span>
+              <span className="min-w-0 break-words">{area.areaName || `Area ${idx + 1}`}</span>
             </h3>
             <button
               type="button"
               onClick={() => handleDeleteArea(area.id)}
               disabled={deletingAreaIds.has(area.id) || savingAreaIds.has(area.id)}
-              className="text-red-600 hover:text-red-700 disabled:opacity-50"
+              className="shrink-0 rounded-md p-1 text-primary-foreground/80 transition-colors hover:bg-primary-foreground/15 hover:text-primary-foreground disabled:opacity-50"
             >
               <Trash2 className="size-4" />
             </button>
           </div>
 
-          <div className="space-y-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Title</label>
-              <input
-                type="text"
-                value={area.areaName}
-                onChange={(e) => handleUpdateArea(area.id, { areaName: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                placeholder="e.g., Front Slope, Back Roof"
-              />
-            </div>
+  <div className="space-y-2 p-2">
+  {/* Row: Title + Measurements */}
+  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+    <div>
+      <label className="block text-[10px] font-medium text-foreground mb-0.5">Title</label>
+      <input
+        type="text"
+        value={area.areaName}
+        onChange={(e) => handleUpdateArea(area.id, { areaName: e.target.value })}
+        className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+        placeholder="e.g., Front Slope"
+      />
+    </div>
+    <div>
+      <label className="block text-[10px] font-medium text-foreground mb-0.5">Measurements</label>
+      <input
+        type="text"
+        value={area.measurements ?? ""}
+        onChange={(e) => handleUpdateArea(area.id, { measurements: e.target.value })}
+        className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+        placeholder="e.g., 24 SQ, 12/12"
+      />
+    </div>
+  </div>
 
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Measurements</label>
-              <input
-                type="text"
-                value={area.measurements ?? ""}
-                onChange={(e) => handleUpdateArea(area.id, { measurements: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                placeholder="e.g., 24 SQ, 12/12 pitch"
-              />
-            </div>
+  {/* Row: Inspection + Scope – 3 rows */}
+  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+    {/* <div>
+      <label className="block text-[10px] font-medium text-foreground mb-0.5">Inspection / Condition</label>
+      <textarea
+        value={area.inspectionNotes ?? ""}
+        onChange={(e) => handleUpdateArea(area.id, { inspectionNotes: e.target.value })}
+        className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+        placeholder="Observed condition, damage, existing layers, etc."
+        rows={3}
+      />
+    </div> */}
+    <div>
+      <label className="block text-[10px] font-medium text-foreground mb-0.5">Scope / Work Description</label>
+      <textarea
+        value={area.scopeItems || ""}
+        onChange={(e) => handleUpdateArea(area.id, { scopeItems: e.target.value })}
+        className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+        placeholder="Tear off, new shingles, gutters, etc."
+        rows={3}
+      />
+    </div>
+  </div>
 
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Inspection / Condition</label>
-              <textarea
-                value={area.inspectionNotes ?? ""}
-                onChange={(e) => handleUpdateArea(area.id, { inspectionNotes: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                placeholder="Observed condition, damage, existing layers, etc."
-                rows={2}
-              />
-            </div>
+  {/* Notes – full width, 3 rows, now DISABLED */}
+  <div>
+    <label className="block text-[10px] font-medium text-foreground mb-0.5">Notes</label>
+    <textarea
+      value={area.notes ?? ""}
+      onChange={(e) => handleUpdateArea(area.id, { notes: e.target.value })}
+      className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+      placeholder="Any other notes for this area"
+      rows={3}
+      disabled // <-- disabled as requested
+    />
+  </div>
 
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Scope / Work Description</label>
-              <textarea
-                value={area.scopeItems || ""}
-                onChange={(e) => handleUpdateArea(area.id, { scopeItems: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                placeholder="Tear off, new shingles, gutters, etc."
-                rows={2}
-              />
-            </div>
+  {/* ---- Repair Item (collapsible) ---- */}
+  <details className="rounded-lg border border-border bg-card/50 p-2">
+    <summary className="text-xs font-semibold uppercase tracking-wide text-muted-foreground cursor-pointer select-none">
+      Repair Item
+    </summary>
+    <div className="mt-2 space-y-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div>
+          <label className="block text-[10px] font-medium text-foreground mb-0.5">Defect</label>
+          <textarea
+            value={area.defect ?? ""}
+            onChange={(e) => handleUpdateArea(area.id, { defect: e.target.value })}
+            className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+            placeholder="Describe the defect"
+            rows={3} // now 3 rows
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] font-medium text-foreground mb-0.5">Location</label>
+          <input
+            type="text"
+            value={area.location ?? ""}
+            onChange={(e) => handleUpdateArea(area.id, { location: e.target.value })}
+            className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+            placeholder="e.g., NE corner"
+          />
+        </div>
+      </div>
 
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
-              <textarea
-                value={area.notes ?? ""}
-                onChange={(e) => handleUpdateArea(area.id, { notes: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                placeholder="Any other notes for this area"
-                rows={2}
-              />
-            </div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div>
+          <label className="block text-[10px] font-medium text-foreground mb-0.5">Corrective Action</label>
+          <textarea
+            value={area.correctiveAction ?? ""}
+            onChange={(e) => handleUpdateArea(area.id, { correctiveAction: e.target.value })}
+            className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+            placeholder="Planned repair"
+            rows={3} // now 3 rows
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] font-medium text-foreground mb-0.5">Materials Included</label>
+          <textarea
+            value={area.materialsIncluded ?? ""}
+            onChange={(e) => handleUpdateArea(area.id, { materialsIncluded: e.target.value })}
+            className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+            placeholder="Materials included"
+            rows={3} // now 3 rows
+          />
+        </div>
+      </div>
 
-            <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50/50 p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Repair Item</div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <div>
+          <label className="block text-[10px] font-medium text-foreground mb-0.5">Qty</label>
+          <input
+            type="number"
+            min="0"
+            step="any"
+            value={area.quantity ?? 1}
+            onChange={(e) => handleUpdateArea(area.id, { quantity: parseFloat(e.target.value) || 0 })}
+            className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] font-medium text-foreground mb-0.5">Unit</label>
+          <select
+            value={area.quantityUnit ?? ""}
+            onChange={(e) => handleUpdateArea(area.id, { quantityUnit: (e.target.value || null) as RoofingAreaQuantityUnit | null })}
+            className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+          >
+            <option value="">—</option>
+            {ROOFING_AREA_QUANTITY_UNITS.map((u) => (
+              <option key={u} value={u}>{u}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-[10px] font-medium text-foreground mb-0.5">Material $</label>
+          <input
+            type="number"
+            min="0"
+            step="any"
+            value={area.materialCost ?? 0}
+            onChange={(e) => handleUpdateArea(area.id, { materialCost: parseFloat(e.target.value) || 0 })}
+            className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] font-medium text-foreground mb-0.5">Labor $</label>
+          <input
+            type="number"
+            min="0"
+            step="any"
+            value={area.laborCost ?? 0}
+            onChange={(e) => handleUpdateArea(area.id, { laborCost: parseFloat(e.target.value) || 0 })}
+            className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] font-medium text-foreground mb-0.5">Tax $</label>
+          <input
+            type="number"
+            min="0"
+            step="any"
+            value={area.tax ?? 0}
+            onChange={(e) => handleUpdateArea(area.id, { tax: parseFloat(e.target.value) || 0 })}
+            className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+          />
+        </div>
+      </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Defect</label>
-                  <textarea
-                    value={area.defect ?? ""}
-                    onChange={(e) => handleUpdateArea(area.id, { defect: e.target.value })}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                    placeholder="Describe the defect"
-                    rows={2}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Location</label>
-                  <input
-                    type="text"
-                    value={area.location ?? ""}
-                    onChange={(e) => handleUpdateArea(area.id, { location: e.target.value })}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                    placeholder="e.g., NE corner, ridge line"
-                  />
-                </div>
+      <div className="flex items-center justify-between rounded-lg border border-border bg-card px-2 py-1.5 text-sm">
+        <span className="text-muted-foreground">Estimated Repair Cost</span>
+        <span className="font-semibold text-foreground">
+          {formatMoney(calculateAreaRepairCost(area.materialCost ?? 0, area.laborCost ?? 0, area.tax ?? 0))}
+        </span>
+      </div>
+    </div>
+  </details>
+
+  {/* ---- Line Items ---- */}
+  <div>
+    <label className="block text-[10px] font-medium text-foreground mb-0.5">Line Items</label>
+    <RoofingAreaLineItemEditor
+      ref={(el) => {
+        lineItemEditorRefs.current[area.id] = el;
+      }}
+      areaId={area.id}
+      companyId={area.companyId || null}
+    />
+  </div>
+
+  {/* ---- Photos (collapsible) ---- */}
+{/* Photo section – custom collapsible with chevron */}
+<div className="rounded-lg border border-primary/25 bg-primary/5 p-2">
+  {/* Header – clickable to toggle */}
+  <div
+    className="flex items-center justify-between cursor-pointer select-none"
+    onClick={() => setPhotoOpen(prev => ({ ...prev, [area.id]: !prev[area.id] }))}
+  >
+    <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-primary">
+      <Camera className="size-3.5 text-primary" />
+      Area Photos
+    </div>
+    <button
+      type="button"
+      className="text-primary transition-transform duration-200"
+      style={{ transform: photoOpen[area.id] ? 'rotate(180deg)' : 'rotate(0deg)' }}
+    >
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
+    </button>
+  </div>
+
+  {/* Content – collapses/expands */}
+  <div
+    className={`overflow-hidden transition-all duration-200 ease-in-out ${
+      photoOpen[area.id] ? "max-h-[2000px] opacity-100 mt-2" : "max-h-0 opacity-0 mt-0"
+    }`}
+  >
+    {(["before", "after"] as const).map((type) => (
+      <div key={type} className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold capitalize text-foreground">{type}</span>
+          <input
+            ref={(el) => {
+              if (el) fileInputRefs.current[`${area.id}-${type}`] = el;
+            }}
+            type="file"
+            accept="image/*"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                handlePhotoUpload(area.id, type, file);
+                e.target.value = "";
+              }
+            }}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRefs.current[`${area.id}-${type}`]?.click()}
+            disabled={uploading[`${area.id}-${type}`] || !area.companyId}
+            title={!area.companyId ? "Save area first" : ""}
+            className="flex items-center gap-1 rounded-md border border-primary/40 px-2 py-0.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Upload className="size-3" />
+            Add {type === "before" ? "Before" : "After"}
+          </button>
+        </div>
+
+        {(areaPhotos[area.id]?.[type] || []).length > 0 ? (
+          <div className="grid grid-cols-2 gap-2">
+            {(areaPhotos[area.id]?.[type] || []).map((photo) => (
+              <div key={photo.id} className="relative overflow-hidden rounded-lg border border-border">
+                <img
+                  src={`/api/estimate-photos/download?path=${encodeURIComponent(photo.storagePath)}`}
+                  alt={`${type} photo`}
+                  className="h-16 w-full object-cover"
+                  loading="lazy"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleDeletePhoto(area.id, photo.id)}
+                  className="absolute right-1 top-1 rounded-md bg-red-600 p-0.5 text-white hover:bg-red-700"
+                >
+                  <Trash2 className="size-3" />
+                </button>
               </div>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Corrective Action</label>
-                  <textarea
-                    value={area.correctiveAction ?? ""}
-                    onChange={(e) => handleUpdateArea(area.id, { correctiveAction: e.target.value })}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                    placeholder="Planned repair action"
-                    rows={2}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Material Included</label>
-                  <textarea
-                    value={area.materialsIncluded ?? ""}
-                    onChange={(e) => handleUpdateArea(area.id, { materialsIncluded: e.target.value })}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                    placeholder="Materials included in this repair"
-                    rows={2}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Quantity</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={area.quantity ?? 1}
-                    onChange={(e) => handleUpdateArea(area.id, { quantity: parseFloat(e.target.value) || 0 })}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Unit</label>
-                  <select
-                    value={area.quantityUnit ?? ""}
-                    onChange={(e) => handleUpdateArea(area.id, { quantityUnit: (e.target.value || null) as RoofingAreaQuantityUnit | null })}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                  >
-                    <option value="">—</option>
-                    {ROOFING_AREA_QUANTITY_UNITS.map((u) => (
-                      <option key={u} value={u}>{u}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Material Cost</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={area.materialCost ?? 0}
-                    onChange={(e) => handleUpdateArea(area.id, { materialCost: parseFloat(e.target.value) || 0 })}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Labor Cost</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={area.laborCost ?? 0}
-                    onChange={(e) => handleUpdateArea(area.id, { laborCost: parseFloat(e.target.value) || 0 })}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Tax</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={area.tax ?? 0}
-                    onChange={(e) => handleUpdateArea(area.id, { tax: parseFloat(e.target.value) || 0 })}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between rounded-lg bg-white px-3 py-2 text-sm">
-                <span className="text-gray-600">Estimated Repair Cost</span>
-                <span className="font-semibold text-gray-900">
-                  {formatMoney(calculateAreaRepairCost(area.materialCost ?? 0, area.laborCost ?? 0, area.tax ?? 0))}
-                </span>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Line Items</label>
-              <RoofingAreaLineItemEditor
-                ref={(el) => {
-                  lineItemEditorRefs.current[area.id] = el;
-                }}
-                areaId={area.id}
-                companyId={area.companyId || null}
-              />
-            </div>
-
-            <div className="space-y-2 rounded bg-gray-50 p-3">
-              <div className="text-xs font-medium text-gray-700">Photos</div>
-
-              {(["before", "after"] as const).map((type) => (
-                <div key={type} className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-gray-600 capitalize">{type} Photos</span>
-                    <input
-                      ref={(el) => {
-                        if (el) fileInputRefs.current[`${area.id}-${type}`] = el;
-                      }}
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          handlePhotoUpload(area.id, type, file);
-                          e.target.value = "";
-                        }
-                      }}
-                      className="hidden"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => fileInputRefs.current[`${area.id}-${type}`]?.click()}
-                      disabled={uploading[`${area.id}-${type}`] || !area.companyId}
-                      title={!area.companyId ? "Save area first" : ""}
-                      className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Upload className="size-3" />
-                      Add {type === "before" ? "Before" : "After"}
-                    </button>
-                  </div>
-
-                  {(areaPhotos[area.id]?.[type] || []).length > 0 ? (
-                    <div className="grid grid-cols-2 gap-2">
-                      {(areaPhotos[area.id]?.[type] || []).map((photo) => (
-                        <div key={photo.id} className="relative overflow-hidden rounded-lg border border-gray-200">
-                          <img
-                            src={`/api/estimate-photos/download?path=${encodeURIComponent(photo.storagePath)}`}
-                            alt={`${type} photo`}
-                            className="h-20 w-full object-cover"
-                            loading="lazy"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleDeletePhoto(area.id, photo.id)}
-                            className="absolute right-1 top-1 rounded-md bg-red-600 p-1 text-white hover:bg-red-700"
-                          >
-                            <Trash2 className="size-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-gray-500">No {type} photos yet</p>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => handleSaveArea(area)}
-              disabled={savingAreaIds.has(area.id)}
-              className={`w-full rounded-lg px-3 py-2 text-sm font-medium text-white ${
-                savedAreaIds.has(area.id) ? "bg-green-600 hover:bg-green-700" : "bg-blue-600 hover:bg-blue-700"
-              } disabled:opacity-50`}
-            >
-              {savingAreaIds.has(area.id) ? "Saving..." : savedAreaIds.has(area.id) ? "✓ Saved" : "Save Area"}
-            </button>
+            ))}
           </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">No {type} photos yet</p>
+        )}
+      </div>
+    ))}
+  </div>
+</div>
+</div>
         </div>
       ))}
 
@@ -582,10 +689,15 @@ export function RoofingAreasEditorV2({ estimateId, areas, onChange, onSave, onDe
         type="button"
         onClick={handleAddArea}
         disabled={savingAreaIds.size > 0 || deletingAreaIds.size > 0}
-        className="w-full rounded-lg border border-dashed border-gray-300 py-2 text-sm font-medium text-gray-600 hover:border-gray-400 hover:text-gray-700 disabled:opacity-50"
+        className="w-full rounded-lg border-2 border-dashed border-primary/50 py-2.5 text-sm font-semibold text-primary transition-colors hover:border-primary hover:bg-primary/5 disabled:opacity-50"
       >
         <Plus className="inline size-4 mr-1" /> Add Another Area
       </button>
     </div>
   );
 }
+
+export const RoofingAreasEditorV2 = forwardRef<RoofingAreasEditorV2Ref, RoofingAreasEditorV2Props>(
+  RoofingAreasEditorV2Inner
+);
+RoofingAreasEditorV2.displayName = "RoofingAreasEditorV2";

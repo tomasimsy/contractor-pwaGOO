@@ -189,7 +189,7 @@ export async function GET(
         ${estimate.estimate_type === "roofing" && roofingAreas.length > 0 ? `
           <div class="section" style="page-break-inside: avoid;">
             <div style="font-size: 14px; font-weight: 800; color: #111827; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 16px; border-bottom: 2px solid #111827; padding-bottom: 6px;">
-              Detailed Roof Areas &amp; Scope of Work
+              Detailed Areas &amp; Scope of Work
             </div>
             
             ${roofingAreas.map((area, idx) => {

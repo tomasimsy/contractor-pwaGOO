@@ -56,7 +56,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const { data: invoice } = await invoiceQuery.maybeSingle();
     if (!invoice) return new NextResponse("Not found", { status: 404 });
 
-    const [{ data: client }, { data: items }, { data: payments }, { data: changeOrderRows }] = await Promise.all([
+    const [{ data: client }, { data: items }, { data: payments }, { data: changeOrderRows }, { data: parentEstimate }] = await Promise.all([
       supabase.from("clients").select("*").eq("id", invoice.client_id).maybeSingle(),
       supabase.from("invoice_items").select("*").eq("invoice_id", id).is("deleted_at", null).order("created_at", { ascending: true }),
       supabase.from("invoice_payments").select("*").eq("invoice_id", id).is("deleted_at", null).order("payment_date", { ascending: true }),
@@ -67,6 +67,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         ? supabase.from("change_orders").select("change_order_number,title,total_amount,tax,approved_at")
             .eq("estimate_id", invoice.estimate_id).eq("status", "approved").is("deleted_at", null)
         : Promise.resolve({ data: [] }),
+      // The parent estimate's signature — see the fallback below for
+      // why an invoice PDF needs it. includeDeleted is irrelevant here
+      // (we only read the signature), but financial history is
+      // permanent, so a later-deleted estimate must not erase the
+      // approval this invoice was raised against.
+      invoice.estimate_id
+        ? supabase.from("estimates").select("estimate_number,signature").eq("id", invoice.estimate_id).maybeSingle()
+        : Promise.resolve({ data: null }),
     ]);
 
     const lineItems = (items ?? []) as { name?: string; description?: string; quantity?: number; unit_price?: number; total?: number }[];
@@ -107,6 +115,35 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         signature = { type: "type", value: String(invoice.signature), date: invoice.signed_date ?? "" };
       }
     }
+
+    // FALLBACK: the customer signed the ESTIMATE, not the invoice.
+    //
+    // Almost every invoice in this app is auto-generated the moment an
+    // estimate is signed (estimateWorkflow.signEstimate), and that
+    // signature is recorded on `estimates.signature`. Nothing ever
+    // copies it onto the invoice row — so `invoices.signature` is null
+    // for those, and this PDF printed "Not Signed" on work the customer
+    // had demonstrably approved. Reported live on INV-1014, whose
+    // parent estimate OSR20260026 carries a signature dated the same
+    // day.
+    //
+    // Deliberately NOT copied into `invoices.signature`: that would
+    // duplicate one signature across two rows and let them drift. The
+    // estimate remains the single record of what the customer signed;
+    // this reads it.
+    //
+    // It is also labelled differently below — signing an estimate
+    // accepts a QUOTE, which is not the same act as acknowledging a
+    // BILL. Presenting the former as though it were the latter would
+    // misrepresent what the customer actually agreed to.
+    const estimateSignatureRaw = (parentEstimate as { signature?: unknown } | null)?.signature ?? null;
+    const signedOnEstimate = !signature && !!estimateSignatureRaw;
+    if (signedOnEstimate) {
+      // estimates.signature is jsonb — already an object, unlike the
+      // invoice's TEXT column handled above.
+      signature = estimateSignatureRaw as { type: "draw" | "type"; value: string; date: string };
+    }
+    const parentEstimateNumber = (parentEstimate as { estimate_number?: string | null } | null)?.estimate_number ?? null;
 
     const html = pdfDocument({
       docTitle: `Invoice ${invoice.invoice_number || invoice.id.slice(0, 8)}`,
@@ -230,6 +267,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         <div class="section">
           <div class="section-title">Customer Signature</div>
           <div class="signature-box">${renderSignature(signature)}</div>
+          ${signedOnEstimate
+            ? `<div style="font-size:9.5px; color:#6b7280; margin-top:4px;">Approved on estimate ${parentEstimateNumber ?? ""} — this invoice bills the approved scope.</div>`
+            : ""}
           ${renderCompanySignatureLine(company)}
         </div>
 

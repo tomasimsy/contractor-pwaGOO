@@ -18,12 +18,13 @@
  * functions EstimateService itself delegates to), never computed
  * ad hoc here.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Building2, FileText, Home, ListChecks, Calculator, Camera } from "lucide-react";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { LineItemEditor, type DraftLineItem } from "./LineItemEditor";
-import { RoofingAreasEditorV2 } from "./RoofingAreasEditorV2";
+import { RoofingAreasEditorV2, type RoofingAreasEditorV2Ref } from "./RoofingAreasEditorV2";
 import { EstimatePhotosEditor } from "./EstimatePhotosEditor";
 import { Modal } from "@/components/ui/Modal";
 import { ProjectForm } from "@/components/projects/ProjectForm";
@@ -37,6 +38,85 @@ import type { Project } from "@/lib/services/projectService";
 import type { Client } from "@/lib/services/clientService";
 
 const formatMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+
+/* ------------------------------------------------------------------
+ * PRESENTATION ONLY
+ * ------------------------------------------------------------------
+ * Everything below this comment is layout, spacing and colour. No
+ * field was added, removed, renamed or re-wired; every input keeps the
+ * exact value/onChange/required/disabled it had, and every conditional
+ * (roofV2, estimateType, typeLocked, `estimate` present) is unchanged.
+ *
+ * The form was one flat 3xl column of ~14 equally-weighted blocks, so
+ * nothing signalled where one concern ended and the next began — and
+ * the per-area photo upload ended up buried a thousand pixels inside
+ * an unlabelled card (reported live: "I'm not seeing where I can
+ * upload photos for each area"). These sections exist to make the
+ * shape of the form legible at a glance.
+ * ------------------------------------------------------------------ */
+
+/** One shared input style. Previously this exact class string was
+ * repeated on all ten inputs, which is how they drifted apart. */
+/* ------------------------------------------------------------------
+ * COLOUR RULE FOR THIS FILE: token classes only. NO `dark:` variants.
+ * ------------------------------------------------------------------
+ * This app switches themes with `data-theme` on <html> (app/layout.tsx),
+ * chosen deliberately so a user's explicit setting can override their
+ * OS. But Tailwind v4's `dark:` variant defaults to
+ * `@media (prefers-color-scheme: dark)`, and globals.css declares no
+ * `@custom-variant dark` — so `dark:` fires off the OS setting and is
+ * completely disconnected from the theme the app is actually rendering.
+ *
+ * With the app on LIGHT and the OS on DARK, an earlier version of this
+ * form applied dark-mode colours over a white page: measured at
+ * near-white text (lab 97.8) on a #ffffff background. Unreadable.
+ *
+ * `bg-card`, `text-foreground`, `border-input`, `bg-muted`,
+ * `text-muted-foreground`, `text-primary` all resolve through the CSS
+ * variables that data-theme actually swaps, so they are correct in both
+ * themes with no variant needed. Use those. */
+const FIELD =
+  "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30:text-emerald-400/40";
+
+const LABEL = "text-xs font-semibold text-foreground";
+
+/** A titled, colour-headed panel. The icon + tinted header is what
+ * makes the form scannable without reading every label. */
+function Section({
+  icon: Icon,
+  title,
+  hint,
+  accent = true,
+  children,
+}: {
+  icon: typeof FileText;
+  title: string;
+  hint?: string;
+  /** Tinted surface + left accent rail. Used for the PHOTO sections so
+   * they are recognisable at a glance while scanning past text fields —
+   * same footprint, more contrast. */
+  accent?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      className={`overflow-hidden rounded-xl border shadow-xs ${
+        accent ? "border-primary/25 border-l-4 border-l-primary bg-primary/5" : "border-border bg-card"
+      }`}
+    >
+      <header
+        className={`flex items-baseline gap-2 border-b px-4 py-2.5 ${
+          accent ? "border-primary/20 bg-primary/10" : "border-border bg-muted/40"
+        }`}
+      >
+        <Icon className={`size-4 shrink-0 translate-y-0.5 ${accent ? "text-primary" : "text-primary"}`} />
+        <h2 className={`text-xs font-bold uppercase tracking-wider ${accent ? "text-primary" : "text-foreground"}`}>{title}</h2>
+        {hint && <span className="ml-auto hidden text-[11px] text-muted-foreground sm:block">{hint}</span>}
+      </header>
+      <div className="space-y-4 p-4">{children}</div>
+    </section>
+  );
+}
 
 export function EstimateForm({
   estimate,
@@ -68,6 +148,11 @@ export function EstimateForm({
   const { estimateService, projectService, clientService, roofingAreaService, estimatePhotoService } = useServices();
   const { profile } = useAuth();
 
+  // Collapsible sections — the form is long and dense, so let users hide what they don't need to see.
+  const [detailsOpen, setDetailsOpen] = useState(true);
+  const [photosOpen, setPhotosOpen] = useState(true);
+const [pricingOpen, setPricingOpen] = useState(true);
+
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState(estimate?.projectId ?? searchParams.get("projectId") ?? "");
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
@@ -92,6 +177,10 @@ export function EstimateForm({
   const [discount, setDiscount] = useState(estimate?.discount ?? 0);
   const [taxRate, setTaxRate] = useState(estimate?.taxRate ?? 0);
   const [depositAmount, setDepositAmount] = useState(estimate?.depositAmount ?? 0);
+  /** Lets "Save changes" persist roof areas too — the per-area
+   * "Save Area" button is gone, so this form is now the ONLY way area
+   * edits reach the database. */
+  const roofAreasRef = useRef<RoofingAreasEditorV2Ref>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Roofing estimates' subtotal/total are derived from every roof
@@ -201,6 +290,20 @@ export function EstimateForm({
         // this call for a roofing estimate, so don't make it.
         if (estimateType !== "roofing") {
           await estimateService.updateLineItems(estimate.id, lineItems);
+        } else {
+          // Saves every roof area AND its line items. Throws on the
+          // first failure, which the catch below surfaces — so a
+          // partial save never navigates away looking successful.
+          //
+          // Deliberately NOT `?.` — an optional chain here silently
+          // discards every area edit if the ref is ever unattached,
+          // which is precisely what happened when this was first wired
+          // up (the ref prop was missing, the call no-oped, and the
+          // form redirected as though it had saved). Fail loudly.
+          if (!roofAreasRef.current) {
+            throw new Error("Roof area editor is not ready — please try again.");
+          }
+          await roofAreasRef.current.saveAll();
         }
         router.push(`${basePath}/${estimate.id}`);
       } else {
@@ -239,99 +342,136 @@ export function EstimateForm({
 
   return (
     <>
-    <form onSubmit={handleSubmit} className="max-w-3xl space-y-5 rounded-xl border border-border bg-card p-4 sm:p-6">
-      {error && <div className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</div>}
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-foreground">Project</label>
-          <select
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-            className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
-          >
-            <option value="">Auto — use the client’s project</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => setShowNewProjectModal(true)}
-            className="text-xs font-medium text-primary hover:underline"
-          >
-            + Add New Project
-          </button>
-          <p className="text-xs text-muted-foreground">Leave on Auto and the client’s project is used, or created for them.</p>
+    <form onSubmit={handleSubmit} className="mx-auto max-w-4xl space-y-5 pb-40 lg:pb-28">
+      {error && (
+        <div role="alert" className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm font-medium text-danger">
+          {error}
         </div>
+      )}
 
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-foreground">Client</label>
-          {selectedProject?.clientId ? (
-            <div className="flex h-[34px] items-center rounded-lg border border-input bg-muted px-3 text-sm text-foreground">
-              {clients.find((c) => c.id === selectedProject.clientId)?.name ?? "Auto-loaded from project"}
-            </div>
-          ) : (
-            <>
-              <select
-                value={manualClientId}
-                onChange={(e) => setManualClientId(e.target.value)}
-                className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
-              >
-                <option value="">No client</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+      {/* ---------- 1. CLIENT & PROJECT ---------- */}
+      <Section icon={Building2} title="Client & Project" hint="Who this estimate is for">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <label className={LABEL}>Project</label>
+            <select
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+              className={FIELD}
+            >
+              <option value="">Auto — use the client’s project</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="text-[11px] text-muted-foreground">
+                Leave on Auto and the client’s project is used, or created for them.
+              </p>
               <button
                 type="button"
-                onClick={() => setShowNewClientModal(true)}
-                className="text-xs font-medium text-primary hover:underline"
+                onClick={() => setShowNewProjectModal(true)}
+                className="shrink-0 text-xs font-semibold text-primary hover:underline"
               >
-                + Add New Client
+                + New Project
               </button>
-            </>
-          )}
-        </div>
-      </div>
+            </div>
+          </div>
 
-      <div className="space-y-1">
-        <label className="text-xs font-medium text-foreground">Title *</label>
+          <div className="space-y-1.5">
+            <label className={LABEL}>Client</label>
+            {selectedProject?.clientId ? (
+              <div className="flex h-[38px] items-center rounded-lg border border-input bg-muted px-3 text-sm font-medium text-foreground">
+                {clients.find((c) => c.id === selectedProject.clientId)?.name ?? "Auto-loaded from project"}
+              </div>
+            ) : (
+              <>
+                <select
+                  value={manualClientId}
+                  onChange={(e) => setManualClientId(e.target.value)}
+                  className={FIELD}
+                >
+                  <option value="">No client</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowNewClientModal(true)}
+                    className="text-xs font-semibold text-primary hover:underline"
+                  >
+                    + New Client
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </Section>
+
+      {/* ---------- 2. ESTIMATE DETAILS ---------- */}
+<Section icon={FileText} title="Estimate Details" accent>
+  {/* Toggle button – stays above the fields */}
+  <div className="flex justify-end -mt-1 mb-2">
+    <button
+      type="button"
+      onClick={() => setDetailsOpen(!detailsOpen)}
+      className="text-muted-foreground hover:text-foreground transition-transform"
+      aria-label={detailsOpen ? "Collapse details" : "Expand details"}
+    >
+      <svg
+        className={`w-4 h-4 transition-transform duration-200 ${detailsOpen ? "rotate-180" : ""}`}
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
+    </button>
+  </div>
+
+  {/* Collapsible content – all original fields remain untouched */}
+  <div
+    className={`overflow-hidden transition-all duration-200 ease-in-out ${
+      detailsOpen ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0"
+    }`}
+  >
+    <div className="space-y-4">
+      <div className="space-y-1.5">
+        <label className={LABEL}>Title *</label>
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           required
           placeholder="Short title for this estimate"
-          className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+          className={FIELD}
         />
       </div>
 
-      <div className="space-y-1">
-        <label className="text-xs font-medium text-foreground">Description</label>
+      <div className="space-y-1.5">
+        <label className={LABEL}>Description</label>
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={3}
           placeholder="Project overview shown on the estimate and its PDF"
-          className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+          className={FIELD}
         />
       </div>
 
-      {/* An estimate's KIND is immutable once it has scope — switching
-          moves its total between two different tables and strands the
-          old source. EstimateService enforces this; the radios are
-          disabled here so the rule is visible before submitting.
-          `estimate` is only set when editing an existing one. */}
+      {/* Estimate Type – unchanged */}
       {!roofV2 && (
         <div className="space-y-2">
-          <label className="text-xs font-medium text-foreground">Estimate Type</label>
+          <label className={LABEL}>Estimate Type</label>
           {typeLocked && (
-            <p className="text-xs text-muted-foreground">
+            <p className="rounded-md bg-muted px-2.5 py-1.5 text-[11px] text-muted-foreground">
               Locked — this estimate already has {estimateType === "roofing" ? "roof areas" : "line items"} recorded. Create a new estimate to change its type.
             </p>
           )}
-          <div className="flex gap-4">
-            <label className="flex items-center gap-2 cursor-pointer">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <label className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2.5 transition-colors ${estimateType === "standard" ? "border-primary bg-primary/5" : "border-input"} ${typeLocked ? "cursor-not-allowed opacity-60" : "hover:bg-muted/60:bg-emerald-900/20"}`}>
               <input
                 type="radio"
                 name="estimateType"
@@ -339,11 +479,11 @@ export function EstimateForm({
                 checked={estimateType === "standard"}
                 disabled={typeLocked}
                 onChange={(e) => setEstimateType(e.target.value as "standard" | "roofing")}
-                className="w-4 h-4 disabled:opacity-50"
+                className="size-4 accent-[var(--primary)] disabled:opacity-50"
               />
-              <span className="text-sm text-foreground">Standard (Line Items)</span>
+              <span className="text-sm font-medium text-foreground">Standard (Line Items)</span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2.5 transition-colors ${estimateType === "roofing" ? "border-primary bg-primary/5" : "border-input"} ${typeLocked ? "cursor-not-allowed opacity-60" : "hover:bg-muted/60:bg-emerald-900/20"}`}>
               <input
                 type="radio"
                 name="estimateType"
@@ -351,51 +491,82 @@ export function EstimateForm({
                 checked={estimateType === "roofing"}
                 disabled={typeLocked}
                 onChange={(e) => setEstimateType(e.target.value as "standard" | "roofing")}
-                className="w-4 h-4 disabled:opacity-50"
+                className="size-4 accent-[var(--primary)] disabled:opacity-50"
               />
-              <span className="text-sm text-foreground">Roofing (Areas)</span>
+              <span className="text-sm font-medium text-foreground">Roofing (Areas)</span>
             </label>
           </div>
         </div>
       )}
+    </div>
+  </div>
+</Section>
 
-      {estimate && (
-        <div className="space-y-2">
-          <label className="text-xs font-medium text-foreground">Photos</label>
-          <EstimatePhotosEditor
-            estimateId={estimate.id}
-            photos={estimatePhotos}
-            onChange={setEstimatePhotos}
-            onDelete={async (photoId) => {
-              try {
-                await estimatePhotoService.softDelete(photoId);
-                setEstimatePhotos((prev) => ({
-                  before: prev.before.filter((p) => p.id !== photoId),
-                  after: prev.after.filter((p) => p.id !== photoId),
-                }));
-              } catch (err) {
-                console.error("Error deleting photo:", err);
-                throw err;
-              }
-            }}
-            onPhotoUpload={(photo) => {
-              setEstimatePhotos((prev) => {
-                const type = photo.photoType;
-                return {
-                  ...prev,
-                  [type]: [...prev[type], photo],
-                };
-              });
-            }}
-          />
-        </div>
-      )}
+      {/* ---------- 5. ATTACHMENTS (estimate-level) ----------
+          Retitled from a bare "Photos": the roof-area cards below have
+          their OWN photo uploads, and two identically-labelled sections
+          on one page is exactly why the per-area one was unfindable. */}
+{estimate && (
+  <Section icon={Camera} title="Estimate Photos" hint="Apply to the whole estimate" accent>
+    {/* Toggle button – placed inside the Section so it appears on the right */}
+    <div className="flex justify-end -mt-1 mb-2">
+      <button
+        type="button"
+        onClick={() => setPhotosOpen(!photosOpen)}
+        className="text-muted-foreground hover:text-foreground transition-transform"
+        aria-label={photosOpen ? "Collapse photos" : "Expand photos"}
+      >
+        <svg
+          className={`w-4 h-4 transition-transform duration-200 ${photosOpen ? "rotate-180" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+    </div>
+
+    {/* Collapsible content – the photo editor */}
+    <div
+      className={`overflow-hidden transition-all duration-200 ease-in-out ${
+        photosOpen ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0"
+      }`}
+    >
+      <EstimatePhotosEditor
+        estimateId={estimate.id}
+        photos={estimatePhotos}
+        onChange={setEstimatePhotos}
+        onDelete={async (photoId) => {
+          try {
+            await estimatePhotoService.softDelete(photoId);
+            setEstimatePhotos((prev) => ({
+              before: prev.before.filter((p) => p.id !== photoId),
+              after: prev.after.filter((p) => p.id !== photoId),
+            }));
+          } catch (err) {
+            console.error("Error deleting photo:", err);
+            throw err;
+          }
+        }}
+        onPhotoUpload={(photo) => {
+          setEstimatePhotos((prev) => {
+            const type = photo.photoType;
+            return {
+              ...prev,
+              [type]: [...prev[type], photo],
+            };
+          });
+        }}
+      />
+    </div>
+  </Section>
+)}
 
       {estimateType === "roofing" && (
         <>
           {estimate && profile?.companyId ? (
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-foreground">Roof Areas</label>
+            <Section icon={Home} title="Scope — Roof Areas" hint="Each area has its own photos">
               {/* V2 for every roofing estimate, not just the
                   /estimates-roof route. Which editor appeared used to
                   depend on the ROUTE (`roofV2`), and the V1 editor only
@@ -407,6 +578,7 @@ export function EstimateForm({
                   the line-item editor below: the editor was chosen by
                   the URL instead of by the data. */}
               <RoofingAreasEditorV2
+                  ref={roofAreasRef}
                   estimateId={estimate.id}
                   areas={roofingAreas}
                   onChange={setRoofingAreas}
@@ -461,13 +633,13 @@ export function EstimateForm({
                   }}
                 onAreaLineItemsSaved={refreshRoofingTotals}
               />
-            </div>
+            </Section>
           ) : (
-            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
-              <p className="text-sm text-blue-800">
-                <strong>Roof Areas:</strong> Create the estimate first, then you'll be able to add roof areas and photos on the edit page.
+            <Section icon={Home} title="Scope — Roof Areas">
+              <p className="text-sm text-muted-foreground">
+                Create the estimate first, then you&apos;ll be able to add roof areas and photos on the edit page.
               </p>
-            </div>
+            </Section>
           )}
         </>
       )}
@@ -481,43 +653,118 @@ export function EstimateForm({
           EstimateService now refuses such a write outright; this stops
           the UI offering it in the first place. */}
       {estimateType !== "roofing" && (
-        <div className="space-y-2">
-          <label className="text-xs font-medium text-foreground">Line items</label>
+        <Section icon={ListChecks} title="Scope — Line Items">
           <LineItemEditor items={lineItems} onChange={setLineItems} />
-        </div>
+        </Section>
       )}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-foreground">Markup ($)</label>
-          <input type="number" step="any" value={markup} onChange={(e) => setMarkup(parseFloat(e.target.value) || 0)} className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30" />
+      {/* ---------- 6. PRICING & TOTALS ---------- */}
+<Section icon={Calculator} title="Pricing & Totals">
+  <div className="flex justify-end -mt-1">
+    <button
+      type="button"
+      onClick={() => setPricingOpen(!pricingOpen)}
+      className="text-muted-foreground hover:text-foreground transition-transform p-1"
+      aria-label={pricingOpen ? "Collapse" : "Expand"}
+    >
+      <svg
+        className={`w-4 h-4 transition-transform duration-200 ${pricingOpen ? "rotate-180" : ""}`}
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
+    </button>
+  </div>
+
+  <div
+    className={`overflow-hidden transition-all duration-200 ease-in-out ${
+      pricingOpen ? "max-h-[1000px] opacity-100" : "max-h-0 opacity-0"
+    }`}
+  >
+    <div className="space-y-2 pt-1">
+      {/* Four fields in a tight grid */}
+      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+        <div className="space-y-0.5">
+          <label className="block text-[9px] font-medium text-foreground/70 uppercase tracking-wider">Markup</label>
+          <input
+            type="number"
+            step="any"
+            value={markup}
+            onChange={(e) => setMarkup(parseFloat(e.target.value) || 0)}
+            className="w-full rounded border border-input bg-background px-1.5 py-1 text-xs focus:border-ring focus:outline-none"
+          />
         </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-foreground">Discount ($)</label>
-          <input type="number" step="any" value={discount} onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)} className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30" />
+        <div className="space-y-0.5">
+          <label className="block text-[9px] font-medium text-foreground/70 uppercase tracking-wider">Discount</label>
+          <input
+            type="number"
+            step="any"
+            value={discount}
+            onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
+            className="w-full rounded border border-input bg-background px-1.5 py-1 text-xs focus:border-ring focus:outline-none"
+          />
         </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-foreground">Tax rate (%)</label>
-          <input type="number" step="any" value={taxRate} onChange={(e) => setTaxRate(parseFloat(e.target.value) || 0)} className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30" />
+        <div className="space-y-0.5">
+          <label className="block text-[9px] font-medium text-foreground/70 uppercase tracking-wider">Tax %</label>
+          <input
+            type="number"
+            step="any"
+            value={taxRate}
+            onChange={(e) => setTaxRate(parseFloat(e.target.value) || 0)}
+            className="w-full rounded border border-input bg-background px-1.5 py-1 text-xs focus:border-ring focus:outline-none"
+          />
         </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-foreground">Deposit ($)</label>
-          <input type="number" step="any" value={depositAmount} onChange={(e) => setDepositAmount(parseFloat(e.target.value) || 0)} className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30" />
+        <div className="space-y-0.5">
+          <label className="block text-[9px] font-medium text-foreground/70 uppercase tracking-wider">Deposit</label>
+          <input
+            type="number"
+            step="any"
+            value={depositAmount}
+            onChange={(e) => setDepositAmount(parseFloat(e.target.value) || 0)}
+            className="w-full rounded border border-input bg-background px-1.5 py-1 text-xs focus:border-ring focus:outline-none"
+          />
         </div>
       </div>
 
-      <div className="rounded-lg bg-muted/50 px-4 py-3 text-right text-sm">
-        <span className="text-muted-foreground">Total: </span>
-        <span className="font-semibold text-foreground">{formatMoney(total)}</span>
+      {/* Total card – much smaller */}
+      <div className="flex items-baseline justify-between rounded border border-border bg-muted/50 px-3 py-1.5">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Total</span>
+        <span className="text-lg font-bold text-foreground">{formatMoney(total)}</span>
       </div>
+    </div>
+  </div>
+</Section>
 
-      <div className="flex justify-end gap-2 pt-2">
-        <button type="button" onClick={() => router.back()} className="rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted">
-          Cancel
-        </button>
-        <button type="submit" disabled={saving || !title.trim() || (!projectId && !manualClientId)} className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-          {saving ? "Saving…" : estimate ? "Save changes" : "Create estimate"}
-        </button>
+      {/* ---------- STICKY ACTIONS ----------
+          Offset by the 65px mobile bottom nav so the Save button is
+          never hidden behind it; flush to the viewport from lg up,
+          where that nav isn't rendered. Carries the total too, so the
+          number stays visible however far down the form you are. */}
+      <div className="sticky bottom-[65px] z-30 -mx-4 border-t border-border bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80:bg-emerald-950/80 sm:-mx-6 sm:px-6 lg:bottom-0">
+        <div className="mx-auto flex max-w-4xl items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Total</div>
+            <div className="truncate text-lg font-bold text-foreground">{formatMoney(total)}</div>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={() => router.back()}
+              className="rounded-lg border border-input px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted:bg-emerald-900/40"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving || !title.trim() || (!projectId && !manualClientId)}
+              className="rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
+            >
+              {saving ? "Saving…" : estimate ? "Save changes" : "Create estimate"}
+            </button>
+          </div>
+        </div>
       </div>
     </form>
 

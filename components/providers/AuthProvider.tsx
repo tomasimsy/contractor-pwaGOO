@@ -87,7 +87,7 @@ function resolveRole(rawRole: string): Role | null {
 }
 
 async function fetchProfile(userId: string): Promise<Profile | null> {
-  const { data, error } = await supabase.from("profiles").select("company_id, role, location_id").eq("id", userId).single();
+  const { data, error } = await supabase.from("profiles").select("company_id, role, location_id, full_name").eq("id", userId).single();
 
   if (error) {
     // PGRST116 = "no rows returned" — a real, expected case (an
@@ -108,10 +108,13 @@ async function fetchProfile(userId: string): Promise<Profile | null> {
     return null;
   }
 
-  return { userId, companyId: data.company_id, locationId: data.location_id, role };
+  // `?? ""` — full_name is nullable on the live table (confirmed:
+  // populated for existing users, but nothing enforces it), and Profile
+  // declares it as a plain string.
+  return { userId, companyId: data.company_id, fullName: data.full_name ?? "", locationId: data.location_id, role };
 }
 
-/** Field-by-field compare — `profile` is a 4-field value object, so
+/** Field-by-field compare — `profile` is a small value object, so
  * this is cheap and lets us keep the previous reference when nothing
  * actually changed. */
 function sameProfile(a: Profile | null, b: Profile | null): boolean {
@@ -120,6 +123,7 @@ function sameProfile(a: Profile | null, b: Profile | null): boolean {
   return (
     a.userId === b.userId &&
     a.companyId === b.companyId &&
+    a.fullName === b.fullName &&
     a.locationId === b.locationId &&
     a.role === b.role
   );

@@ -17,11 +17,8 @@ import type { RoofingArea } from "@/lib/services/roofingAreaService";
 
 const formatMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
-/** Card background alternates between two very light neutral tones —
- * no color-coding, just enough contrast that consecutive areas read as
- * separate sections. Distinctiveness instead comes from the left
- * accent border (below) in the app's primary color. */
-const ZEBRA_TONES = ["bg-card", "bg-muted/40"];
+/** White card background for clear readability. */
+const AREA_CARD_TONE = "bg-white";
 
 const TRUNCATE_AT = 90;
 
@@ -57,14 +54,13 @@ function Field({ label, value, emphasize = false }: { label: string; value: stri
 }
 
 export function RoofAreaSummaryCard({ area, index, areaSubtotal }: { area: RoofingArea; index: number; areaSubtotal: number }) {
-  const tone = ZEBRA_TONES[index % ZEBRA_TONES.length];
   const hasImages = (area.beforePhotos?.length ?? 0) > 0 || (area.afterPhotos?.length ?? 0) > 0;
   const hasDetail = area.defect || area.location || area.correctiveAction || area.materialsIncluded;
   const hasQuantity = !!area.quantity;
   const repairCost = area.estimatedRepairCost || areaSubtotal || area.areaTotal;
 
   return (
-    <div className={`rounded-xl border border-l-4 border-border border-l-primary ${tone} p-4 shadow-sm`}>
+    <div className={`rounded-xl border border-l-4 border-border border-l-primary ${AREA_CARD_TONE} p-4 shadow-sm`}>
       {/* Header — Roof Area N + title, emphasized */}
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -102,7 +98,7 @@ export function RoofAreaSummaryCard({ area, index, areaSubtotal }: { area: Roofi
           <span>Labor <strong className="text-foreground">{formatMoney(area.laborCost)}</strong></span>
           <span>Tax <strong className="text-foreground">{formatMoney(area.tax)}</strong></span>
         </div>
-        <span className={`inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-medium ${hasImages ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground"}`}>
+        <span className={`inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-medium ${hasImages ? "text-emerald-700 dark:text-emerald-700" : "text-muted-foreground"}`}>
           {hasImages ? <ImageIcon className="size-3.5" /> : <ImageOff className="size-3.5" />}
           {hasImages ? "Images Available" : "No Images"}
         </span>

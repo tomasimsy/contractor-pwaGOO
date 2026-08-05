@@ -97,16 +97,16 @@ export function EstimatePhotosEditor({ estimateId, photos, onChange, onDelete, o
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {["before", "after"].map((type) => (
         <div key={type} className="space-y-2">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-medium text-foreground capitalize">{type} Photos</label>
+            <label className="text-xs font-semibold capitalize text-foreground">{type}</label>
             <button
               type="button"
               onClick={() => fileInputRefs.current[type]?.click()}
               disabled={uploading[type]}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-input px-2 py-1 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 px-2 py-1 text-xs font-semibold text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
             >
               <Upload className="size-3.5" />
               Add {type} Photo
