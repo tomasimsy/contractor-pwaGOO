@@ -381,66 +381,124 @@ const [pricingOpen, setPricingOpen] = useState(true);
       )}
 
       {/* ---------- 1. CLIENT & PROJECT ---------- */}
-      <Section icon={Building2} title="Client & Project" hint="Who this estimate is for">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <label className={LABEL}>Project</label>
-            <select
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-              className={FIELD}
-            >
-              <option value="">Auto — use the client’s project</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-            <div className="flex items-baseline justify-between gap-2">
-              <p className="text-[11px] text-muted-foreground">
-                Leave on Auto and the client’s project is used, or created for them.
-              </p>
-              <button
-                type="button"
-                onClick={() => setShowNewProjectModal(true)}
-                className="shrink-0 text-xs font-semibold text-primary hover:underline"
-              >
-                + New Project
-              </button>
-            </div>
-          </div>
+<div className="relative">
+  <Section icon={Building2} title="Client & Project"  >
+    {/* Pills – positioned in the top-right corner of the card header */}
+    {!roofV2 && (
+      <div className="absolute right-4 top-2 flex items-center gap-1.5">
+        {/* <span className="text-[10px] font-medium text-muted-foreground">Type:</span> */}
+        <div className="flex gap-0.5">
+          <label
+        className={`flex cursor-pointer items-center rounded border px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+          estimateType === "standard"
+            ? "border-primary bg-primary text-white"
+            : "border-input bg-transparent text-muted-foreground hover:bg-muted/30"
+        } ${typeLocked ? "cursor-not-allowed  " : ""}`}
+      >
+            <input
+              type="radio"
+              name="estimateType"
+              value="standard"
+              checked={estimateType === "standard"}
+              disabled={typeLocked}
+              onChange={(e) => setEstimateType(e.target.value as "standard" | "roofing")}
+              className="hidden"
+            />
+            Standard
+          </label>
+          <label
+        className={`flex cursor-pointer items-center rounded border px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+          estimateType === "roofing"
+            ? "border-primary bg-primary text-white"
+            : "border-input bg-transparent text-muted-foreground hover:bg-muted/30"
+        } ${typeLocked ? "cursor-not-allowed  " : ""}`}
+      >
+            <input
+              type="radio"
+              name="estimateType"
+              value="roofing"
+              checked={estimateType === "roofing"}
+              disabled={typeLocked}
+              onChange={(e) => setEstimateType(e.target.value as "standard" | "roofing")}
+              className="hidden"
+            />
+            Roofing
+          </label>
+        </div>
+      </div>
+    )}
 
-          <div className="space-y-1.5">
-            <label className={LABEL}>Client</label>
-            {selectedProject?.clientId ? (
-              <div className="flex h-[38px] items-center rounded-lg border border-input bg-muted px-3 text-sm font-medium text-foreground">
-                {clients.find((c) => c.id === selectedProject.clientId)?.name ?? "Auto-loaded from project"}
-              </div>
-            ) : (
-              <>
-                <select
-                  value={manualClientId}
-                  onChange={(e) => setManualClientId(e.target.value)}
-                  className={FIELD}
-                >
-                  <option value="">No client</option>
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setShowNewClientModal(true)}
-                    className="text-xs font-semibold text-primary hover:underline"
-                  >
-                    + New Client
-                  </button>
-                </div>
-              </>
-            )}
+    {/* Content – adds top padding to avoid overlap with pills */}
+    <div className="pt-8">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {/* Project column – unchanged */}
+        <div className="space-y-1.5">
+          <label className={LABEL}>Project</label>
+          <select
+            value={projectId}
+            onChange={(e) => setProjectId(e.target.value)}
+            className={FIELD}
+          >
+            <option value="">Auto — use the client’s project</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="text-[11px] text-muted-foreground">
+              Leave on Auto and the client’s project is used, or created for them.
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowNewProjectModal(true)}
+              className="shrink-0 text-xs font-semibold text-primary hover:underline"
+            >
+              + New Project
+            </button>
           </div>
         </div>
-      </Section>
+
+        {/* Client column – unchanged */}
+        <div className="space-y-1.5">
+          <label className={LABEL}>Client</label>
+          {selectedProject?.clientId ? (
+            <div className="flex h-[38px] items-center rounded-lg border border-input bg-muted px-3 text-sm font-medium text-foreground">
+              {clients.find((c) => c.id === selectedProject.clientId)?.name ?? "Auto-loaded from project"}
+            </div>
+          ) : (
+            <>
+              <select
+                value={manualClientId}
+                onChange={(e) => setManualClientId(e.target.value)}
+                className={FIELD}
+              >
+                <option value="">No client</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowNewClientModal(true)}
+                  className="text-xs font-semibold text-primary hover:underline"
+                >
+                  + New Client
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {typeLocked && (
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          Locked — has {estimateType === "roofing" ? "roof areas" : "line items"}
+        </p>
+      )}
+    </div>
+  </Section>
+</div>
 
       {/* ---------- 2. ESTIMATE DETAILS ---------- */}
 <Section icon={FileText} title="Estimate Details" accent>
@@ -463,24 +521,72 @@ const [pricingOpen, setPricingOpen] = useState(true);
     </button>
   </div>
 
-  {/* Collapsible content – all original fields remain untouched */}
+  {/* Collapsible content */}
   <div
     className={`overflow-hidden transition-all duration-200 ease-in-out ${
       detailsOpen ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0"
     }`}
   >
     <div className="space-y-4">
-      <div className="space-y-1.5">
-        <label className={LABEL}>Title *</label>
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          required
-          placeholder="Short title for this estimate"
-          className={FIELD}
-        />
+      {/* Row: Title + Type selector (inline) */}
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="flex-1 min-w-[180px]">
+          <label className={LABEL}>Title *</label>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            required
+            placeholder="Short title for this estimate"
+            className={FIELD}
+          />
+        </div>
+{/* 
+        {!roofV2 && (
+          <div className="flex items-center gap-1.5 pb-1">
+            <span className="text-[10px] font-medium text-muted-foreground">Type:</span>
+            <div className="flex gap-0.5">
+              <label
+                className={`flex cursor-pointer items-center rounded border px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                  estimateType === "standard"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-input text-muted-foreground"
+                } ${typeLocked ? "cursor-not-allowed opacity-50" : "hover:bg-muted/60"}`}
+              >
+                <input
+                  type="radio"
+                  name="estimateType"
+                  value="standard"
+                  checked={estimateType === "standard"}
+                  disabled={typeLocked}
+                  onChange={(e) => setEstimateType(e.target.value as "standard" | "roofing")}
+                  className="hidden"
+                />
+                Standard
+              </label>
+              <label
+                className={`flex cursor-pointer items-center rounded border px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                  estimateType === "roofing"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-input text-muted-foreground"
+                } ${typeLocked ? "cursor-not-allowed opacity-50" : "hover:bg-muted/60"}`}
+              >
+                <input
+                  type="radio"
+                  name="estimateType"
+                  value="roofing"
+                  checked={estimateType === "roofing"}
+                  disabled={typeLocked}
+                  onChange={(e) => setEstimateType(e.target.value as "standard" | "roofing")}
+                  className="hidden"
+                />
+                Roofing
+              </label>
+            </div>
+          </div>
+        )} */}
       </div>
 
+      {/* Description */}
       <div className="space-y-1.5">
         <label className={LABEL}>Description</label>
         <textarea
@@ -492,42 +598,11 @@ const [pricingOpen, setPricingOpen] = useState(true);
         />
       </div>
 
-      {/* Estimate Type – unchanged */}
-      {!roofV2 && (
-        <div className="space-y-2">
-          <label className={LABEL}>Estimate Type</label>
-          {typeLocked && (
-            <p className="rounded-md bg-muted px-2.5 py-1.5 text-[11px] text-muted-foreground">
-              Locked — this estimate already has {estimateType === "roofing" ? "roof areas" : "line items"} recorded. Create a new estimate to change its type.
-            </p>
-          )}
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <label className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2.5 transition-colors ${estimateType === "standard" ? "border-primary bg-primary/5" : "border-input"} ${typeLocked ? "cursor-not-allowed opacity-60" : "hover:bg-muted/60:bg-emerald-900/20"}`}>
-              <input
-                type="radio"
-                name="estimateType"
-                value="standard"
-                checked={estimateType === "standard"}
-                disabled={typeLocked}
-                onChange={(e) => setEstimateType(e.target.value as "standard" | "roofing")}
-                className="size-4 accent-[var(--primary)] disabled:opacity-50"
-              />
-              <span className="text-sm font-medium text-foreground">Standard (Line Items)</span>
-            </label>
-            <label className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2.5 transition-colors ${estimateType === "roofing" ? "border-primary bg-primary/5" : "border-input"} ${typeLocked ? "cursor-not-allowed opacity-60" : "hover:bg-muted/60:bg-emerald-900/20"}`}>
-              <input
-                type="radio"
-                name="estimateType"
-                value="roofing"
-                checked={estimateType === "roofing"}
-                disabled={typeLocked}
-                onChange={(e) => setEstimateType(e.target.value as "standard" | "roofing")}
-                className="size-4 accent-[var(--primary)] disabled:opacity-50"
-              />
-              <span className="text-sm font-medium text-foreground">Roofing (Areas)</span>
-            </label>
-          </div>
-        </div>
+      {/* Locked message – shown only when type is locked */}
+      {typeLocked && (
+        <p className="text-[10px] text-muted-foreground -mt-1">
+          Locked — this estimate already has {estimateType === "roofing" ? "roof areas" : "line items"} recorded.
+        </p>
       )}
     </div>
   </div>

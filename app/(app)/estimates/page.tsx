@@ -120,49 +120,54 @@ function EstimatesListContent() {
 
       {error && <div className="mb-3 rounded-lg bg-danger/10 px-3 py-2 text-xs sm:text-sm text-danger">{error}</div>}
 
-      <div className="mb-3 flex flex-wrap items-center gap-1.5 sm:gap-2">
-        {/* Full width on a phone (the `max-w-xs` cap only applies from
-            `sm` up, where it sits beside the three filter selects). */}
-        <div className="relative w-full min-w-[140px] sm:max-w-xs sm:flex-1">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search estimates…"
-            className="h-8 w-full rounded-lg border border-input bg-background pl-8 pr-2.5 text-xs sm:text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
-          />
-        </div>
-        <select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value as "all" | "standard" | "roofing")}
-          className="h-8 rounded-lg border border-input bg-background px-2 text-xs sm:text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
-        >
-          <option value="all">All types</option>
-          <option value="standard">Standard</option>
-          <option value="roofing">Roofing</option>
-        </select>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as EstimateStatus | "all")}
-          className="h-8 rounded-lg border border-input bg-background px-2 text-xs sm:text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
-        >
-          <option value="all">All statuses</option>
-          {(["draft", "sent", "viewed", "approved", "rejected", "converted_to_invoice"] as EstimateStatus[]).map((s) => (
-            <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
-          ))}
-        </select>
-        <select
-          value={sortKey}
-          onChange={(e) => setSortKey(e.target.value as SortKey)}
-          className="h-8 rounded-lg border border-input bg-background px-2 text-xs sm:text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
-        >
-          <option value="createdAt">Newest</option>
-          <option value="updatedAt">Updated</option>
-          <option value="total">Total</option>
-          <option value="estimateNumber">Estimate #</option>
-        </select>
-      </div>
+<div className="mb-3 flex flex-nowrap items-center gap-1 sm:gap-2">
+  {/* Search – takes flexible width, shrinks to fit */}
+  <div className="relative flex-1 min-w-0">
+    <Search className="pointer-events-none absolute left-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
+    <input
+      type="search"
+      value={search}
+      onChange={(e) => setSearch(e.target.value)}
+      placeholder="Search…"
+      className="h-7 w-full rounded-lg border border-input bg-background pl-6 pr-1.5 text-[10px] sm:text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+    />
+  </div>
+
+  {/* Type filter – flex-1 to share space */}
+  <select
+    value={typeFilter}
+    onChange={(e) => setTypeFilter(e.target.value as "all" | "standard" | "roofing")}
+    className="h-7 flex-1 min-w-0 rounded-lg border border-input bg-background px-1 text-[10px] sm:text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+  >
+    <option value="all">All</option>
+    <option value="standard">Standard</option>
+    <option value="roofing">Roofing</option>
+  </select>
+
+  {/* Status filter */}
+  <select
+    value={statusFilter}
+    onChange={(e) => setStatusFilter(e.target.value as EstimateStatus | "all")}
+    className="h-7 flex-1 min-w-0 rounded-lg border border-input bg-background px-1 text-[10px] sm:text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+  >
+    <option value="all">All</option>
+    {(["draft", "sent", "viewed", "approved", "rejected", "converted_to_invoice"] as EstimateStatus[]).map((s) => (
+      <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
+    ))}
+  </select>
+
+  {/* Sort filter */}
+  <select
+    value={sortKey}
+    onChange={(e) => setSortKey(e.target.value as SortKey)}
+    className="h-7 flex-1 min-w-0 rounded-lg border border-input bg-background px-1 text-[10px] sm:text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+  >
+    <option value="createdAt">Newest</option>
+    <option value="updatedAt">Updated</option>
+    <option value="total">Total</option>
+    <option value="estimateNumber">#</option>
+  </select>
+</div>
 
       {loading ? (
         <div className="py-12 text-center text-xs sm:text-sm text-muted-foreground">Loading…</div>

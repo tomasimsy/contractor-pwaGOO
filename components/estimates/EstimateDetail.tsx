@@ -889,6 +889,7 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
                 portalUrl={`${origin}/portal/${estimate.id}?token=${encodeURIComponent(estimate.customerToken)}`}
                 clientName={client?.name ?? null}
                 clientPhone={client?.phone ?? null}
+                clientEmail={client?.email ?? null}
                 documentLabel="estimate"
               />
             ) : (

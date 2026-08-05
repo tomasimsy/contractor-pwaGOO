@@ -1,7 +1,15 @@
 "use client";
 
 /**
- * Customer-portal sharing: Copy Link and Send via SMS.
+ * Customer-portal sharing: Copy Link, Send via SMS, and Email Customer.
+ *
+ * EMAIL DELIVERY works exactly like SMS below, for exactly the same
+ * reasons: a `mailto:` URI opens the staff member's own mail client
+ * with recipient, subject and body pre-filled, and they press send. No
+ * credentials, no sending domain to warm up, no deliverability
+ * surprises, and the customer replies to a real human address. Swapping
+ * in a transactional provider later means replacing `buildMailtoHref`
+ * with a POST — the same narrow seam.
  *
  * SMS DELIVERY — read this before adding Twilio.
  * This uses the `sms:` URI scheme, which opens the staff member's own
@@ -18,7 +26,7 @@
  * touches one function.
  */
 import { useState } from "react";
-import { Copy, Check, MessageSquare, ExternalLink } from "lucide-react";
+import { Copy, Check, MessageSquare, ExternalLink, Mail } from "lucide-react";
 
 /** E.164-ish normalisation for the `sms:` target. Strips formatting;
  * assumes +1 for bare 10-digit US numbers, which is what this CRM
@@ -41,16 +49,57 @@ function buildSmsHref(phone: string, body: string): string {
   return `sms:${phone}${isAppleDevice ? "&" : "?"}body=${encodeURIComponent(body)}`;
 }
 
+/** Same contract as normalizePhone: trim, sanity-check, and return null
+ * when there is nothing usable, so the caller disables the control
+ * instead of opening a mail window addressed to nobody. Deliberately
+ * permissive — this only decides whether to offer the button, and the
+ * mail client validates for real. Rejecting an unusual-but-valid
+ * address here would strand the user with no way to send. */
+function normalizeEmail(raw: string | null | undefined): string | null {
+  const trimmed = raw?.trim();
+  if (!trimmed) return null;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed) ? trimmed : null;
+}
+
+/** `mailto:` with subject and body. Both must be percent-encoded, and
+ * the body's line breaks have to survive as %0D%0A — encodeURIComponent
+ * handles both, which is why the string is built with real newlines
+ * rather than pre-escaped ones. */
+function buildMailtoHref(email: string, subject: string, body: string): string {
+  return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+/** Presentational only — what the panel PRINTS, never what it links to
+ * or copies.
+ *
+ * The real link carries a UUID plus a long opaque token and runs well
+ * past 100 characters, which made the panel look like a wall of
+ * gibberish and put a credential on screen for anyone standing nearby.
+ * This shows `host/portal/…` instead. The href, the clipboard payload
+ * and the SMS/email bodies all still use the full URL: shortening the
+ * ACTUAL url would need a lookup table or a new short-code column, and
+ * both are out of scope here. */
+function maskPortalUrl(url: string): string {
+  try {
+    const { host, pathname } = new URL(url);
+    return `${host}${pathname.replace(/\/[^/]*$/, "/…")}`;
+  } catch {
+    return url;
+  }
+}
+
 export function SharePortalPanel({
   portalUrl,
   clientName,
   clientPhone,
+  clientEmail,
   documentLabel,
   companyName,
 }: {
   portalUrl: string;
   clientName: string | null;
   clientPhone: string | null;
+  clientEmail: string | null;
   documentLabel: string;
   companyName?: string | null;
 }) {
@@ -58,9 +107,28 @@ export function SharePortalPanel({
   const [error, setError] = useState<string | null>(null);
 
   const phone = normalizePhone(clientPhone);
+  const email = normalizeEmail(clientEmail);
   const greeting = clientName ? `Hi ${clientName.split(" ")[0]}, ` : "Hi, ";
   const from = companyName ? ` from ${companyName}` : "";
   const smsBody = `${greeting}here's your ${documentLabel}${from}. You can review, approve, and download it here: ${portalUrl}`;
+
+  // Email gets its own subject and a multi-line body — an inbox affords
+  // structure an SMS does not. The link sits alone on its own line so
+  // mail clients auto-link it cleanly and nothing wraps into it.
+  const emailSubject = companyName
+    ? `Your ${documentLabel} from ${companyName}`
+    : `Your ${documentLabel}`;
+  const emailBody = [
+    clientName ? `Hi ${clientName.split(" ")[0]},` : "Hi,",
+    "",
+    `Here's your ${documentLabel}${from}. You can review it, approve it, and download a PDF from the link below — no login needed.`,
+    "",
+    portalUrl,
+    "",
+    "Please don't forward this link; anyone who has it can view and approve.",
+    "",
+    companyName ? `Thanks,\n${companyName}` : "Thanks",
+  ].join("\n");
 
   async function copy() {
     try {
@@ -107,6 +175,23 @@ export function SharePortalPanel({
           </span>
         )}
 
+        {email ? (
+          <a
+            href={buildMailtoHref(email, emailSubject, emailBody)}
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            <Mail className="size-3.5" /> Email customer
+          </a>
+        ) : (
+          <span
+            aria-disabled="true"
+            className="inline-flex min-h-9 cursor-not-allowed items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-xs font-medium text-muted-foreground opacity-60"
+            title="This client has no email address on file. Add one in the CRM to enable email."
+          >
+            <Mail className="size-3.5" /> Email customer
+          </span>
+        )}
+
         <a
           href={portalUrl}
           target="_blank"
@@ -123,7 +208,19 @@ export function SharePortalPanel({
           No phone number on file for this client — add one in the CRM to enable SMS.
         </p>
       )}
-      <p className="break-all rounded-lg bg-muted/50 px-2 py-1.5 text-[11px] text-muted-foreground">{portalUrl}</p>
+      {!email && (
+        <p className="text-xs text-muted-foreground">
+          No email available for this client — add one in the CRM to enable email.
+        </p>
+      )}
+      {/* Masked for display; `title` and every action still carry the
+          full URL. See maskPortalUrl. */}
+      <p
+        className="truncate rounded-lg bg-muted/50 px-2 py-1.5 font-mono text-[11px] text-muted-foreground"
+        title={portalUrl}
+      >
+        {maskPortalUrl(portalUrl)}
+      </p>
       <p className="text-xs text-muted-foreground">
         Anyone with this link can view and approve. Treat it like a password.
       </p>

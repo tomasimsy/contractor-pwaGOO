@@ -58,7 +58,7 @@ export function MobileBottomNav() {
         pb-[env(safe-area-inset-bottom)]
       "
     >
-      <div className="grid h-16 grid-cols-5">
+      <div className="grid h-12 grid-cols-5">
         {items.map((item) => {
           const Icon = item.icon;
 
@@ -71,7 +71,7 @@ export function MobileBottomNav() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex flex-col items-center justify-center gap-1 text-xs font-medium transition-colors",
+                "flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors",
                 isActive
                   ? "text-white"
                   : "text-emerald-200 hover:text-white"
@@ -79,7 +79,7 @@ export function MobileBottomNav() {
             >
               <Icon
                 className={cn(
-                  "size-5",
+                  "size-4",
                   isActive
                     ? "text-white stroke-[2.5]"
                     : "text-emerald-200"
@@ -87,7 +87,7 @@ export function MobileBottomNav() {
                 aria-hidden="true"
               />
 
-              <span>{item.label}</span>
+              <span className="leading-none">{item.label}</span>
             </Link>
           );
         })}
