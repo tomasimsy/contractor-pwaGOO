@@ -36,8 +36,77 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function downloadUrl(storagePath: string, fileType: string): string {
-  return `/api/company-documents/download?path=${encodeURIComponent(storagePath)}&contentType=${encodeURIComponent(fileType)}`;
+/** The route derives Content-Type from the stored file's extension and
+ * ignores anything the caller supplies — passing one back would be
+ * theatre at best and, before that route was hardened, was a stored-XSS
+ * vector. See app/api/company-documents/download/route.ts. */
+function downloadUrl(storagePath: string): string {
+  return `/api/company-documents/download?path=${encodeURIComponent(storagePath)}`;
+}
+
+/** What the preview modal knows how to render. Driven off the stored
+ * `fileType` (the browser-reported MIME at upload) purely to pick a
+ * renderer — the bytes are always served with a server-derived type. */
+function previewKind(fileType: string, name: string): "image" | "pdf" | "text" | "none" {
+  if (fileType.startsWith("image/") && !fileType.includes("svg")) return "image";
+  if (fileType === "application/pdf") return "pdf";
+  if (fileType.startsWith("text/")) return "text";
+  // Some browsers report an empty or generic type for .txt/.csv; fall
+  // back to the extension so those still preview instead of dead-ending
+  // on "no preview available".
+  const ext = name.split(".").pop()?.toLowerCase();
+  if (ext === "txt" || ext === "csv" || ext === "md" || ext === "log") return "text";
+  return "none";
+}
+
+/**
+ * Plain-text preview.
+ *
+ * Fetched and rendered as TEXT inside <pre>, never handed to an iframe
+ * or dangerouslySetInnerHTML: these files are user-uploaded, so letting
+ * the browser interpret them as markup on this origin would reintroduce
+ * exactly the stored-XSS problem the download route was just fixed for.
+ * React escapes the string, so the worst a hostile file can do is look
+ * ugly.
+ */
+function TextPreview({ storagePath, name }: { storagePath: string; name: string }) {
+  const [state, setState] = useState<{ status: "loading" | "ok" | "error"; text: string }>({
+    status: "loading",
+    text: "",
+  });
+
+  useEffect(() => {
+    let active = true;
+    setState({ status: "loading", text: "" });
+    fetch(downloadUrl(storagePath))
+      .then(async (res) => {
+        if (!res.ok) throw new Error(String(res.status));
+        // Cap what we render: a multi-megabyte log would otherwise lock
+        // the tab up laying out one enormous text node.
+        const raw = await res.text();
+        const LIMIT = 200_000;
+        return raw.length > LIMIT
+          ? `${raw.slice(0, LIMIT)}\n\n… truncated — download ${name} to see the rest.`
+          : raw;
+      })
+      .then((text) => active && setState({ status: "ok", text }))
+      .catch(() => active && setState({ status: "error", text: "" }));
+    return () => {
+      active = false;
+    };
+  }, [storagePath, name]);
+
+  if (state.status === "loading") {
+    return <p className="py-8 text-center text-sm text-muted-foreground">Loading preview…</p>;
+  }
+  if (state.status === "error") {
+    return <p className="py-8 text-center text-sm text-danger">Couldn&apos;t load this file. Try downloading it instead.</p>;
+  }
+  return (
+    <pre className="max-h-[70vh] overflow-auto rounded-lg border border-border bg-muted/40 p-3 text-xs leading-relaxed text-foreground whitespace-pre-wrap break-words">
+      {state.text}
+    </pre>
+  );
 }
 
 function CompanyDocumentsContent() {
@@ -196,7 +265,7 @@ function CompanyDocumentsContent() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
+            accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.gif,.webp,.txt,.csv"
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];
@@ -249,26 +318,40 @@ function CompanyDocumentsContent() {
                 <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
+            <tbody className="divide-y divide-border capitalize">
               {filtered.map((doc) => {
                 const isExpired = doc.expirationDate && doc.expirationDate < new Date().toISOString().slice(0, 10);
                 return (
-                  <tr key={doc.id} className="hover:bg-muted/40">
-                    <td className="px-3 py-2.5">
+                  <tr key={doc.id} className="hover:bg-muted/40  ">
+                    <td className="px-3 py-2.5  ">
                       {renamingId === doc.id ? (
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 uppercase ">
                           <input
                             autoFocus
                             value={renameValue}
                             onChange={(e) => setRenameValue(e.target.value)}
                             onKeyDown={(e) => e.key === "Enter" && handleRename(doc)}
-                            className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring"
+                            className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring capitalize"
                           />
                           <button type="button" onClick={() => handleRename(doc)} disabled={busyId === doc.id} className="text-xs font-medium text-primary hover:underline">Save</button>
                           <button type="button" onClick={() => setRenamingId(null)} className="text-xs text-muted-foreground hover:underline">Cancel</button>
                         </div>
                       ) : (
-                        <span className="font-medium text-foreground">{doc.name}</span>
+                        // The name itself opens the preview — the Eye
+                        // button beside it remains for discoverability,
+                        // but the document's title is the thing people
+                        // reach for first. A <button>, not an <a>: this
+                        // opens a modal rather than navigating, so it
+                        // must not offer "open in new tab" or a URL that
+                        // wouldn't work.
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDoc(doc)}
+                          title={`Preview ${doc.name}`}
+                          className="text-left font-medium text-foreground underline-offset-2 hover:text-primary hover:underline focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                        >
+                          {doc.name}
+                        </button>
                       )}
                       <div className="text-xs text-muted-foreground">{formatBytes(doc.fileSize)}</div>
                     </td>
@@ -292,7 +375,7 @@ function CompanyDocumentsContent() {
                         <button type="button" onClick={() => setPreviewDoc(doc)} aria-label="Preview" className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground">
                           <Eye className="size-3.5" />
                         </button>
-                        <a href={downloadUrl(doc.storagePath, doc.fileType)} download={doc.name} aria-label="Download" className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground">
+                        <a href={downloadUrl(doc.storagePath)} download={doc.name} aria-label="Download" className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground">
                           <Download className="size-3.5" />
                         </a>
                         {canUpload && (
@@ -326,18 +409,33 @@ function CompanyDocumentsContent() {
       )}
 
       <Modal open={previewDoc != null} onClose={() => setPreviewDoc(null)} title={previewDoc?.name}>
-        {previewDoc && (
-          previewDoc.fileType.startsWith("image/") ? (
+        {previewDoc && (() => {
+          const kind = previewKind(previewDoc.fileType, previewDoc.name);
+          if (kind === "image") {
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={downloadUrl(previewDoc.storagePath, previewDoc.fileType)} alt={previewDoc.name} className="max-h-[70vh] w-full rounded-lg object-contain" />
-          ) : previewDoc.fileType === "application/pdf" ? (
-            <iframe src={downloadUrl(previewDoc.storagePath, previewDoc.fileType)} title={previewDoc.name} className="h-[70vh] w-full rounded-lg border border-border" />
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No inline preview for this file type — use Download instead.
-            </p>
-          )
-        )}
+            return <img src={downloadUrl(previewDoc.storagePath)} alt={previewDoc.name} className="max-h-[70vh] w-full rounded-lg object-contain" />;
+          }
+          if (kind === "pdf") {
+            return <iframe src={downloadUrl(previewDoc.storagePath)} title={previewDoc.name} className="h-[70vh] w-full rounded-lg border border-border" />;
+          }
+          if (kind === "text") {
+            return <TextPreview storagePath={previewDoc.storagePath} name={previewDoc.name} />;
+          }
+          return (
+            <div className="space-y-3 py-4 text-center">
+              <p className="text-sm text-muted-foreground">
+                No inline preview for this file type.
+              </p>
+              <a
+                href={downloadUrl(previewDoc.storagePath)}
+                download={previewDoc.name}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                <Download className="size-4" /> Download {previewDoc.name}
+              </a>
+            </div>
+          );
+        })()}
       </Modal>
 
       <Modal open={deletingDoc != null} onClose={() => { setDeletingDoc(null); setDeleteReason(""); }} title="Delete this document?">
