@@ -8,7 +8,9 @@ export function PageHeader({
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+    // `mb-4` on phones, the original `mb-6` from `sm` up — 8px of the
+    // gap above the fold back, without changing tablet or desktop.
+    <div className="mb-4 flex flex-wrap items-start justify-between gap-3 sm:mb-6">
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
           {title}

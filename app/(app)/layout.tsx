@@ -1,7 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { hidesMobileBottomNav } from "@/lib/layout/mobileBottomNav";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -31,6 +32,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // and RLS layers regardless.
   const { user, authResolving } = useAuth();
   const router = useRouter();
+  const navHidden = hidesMobileBottomNav(usePathname());
 
   useEffect(() => {
     if (!authResolving && !user) router.replace("/login");
@@ -51,7 +53,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <AppHeader />
-       <main className="flex-1 px-4 py-6 pb-24 sm:px-6 lg:px-8">
+       {/* `pb-24` reserves room for the fixed MobileBottomNav. When
+           that nav isn't rendered (edit screens — see
+           hidesMobileBottomNav) the reservation would just be 96px of
+           dead space at the bottom of the page. */}
+       <main className={`flex-1 px-4 py-6 sm:px-6 lg:px-8 ${navHidden ? "pb-6" : "pb-24"}`}>
         {children}
       </main>
 

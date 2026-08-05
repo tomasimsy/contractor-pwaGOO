@@ -19,7 +19,8 @@
  * ad hoc here.
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { hidesMobileBottomNav } from "@/lib/layout/mobileBottomNav";
 import { Building2, FileText, Home, ListChecks, Calculator, Camera } from "lucide-react";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
@@ -87,6 +88,7 @@ function Section({
   title,
   hint,
   accent = true,
+  flush = false,
   children,
 }: {
   icon: typeof FileText;
@@ -96,6 +98,20 @@ function Section({
    * they are recognisable at a glance while scanning past text fields —
    * same footprint, more contrast. */
   accent?: boolean;
+  /** Drop the body padding so children sit flush against the section
+   * border.
+   *
+   * For "Scope — Roof Areas", whose children are ALREADY self-contained
+   * bordered cards with their own green header bars. Padding there
+   * produced a box inside a box: a green section header, a 12px inset,
+   * then a green area header — two frames of chrome and a wasted gutter
+   * on each side for no separation the area's own border wasn't already
+   * providing. Flush, the section header reads as the heading FOR the
+   * area cards rather than as a second container around them.
+   *
+   * Only for children that are full-width blocks; bare form fields
+   * still want the padded default. */
+  flush?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -105,7 +121,7 @@ function Section({
       }`}
     >
       <header
-        className={`flex items-baseline gap-2 border-b px-4 py-2.5 ${
+        className={`flex items-baseline gap-2 border-b px-3 py-2.5 sm:px-4 ${
           accent ? "border-primary/20 bg-primary/10" : "border-border bg-muted/40"
         }`}
       >
@@ -113,7 +129,16 @@ function Section({
         <h2 className={`text-xs font-bold uppercase tracking-wider ${accent ? "text-primary" : "text-foreground"}`}>{title}</h2>
         {hint && <span className="ml-auto hidden text-[11px] text-muted-foreground sm:block">{hint}</span>}
       </header>
-      <div className="space-y-4 p-4">{children}</div>
+      {/* 12px of inner padding on phones, the original 16px from `sm`
+          up. Section padding stacks on top of the page gutter, so this
+          is 8px of usable width per row recovered where it is scarcest.
+          `flush` drops it entirely — see the prop's note. */}
+      {/* `flush` keeps a bottom gutter only: the section header then
+          butts directly against the first area's own header (the point
+          of combining them), while the trailing "Add Another Area"
+          button still gets clearance from the section's bottom border
+          instead of sitting on it. */}
+      <div className={flush ? "px-2 pb-2" : "space-y-4 p-3 sm:p-4"}>{children}</div>
     </section>
   );
 }
@@ -144,6 +169,10 @@ export function EstimateForm({
   basePath?: string;
 }) {
   const router = useRouter();
+  // This form serves both /new and /edit; only the latter hides the
+  // mobile bottom nav, and the sticky bar's offset must match whichever
+  // route it is on or it floats above (or under) the wrong thing.
+  const navHidden = hidesMobileBottomNav(usePathname());
   const searchParams = useSearchParams();
   const { estimateService, projectService, clientService, roofingAreaService, estimatePhotoService } = useServices();
   const { profile } = useAuth();
@@ -342,7 +371,9 @@ const [pricingOpen, setPricingOpen] = useState(true);
 
   return (
     <>
-    <form onSubmit={handleSubmit} className="mx-auto max-w-4xl space-y-5 pb-40 lg:pb-28">
+    {/* Trailing padding clears the sticky action bar, plus the bottom
+        nav when it's there — 65px less to reserve when it isn't. */}
+    <form onSubmit={handleSubmit} className={`mx-auto max-w-4xl space-y-5 lg:pb-28 ${navHidden ? "pb-24" : "pb-40"}`}>
       {error && (
         <div role="alert" className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm font-medium text-danger">
           {error}
@@ -563,86 +594,48 @@ const [pricingOpen, setPricingOpen] = useState(true);
   </Section>
 )}
 
-      {estimateType === "roofing" && (
-        <>
-          {estimate && profile?.companyId ? (
-            <Section icon={Home} title="Scope — Roof Areas" hint="Each area has its own photos">
-              {/* V2 for every roofing estimate, not just the
-                  /estimates-roof route. Which editor appeared used to
-                  depend on the ROUTE (`roofV2`), and the V1 editor only
-                  edits `area_total` — a field that feeds NO total. A
-                  roofing estimate opened at /estimates/[id]/edit
-                  therefore showed no Material/Labor/Tax inputs and no
-                  Estimated Repair Cost, which is where its money
-                  actually lives (see getScopeLines). Same root cause as
-                  the line-item editor below: the editor was chosen by
-                  the URL instead of by the data. */}
-              <RoofingAreasEditorV2
-                  ref={roofAreasRef}
-                  estimateId={estimate.id}
-                  areas={roofingAreas}
-                  onChange={setRoofingAreas}
-                  onSave={async (area) => {
-                    try {
-                      const areaWithCompany = { ...area, companyId: profile.companyId };
-                      let saved: RoofingArea;
-                      // Whether this area already exists in the DB must be
-                      // judged by area.companyId (empty string for a
-                      // freshly-added, never-persisted area — see
-                      // handleAddArea), NOT by `roofingAreas.find(...)`:
-                      // a brand-new area is already present in local
-                      // `roofingAreas` state the instant "Add Area" is
-                      // clicked (onChange runs immediately), so that find()
-                      // always matched and routed every first save to
-                      // update() — which then 0-rowed (PGRST116) because
-                      // the row never existed yet.
-                      if (area.id && area.companyId) {
-                        saved = await roofingAreaService.update(area.id, areaWithCompany);
-                      } else {
-                        saved = await roofingAreaService.create(areaWithCompany);
-                      }
-                      // Match on the ORIGINAL client-side draft id
-                      // (area.id), not saved.id: create() mints a brand
-                      // new server-side UUID, different from the local
-                      // draft's id — matching on saved.id here meant this
-                      // replacement never found the draft to replace, so
-                      // the stale draft (with empty companyId) stayed in
-                      // state forever, permanently disabling photo/line-
-                      // item buttons for that area even though the DB
-                      // row saved correctly.
-                      setRoofingAreas((prev) => prev.map((a) => (a.id === area.id ? saved : a)));
-                      // Totals refresh happens once, AFTER this area's
-                      // line items also save (see RoofingAreasEditorV2's
-                      // handleSaveArea → onAreaLineItemsSaved), not here
-                      // — recalculating before the line-item write lands
-                      // would show a stale subtotal for one extra beat.
-                      return saved;
-                    } catch (err) {
-                      console.error("Error saving roofing area:", err instanceof Error ? err.message : JSON.stringify(err));
-                      throw err;
-                    }
-                  }}
-                  onDelete={async (areaId) => {
-                    try {
-                      await roofingAreaService.softDelete(areaId, "Deleted by user");
-                      await refreshRoofingTotals();
-                    } catch (err) {
-                      console.error("Error deleting roofing area:", err);
-                      throw err;
-                    }
-                  }}
-                onAreaLineItemsSaved={refreshRoofingTotals}
-              />
-            </Section>
-          ) : (
-            <Section icon={Home} title="Scope — Roof Areas">
-              <p className="text-sm text-muted-foreground">
-                Create the estimate first, then you&apos;ll be able to add roof areas and photos on the edit page.
-              </p>
-            </Section>
-          )}
-        </>
-      )}
+{estimateType === "roofing" && (
+  <>
+    {estimate && profile?.companyId ? (
+      <RoofingAreasEditorV2
+        ref={roofAreasRef}
+        estimateId={estimate.id}
+        areas={roofingAreas}
+        onChange={setRoofingAreas}
+        onSave={async (area) => {
+          try {
+            const areaWithCompany = { ...area, companyId: profile.companyId };
+            let saved: RoofingArea;
+            if (area.id && area.companyId) {
+              saved = await roofingAreaService.update(area.id, areaWithCompany);
+            } else {
+              saved = await roofingAreaService.create(areaWithCompany);
+            }
+            setRoofingAreas((prev) => prev.map((a) => (a.id === area.id ? saved : a)));
+            return saved;
+          } catch (err) {
+            console.error("Error saving roofing area:", err instanceof Error ? err.message : JSON.stringify(err));
+            throw err;
+          }
+        }}
+        onDelete={async (areaId) => {
+          try {
+            await roofingAreaService.softDelete(areaId, "Deleted by user");
+            await refreshRoofingTotals();
+          } catch (err) {
+            console.error("Error deleting roofing area:", err);
+            throw err;
+          }
+        }}
+        onAreaLineItemsSaved={refreshRoofingTotals}
+      />
+    ) : (
+      <p className="text-sm text-muted-foreground">
+        Create the estimate first, then you&apos;ll be able to add roof areas and photos on the edit page.
+      </p>
+    )}
+  </>
+)}
 
       {/* Gated on estimateType, NOT on the roofV2 route prop.
           Previously `!roofV2`, which meant a ROOFING estimate opened
@@ -742,30 +735,30 @@ const [pricingOpen, setPricingOpen] = useState(true);
           never hidden behind it; flush to the viewport from lg up,
           where that nav isn't rendered. Carries the total too, so the
           number stays visible however far down the form you are. */}
-      <div className="sticky bottom-[65px] z-30 -mx-4 border-t border-border bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80:bg-emerald-950/80 sm:-mx-6 sm:px-6 lg:bottom-0">
-        <div className="mx-auto flex max-w-4xl items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Total</div>
-            <div className="truncate text-lg font-bold text-foreground">{formatMoney(total)}</div>
-          </div>
-          <div className="flex shrink-0 gap-2">
-            <button
-              type="button"
-              onClick={() => router.back()}
-              className="rounded-lg border border-input px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted:bg-emerald-900/40"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving || !title.trim() || (!projectId && !manualClientId)}
-              className="rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
-            >
-              {saving ? "Saving…" : estimate ? "Save changes" : "Create estimate"}
-            </button>
-          </div>
-        </div>
-      </div>
+<div className="sticky bottom-0 z-30 -mx-4 border-t border-border bg-background/95 px-3 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-6 sm:px-4">
+  <div className="mx-auto flex max-w-4xl items-center justify-between gap-2">
+    <div className="min-w-0">
+      <div className="text-[8px] font-bold uppercase tracking-wider text-muted-foreground">Total</div>
+      <div className="truncate text-sm font-bold text-foreground sm:text-base">{formatMoney(total)}</div>
+    </div>
+    <div className="flex shrink-0 gap-1.5 sm:gap-2">
+      <button
+        type="button"
+        onClick={() => router.back()}
+        className="rounded-lg border border-input px-2.5 py-1 text-xs font-semibold text-foreground transition-colors hover:bg-muted sm:px-3 sm:py-1.5 sm:text-sm"
+      >
+        Cancel
+      </button>
+      <button
+        type="submit"
+        disabled={saving || !title.trim() || (!projectId && !manualClientId)}
+        className="rounded-lg bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50 sm:px-4 sm:py-1.5 sm:text-sm"
+      >
+        {saving ? "Saving…" : estimate ? "Save Changes" : "Create"}
+      </button>
+    </div>
+  </div>
+</div>
     </form>
 
     <Modal open={showNewProjectModal} onClose={() => setShowNewProjectModal(false)} title="New Project">

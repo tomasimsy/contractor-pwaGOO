@@ -179,7 +179,99 @@ export const RoofingAreaLineItemEditor = forwardRef<RoofingAreaLineItemEditorHan
     <div className="space-y-2">
       {error && <div className="rounded-md bg-red-50 px-2 py-1.5 text-xs text-red-700">{error}</div>}
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
+      {/* ---------- MOBILE: one card per line item ----------
+          A 7-column table cannot fit a phone. Measured at 375px wide
+          this editor had 254px of usable width against 341px of table,
+          so every row scrolled sideways. Below `sm` the same fields
+          render stacked and full-width instead; from `sm` up the table
+          below is unchanged. Identical state and handlers — this is
+          purely how the same inputs are arranged. */}
+      <div className="space-y-2 sm:hidden">
+        {items.map((item, i) => (
+          <div key={i} className="space-y-2 rounded-lg border border-gray-200 p-2.5">
+            <div className="flex items-start gap-2">
+              <input
+                value={item.name}
+                onChange={(e) => updateItem(i, { name: e.target.value })}
+                placeholder="Item name"
+                className="w-full min-w-0 rounded-md border border-gray-300 px-2 py-1.5 text-xs outline-none focus:border-blue-500"
+              />
+              <button
+                type="button"
+                onClick={() => removeItem(i)}
+                aria-label="Remove line item"
+                className="shrink-0 rounded-md p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
+              >
+                <Trash2 className="size-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <label className="block">
+                <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-gray-500">Category</span>
+                <select
+                  value={item.category}
+                  onChange={(e) => updateItem(i, { category: e.target.value as DraftAreaLineItem["category"] })}
+                  className="w-full rounded-md border border-gray-300 bg-white px-1.5 py-1.5 text-xs outline-none focus:border-blue-500"
+                >
+                  {CATEGORIES.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-gray-500">Qty</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={item.quantity}
+                  onChange={(e) => updateItem(i, { quantity: parseFloat(e.target.value) || 0 })}
+                  className="w-full rounded-md border border-gray-300 px-1.5 py-1.5 text-xs outline-none focus:border-blue-500"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-gray-500">Unit</span>
+                <select
+                  value={item.unit ?? ""}
+                  onChange={(e) => updateItem(i, { unit: (e.target.value || null) as DraftAreaLineItem["unit"] })}
+                  className="w-full rounded-md border border-gray-300 bg-white px-1.5 py-1.5 text-xs outline-none focus:border-blue-500"
+                >
+                  <option value="">—</option>
+                  {UNITS.map((u) => (
+                    <option key={u} value={u}>{u}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="grid grid-cols-2 items-end gap-2">
+              <label className="block">
+                <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-gray-500">Unit Price</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={item.unitPrice}
+                  onChange={(e) => updateItem(i, { unitPrice: parseFloat(e.target.value) || 0 })}
+                  className="w-full rounded-md border border-gray-300 px-1.5 py-1.5 text-xs outline-none focus:border-blue-500"
+                />
+              </label>
+              <div className="text-right">
+                <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-gray-500">Total</span>
+                <span className="block py-1.5 text-xs font-semibold text-gray-900">
+                  {calculateLineItemTotal(item).toLocaleString("en-US", { style: "currency", currency: "USD" })}
+                </span>
+              </div>
+            </div>
+          </div>
+        ))}
+        {items.length === 0 && (
+          <div className="rounded-lg border border-gray-200 px-2 py-3 text-center text-xs text-gray-500">No line items yet.</div>
+        )}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-lg border border-gray-200 sm:block">
         <table className="w-full text-xs">
           <thead className="bg-gray-50">
             <tr>

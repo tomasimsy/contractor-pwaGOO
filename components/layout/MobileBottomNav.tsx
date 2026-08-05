@@ -10,6 +10,7 @@ import {
   Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { hidesMobileBottomNav } from "@/lib/layout/mobileBottomNav";
 
 const items = [
   {
@@ -41,6 +42,11 @@ const items = [
 
 export function MobileBottomNav() {
   const pathname = usePathname();
+
+  // Edit screens run full-bleed with their own sticky action bar.
+  // Returning null (rather than hiding with a class) also drops the
+  // fixed element entirely, so nothing can overlay the form.
+  if (hidesMobileBottomNav(pathname)) return null;
 
   return (
     <nav

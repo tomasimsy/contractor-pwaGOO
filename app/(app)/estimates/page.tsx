@@ -121,7 +121,9 @@ function EstimatesListContent() {
       {error && <div className="mb-3 rounded-lg bg-danger/10 px-3 py-2 text-xs sm:text-sm text-danger">{error}</div>}
 
       <div className="mb-3 flex flex-wrap items-center gap-1.5 sm:gap-2">
-        <div className="relative flex-1 min-w-[140px] max-w-xs">
+        {/* Full width on a phone (the `max-w-xs` cap only applies from
+            `sm` up, where it sits beside the three filter selects). */}
+        <div className="relative w-full min-w-[140px] sm:max-w-xs sm:flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
             type="search"

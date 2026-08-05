@@ -382,7 +382,7 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
            glance while scrolling. Tokens only — no `dark:` variants,
            which key off the OS rather than this app's data-theme. */
         <div key={area.id} className="overflow-hidden rounded-xl border border-primary  shadow-sm">
-          <div className="flex items-start justify-between gap-3 bg-primary px-4 py-3  ">
+          <div className="flex items-start justify-between gap-3 bg-primary px-3 py-3 sm:px-4">
             <h3 className="flex items-center gap-2 font-semibold text-primary-foreground">
               <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-foreground/20 text-xs font-bold">
                 {idx + 1}

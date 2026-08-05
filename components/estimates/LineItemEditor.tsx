@@ -50,8 +50,101 @@ export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; on
         </div>
       </div>
 
+      {/* ---------- MOBILE: one card per line item ----------
+          The table below has seven columns and fixed-width inputs
+          (`w-20`, `w-24`, `min-w-[140px]`), which together overflow any
+          phone and force sideways scrolling. Below `sm` the same fields
+          stack full-width; from `sm` up the table renders unchanged.
+          Same state, same handlers — only the arrangement differs. */}
+      <div className="space-y-2 sm:hidden">
+        {items.map((item, i) => (
+          <div key={i} className="space-y-2 rounded-lg border border-border/80 bg-background p-2.5 shadow-2xs">
+            <div className="flex items-start gap-2">
+              <input
+                value={item.name}
+                onChange={(e) => updateItem(i, { name: e.target.value })}
+                placeholder="Item name"
+                className="w-full min-w-0 rounded-md border border-input bg-background px-2.5 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
+              />
+              <button
+                type="button"
+                onClick={() => removeItem(i)}
+                aria-label="Remove line item"
+                className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger"
+              >
+                <Trash2 className="size-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <label className="block">
+                <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Category</span>
+                <select
+                  value={item.category}
+                  onChange={(e) => updateItem(i, { category: e.target.value as DraftLineItem["category"] })}
+                  className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs font-medium capitalize outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
+                >
+                  {CATEGORIES.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Qty</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={item.quantity}
+                  onChange={(e) => updateItem(i, { quantity: parseFloat(e.target.value) || 0 })}
+                  className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Unit</span>
+                <select
+                  value={item.unit ?? ""}
+                  onChange={(e) => updateItem(i, { unit: (e.target.value || null) as DraftLineItem["unit"] })}
+                  className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
+                >
+                  <option value="">—</option>
+                  {UNITS.map((u) => (
+                    <option key={u} value={u}>{u}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="grid grid-cols-2 items-end gap-2">
+              <label className="block">
+                <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Unit Price</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={item.unitPrice}
+                  onChange={(e) => updateItem(i, { unitPrice: parseFloat(e.target.value) || 0 })}
+                  className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
+                />
+              </label>
+              <div className="text-right">
+                <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Total</span>
+                <span className="block py-1.5 text-xs font-semibold text-foreground">
+                  {calculateLineItemTotal(item).toLocaleString("en-US", { style: "currency", currency: "USD" })}
+                </span>
+              </div>
+            </div>
+          </div>
+        ))}
+        {items.length === 0 && (
+          <div className="rounded-lg border border-border/80 bg-background px-3 py-8 text-center text-xs text-muted-foreground">
+            No line items yet. Click &quot;Add line item&quot; below to start building your estimate.
+          </div>
+        )}
+      </div>
+
       {/* Table Container with clear separation */}
-      <div className="overflow-x-auto rounded-lg border border-border/80 bg-background shadow-2xs">
+      <div className="hidden overflow-x-auto rounded-lg border border-border/80 bg-background shadow-2xs sm:block">
         <table className="w-full text-sm">
           <thead className="bg-muted/60 border-b border-border/80">
             <tr>
