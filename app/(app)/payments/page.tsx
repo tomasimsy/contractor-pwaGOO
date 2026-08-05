@@ -18,13 +18,18 @@ const money = (n: number) => n.toLocaleString("en-US", { style: "currency", curr
 
 /**
  * Company-wide payment history. Reads through the same PaymentService
- * every other surface uses (listForInvoice per invoice), so a figure
- * here can never disagree with the invoice it belongs to.
+ * every other surface uses, so a figure here can never disagree with
+ * the invoice it belongs to.
  *
- * There is no company-wide listPayments() on the interface yet, so this
- * fans out across the company's invoices. That is honest but O(n) in
- * invoices — see the note in the deliverables about adding a scoped
- * list method when volume warrants it.
+ * Uses PaymentService.listForCompany — ONE query. This previously
+ * fanned out with listForInvoice per invoice, noted at the time as
+ * "O(n) in invoices... when volume warrants it". It already did:
+ * 48 invoices meant 48 sequential round-trips, and the measured
+ * round-trip floor to hosted Supabase is ~130ms, so this page spent
+ * ~6s fetching data one query at a time. `listForCompany` existed on
+ * the interface the whole time; the comment claiming otherwise was
+ * stale. Same `deleted_at is null` filter and payment_date ordering,
+ * so the rows are identical — only the number of requests changed.
  */
 function PaymentsListContent() {
   const { paymentService, invoiceService, clientService } = useServices();
@@ -42,15 +47,25 @@ function PaymentsListContent() {
     setLoading(true);
     setError(null);
     try {
-      const [invoices, clients] = await Promise.all([
+      const [invoices, clients, payments] = await Promise.all([
         invoiceService.listForCompany({ companyId: profile.companyId }),
         clientService.list({ companyId: profile.companyId }),
+        paymentService.listForCompany({ companyId: profile.companyId }),
       ]);
       setClientsById(Object.fromEntries(clients.map((c) => [c.id, c])));
-      const perInvoice = await Promise.all(
-        invoices.map(async (inv) => (await paymentService.listForInvoice(inv.id)).map((payment) => ({ payment, invoice: inv })))
+      // Joined in memory against the invoices already fetched above.
+      // A payment whose invoice isn't in scope is dropped, exactly as
+      // the per-invoice fan-out did (it only ever asked about invoices
+      // in this company).
+      const invoiceById = new Map(invoices.map((inv) => [inv.id, inv] as const));
+      setRows(
+        payments
+          .flatMap((payment) => {
+            const invoice = invoiceById.get(payment.invoiceId);
+            return invoice ? [{ payment, invoice }] : [];
+          })
+          .sort((a, b) => b.payment.paymentDate.localeCompare(a.payment.paymentDate))
       );
-      setRows(perInvoice.flat().sort((a, b) => b.payment.paymentDate.localeCompare(a.payment.paymentDate)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load payments.");
     } finally {

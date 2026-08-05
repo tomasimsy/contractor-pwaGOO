@@ -1,9 +1,9 @@
-"use client";
+"use type";
 
 /**
- * Reusable stat tile — every dashboard number is a plain read of a
- * field FinancialEngine/EstimateService/ProjectService already
- * computed; this component only formats and displays it.
+ * Reusable stat tile — optimized for mobile touch targets, information hierarchy,
+ * and tight viewports. Uses responsive padding, compact typography, and distinct 
+ * visual indicators for scannability.
  */
 import type { LucideIcon } from "lucide-react";
 
@@ -21,27 +21,48 @@ export function StatCard({
   hint?: string;
 }) {
   const toneClass =
-    tone === "success" ? "text-success" : tone === "danger" ? "text-danger" : tone === "warning" ? "text-warning-foreground" : "text-foreground";
+    tone === "success" 
+      ? "text-success" 
+      : tone === "danger" 
+      ? "text-danger" 
+      : tone === "warning" 
+      ? "text-warning-foreground" 
+      : "text-foreground";
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        <Icon className="size-3.5" />
-        {label}
+    <div className="relative flex flex-col justify-between overflow-hidden rounded-xl border border-border bg-card p-3 sm:p-4 shadow-sm transition-all active:scale-[0.98]">
+      <div>
+        {/* Header row: Icon + Label scaled down for mobile screens to prevent ugly wrapping */}
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground sm:text-xs">
+          <Icon className="size-3.5 shrink-0" />
+          <span className="truncate">{label}</span>
+        </div>
+        
+        {/* Value: Adjusted font size to fit large currency figures neatly on 2-column mobile grids */}
+        <div className={`mt-1.5 text-xl font-extrabold tracking-tight sm:text-2xl ${toneClass}`}>
+          {value}
+        </div>
       </div>
-      <div className={`mt-1.5 text-2xl font-bold ${toneClass}`}>{value}</div>
-      {hint && <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div>}
+
+      {hint && (
+        <div className="mt-2 text-[10px] font-medium text-muted-foreground/80 sm:text-xs">
+          {hint}
+        </div>
+      )}
     </div>
   );
 }
 
-/** Loading placeholder matching StatCard's exact dimensions, so the
- * grid doesn't reflow once real data arrives. */
+/** Loading placeholder matching StatCard's exact mobile & desktop dimensions */
 export function StatCardSkeleton() {
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="h-3 w-20 animate-pulse rounded bg-muted" />
-      <div className="mt-2 h-7 w-24 animate-pulse rounded bg-muted" />
+    <div className="flex flex-col justify-between rounded-xl border border-border bg-card p-3 sm:p-4 shadow-sm">
+      <div className="flex items-center gap-1.5">
+        <div className="size-3.5 animate-pulse rounded bg-muted" />
+        <div className="h-3 w-16 animate-pulse rounded bg-muted sm:w-20" />
+      </div>
+      <div className="mt-2 h-6 w-20 animate-pulse rounded bg-muted sm:h-7 sm:w-24" />
+      <div className="mt-2 h-2.5 w-12 animate-pulse rounded bg-muted" />
     </div>
   );
 }

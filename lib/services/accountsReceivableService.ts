@@ -47,6 +47,15 @@ export function createAccountsReceivableService(deps: {
     const asOf = asOfDate ? new Date(asOfDate) : new Date();
     const invoices = await deps.invoiceService.listForCompany(scope);
 
+    // Batched up front: this loop previously called
+    // getSummaryForInvoice per invoice — TWO round-trips each, across
+    // every invoice in the company. Same summaries, same formulas, one
+    // query. Only revenue invoices are asked about, matching the filter
+    // applied below.
+    const summaries = await deps.paymentService.getSummariesForInvoices(
+      invoices.filter(isRevenueInvoice).map((inv) => ({ id: inv.id, total: inv.total }))
+    );
+
     const lines: ARAgingLine[] = [];
     for (const invoice of invoices) {
       // Same rule FinancialEngine.isRevenueInvoice applies everywhere
@@ -56,8 +65,8 @@ export function createAccountsReceivableService(deps: {
       // method had only the remainingBalance>0 check below, which a
       // voided invoice with zero payments still passes).
       if (!isRevenueInvoice(invoice)) continue;
-      const summary = await deps.paymentService.getSummaryForInvoice(invoice.id);
-      if (summary.remainingBalance <= 0) continue; // paid/overpaid invoices carry no receivable
+      const summary = summaries[invoice.id];
+      if (!summary || summary.remainingBalance <= 0) continue; // paid/overpaid invoices carry no receivable
 
       const daysPastDue = invoice.dueDate
         ? Math.floor((asOf.getTime() - new Date(invoice.dueDate).getTime()) / 86400000)

@@ -90,6 +90,47 @@ export interface Estimate extends AuditedEntity {
   estimateType?: "standard" | "roofing";
 }
 
+/**
+ * ONE normalized scope line, whatever kind of estimate produced it.
+ *
+ * A standard estimate's scope lives in `estimate_items`. A ROOFING
+ * estimate's lives in `estimate_areas` (+ `estimate_area_line_items`)
+ * and carries fields a line item has no business holding — defect,
+ * location, corrective action, measurements, before/after photos. The
+ * two therefore stay in separate tables, deliberately: merging them
+ * would either bloat `estimate_items` with roofing columns or mirror
+ * the same dollar in two places.
+ *
+ * What every CONSUMER actually needs, though, is the same short list:
+ * what was quoted, and for how much. `getScopeLines` is that list.
+ * It exists so no caller outside EstimateService has to know which
+ * tables back which estimate type — the branch that InvoiceService,
+ * the customer portal, and EstimateDetail each independently got wrong.
+ */
+export interface ScopeLine {
+  /** Stable id of the underlying row. For an area's repair cost this
+   * is the AREA's id — that figure is a property of the area itself,
+   * not of a separate record. */
+  id: UUID;
+  category: "material" | "labor" | "other";
+  name: string;
+  description: string | null;
+  quantity: number;
+  unitPrice: number;
+  unit?: EstimateLineItemUnit | null;
+  /** Always quantity × unitPrice via calculateLineItemTotal, or the
+   * persisted figure for an area repair cost. Never recomputed by a
+   * caller. */
+  total: number;
+  /** Which underlying record this came from. Presentational only —
+   * financially every source is just scope, summed once. */
+  source: "estimate_item" | "area_line_item" | "area_repair_cost";
+  /** Roofing only: which roof area this line belongs to, for grouping
+   * in the PDF. Null for standard estimates. */
+  areaId?: UUID | null;
+  areaName?: string | null;
+}
+
 export interface EstimateService {
   /** `includeDeleted` (default false) — same contract as
    * ProjectService/ClientService.getById: pass `true` when this
@@ -143,6 +184,23 @@ export interface EstimateService {
    * lib/utils/calculations.ts, moved here since it's an estimate
    * concern, not a floating utility). */
   recalculateTotal(estimateId: UUID): Promise<Estimate>;
+
+  /**
+   * THE scope of this estimate, normalized — the single answer to
+   * "what was quoted, and for how much", regardless of estimate type.
+   *
+   * This is the ONLY supported way to read an estimate's scope outside
+   * this service. `estimate.lineItems` remains available but is the
+   * RAW `estimate_items` rows, which are empty (and meaningless) for a
+   * roofing estimate — reading them unconditionally is what produced
+   * $0 roofing invoices and a customer portal whose breakdown didn't
+   * sum to its own total.
+   *
+   * INVARIANT: `sum(getScopeLines(id).total)` === the estimate's
+   * `subtotal`. recalculateTotal is derived from this same call, so
+   * the two cannot drift; a test pins it for both estimate types.
+   */
+  getScopeLines(estimateId: UUID, knownType?: string | null): Promise<ScopeLine[]>;
 
   changeStatus(estimateId: UUID, toStatus: EstimateStatus): Promise<ValidationResult & { estimate?: Estimate }>;
 

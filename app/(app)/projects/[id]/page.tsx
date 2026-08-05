@@ -138,10 +138,8 @@ function ProjectDetailContent() {
 
         const projectInvoices = await invoiceService.listForProject(p.id);
         setInvoices(projectInvoices);
-        const paymentEntries = await Promise.all(
-          projectInvoices.map(async (inv) => [inv.id, await paymentService.listForInvoice(inv.id)] as const)
-        );
-        setPaymentsByInvoice(Object.fromEntries(paymentEntries));
+        // Batched: was one query per invoice in a loop.
+        setPaymentsByInvoice(await paymentService.listForInvoices(projectInvoices.map((inv) => inv.id)));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load project.");

@@ -62,7 +62,7 @@
  * delete/restore) already does.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Estimate, EstimateLineItem, EstimateService } from "../estimateService";
+import type { Estimate, EstimateLineItem, EstimateService, ScopeLine } from "../estimateService";
 import type { UUID, EstimateStatus, ValidationResult, QueryScope } from "../types";
 import type { ValidationService } from "../validationService";
 import type { AuditService } from "../auditService";
@@ -205,43 +205,125 @@ export function createSupabaseEstimateService(
    * decides which rows feed the subtotal; it does not reimplement any
    * part of the calculation itself.
    */
-  async function calculateRoofingAreasSubtotal(estimateId: UUID): Promise<number> {
-    // Selects estimated_repair_cost alongside id: a Roof Area's repair-
-    // item cost (material + labor + tax, see calculateAreaRepairCost in
-    // financialCalculations.ts, always kept in sync by
-    // RoofingAreaService's create/update) is a SECOND, additive cost
-    // source alongside estimate_area_line_items below — not a
-    // replacement. An area with no line items but a filled-in repair
-    // cost still contributes; an area using only granular line items is
-    // unaffected (estimated_repair_cost defaults to 0). Both sum into
-    // the same subtotal via calculateSubtotal, the one shared Layer 0
-    // formula, so there is no second addition formula living here.
+  /**
+   * A ROOFING estimate's scope, as normalized lines.
+   *
+   * TWO additive sources, both real and both required:
+   *   1. `estimate_area_line_items` — granular per-area lines.
+   *   2. each area's own `estimated_repair_cost` (material + labor +
+   *      tax, computed by calculateAreaRepairCost and persisted on the
+   *      area row) — an area may carry this with no line items at all.
+   * An area using only one of the two is unaffected by the other; the
+   * unused figure is 0. This composition rule now lives in exactly ONE
+   * place. It was previously duplicated inside
+   * InvoiceService.createFromEstimate, which had to re-derive it to
+   * avoid issuing invoices worth less than the approved estimate.
+   */
+  async function roofingScopeLines(estimateId: UUID): Promise<ScopeLine[]> {
     const { data: areas, error: areasError } = await supabase
       .from("estimate_areas")
-      .select("id, estimated_repair_cost")
+      .select("id, area_name, estimated_repair_cost, sequence_number")
       .eq("estimate_id", estimateId)
-      .is("deleted_at", null);
+      .is("deleted_at", null)
+      .order("sequence_number", { ascending: true });
     if (areasError) throw new Error(`Failed to load roofing areas: ${areasError.message}`);
 
-    const areaRows = (areas || []) as Array<{ id: string; estimated_repair_cost: number | null }>;
+    const areaRows = (areas || []) as Array<{ id: string; area_name: string | null; estimated_repair_cost: number | null; sequence_number: number | null }>;
+    if (areaRows.length === 0) return [];
     const areaIds = areaRows.map((a) => a.id);
-    if (areaIds.length === 0) return 0;
 
     const { data: lineItemRows, error: lineItemsError } = await supabase
       .from("estimate_area_line_items")
-      .select("total")
+      .select("*")
       .in("estimate_area_id", areaIds)
-      .is("deleted_at", null);
+      .is("deleted_at", null)
+      .order("sequence_number", { ascending: true });
     if (lineItemsError) throw new Error(`Failed to load roofing area line items: ${lineItemsError.message}`);
 
-    const repairCostRows = areaRows.map((a) => ({ total: a.estimated_repair_cost ?? 0 }));
-    return calculateSubtotal([...(lineItemRows || []), ...repairCostRows] as Array<{ total: number }>);
+    const areaById = new Map(areaRows.map((a) => [a.id, a] as const));
+    const lines: ScopeLine[] = [];
+
+    for (const row of (lineItemRows || []) as Array<Record<string, unknown>>) {
+      const areaId = row.estimate_area_id as string;
+      lines.push({
+        id: row.id as string,
+        category: (row.category as ScopeLine["category"]) ?? "other",
+        name: (row.name as string) ?? "",
+        description: (row.description as string | null) ?? null,
+        quantity: (row.quantity as number) ?? 0,
+        unitPrice: (row.unit_price as number) ?? 0,
+        unit: (row.unit as ScopeLine["unit"]) ?? null,
+        total: (row.total as number) ?? 0,
+        source: "area_line_item",
+        areaId,
+        areaName: areaById.get(areaId)?.area_name ?? null,
+      });
+    }
+
+    for (const area of areaRows) {
+      const repairCost = area.estimated_repair_cost ?? 0;
+      if (repairCost === 0) continue;
+      lines.push({
+        // The AREA's id: this figure is a property of the area itself,
+        // not of a separate record.
+        id: area.id,
+        category: "other",
+        name: `${area.area_name ?? "Roof area"} - Estimated Repair Cost`,
+        description: "Materials + labor + tax carried from approved estimate",
+        quantity: 1,
+        unitPrice: repairCost,
+        unit: null,
+        total: repairCost,
+        source: "area_repair_cost",
+        areaId: area.id,
+        areaName: area.area_name ?? null,
+      });
+    }
+
+    return lines;
   }
 
-  async function calculateStandardItemsSubtotal(estimateId: UUID): Promise<number> {
-    const { data: itemRows, error: itemsError } = await supabase.from("estimate_items").select("*").eq("estimate_id", estimateId).is("deleted_at", null);
-    if (itemsError) throw new Error(`Failed to load estimate line items: ${itemsError.message}`);
-    return calculateSubtotal((itemRows as EstimateItemRow[]).map(itemRowToLineItem));
+  /** A STANDARD estimate's scope: its `estimate_items` rows, verbatim. */
+  async function standardScopeLines(estimateId: UUID): Promise<ScopeLine[]> {
+    const { data: itemRows, error } = await supabase
+      .from("estimate_items").select("*").eq("estimate_id", estimateId).is("deleted_at", null);
+    if (error) throw new Error(`Failed to load estimate line items: ${error.message}`);
+    return (itemRows as EstimateItemRow[]).map(itemRowToLineItem).map((li) => ({
+      id: li.id,
+      category: li.category,
+      name: li.name,
+      description: li.description,
+      quantity: li.quantity,
+      unitPrice: li.unitPrice,
+      unit: li.unit ?? null,
+      total: li.total,
+      source: "estimate_item" as const,
+      areaId: null,
+      areaName: null,
+    }));
+  }
+
+  /** See the interface doc. The ONE place the estimate_type branch for
+   * SCOPE lives; every consumer calls this instead of branching.
+   *
+   * `knownType` is an internal fast path, not part of the public
+   * contract: getById and writeRecalculatedTotals have ALREADY loaded
+   * the estimate row, so re-reading `estimate_type` here cost a third
+   * round-trip on the hottest read in the app — measured at 8 redundant
+   * `select=estimate_type` queries on one Estimate Detail load. Callers
+   * that don't have the row omit it and the lookup happens as before. */
+  async function getScopeLines(estimateId: UUID, knownType?: string | null): Promise<ScopeLine[]> {
+    let estimateType = knownType;
+    if (estimateType === undefined) {
+      const { data: row, error } = await supabase
+        .from("estimates").select("estimate_type").eq("id", estimateId).maybeSingle();
+      if (error) throw new Error(`Failed to load estimate: ${error.message}`);
+      if (!row) return [];
+      estimateType = (row as { estimate_type: string | null }).estimate_type;
+    }
+    return estimateType === "roofing"
+      ? roofingScopeLines(estimateId)
+      : standardScopeLines(estimateId);
   }
 
   async function writeRecalculatedTotals(estimateId: UUID): Promise<Estimate> {
@@ -255,9 +337,11 @@ export function createSupabaseEstimateService(
     // estimate_items (unchanged). Roofing estimates: sum of every roof
     // area's line items (Estimate Roof V2) — estimate_items stays
     // unused/empty for roofing estimates, so this never double-counts.
-    const subtotal = estimate.estimateType === "roofing"
-      ? await calculateRoofingAreasSubtotal(estimateId)
-      : await calculateStandardItemsSubtotal(estimateId);
+    // Derived from getScopeLines, NOT from a parallel per-type sum —
+    // so "what this estimate is worth" and "what this estimate quotes"
+    // are one computation. A test pins sum(scope) === subtotal for both
+    // estimate types.
+    const subtotal = calculateSubtotal(await getScopeLines(estimateId, estimate.estimateType));
     const { total } = calculateDocumentTotal(subtotal, estimate.markup, estimate.discount, estimate.taxRate);
 
     const { data, error: updateError } = await supabase.from("estimates").update({ subtotal, total }).eq("id", estimateId).select().single();
@@ -303,9 +387,7 @@ export function createSupabaseEstimateService(
     // would compare its correct, already-persisted subtotal against 0
     // (since `lineItems`/estimate_items are unused for roofing) and
     // force a spurious recalculation on every read.
-    const subtotal = estimate.estimateType === "roofing"
-      ? await calculateRoofingAreasSubtotal(estimateId)
-      : calculateSubtotal(lineItems);
+    const subtotal = calculateSubtotal(await getScopeLines(estimateId, estimate.estimateType));
     const { total } = calculateDocumentTotal(subtotal, estimate.markup, estimate.discount, estimate.taxRate);
 
     if (needsTotalRecalculation(estimate, { subtotal, total })) {
@@ -446,9 +528,22 @@ export function createSupabaseEstimateService(
 
     // The parent's company_id — required on every child row by RLS.
     const { data: parent, error: parentError } = await supabase
-      .from("estimates").select("company_id").eq("id", estimateId).single();
+      .from("estimates").select("company_id, estimate_type").eq("id", estimateId).single();
     if (parentError) throw new Error(`Failed to load estimate: ${parentError.message}`);
     const companyId = (parent as { company_id: string }).company_id;
+
+    // A ROOFING estimate's scope lives in its roof areas; `estimate_items`
+    // contributes nothing to its subtotal (see getScopeLines). Writing
+    // here would create rows that are invisible to every total — the
+    // exact defect that let a user edit a line item from $10 to $9 on a
+    // roofing estimate, see it save, and watch the total never move.
+    // Refused loudly rather than silently ignored, so a caller that
+    // means to edit roofing scope is told where it actually lives.
+    if ((parent as { estimate_type: string | null }).estimate_type === "roofing") {
+      throw new Error(
+        "This is a roofing estimate — its scope lives in roof areas, not line items. Edit it through the roof area editor (RoofingAreaService / EstimateAreaLineItemService)."
+      );
+    }
 
     const { error: deleteError } = await supabase.from("estimate_items").delete().eq("estimate_id", estimateId);
     if (deleteError) throw new Error(`Failed to update estimate line items: ${deleteError.message}`);
@@ -489,6 +584,29 @@ export function createSupabaseEstimateService(
     for (const forbidden of ["subtotal", "total", "revisedTotal"]) {
       if (forbidden in changes) {
         throw new Error(`EstimateService.update() cannot set "${forbidden}" — it is a derived value. Call recalculateTotal() instead.`);
+      }
+    }
+
+    // An estimate's KIND is immutable once it has scope. Flipping
+    // standard <-> roofing silently moves the total between two
+    // different tables: a $10,000 standard estimate becomes $0 the
+    // instant it is called "roofing" (its estimate_items stop counting
+    // and it has no roof areas yet), and the reverse strands real
+    // roofing scope. Nothing recalculates the OLD source afterwards, so
+    // the damage is invisible until someone reads the total. Cheap to
+    // forbid, expensive to detect.
+    if (changes.estimateType !== undefined) {
+      const { data: currentRow, error } = await supabase
+        .from("estimates").select("estimate_type").eq("id", estimateId).single();
+      if (error) throw new Error(`Failed to load estimate: ${error.message}`);
+      const currentType = (currentRow as { estimate_type: string | null }).estimate_type ?? "standard";
+      if (changes.estimateType !== currentType) {
+        const existingScope = await getScopeLines(estimateId);
+        if (existingScope.length > 0) {
+          throw new Error(
+            `This estimate already has scope recorded, so its type cannot be changed from "${currentType}" to "${changes.estimateType}". Its total is derived from ${currentType === "roofing" ? "roof areas" : "line items"}; switching would strand that scope. Create a new estimate instead.`
+          );
+        }
       }
     }
 
@@ -640,5 +758,5 @@ export function createSupabaseEstimateService(
     if (error) throw new Error(`Failed to restore estimate: ${error.message}`);
   }
 
-  return { getById, listForProject, list, create, updateLineItems, update, recalculateTotal, changeStatus, recordSignature, softDelete, restore };
+  return { getById, listForProject, list, create, getScopeLines, updateLineItems, update, recalculateTotal, changeStatus, recordSignature, softDelete, restore };
 }

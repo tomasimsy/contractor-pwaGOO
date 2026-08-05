@@ -467,8 +467,15 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     // can never disagree about where the number comes from. Previously
     // sourced from transactionService.getProjectLedger, which no real
     // payment ever wrote to in production (see DASHBOARD_AUDIT_REPORT.md).
-    const invoicePaymentSummaries = await Promise.all(
-      invoices.filter(isRevenueInvoice).map((inv) => paymentService.getSummaryForInvoice(inv.id))
+    // BATCHED: getSummaryForInvoice costs two round-trips per invoice
+    // (the invoice's own total, then its payments) and this ran it once
+    // per invoice. getSummariesForInvoices takes the totals we already
+    // hold and fetches every invoice's payments in ONE query — same
+    // formulas, same figures. At a measured ~130ms round-trip floor,
+    // that is the difference between 2N calls and 1.
+    const revenueInvoices = invoices.filter(isRevenueInvoice);
+    const invoicePaymentSummaries = Object.values(
+      await paymentService.getSummariesForInvoices(revenueInvoices.map((inv) => ({ id: inv.id, total: inv.total })))
     );
     const amountPaid = asRealizedCost(invoicePaymentSummaries.reduce((sum, s) => sum + s.totalPaid, 0));
     const remainingBalance = calculateRemainingBalance(invoicesTotal, amountPaid);
@@ -656,8 +663,9 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
 
     const invoicesTotal = invoicesForEstimate.reduce((sum, inv) => sum + inv.total, 0);
 
-    const paymentSummaries = await Promise.all(
-      invoicesForEstimate.map((inv) => paymentService.getSummaryForInvoice(inv.id))
+    // Batched for the same reason as getProjectFinancials above.
+    const paymentSummaries = Object.values(
+      await paymentService.getSummariesForInvoices(invoicesForEstimate.map((inv) => ({ id: inv.id, total: inv.total })))
     );
     const amountPaid = paymentSummaries.reduce((sum, p) => sum + p.totalPaid, 0);
     const remainingBalance = calculateRemainingBalance(invoicesTotal, amountPaid);
@@ -848,16 +856,52 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     return Array.from(byPayee.values()).sort((a, b) => a.payeeName.localeCompare(b.payeeName));
   }
 
+  // ==================================================================
+  // IN-FLIGHT COALESCING — concurrency dedupe, deliberately NOT a cache
+  // ==================================================================
+  // Shares the PROMISE of an already-running identical call. The entry
+  // is deleted the moment it settles, so a later call always re-queries.
+  // That distinction is the whole safety argument: a cache can serve
+  // data that has since changed; this cannot, because it only ever
+  // merges calls that overlap in time and would have returned the same
+  // result anyway. No invalidation to get wrong, and no mutation path
+  // needs to know it exists.
+  const inFlight = new Map<string, Promise<unknown>>();
+
+  function coalesce<T>(key: string, run: () => Promise<T>): Promise<T> {
+    const existing = inFlight.get(key) as Promise<T> | undefined;
+    if (existing) return existing;
+    const promise = run().finally(() => {
+      inFlight.delete(key);
+    });
+    inFlight.set(key, promise);
+    return promise;
+  }
+
   async function getRealizedCashFlows(scope: QueryScope & { dateRange: DateRange }, filter?: Filter) {
     // ONE PAYMENT = ONE EXPENSE RECORD. Subcontractor payments and
     // agent commissions are expense ROWS, so `companyExpenses` already
     // carries every dollar paid out — reading subcontractor_payments /
     // agent_payments here would count that same cash a second time.
+    // Keyed WITHOUT the dateRange, deliberately: none of these four
+    // reads uses it. They fetch the company's whole history and the
+    // range is applied in memory below.
+    //
+    // That matters because the Dashboard calls getCompanyFinancials
+    // THIRTEEN times on every load — once for the selected range, then
+    // once per month for the 12-month chart — and each call was
+    // re-fetching every invoice, expense and payment in the company to
+    // produce a differently-filtered view of identical data. Measured:
+    // 138 requests from just 11 distinct URLs, a 12.5x amplification.
+    // Since all thirteen run concurrently, coalescing collapses them to
+    // one fetch each.
+    const co = scope.companyId;
+    const filterKey = filter ? JSON.stringify(filter) : "";
     const [invoicesAll, projectIds, companyExpenses, customerPaymentsAll] = await Promise.all([
-      invoiceService.listForCompany(scope),
-      resolveProjectIds(scope, filter),
-      expenseService.listForCompany(scope.companyId),
-      paymentService.listForCompany(scope),
+      coalesce(`invoices:${co}:${scope.includeDeleted ?? false}`, () => invoiceService.listForCompany(scope)),
+      coalesce(`projectIds:${co}:${filterKey}`, () => resolveProjectIds(scope, filter)),
+      coalesce(`expenses:${co}`, () => expenseService.listForCompany(co)),
+      coalesce(`payments:${co}:${scope.includeDeleted ?? false}`, () => paymentService.listForCompany(scope)),
     ]);
 
     const invoiceProjectId = new Map(invoicesAll.map((inv) => [inv.id, inv.projectId] as const));
@@ -884,7 +928,10 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
 
   async function getCompanyFinancials(scope: QueryScope & { dateRange: DateRange }, filter?: Filter): Promise<CompanyFinancials> {
     const [projects, cashFlows] = await Promise.all([
-      projectService.list({ companyId: scope.companyId }),
+      // Same reasoning as getRealizedCashFlows' reads below: the project
+      // list is range-independent, so all thirteen dashboard calls want
+      // the identical result.
+      coalesce(`projects:${scope.companyId}`, () => projectService.list({ companyId: scope.companyId })),
       getRealizedCashFlows(scope, filter),
     ]);
     const { invoicesAll, projectIds, companyExpenses, customerPayments } = cashFlows;
@@ -959,7 +1006,16 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     // getPayablesSummary computed without a dateRange. Same filter
     // passed through so payables reflect the same project subset as
     // every other number returned here.
-    const payables = await getPayablesSummary({ companyId: scope.companyId }, filter);
+    // Coalesced: note this is already called WITHOUT a dateRange, so
+    // all thirteen dashboard calls request a byte-identical payables
+    // summary. It internally fetches subcontractor + agent assignments
+    // and the company's expenses — which is why those four tables were
+    // still showing 13 requests each after the cash-flow reads were
+    // deduped.
+    const payables = await coalesce(
+      `payables:${scope.companyId}:${filter ? JSON.stringify(filter) : ""}`,
+      () => getPayablesSummary({ companyId: scope.companyId }, filter)
+    );
 
     return {
       companyId: scope.companyId,
@@ -1175,11 +1231,14 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
   }
 
   return {
-    getProjectFinancials,
-    getEstimateFinancials,
-    getEstimateCostEntries,
-    getProjectCostEntries,
-    getPayeeBalances,
+    // Read methods are coalesced. Every one is a pure read composed of
+    // other services' reads — none of them writes, so sharing an
+    // in-flight result is always equivalent to making the call twice.
+    getProjectFinancials: (projectId) => coalesce(`projectFinancials:${projectId}`, () => getProjectFinancials(projectId)),
+    getEstimateFinancials: (estimateId) => coalesce(`estimateFinancials:${estimateId}`, () => getEstimateFinancials(estimateId)),
+    getEstimateCostEntries: (estimateId) => coalesce(`estimateCostEntries:${estimateId}`, () => getEstimateCostEntries(estimateId)),
+    getProjectCostEntries: (projectId) => coalesce(`projectCostEntries:${projectId}`, () => getProjectCostEntries(projectId)),
+    getPayeeBalances: (scope, role) => coalesce(`payeeBalances:${scope.companyId}:${scope.projectId ?? ""}:${role}`, () => getPayeeBalances(scope, role)),
     getCompanyFinancials,
     getFinancialsForProjects,
     getClientFinancials,

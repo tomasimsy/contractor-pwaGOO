@@ -34,8 +34,13 @@ function rowToEntry(row: AuditLogRow): AuditLogEntry {
     action: row.action,
     entityTable: row.entity_table,
     entityId: row.entity_id,
-    oldValues: row.old_values,
-    newValues: row.new_values,
+    // `?? null`, not a bare read: queryByEntity deliberately does NOT
+    // select these two JSONB blobs (see TIMELINE_COLUMNS), so they are
+    // absent on timeline rows. Normalising to null keeps AuditLogEntry
+    // honest — "not loaded" and "no snapshot" both read as null rather
+    // than leaking `undefined` past the type cast.
+    oldValues: row.old_values ?? null,
+    newValues: row.new_values ?? null,
     changedFields: null, // AuditService.getHistory re-derives this from oldValues/newValues
     occurredAt: row.occurred_at,
   };
@@ -95,14 +100,43 @@ export function createSupabaseAuditLogRepository(supabase: SupabaseClient): Audi
     return rowToEntry(data as AuditLogRow);
   }
 
+  /** Newest-N cap for the per-entity timeline. Generous enough that no
+   * realistic entity's visible history is truncated, small enough that
+   * the query can never scale with table growth. */
+  const HISTORY_LIMIT = 100;
+
+  /** Columns the per-entity timeline actually needs.
+   *
+   * Deliberately NOT `*`. `audit_logs.old_values`/`new_values` are
+   * JSONB snapshots of the whole row — median 2.5KB each, largest
+   * 19KB — and `select=*` over 100 of them returned a **576KB**
+   * payload where the same rows without the blobs are **24KB** (23x
+   * smaller, measured). Every one of the four getHistory consumers
+   * (estimate, invoice, project and change-order timelines) renders
+   * only `action` and `occurredAt`; nothing in the app reads
+   * oldValues/newValues/changedFields at all — verified by grep across
+   * app/ and components/.
+   *
+   * queryDeletion below still selects everything: "who deleted this and
+   * why" genuinely needs the snapshot. */
+  const TIMELINE_COLUMNS = "id, company_id, actor_user_id, action, entity_table, entity_id, occurred_at";
+
   async function queryByEntity(companyId: UUID, entityTable: string, entityId: UUID): Promise<AuditLogEntry[]> {
     const { data, error } = await supabase
       .from("audit_logs")
-      .select("*")
+      .select(TIMELINE_COLUMNS)
       .eq("company_id", companyId)
       .eq("entity_table", entityTable)
       .eq("entity_id", entityId)
-      .order("occurred_at", { ascending: false });
+      .order("occurred_at", { ascending: false })
+      // Bounded: this backs an Activity Timeline that shows the most
+      // recent events, but the query was unbounded `select=*` over a
+      // table already holding 1,775 rows and growing with every write —
+      // measured as the single slowest request on the Estimate Detail
+      // page (1,184ms). An entity's full history is still reachable via
+      // the dedicated /audit-logs page; this call site never rendered
+      // more than the newest entries.
+      .limit(HISTORY_LIMIT);
 
     if (error) {
       // "relation does not exist" (migration not applied yet) degrades

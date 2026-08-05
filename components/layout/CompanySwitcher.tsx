@@ -30,7 +30,7 @@ export function CompanySwitcher() {
         className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
       >
         <Building2 className="size-3.5 text-muted-foreground" aria-hidden="true" />
-        <span className="max-w-[8rem] truncate">{profile.companyId}</span>
+        <span className="max-w-[8rem] truncate">{profile.fullName}</span>
         <ChevronDown className="size-3 text-muted-foreground" aria-hidden="true" />
       </button>
 
@@ -39,7 +39,7 @@ export function CompanySwitcher() {
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div role="listbox" className="absolute left-0 z-50 mt-1.5 w-56 rounded-xl border border-border bg-popover p-1 shadow-lg">
             <div role="option" aria-selected="true" className="rounded-lg px-3 py-2 text-xs font-medium text-popover-foreground bg-muted">
-              {profile.companyId}
+              {profile.fullName} (current company)
             </div>
             <div className="px-3 py-2 text-[11px] text-muted-foreground">
               Multi-company switching isn&apos;t available yet — a profile belongs to one company today.

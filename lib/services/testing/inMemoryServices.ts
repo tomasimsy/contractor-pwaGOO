@@ -36,7 +36,7 @@ import { createReportingService } from "../reportingService";
 import { createInMemoryPayrollService, type Payee, type PayRun } from "../payrollService";
 import { createInMemoryLocationService, type Location } from "../locationService";
 import type { ProjectService, Project, CreateProjectInput } from "../projectService";
-import type { EstimateService, Estimate, EstimateLineItem } from "../estimateService";
+import type { EstimateService, Estimate, EstimateLineItem, ScopeLine } from "../estimateService";
 import type { ChangeOrderService, ChangeOrder, ChangeOrderLineItem } from "../changeOrderService";
 import type { InvoiceService, Invoice, InvoiceLineItem, InvoiceLifecycleStatus } from "../invoiceService";
 import type { PaymentService, CustomerPayment } from "../paymentService";
@@ -57,6 +57,7 @@ import type { TransactionService, AppendTransactionInput } from "../transactionS
 import type {
   UUID,
   QueryScope,
+  PaymentStatus,
   Transaction,
   TransactionType,
   TransactionEffect,
@@ -103,6 +104,13 @@ export interface InMemoryStore {
   invoices: Map<UUID, Invoice & { lineItems: InvoiceLineItem[] }>;
   payments: Map<UUID, CustomerPayment>;
   expenses: Map<UUID, Expense>;
+  /** ROOFING scope. Minimal on purpose — just what getScopeLines and
+   * the total recalculation need (area identity + the two additive
+   * cost sources). The rich inspection fields (defect, photos,
+   * measurements) are real but financially inert, so the double does
+   * not model them. */
+  roofingAreas: Map<UUID, { id: UUID; estimateId: UUID; areaName: string; sequenceNumber: number; estimatedRepairCost: number; deletedAt: string | null }>;
+  areaLineItems: Map<UUID, { id: UUID; areaId: UUID; category: "material" | "labor" | "other"; name: string; description: string | null; quantity: number; unitPrice: number; total: number; sequenceNumber: number; deletedAt: string | null }>;
   mileageTrips: Map<UUID, MileageTrip>;
   subcontractors: Map<UUID, Subcontractor>;
   subAssignments: Map<UUID, SubcontractorAssignment & { subcontractorName: string; trade: string | null }>;
@@ -135,6 +143,8 @@ export function createInMemoryStore(): InMemoryStore {
     invoices: new Map(),
     payments: new Map(),
     expenses: new Map(),
+    roofingAreas: new Map(),
+    areaLineItems: new Map(),
     mileageTrips: new Map(),
     subcontractors: new Map(),
     subAssignments: new Map(),
@@ -512,6 +522,13 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
   async function updateLineItems(estimateId: UUID, lineItems: Omit<EstimateLineItem, "id" | "total">[]) {
     const estimate = store.estimates.get(estimateId);
     if (!estimate) throw new Error("Estimate not found");
+    // Same refusal as production — a roofing estimate's scope is its
+    // roof areas, and items written here would count toward nothing.
+    if (estimate.estimateType === "roofing") {
+      throw new Error(
+        "This is a roofing estimate — its scope lives in roof areas, not line items. Edit it through the roof area editor (RoofingAreaService / EstimateAreaLineItemService)."
+      );
+    }
     const newLineItems = lineItems.map((li) => ({ id: id(), ...li, total: calculateLineItemTotal(li) }));
     const updated = { ...estimate, lineItems: newLineItems, updatedAt: now() };
     store.estimates.set(estimateId, updated);
@@ -520,14 +537,19 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
   async function recalculateTotal(estimateId: UUID) {
     const estimate = store.estimates.get(estimateId);
     if (!estimate) throw new Error("Estimate not found");
-    const { subtotal, total } = computeTotals(estimate.lineItems, estimate.markup, estimate.discount, estimate.taxRate);
+    // From getScopeLines, exactly as the Supabase implementation does —
+    // otherwise this double would report $0 for every roofing estimate.
+    const { subtotal, total } = computeTotals(
+      (await getScopeLines(estimateId)) as unknown as EstimateLineItem[],
+      estimate.markup, estimate.discount, estimate.taxRate
+    );
     const updated = { ...estimate, subtotal, total, updatedAt: now() };
     store.estimates.set(estimateId, updated);
     return updated;
   }
   async function update(
     estimateId: UUID,
-    changes: Partial<{ title: string | null; description: string | null; projectId: UUID; clientId: UUID | null; markup: number; discount: number; taxRate: number; depositAmount: number }>
+    changes: Partial<{ title: string | null; description: string | null; projectId: UUID; clientId: UUID | null; markup: number; discount: number; taxRate: number; depositAmount: number; estimateType: "standard" | "roofing" }>
   ) {
     // Defense-in-depth, matching the real Supabase-backed
     // implementation's guard — subtotal/total are derived and must
@@ -540,6 +562,18 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
 
     const estimate = store.estimates.get(estimateId);
     if (!estimate) throw new Error("Estimate not found");
+
+    // Same lock as production: an estimate's KIND is immutable once it
+    // has scope, because switching moves its total between two
+    // different tables and strands the old source.
+    if (changes.estimateType !== undefined && changes.estimateType !== estimate.estimateType) {
+      const existingScope = await getScopeLines(estimateId);
+      if (existingScope.length > 0) {
+        throw new Error(
+          `This estimate already has scope recorded, so its type cannot be changed from "${estimate.estimateType}" to "${changes.estimateType}". Its total is derived from ${estimate.estimateType === "roofing" ? "roof areas" : "line items"}; switching would strand that scope. Create a new estimate instead.`
+        );
+      }
+    }
     const updated = {
       ...estimate,
       title: changes.title !== undefined ? changes.title : estimate.title,
@@ -550,6 +584,7 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
       discount: changes.discount !== undefined ? changes.discount : estimate.discount,
       taxRate: changes.taxRate !== undefined ? changes.taxRate : estimate.taxRate,
       depositAmount: changes.depositAmount !== undefined ? changes.depositAmount : estimate.depositAmount,
+      estimateType: changes.estimateType !== undefined ? changes.estimateType : estimate.estimateType,
       updatedAt: now(),
     };
     store.estimates.set(estimateId, updated);
@@ -597,7 +632,53 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
     store.estimates.set(estimateId, { ...estimate, deletedAt: null, deleteReason: null });
   }
 
-  return { getById, listForProject, list, create, updateLineItems, update, recalculateTotal, changeStatus, recordSignature, softDelete, restore };
+  /** Mirrors the Supabase implementation's rules exactly — roofing =
+   * area line items PLUS each area's estimatedRepairCost; standard =
+   * estimate_items. If these two drift, the tests stop proving
+   * anything about production. */
+  async function getScopeLines(estimateId: UUID): Promise<ScopeLine[]> {
+    const estimate = store.estimates.get(estimateId);
+    if (!estimate) return [];
+
+    if (estimate.estimateType !== "roofing") {
+      return estimate.lineItems.map((li) => ({
+        id: li.id, category: li.category, name: li.name, description: li.description,
+        quantity: li.quantity, unitPrice: li.unitPrice, unit: li.unit ?? null, total: li.total,
+        source: "estimate_item" as const, areaId: null, areaName: null,
+      }));
+    }
+
+    const areas = Array.from(store.roofingAreas.values())
+      .filter((a) => a.estimateId === estimateId && !a.deletedAt)
+      .sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+    const areaIds = new Set(areas.map((a) => a.id));
+    const lines: ScopeLine[] = [];
+
+    for (const li of Array.from(store.areaLineItems.values())
+      .filter((l) => areaIds.has(l.areaId) && !l.deletedAt)
+      .sort((a, b) => a.sequenceNumber - b.sequenceNumber)) {
+      const area = store.roofingAreas.get(li.areaId);
+      lines.push({
+        id: li.id, category: li.category, name: li.name, description: li.description,
+        quantity: li.quantity, unitPrice: li.unitPrice, unit: null, total: li.total,
+        source: "area_line_item", areaId: li.areaId, areaName: area?.areaName ?? null,
+      });
+    }
+    for (const area of areas) {
+      if (area.estimatedRepairCost === 0) continue;
+      lines.push({
+        id: area.id, category: "other",
+        name: `${area.areaName} - Estimated Repair Cost`,
+        description: "Materials + labor + tax carried from approved estimate",
+        quantity: 1, unitPrice: area.estimatedRepairCost, unit: null,
+        total: area.estimatedRepairCost,
+        source: "area_repair_cost", areaId: area.id, areaName: area.areaName,
+      });
+    }
+    return lines;
+  }
+
+  return { getById, listForProject, list, create, getScopeLines, updateLineItems, update, recalculateTotal, changeStatus, recordSignature, softDelete, restore };
 }
 
 /** Extracted from EstimateService during the service-layer completion
@@ -1054,7 +1135,39 @@ function createPaymentService(store: InMemoryStore, validation: ValidationServic
     await update(paymentId, { deletedAt: null, deleteReason: null });
   }
 
-  return { listForInvoice, listForCompany, record, update, softDelete, restore, getSummaryForInvoice };
+  /** Batched list — mirrors the Supabase implementation's filter and
+   * ordering exactly. */
+  async function listForInvoices(invoiceIds: UUID[]): Promise<Record<UUID, CustomerPayment[]>> {
+    const result: Record<UUID, CustomerPayment[]> = {};
+    for (const id of invoiceIds) result[id] = [];
+    for (const p of Array.from(store.payments.values())) {
+      if (p.deletedAt || !(p.invoiceId in result)) continue;
+      result[p.invoiceId].push(p);
+    }
+    for (const id of invoiceIds) {
+      result[id].sort((a, b) => b.paymentDate.localeCompare(a.paymentDate));
+    }
+    return result;
+  }
+
+  /** Batched form — mirrors the Supabase implementation: one pass over
+   * the payments, same per-invoice formulas. */
+  async function getSummariesForInvoices(invoices: Array<{ id: UUID; total: number }>) {
+    const result: Record<UUID, { totalPaid: number; remainingBalance: number; status: PaymentStatus }> = {};
+    for (const inv of invoices) {
+      const totalPaid = Array.from(store.payments.values())
+        .filter((p) => p.invoiceId === inv.id && !p.deletedAt)
+        .reduce((sum, p) => sum + p.amount, 0);
+      result[inv.id] = {
+        totalPaid,
+        remainingBalance: calculateRemainingBalance(inv.total, totalPaid),
+        status: derivePaymentStatus(inv.total, totalPaid),
+      };
+    }
+    return result;
+  }
+
+  return { listForInvoice, listForInvoices, listForCompany, record, update, softDelete, restore, getSummaryForInvoice, getSummariesForInvoices };
 }
 
 function createExpenseService(store: InMemoryStore, validation: ValidationService, transactionService: TransactionService): ExpenseService {

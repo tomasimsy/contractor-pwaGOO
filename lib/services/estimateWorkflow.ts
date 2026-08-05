@@ -191,8 +191,11 @@ export async function unsignEstimate(
 
   const activeInvoices = await findActiveInvoicesForEstimate(deps, estimate);
 
-  const paymentSummaries = await Promise.all(
-    activeInvoices.map((inv) => paymentService.getSummaryForInvoice(inv.id))
+  // Batched — one query for every active invoice's payments rather
+  // than two round-trips each. Same figures; this only decides whether
+  // ANY payment exists.
+  const paymentSummaries = Object.values(
+    await paymentService.getSummariesForInvoices(activeInvoices.map((inv) => ({ id: inv.id, total: inv.total })))
   );
   const hasAnyPayment = paymentSummaries.some((s) => s.totalPaid > 0);
 

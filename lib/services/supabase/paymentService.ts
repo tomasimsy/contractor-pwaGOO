@@ -83,6 +83,60 @@ export function createSupabasePaymentService(
     return (data as PaymentRow[]).map(rowToPayment);
   }
 
+  /** See the interface doc. ONE query for the whole set; same filter
+   * and ordering as listForInvoice. */
+  async function listForInvoices(invoiceIds: UUID[]): Promise<Record<UUID, CustomerPayment[]>> {
+    const result: Record<UUID, CustomerPayment[]> = {};
+    for (const id of invoiceIds) result[id] = [];
+    if (invoiceIds.length === 0) return result;
+
+    const { data, error } = await supabase
+      .from("invoice_payments")
+      .select("*")
+      .in("invoice_id", invoiceIds)
+      .is("deleted_at", null)
+      .order("payment_date", { ascending: false });
+    if (error) throw new Error(`Failed to list payments: ${error.message}`);
+
+    for (const row of (data as PaymentRow[])) {
+      const payment = rowToPayment(row);
+      (result[payment.invoiceId] ??= []).push(payment);
+    }
+    return result;
+  }
+
+  /** See the interface doc. ONE payments query for every invoice in the
+   * set, then the same per-invoice formulas applied locally. */
+  async function getSummariesForInvoices(
+    invoices: Array<{ id: UUID; total: number }>
+  ): Promise<Record<UUID, { totalPaid: number; remainingBalance: number; status: PaymentStatus }>> {
+    const result: Record<UUID, { totalPaid: number; remainingBalance: number; status: PaymentStatus }> = {};
+    if (invoices.length === 0) return result;
+
+    const { data, error } = await supabase
+      .from("invoice_payments")
+      .select("*")
+      .in("invoice_id", invoices.map((i) => i.id))
+      .is("deleted_at", null);
+    if (error) throw new Error(`Failed to list payments: ${error.message}`);
+
+    const paidByInvoice = new Map<UUID, number>();
+    for (const row of (data as PaymentRow[])) {
+      const p = rowToPayment(row);
+      paidByInvoice.set(p.invoiceId, (paidByInvoice.get(p.invoiceId) ?? 0) + p.amount);
+    }
+
+    for (const inv of invoices) {
+      const totalPaid = paidByInvoice.get(inv.id) ?? 0;
+      result[inv.id] = {
+        totalPaid,
+        remainingBalance: calculateRemainingBalance(inv.total, totalPaid),
+        status: derivePaymentStatus(inv.total, totalPaid),
+      };
+    }
+    return result;
+  }
+
   async function getSummaryForInvoice(invoiceId: UUID): Promise<{ totalPaid: number; remainingBalance: number; status: PaymentStatus }> {
     const { data: invoiceRow, error } = await supabase.from("invoices").select("total").eq("id", invoiceId).single();
     if (error) throw new Error(`Failed to load invoice: ${error.message}`);
@@ -210,5 +264,5 @@ export function createSupabasePaymentService(
     if (error) throw new Error(`Failed to restore payment: ${error.message}`);
   }
 
-  return { listForInvoice, listForCompany, record, update, softDelete, restore, getSummaryForInvoice };
+  return { listForInvoice, listForInvoices, listForCompany, record, update, softDelete, restore, getSummaryForInvoice, getSummariesForInvoices };
 }

@@ -106,9 +106,7 @@ export function createServerAppServices(
     auditService,
     currentUserId,
     estimateService,
-    changeOrderService,
-    roofingAreaService,
-    estimateAreaLineItemService
+    changeOrderService
   );
   const paymentService = createSupabasePaymentService(supabase, validationService, currentUserId);
   const expenseService = createSupabaseExpenseService(supabase, validationService, currentUserId, estimateService);

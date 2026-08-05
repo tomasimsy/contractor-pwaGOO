@@ -7,20 +7,22 @@
  * dropping the repair-cost figure from the resulting invoice.
  *
  * This exercises the REAL `createSupabaseInvoiceService` implementation
- * (lib/services/supabase/invoiceService.ts) — the fixed code — against
- * a minimal fake Postgrest-shaped Supabase client, since the in-memory
- * reference stack has no double for estimateAreaLineItemService/
- * roofingAreaService (a known gap documented in
- * COMPREHENSIVE_AUDIT_REPORT.md) and this bug lives entirely inside the
- * Supabase-backed implementation, not the shared in-memory contract.
+ * (lib/services/supabase/invoiceService.ts) against a minimal fake
+ * Postgrest-shaped Supabase client.
+ *
+ * UPDATED for the scope-lines refactor. InvoiceService no longer knows
+ * what a roof area IS: it asks `EstimateService.getScopeLines`, which
+ * owns the "area line items PLUS estimated_repair_cost" composition
+ * rule in one place. These tests therefore now assert the same money
+ * through that seam — the repair cost still has to reach the invoice,
+ * and a standard estimate still must not go anywhere near roofing
+ * data. Both guarantees survive the refactor; only the wiring moved.
  */
 import { describe, test, expect } from "vitest";
 import { createSupabaseInvoiceService } from "../lib/services/supabase/invoiceService";
 import { createValidationService } from "../lib/services/validationService";
 import type { EstimateService } from "../lib/services/estimateService";
 import type { ChangeOrderService } from "../lib/services/changeOrderService";
-import type { RoofingAreaService } from "../lib/services/roofingAreaService";
-import type { EstimateAreaLineItemService } from "../lib/services/estimateAreaLineItemService";
 import type { AuditService } from "../lib/services/auditService";
 
 const COMPANY_ID = "company-1";
@@ -150,57 +152,15 @@ describe("Roofing estimate -> invoice conversion includes estimated_repair_cost"
       async getById() {
         return estimate;
       },
-    };
-
-    const roofingAreaServiceFake: Partial<RoofingAreaService> = {
-      async listForEstimate() {
+      // The scope EstimateService would resolve for this roofing
+      // estimate: two area line items ($200 + $50) plus the area's
+      // own estimated_repair_cost — the figure the original bug
+      // dropped.
+      async getScopeLines() {
         return [
-          {
-            id: AREA_ID,
-            companyId: COMPANY_ID,
-            estimateId: ESTIMATE_ID,
-            areaName: "Front Slope",
-            sequenceNumber: 0,
-            scopeItems: null,
-            areaTotal: 0,
-            measurements: null,
-            inspectionNotes: null,
-            notes: null,
-            quantity: 1,
-            quantityUnit: null,
-            defect: null,
-            location: null,
-            correctiveAction: null,
-            materialsIncluded: null,
-            materialCost: 60,
-            laborCost: 40,
-            tax: 0,
-            estimatedRepairCost: repairCost,
-            createdBy: null,
-            createdAt: "2026-01-01T00:00:00.000Z",
-            updatedBy: null,
-            updatedAt: "2026-01-01T00:00:00.000Z",
-            deletedBy: null,
-            deletedAt: null,
-            deleteReason: null,
-          },
-        ];
-      },
-    };
-
-    const estimateAreaLineItemServiceFake: Partial<EstimateAreaLineItemService> = {
-      async listForArea() {
-        return [
-          {
-            id: "area-line-1", areaId: AREA_ID, companyId: COMPANY_ID, category: "material",
-            name: "Shingles", description: null, quantity: 10, unitPrice: 20, unit: "SQ",
-            total: 200, taxable: true, sequenceNumber: 0, createdAt: "2026-01-01T00:00:00.000Z", deletedAt: null,
-          },
-          {
-            id: "area-line-2", areaId: AREA_ID, companyId: COMPANY_ID, category: "material",
-            name: "Flashing", description: null, quantity: 5, unitPrice: 10, unit: "LF",
-            total: 50, taxable: true, sequenceNumber: 1, createdAt: "2026-01-01T00:00:00.000Z", deletedAt: null,
-          },
+          { id: "area-line-1", category: "material", name: "Shingles", description: null, quantity: 10, unitPrice: 20, unit: "SQ", total: 200, source: "area_line_item", areaId: AREA_ID, areaName: "Front Slope" },
+          { id: "area-line-2", category: "material", name: "Flashing", description: null, quantity: 5, unitPrice: 10, unit: "LF", total: 50, source: "area_line_item", areaId: AREA_ID, areaName: "Front Slope" },
+          { id: AREA_ID, category: "other", name: "Front Slope - Estimated Repair Cost", description: "Materials + labor + tax carried from approved estimate", quantity: 1, unitPrice: repairCost, unit: null, total: repairCost, source: "area_repair_cost", areaId: AREA_ID, areaName: "Front Slope" },
         ];
       },
     };
@@ -233,8 +193,6 @@ describe("Roofing estimate -> invoice conversion includes estimated_repair_cost"
       async () => null,
       estimateServiceFake as EstimateService,
       changeOrderServiceFake as ChangeOrderService,
-      roofingAreaServiceFake as RoofingAreaService,
-      estimateAreaLineItemServiceFake as EstimateAreaLineItemService,
       () => "2026-01-15"
     );
 
@@ -303,18 +261,18 @@ describe("Roofing estimate -> invoice conversion includes estimated_repair_cost"
       estimateType: "standard" as const,
     };
 
-    const estimateServiceFake: Partial<EstimateService> = { async getById() { return estimate; } };
-    // Standard estimates must never touch roofing-only services —
-    // returning a non-empty area list here would prove a regression
-    // (the roofing branch leaking into the standard path).
-    const roofingAreaServiceFake: Partial<RoofingAreaService> = {
-      async listForEstimate() {
-        throw new Error("roofingAreaService must not be called for a standard estimate");
-      },
-    };
-    const estimateAreaLineItemServiceFake: Partial<EstimateAreaLineItemService> = {
-      async listForArea() {
-        throw new Error("estimateAreaLineItemService must not be called for a standard estimate");
+    const estimateServiceFake: Partial<EstimateService> = {
+      async getById() { return estimate; },
+      // A standard estimate's scope is its own line items, and nothing
+      // roofing-shaped may appear. InvoiceService can no longer reach
+      // roofing services at all — it doesn't hold them — so this is now
+      // guaranteed structurally, not just by convention.
+      async getScopeLines() {
+        return estimate.lineItems.map((li) => ({
+          id: li.id, category: li.category, name: li.name, description: li.description,
+          quantity: li.quantity, unitPrice: li.unitPrice, unit: null, total: li.total,
+          source: "estimate_item" as const, areaId: null, areaName: null,
+        }));
       },
     };
     const changeOrderServiceFake: Partial<ChangeOrderService> = {
@@ -327,7 +285,6 @@ describe("Roofing estimate -> invoice conversion includes estimated_repair_cost"
     const invoiceService = createSupabaseInvoiceService(
       supabase, validationService, auditServiceFake as AuditService, async () => null,
       estimateServiceFake as EstimateService, changeOrderServiceFake as ChangeOrderService,
-      roofingAreaServiceFake as RoofingAreaService, estimateAreaLineItemServiceFake as EstimateAreaLineItemService,
       () => "2026-01-15"
     );
 

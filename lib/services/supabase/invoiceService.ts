@@ -52,8 +52,6 @@ import type { ValidationService } from "../validationService";
 import type { AuditService } from "../auditService";
 import type { EstimateService } from "../estimateService";
 import type { ChangeOrderService } from "../changeOrderService";
-import type { RoofingAreaService } from "../roofingAreaService";
-import type { EstimateAreaLineItemService } from "../estimateAreaLineItemService";
 import {
   calculateLineItemTotal,
   calculateSubtotal,
@@ -174,11 +172,6 @@ export function createSupabaseInvoiceService(
   currentUserId: () => Promise<UUID | null>,
   estimateService: EstimateService,
   changeOrderService: ChangeOrderService,
-  /** Only needed for createFromEstimate on ROOFING estimates — see that
-   * function's comment for why a roofing estimate's real line items
-   * live in estimate_area_line_items, not estimate_items. */
-  roofingAreaService: RoofingAreaService,
-  estimateAreaLineItemService: EstimateAreaLineItemService,
   /** Injected so status derivation is deterministic and testable —
    * never `new Date()` inline. */
   today: () => string = () => new Date().toISOString().slice(0, 10)
@@ -195,9 +188,18 @@ export function createSupabaseInvoiceService(
     return (data as { amount: number | null }[]).reduce((sum, p) => sum + (p.amount ?? 0), 0);
   }
 
-  async function rowToInvoice(row: InvoiceRow): Promise<Invoice> {
+  /**
+   * `knownAmountPaid` lets a LIST caller supply the figure it has
+   * already batched, instead of this function issuing its own query per
+   * row. Without it, every `invoices` list cost one extra
+   * `invoice_payments` round-trip PER INVOICE — measured as 9 such
+   * calls on a single Estimate Detail load, and it scaled with the
+   * company's invoice count on /payments and /invoices. Single-row
+   * callers omit it and behave exactly as before.
+   */
+  async function rowToInvoice(row: InvoiceRow, knownAmountPaid?: number): Promise<Invoice> {
     const total = row.total ?? 0;
-    const amountPaid = await sumActivePayments(row.id);
+    const amountPaid = knownAmountPaid ?? (await sumActivePayments(row.id));
     const lifecycleStatus = readLifecycleStatus(row);
     return {
       id: row.id,
@@ -314,6 +316,34 @@ export function createSupabaseInvoiceService(
     return { ...invoice, lineItems, hasTotalDrift: drifted && invoice.lifecycleStatus !== "draft" };
   }
 
+  /** Active payment totals for a SET of invoices, in one query —
+   * the batched form of sumActivePayments. Same `deleted_at is null`
+   * filter, so a batched total can never differ from a single one. */
+  async function sumActivePaymentsFor(invoiceIds: UUID[]): Promise<Map<UUID, number>> {
+    const totals = new Map<UUID, number>();
+    for (const id of invoiceIds) totals.set(id, 0);
+    if (invoiceIds.length === 0) return totals;
+
+    const { data, error } = await supabase
+      .from("invoice_payments")
+      .select("invoice_id, amount")
+      .in("invoice_id", invoiceIds)
+      .is("deleted_at", null);
+    if (error) throw new Error(`Failed to load payments: ${error.message}`);
+
+    for (const p of (data as { invoice_id: string; amount: number | null }[])) {
+      totals.set(p.invoice_id, (totals.get(p.invoice_id) ?? 0) + (p.amount ?? 0));
+    }
+    return totals;
+  }
+
+  /** Maps rows to Invoices with ONE payments query for the whole set
+   * rather than one per row. */
+  async function rowsToInvoices(rows: InvoiceRow[]): Promise<Invoice[]> {
+    const paidByInvoice = await sumActivePaymentsFor(rows.map((r) => r.id));
+    return Promise.all(rows.map((row) => rowToInvoice(row, paidByInvoice.get(row.id) ?? 0)));
+  }
+
   async function listForProject(projectId: UUID): Promise<Invoice[]> {
     const { data, error } = await supabase
       .from("invoices")
@@ -322,7 +352,7 @@ export function createSupabaseInvoiceService(
       .is("deleted_at", null)
       .order("created_at", { ascending: false });
     if (error) throw new Error(`Failed to list invoices: ${error.message}`);
-    return Promise.all((data as InvoiceRow[]).map(rowToInvoice));
+    return rowsToInvoices(data as InvoiceRow[]);
   }
 
   async function listForCompany(scope: QueryScope): Promise<Invoice[]> {
@@ -331,7 +361,7 @@ export function createSupabaseInvoiceService(
     if (scope.projectId) query = query.eq("project_id", scope.projectId);
     const { data, error } = await query.order("created_at", { ascending: false });
     if (error) throw new Error(`Failed to list invoices: ${error.message}`);
-    return Promise.all((data as InvoiceRow[]).map(rowToInvoice));
+    return rowsToInvoices(data as InvoiceRow[]);
   }
 
   /**
@@ -467,57 +497,24 @@ export function createSupabaseInvoiceService(
     // rather than re-deriving, so a quoted $X always invoices as $X.
     const { taxedBase, tax } = calculateDocumentTotal(estimate.subtotal, estimate.markup, estimate.discount, estimate.taxRate);
 
-    // A roofing estimate's real pricing lives in estimate_area_line_items
-    // (per roof area), NOT estimate_items — that table stays empty for
-    // roofing estimates (see EstimateForm's roofV2 branch, which hides
-    // the standard Line Items editor entirely for them). Using
-    // estimate.lineItems unconditionally here produced a $0 invoice
-    // for every roofing estimate signed through the automated workflow
-    // (zero line items -> self-heals to $0 total on next read) — found
-    // live while verifying estimateWorkflow.ts's auto-invoice step.
-    let estimateLines: Omit<InvoiceLineItem, "id" | "total">[];
-    if (estimate.estimateType === "roofing") {
-      const areas = await roofingAreaService.listForEstimate(estimateId);
-      const areaLineItemLists = await Promise.all(
-        areas.map((area) => estimateAreaLineItemService.listForArea(area.id))
-      );
-      estimateLines = areaLineItemLists.flat().map((li) => ({
-        name: li.name,
-        description: li.description,
-        quantity: li.quantity,
-        unitPrice: li.unitPrice,
-      }));
-
-      // Each roof area's estimated_repair_cost (materials + labor + tax,
-      // computed by calculateAreaRepairCost and persisted on the area
-      // row) is a SECOND, independent input to a roofing estimate's
-      // subtotal — see EstimateService.calculateRoofingAreasSubtotal,
-      // which sums area line items AND this figure. Line items above
-      // only ever carry the first half; without this, the invoice's
-      // line-item-derived subtotal silently omitted this figure,
-      // producing an invoice worth less than the approved estimate
-      // (found 2026-08-02 — ESTIMATE_TO_INVOICE_CONVERSION_AUDIT.md).
-      // Surfaced as an explicit, visible line — same pattern already
-      // used below for approved change orders and the markup/discount
-      // delta — never folded invisibly into a total.
-      for (const area of areas) {
-        if (area.estimatedRepairCost > 0) {
-          estimateLines.push({
-            name: `${area.areaName} - Estimated Repair Cost`,
-            description: "Materials + labor + tax carried from approved estimate",
-            quantity: 1,
-            unitPrice: area.estimatedRepairCost,
-          });
-        }
-      }
-    } else {
-      estimateLines = estimate.lineItems.map((li) => ({
-        name: li.name,
-        description: li.description,
-        quantity: li.quantity,
-        unitPrice: li.unitPrice,
-      }));
-    }
+    // ONE call, whatever kind of estimate this is: getScopeLines
+    // resolves estimate_items vs roof areas internally.
+    //
+    // This replaces ~40 lines that re-implemented the roofing
+    // composition rule (area line items PLUS each area's
+    // estimated_repair_cost) here. That duplicate existed because
+    // reading estimate.lineItems unconditionally produced a $0 invoice
+    // for every roofing estimate — and it then had to be patched AGAIN
+    // when the repair-cost half was found missing, because the same
+    // rule lived in two files. It now lives in one.
+    const estimateLines: Omit<InvoiceLineItem, "id" | "total">[] = (
+      await estimateService.getScopeLines(estimateId)
+    ).map((line) => ({
+      name: line.name,
+      description: line.description,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+    }));
 
     // Approved change orders become real line items on the invoice —
     // pending/rejected/deleted ones are excluded by listForEstimate

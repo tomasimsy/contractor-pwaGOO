@@ -16,14 +16,27 @@ import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
  * establish).
  */
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  // `authResolving` — NOT `loading`. Access is gated on the USER (is
+  // there a session?), which resolves from supabase.auth.getUser().
+  // The PROFILE (company/role) is a second, sequential round-trip and
+  // used to be part of the same gate, so the entire app rendered a bare
+  // spinner until both had returned — measured at ~800ms of blank
+  // screen on every page, for data the shell itself doesn't need.
+  //
+  // Profile now streams in afterwards. Nothing downstream breaks:
+  // usePermission already default-DENIES when `profile` is null (see
+  // its doc comment — a missing role must never grant access), and
+  // every page guards on `profile?.companyId` before fetching. The
+  // security boundary is unchanged and still enforced at the service
+  // and RLS layers regardless.
+  const { user, authResolving } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && !user) router.replace("/login");
-  }, [loading, user, router]);
+    if (!authResolving && !user) router.replace("/login");
+  }, [authResolving, user, router]);
 
-  if (loading) {
+  if (authResolving) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="size-6 animate-spin rounded-full border-2 border-muted border-t-primary" />

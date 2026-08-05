@@ -23,6 +23,22 @@ export interface CustomerPayment extends AuditedEntity {
 export interface PaymentService {
   listForInvoice(invoiceId: UUID): Promise<CustomerPayment[]>;
 
+  /**
+   * The BATCHED form of listForInvoice — every payment for a SET of
+   * invoices in one query, keyed by invoice id.
+   *
+   * Same reason getSummariesForInvoices exists: with hosted Supabase
+   * the measured round-trip floor is ~130ms, and callers that render a
+   * payments list per invoice were issuing one query per invoice in a
+   * loop. Identical filter to listForInvoice (`deleted_at is null`,
+   * newest payment first) so a batched read and a single read can
+   * never disagree about which payments count.
+   *
+   * Every requested id appears in the result, mapping to [] when that
+   * invoice has no payments — so callers never need a `?? []` guard.
+   */
+  listForInvoices(invoiceIds: UUID[]): Promise<Record<UUID, CustomerPayment[]>>;
+
   /** Company-wide active payments — the real, persisted source
    * FinancialEngine.getCompanyFinancials/getTaxSummary use for
    * cash-basis revenue (added 2026-08-01 to remove those two methods'
@@ -74,4 +90,27 @@ export interface PaymentService {
     remainingBalance: number;
     status: PaymentStatus;
   }>;
+
+  /**
+   * The BATCHED form of getSummaryForInvoice — same figures, same
+   * formulas, one round-trip for the whole set instead of two per
+   * invoice.
+   *
+   * Why it exists: getSummaryForInvoice issues TWO queries (the
+   * invoice's `total`, then its payments), and FinancialEngine calls it
+   * inside `.map()` over every invoice on a project. With hosted
+   * Supabase the measured round-trip floor is ~130ms, so a 3-invoice
+   * project spent ~800ms on six calls whose data could arrive in one —
+   * and one of those calls re-fetched `invoices.total`, which the
+   * caller already had in hand.
+   *
+   * Callers pass the invoice id AND its total (which they already
+   * hold), so this only needs the payments. Results are keyed by
+   * invoice id. Uses the identical derivePaymentStatus/
+   * calculateRemainingBalance formulas, so a batched summary can never
+   * disagree with a single one.
+   */
+  getSummariesForInvoices(
+    invoices: Array<{ id: UUID; total: number }>
+  ): Promise<Record<UUID, { totalPaid: number; remainingBalance: number; status: PaymentStatus }>>;
 }

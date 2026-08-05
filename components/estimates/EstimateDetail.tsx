@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { SkeletonLines } from "@/components/ui/Skeleton";
 import { Badge } from "@/components/ui/Badge";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { SignaturePad } from "@/components/estimates/SignaturePad";
@@ -46,6 +47,7 @@ import type { CustomerPayment } from "@/lib/services/paymentService";
 import type { RoofingArea } from "@/lib/services/roofingAreaService";
 import type { EstimateAreaLineItem } from "@/lib/services/estimateAreaLineItemService";
 import type { AuditLogEntry, EstimateStatus, ChangeOrderStatus, EstimateFinancials } from "@/lib/services";
+import type { ScopeLine } from "@/lib/services/estimateService";
 
 const STATUS_TONE: Record<EstimateStatus, "neutral" | "success" | "warning" | "danger"> = {
   draft: "neutral",
@@ -82,14 +84,36 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
   const [activity, setActivity] = useState<AuditLogEntry[]>([]);
   const [financials, setFinancials] = useState<EstimateFinancials | null>(null);
   const [roofingAreas, setRoofingAreas] = useState<RoofingArea[]>([]);
+  /** The estimate's scope, normalized by EstimateService — items for a
+   * standard estimate, roof-area scope for a roofing one. Rendering
+   * `estimate.lineItems` directly showed a roofing estimate's dead
+   * estimate_items rows: a "$9" line under a $24 total. */
+  const [scopeLines, setScopeLines] = useState<ScopeLine[]>([]);
   const [areaLineItems, setAreaLineItems] = useState<Record<string, EstimateAreaLineItem[]>>({});
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [paymentsByInvoice, setPaymentsByInvoice] = useState<Record<string, CustomerPayment[]>>({});
   const [paidTotalByInvoice, setPaidTotalByInvoice] = useState<Record<string, number>>({});
+  /** True only until the ESTIMATE itself resolves — the header, status
+   * and totals need nothing else. Previously one `loading` flag covered
+   * the whole load() chain, so the page rendered "Loading estimate
+   * details..." until audit logs, photos, invoices and payments had ALL
+   * returned: measured at 5,223ms, when the estimate itself was in hand
+   * at 1,479ms. Nearly 4 seconds of blank page waiting for panels the
+   * header does not depend on. */
   const [loading, setLoading] = useState(true);
+  /** True until the secondary panels' data has arrived. Drives
+   * skeletons, never a full-page block. */
+  const [panelsLoading, setPanelsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
+  /** Signature-specific feedback, rendered INSIDE the signature card.
+   * The page-level `error` banner sits at the very top of a long page:
+   * refusing to remove a signature put its explanation ~2,600px above
+   * the user's viewport, so clicking "Remove signature" looked like it
+   * silently did nothing. Measured live, not guessed. */
+  const [signatureNotice, setSignatureNotice] = useState<{ tone: "error" | "success"; message: string } | null>(null);
+  const [signatureBusy, setSignatureBusy] = useState(false);
 
   const loadFinancials = useCallback(async () => {
     if (!estimateId) return;
@@ -106,54 +130,82 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
 
   const load = useCallback(async () => {
     setLoading(true);
+    setPanelsLoading(true);
     setError(null);
     try {
       const e = await estimateService.getById(estimateId);
       setEstimate(e);
+      // Header/totals can paint NOW. Everything below streams in.
+      setLoading(false);
 
       if (e) {
-        // includeDeleted: true on both — this estimate's own project/
-        // client context must never disappear just because either was
-        // later deleted; financial history is permanent.
-        const p = await projectService.getById(e.projectId, true);
+        // PARALLEL. These six reads have no dependency on one another,
+        // but were awaited one after the next: page latency was their
+        // SUM (~300-700ms each) instead of their max. Nothing about
+        // the data changed — only the scheduling.
+        //
+        // includeDeleted: true on project/client — this estimate's own
+        // context must never disappear just because either was later
+        // deleted; financial history is permanent.
+        const [p, c, cos, scope, history, projectInvoices] = await Promise.all([
+          projectService.getById(e.projectId, true),
+          e.clientId ? clientService.getById(e.clientId, true) : Promise.resolve(null),
+          changeOrderService.listForEstimate(e.id),
+          estimateService.getScopeLines(e.id, e.estimateType),
+          auditService.getHistory(e.companyId, "estimates", e.id),
+          invoiceService.listForProject(e.projectId),
+        ]);
         setProject(p);
-        if (e.clientId) setClient(await clientService.getById(e.clientId, true));
-        setChangeOrders(await changeOrderService.listForEstimate(e.id));
-        setActivity(await auditService.getHistory(e.companyId, "estimates", e.id));
+        if (c) setClient(c);
+        setChangeOrders(cos);
+        setScopeLines(scope);
+        setActivity(history);
 
         if (e.estimateType === "roofing") {
           const areas = await roofingAreaService.listForEstimate(e.id, true);
           setRoofingAreas(areas);
-          const lineItemsByArea: Record<string, EstimateAreaLineItem[]> = {};
-          for (const area of areas) {
-            lineItemsByArea[area.id] = await estimateAreaLineItemService.listForArea(area.id);
-          }
-          setAreaLineItems(lineItemsByArea);
+          // Was an await INSIDE a for-loop: one round-trip per roof
+          // area, in series. Same queries, issued together.
+          const perArea = await Promise.all(
+            areas.map(async (area) => [area.id, await estimateAreaLineItemService.listForArea(area.id)] as const)
+          );
+          setAreaLineItems(Object.fromEntries(perArea));
         } else {
           setRoofingAreas([]);
           setAreaLineItems({});
         }
 
-        const projectInvoices = await invoiceService.listForProject(e.projectId);
         const estimateInvoices = projectInvoices.filter((inv) => inv.estimateId === e.id);
         setInvoices(estimateInvoices);
-        const paymentEntries = await Promise.all(
-          estimateInvoices.map(async (inv) => [inv.id, await paymentService.listForInvoice(inv.id)] as const)
+        // Both per-invoice reads in ONE parallel pass rather than two
+        // sequential ones. totalPaid still comes from
+        // PaymentService.getSummaryForInvoice — the same call
+        // FinancialEngine uses — never from reducing the raw payments
+        // array, so this can't silently disagree with the Dashboard.
+        // Summaries in ONE batched call rather than two round-trips per
+        // invoice; the per-invoice payment LISTS are still needed
+        // individually because the panel renders each payment row.
+        // BOTH batched: one query for every invoice's payment rows, one
+        // for every summary — instead of two per invoice in a loop.
+        const [perInvoicePayments, summaries] = await Promise.all([
+          paymentService.listForInvoices(estimateInvoices.map((inv) => inv.id)),
+          paymentService.getSummariesForInvoices(estimateInvoices.map((inv) => ({ id: inv.id, total: inv.total }))),
+        ]);
+        setPaymentsByInvoice(perInvoicePayments);
+        // totalPaid still comes from PaymentService's own summary — the
+        // same figure FinancialEngine uses — never from reducing the
+        // raw payments array, so this can't silently disagree.
+        setPaidTotalByInvoice(
+          Object.fromEntries(estimateInvoices.map((inv) => [inv.id, summaries[inv.id]?.totalPaid ?? 0]))
         );
-        setPaymentsByInvoice(Object.fromEntries(paymentEntries));
-        // totalPaid per invoice comes from PaymentService.getSummaryForInvoice
-        // — the same call FinancialEngine itself uses — rather than
-        // reducing the raw payments array above, so this can never
-        // silently disagree with the figure Dashboard/FinancialEngine show.
-        const paidTotalEntries = await Promise.all(
-          estimateInvoices.map(async (inv) => [inv.id, (await paymentService.getSummaryForInvoice(inv.id)).totalPaid] as const)
-        );
-        setPaidTotalByInvoice(Object.fromEntries(paidTotalEntries));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load estimate.");
     } finally {
+      // `loading` was already released above once the estimate arrived;
+      // clearing it here too covers the error path, where it never was.
       setLoading(false);
+      setPanelsLoading(false);
     }
   }, [estimateService, projectService, clientService, changeOrderService, auditService, roofingAreaService, estimateAreaLineItemService, invoiceService, paymentService, estimateId]);
 
@@ -197,18 +249,28 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
     if (!estimate) return;
     setError(null);
     setNotice(null);
+    setSignatureNotice(null);
+    setSignatureBusy(true);
     try {
       const result = await estimateWorkflow.unsignEstimate(estimate.id);
       if (!result.ok) {
-        setError(result.message ?? "Failed to remove signature.");
+        // Reported in the signature card, not the page-level banner —
+        // a refusal here is almost always the payment guard, and the
+        // user needs to read WHY next to the button they just pressed.
+        setSignatureNotice({ tone: "error", message: result.message ?? "Failed to remove signature." });
         return;
       }
       if (result.estimate) setEstimate({ ...estimate, ...result.estimate });
       await load();
       await loadFinancials();
-      setShowSignatureModal(false);
+      // The card stays OPEN on success, showing the confirmation and
+      // the now-empty signature pad ready to re-sign. Closing it looked
+      // identical to nothing having happened.
+      setSignatureNotice({ tone: "success", message: "Signature removed. This estimate is back to draft and can be signed again." });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to remove signature.");
+      setSignatureNotice({ tone: "error", message: err instanceof Error ? err.message : "Failed to remove signature." });
+    } finally {
+      setSignatureBusy(false);
     }
   }
 
@@ -453,7 +515,9 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
               <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
                 Line Items
               </h2>
-              {estimate.lineItems.length === 0 ? (
+              {panelsLoading && scopeLines.length === 0 ? (
+                <SkeletonLines rows={3} className="py-2" />
+              ) : scopeLines.length === 0 ? (
                 <EmptyState title="No line items" description="Edit this estimate to add items." />
               ) : (
                 <div className="overflow-x-auto rounded-lg border border-emerald-200 dark:border-emerald-800/80 bg-white dark:bg-emerald-950">
@@ -468,7 +532,7 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-emerald-100 dark:divide-emerald-900/80">
-                      {estimate.lineItems.map((item) => (
+                      {scopeLines.map((item) => (
                         <tr key={item.id} className="hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors">
                           <td className="px-3.5 py-3">
                             <div className="font-semibold text-emerald-950 dark:text-white">{item.name}</div>
@@ -518,7 +582,9 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
                   + New change order
                 </Link>
               </div>
-              {changeOrders.length === 0 ? (
+              {panelsLoading && changeOrders.length === 0 ? (
+                <SkeletonLines rows={2} className="py-1" />
+              ) : changeOrders.length === 0 ? (
                 <p className="text-xs text-emerald-700/80 dark:text-emerald-400/80 italic py-1">No change orders recorded yet.</p>
               ) : (
                 <ul className="divide-y divide-emerald-100 dark:divide-emerald-900 rounded-lg border border-emerald-200 dark:border-emerald-800/80 bg-white dark:bg-emerald-950/60 px-3">
@@ -555,7 +621,9 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
                 <h2 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   <Receipt className="size-4 text-primary" /> Invoice & Payments
                 </h2>
-                {invoices.length === 0 ? (
+                {panelsLoading && invoices.length === 0 ? (
+                  <SkeletonLines rows={2} className="py-1" />
+                ) : invoices.length === 0 ? (
                   <p className="text-xs text-muted-foreground italic py-1">Signing this estimate will automatically generate an invoice.</p>
                 ) : (
                   <div className="space-y-3">
@@ -711,7 +779,7 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
                   </div>
                   <button
                     type="button"
-                    onClick={() => setShowSignatureModal(!showSignatureModal)}
+                    onClick={() => { setSignatureNotice(null); setShowSignatureModal(!showSignatureModal); }}
                     className="text-xs font-medium text-primary hover:underline"
                   >
                     {showSignatureModal ? "Close" : "Manage"}
@@ -730,7 +798,7 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
                   </div>
                   <button
                     type="button"
-                    onClick={() => setShowSignatureModal(!showSignatureModal)}
+                    onClick={() => { setSignatureNotice(null); setShowSignatureModal(!showSignatureModal); }}
                     className="text-xs font-medium text-primary hover:underline"
                   >
                     {showSignatureModal ? "Close" : "Manage"}
@@ -741,11 +809,25 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
 
             {showSignatureModal && (
               <div className="mt-4 pt-4 border-t border-border/60">
-                <SignaturePad 
-                  existingSignature={estimate.signature} 
-                  onSave={handleSignature} 
-                  onRemove={handleRemoveSignature} 
-                />
+                {signatureNotice && (
+                  <div
+                    role="status"
+                    className={`mb-3 rounded-lg px-3 py-2 text-xs ${
+                      signatureNotice.tone === "error"
+                        ? "bg-danger/10 text-danger"
+                        : "bg-success/15 text-success"
+                    }`}
+                  >
+                    {signatureNotice.message}
+                  </div>
+                )}
+                <div className={signatureBusy ? "pointer-events-none opacity-60" : ""}>
+                  <SignaturePad
+                    existingSignature={estimate.signature}
+                    onSave={handleSignature}
+                    onRemove={handleRemoveSignature}
+                  />
+                </div>
               </div>
             )}
           </section>
@@ -754,7 +836,9 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
             <h2 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
               <History className="size-4 text-primary" /> Activity Timeline
             </h2>
-            {activity.length === 0 ? (
+            {panelsLoading && activity.length === 0 ? (
+              <SkeletonLines rows={3} />
+            ) : activity.length === 0 ? (
               <p className="text-xs text-muted-foreground italic">No recent activity.</p>
             ) : (
               <div className="max-h-80 overflow-y-auto pr-1">

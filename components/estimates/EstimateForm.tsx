@@ -23,7 +23,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { LineItemEditor, type DraftLineItem } from "./LineItemEditor";
-import { RoofingAreasEditor } from "./RoofingAreasEditor";
 import { RoofingAreasEditorV2 } from "./RoofingAreasEditorV2";
 import { EstimatePhotosEditor } from "./EstimatePhotosEditor";
 import { Modal } from "@/components/ui/Modal";
@@ -119,6 +118,8 @@ export function EstimateForm({
     roofingAreaService.listForEstimate(estimate.id).then(setRoofingAreas);
   }, [estimate, estimateType, roofingAreaService]);
 
+  // Seeds the preview from the persisted figures for ANY roofing
+  // estimate (refreshRoofingTotals keeps it live after each area save).
   useEffect(() => {
     if (!estimate || estimateType !== "roofing") return;
     setRoofingTotals({ subtotal: estimate.subtotal, total: estimate.total });
@@ -139,6 +140,10 @@ export function EstimateForm({
     estimatePhotoService.getForEstimate(estimate.id).then(setEstimatePhotos);
   }, [estimate, estimatePhotoService]);
 
+  // Scope already recorded? Then the type is fixed — same rule
+  // EstimateService.update enforces, surfaced early.
+  const typeLocked = !!estimate && (lineItems.length > 0 || roofingAreas.length > 0);
+
   const selectedProject = projects.find((p) => p.id === projectId);
   // Roofing estimates: SUBTOTAL comes from the backend (roofingTotals,
   // refreshed after every area/line-item mutation via
@@ -156,7 +161,15 @@ export function EstimateForm({
   // total doesn't update." Always recomputing from the live form state
   // via the same calculateDocumentTotal formula EstimateService uses
   // fixes this for both estimate types with one formula, not two.
-  const subtotal = roofV2 && roofingTotals ? roofingTotals.subtotal : calculateSubtotal(lineItems.map((li) => ({ total: calculateLineItemTotal(li) })));
+  //
+  // Gated on estimateType, NOT roofV2 — third instance of the same
+  // root cause. On /estimates/[id]/edit (roofV2 false) a ROOFING
+  // estimate fell through to summing `lineItems`, i.e. its dead
+  // estimate_items rows, and previewed "Total: $9.00" against a real
+  // total of $24.
+  const subtotal = estimateType === "roofing"
+    ? (roofingTotals?.subtotal ?? 0)
+    : calculateSubtotal(lineItems.map((li) => ({ total: calculateLineItemTotal(li) })));
   const total = calculateDocumentTotal(subtotal, markup, discount, taxRate).total;
 
   async function handleSubmit(e: React.FormEvent) {
@@ -184,7 +197,11 @@ export function EstimateForm({
           depositAmount,
           estimateType,
         });
-        await estimateService.updateLineItems(estimate.id, lineItems);
+        // Roofing scope lives in roof areas — EstimateService rejects
+        // this call for a roofing estimate, so don't make it.
+        if (estimateType !== "roofing") {
+          await estimateService.updateLineItems(estimate.id, lineItems);
+        }
         router.push(`${basePath}/${estimate.id}`);
       } else {
         const clientId = selectedProject?.clientId ?? (manualClientId || null);
@@ -300,9 +317,19 @@ export function EstimateForm({
         />
       </div>
 
+      {/* An estimate's KIND is immutable once it has scope — switching
+          moves its total between two different tables and strands the
+          old source. EstimateService enforces this; the radios are
+          disabled here so the rule is visible before submitting.
+          `estimate` is only set when editing an existing one. */}
       {!roofV2 && (
         <div className="space-y-2">
           <label className="text-xs font-medium text-foreground">Estimate Type</label>
+          {typeLocked && (
+            <p className="text-xs text-muted-foreground">
+              Locked — this estimate already has {estimateType === "roofing" ? "roof areas" : "line items"} recorded. Create a new estimate to change its type.
+            </p>
+          )}
           <div className="flex gap-4">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -310,8 +337,9 @@ export function EstimateForm({
                 name="estimateType"
                 value="standard"
                 checked={estimateType === "standard"}
+                disabled={typeLocked}
                 onChange={(e) => setEstimateType(e.target.value as "standard" | "roofing")}
-                className="w-4 h-4"
+                className="w-4 h-4 disabled:opacity-50"
               />
               <span className="text-sm text-foreground">Standard (Line Items)</span>
             </label>
@@ -321,8 +349,9 @@ export function EstimateForm({
                 name="estimateType"
                 value="roofing"
                 checked={estimateType === "roofing"}
+                disabled={typeLocked}
                 onChange={(e) => setEstimateType(e.target.value as "standard" | "roofing")}
-                className="w-4 h-4"
+                className="w-4 h-4 disabled:opacity-50"
               />
               <span className="text-sm text-foreground">Roofing (Areas)</span>
             </label>
@@ -367,8 +396,17 @@ export function EstimateForm({
           {estimate && profile?.companyId ? (
             <div className="space-y-2">
               <label className="text-xs font-medium text-foreground">Roof Areas</label>
-              {roofV2 ? (
-                <RoofingAreasEditorV2
+              {/* V2 for every roofing estimate, not just the
+                  /estimates-roof route. Which editor appeared used to
+                  depend on the ROUTE (`roofV2`), and the V1 editor only
+                  edits `area_total` — a field that feeds NO total. A
+                  roofing estimate opened at /estimates/[id]/edit
+                  therefore showed no Material/Labor/Tax inputs and no
+                  Estimated Repair Cost, which is where its money
+                  actually lives (see getScopeLines). Same root cause as
+                  the line-item editor below: the editor was chosen by
+                  the URL instead of by the data. */}
+              <RoofingAreasEditorV2
                   estimateId={estimate.id}
                   areas={roofingAreas}
                   onChange={setRoofingAreas}
@@ -421,51 +459,8 @@ export function EstimateForm({
                       throw err;
                     }
                   }}
-                  onAreaLineItemsSaved={refreshRoofingTotals}
-                />
-              ) : (
-                <RoofingAreasEditor
-                  estimateId={estimate.id}
-                  areas={roofingAreas}
-                  onChange={setRoofingAreas}
-                  onSave={async (area) => {
-                    try {
-                      console.log("EstimateForm onSave called with area:", area);
-                      const areaWithCompany = {
-                        ...area,
-                        companyId: profile.companyId,
-                      };
-                      console.log("Prepared area with company:", areaWithCompany);
-                      // See the V2 branch's comment above: existence must
-                      // be judged by area.companyId, not roofingAreas.find(),
-                      // which always matches a just-added local-only area.
-                      let saved: RoofingArea;
-                      if (area.id && area.companyId) {
-                        console.log("Updating existing area");
-                        saved = await roofingAreaService.update(area.id, areaWithCompany);
-                      } else {
-                        console.log("Creating new area");
-                        saved = await roofingAreaService.create(areaWithCompany);
-                      }
-                      console.log("Area saved successfully");
-                      setRoofingAreas((prev) =>
-                        prev.map((a) => a.id === area.id ? saved : a)
-                      );
-                    } catch (err) {
-                      console.error("Error saving roofing area:", err instanceof Error ? err.message : JSON.stringify(err));
-                      throw err;
-                    }
-                  }}
-                  onDelete={async (areaId) => {
-                    try {
-                      await roofingAreaService.softDelete(areaId, "Deleted by user");
-                    } catch (err) {
-                      console.error("Error deleting roofing area:", err);
-                      throw err;
-                    }
-                  }}
-                />
-              )}
+                onAreaLineItemsSaved={refreshRoofingTotals}
+              />
             </div>
           ) : (
             <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
@@ -477,7 +472,15 @@ export function EstimateForm({
         </>
       )}
 
-      {!roofV2 && (
+      {/* Gated on estimateType, NOT on the roofV2 route prop.
+          Previously `!roofV2`, which meant a ROOFING estimate opened
+          via /estimates/[id]/edit still rendered this editor — its rows
+          save to estimate_items, which contribute nothing to a roofing
+          estimate's total (that comes from roof areas). A user edited a
+          line from $10 to $9, saw it save, and the total never moved.
+          EstimateService now refuses such a write outright; this stops
+          the UI offering it in the first place. */}
+      {estimateType !== "roofing" && (
         <div className="space-y-2">
           <label className="text-xs font-medium text-foreground">Line items</label>
           <LineItemEditor items={lineItems} onChange={setLineItems} />
