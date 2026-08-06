@@ -307,8 +307,10 @@ function ExpenseV2Content() {
 
                   <Link
                     href={`/estimates/${e.id}`}
-                    className="min-w-0 hover:underline"
+                    className="min-w-0 hover:underline capitalize"
                   >
+
+
                     <span className="block truncate text-sm font-semibold text-foreground capitalize sm:text-base">
                       {estimateLabel(e)}
                     </span>
