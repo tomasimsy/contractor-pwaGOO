@@ -29,8 +29,8 @@ const items = [
     icon: Receipt,
   },
   {
-    label: "Expenses",
-    href: "/expenses",
+    label: "Expenses-v2",
+    href: "/expense-v2",
     icon: Wallet,
   },
   {
