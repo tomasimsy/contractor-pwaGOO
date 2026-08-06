@@ -49,10 +49,9 @@
  * where it is handled. Adding a payment workflow here would be the
  * second implementation this codebase's whole service-layer design
  * exists to prevent.
- */
-import { useCallback, useEffect, useMemo, useState } from "react";
+ */import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Users, HardHat, ArrowLeft, Home, HandCoins } from "lucide-react";
+import { Users, HardHat, ArrowLeft, Home, HandCoins, ArrowRight, Receipt } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -68,21 +67,18 @@ import type { Estimate } from "@/lib/services/estimateService";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
-/** The two buttons on every job row. `paidByType` and `reimbursable`
- * are the real expense fields being seeded — no new concept, just the
- * two combinations that matter in practice. */
 const ENTRY_CHOICES = [
-  {
-    id: "i_paid" as const,
-    shortLabel: "I Paid",
-    paidByType: "employee" as PaidByType,
-    reimbursable: true,
-  },
   {
     id: "company_paid" as const,
     shortLabel: "Company Paid",
     paidByType: "company" as PaidByType,
     reimbursable: false,
+  },
+  {
+    id: "i_paid" as const,
+    shortLabel: "Pay by Me",
+    paidByType: "employee" as PaidByType,
+    reimbursable: true,
   },
 ];
 
@@ -92,16 +88,9 @@ function ExpenseV2Content() {
   const { expenseService, projectService, estimateService, financialEngine } = useServices();
   const { profile } = useAuth();
   const companyId = profile?.companyId ?? null;
-  /** profiles.id IS the auth user id, and that is what `paid_by_id`
-   * holds — so this is the key for "what am I owed". */
   const userId = profile?.userId ?? null;
 
-  // Both are picked in ONE tap now (a job row's [I Paid] / [Company
-  // Paid] button), so they are set together rather than in two steps.
   const [choice, setChoice] = useState<ChoiceId | null>(null);
-  // Only the ESTIMATE is chosen. The project comes from that estimate —
-  // asking for both was two pickers for one fact, and they could
-  // disagree.
   const [estimateId, setEstimateId] = useState<string>("");
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -125,9 +114,6 @@ function ExpenseV2Content() {
       const [projectList, estimateList, mine, subs, agents] = await Promise.all([
         projectService.list(scope),
         estimateService.list(scope),
-        // Same method, narrowed by payee — it filters on `paid_by_id`,
-        // which is exactly the field "I Paid" now seeds with the
-        // signed-in user. No new query and no new rule.
         userId
           ? expenseService.listPendingReimbursements(companyId, userId)
           : Promise.resolve([]),
@@ -136,8 +122,6 @@ function ExpenseV2Content() {
       ]);
       setProjects(projectList);
       setEstimates(estimateList);
-      // Reuses the same breakdown function as the company-wide figure,
-      // just over this person's rows.
       setOwedToMe(calculateExpenseTotals(mine).outstandingReimbursements);
       setOwedToMeCount(mine.length);
       setSubBalances(subs.filter((b) => b.outstanding > 0));
@@ -163,8 +147,6 @@ function ExpenseV2Content() {
     [estimates, estimateId]
   );
 
-  /** Derived, never picked. An estimate already knows its project, so
-   * reading it here keeps the two in step by construction. */
   const projectId = selectedEstimate?.projectId ?? "";
 
   const estimateLabel = useCallback(
@@ -172,9 +154,6 @@ function ExpenseV2Content() {
     []
   );
 
-  /** The ten most recently WORKED-ON jobs — ordered by updatedAt, not
-   * createdAt: an expense almost always belongs to whatever was touched
-   * last, which is not the same as whatever was created last. */
   const recentJobs = useMemo(
     () => [...estimates].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 10),
     [estimates]
@@ -182,14 +161,11 @@ function ExpenseV2Content() {
 
   const selectedChoice = ENTRY_CHOICES.find((c) => c.id === choice) ?? null;
 
-
   async function handleSubmit(
     input: Omit<ExpenseCreateInput, "companyId" | "projectId">
   ): Promise<boolean> {
     if (!companyId) return false;
     try {
-      // The one and only write path — same service call as every other
-      // expense entry point in the app.
       await expenseService.create({
         ...input,
         companyId,
@@ -212,7 +188,7 @@ function ExpenseV2Content() {
   return (
     <PageContainer>
       <PageHeader
-        title="Quick Expense"
+        title="Reports"
         description="Tap a job, then say who paid."
         actions={
           <Link
@@ -238,13 +214,6 @@ function ExpenseV2Content() {
         </div>
       )}
 
-      {/* ---------- OWED TO YOU (display only) ----------
-          One line, not a grid of tiles. The other three figures
-          (company-wide pending, subcontractor and agent outstanding)
-          were four stacked cards deep on a phone before you reached the
-          job list — and only this one is about the person holding the
-          device. Subcontractor and agent balances still appear in
-          Outstanding balances further down, so nothing was lost. */}
       {loading ? (
         <div className="mb-3 h-11 animate-pulse rounded-lg border border-border bg-card" />
       ) : (
@@ -275,13 +244,8 @@ function ExpenseV2Content() {
         </div>
       )}
 
-      {/* ---------- RECENT JOBS ----------
-          One tap records the two facts that matter: WHICH job, and WHO
-          fronted the money. The project is not asked for — the estimate
-          already carries it (projectId is derived below), and the date
-          is today. Everything else is optional and lives on the form. */}
-      <section className="mb-5 rounded-xl border border-border bg-card p-3 shadow-xs sm:p-4">
-        <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+      <section className="mb-5">
+        <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">
           Recent jobs
         </h2>
 
@@ -294,55 +258,68 @@ function ExpenseV2Content() {
             description="Create an estimate first — expenses attach to a job."
           />
         ) : (
-          <div className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60">
+          <div className="space-y-3">
             {recentJobs.map((e) => {
               const project = e.projectId ? projectsById[e.projectId] : undefined;
               return (
                 <div
                   key={e.id}
-                  className="flex flex-col gap-2 px-2.5 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+                  className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card p-3.5 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:py-3.5"
                 >
-                  <div className="flex min-w-0 items-center gap-2">
-                  <Home className="size-4 shrink-0 text-primary" aria-hidden="true" />
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Receipt className="size-4" />
+                    </div>
 
-                  <Link
-                    href={`/estimates/${e.id}`}
-                    className="min-w-0 hover:underline capitalize"
-                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                        <span className="inline-flex items-center gap-1">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                          {profile?.fullName || "User"}
+                        </span>
+                        <ArrowRight className="size-3 text-muted-foreground/60" />
+                        <span className="inline-flex items-center gap-1">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                          {project?.name ?? "No project"}
+                        </span>
+                      </div>
 
+                      <div className="mt-1 flex items-center gap-2">
+                        <Link
+                          href={`/estimates/${e.id}`}
+                          className="truncate text-sm font-bold text-foreground hover:underline capitalize sm:text-base"
+                        >
+                          {estimateLabel(e)}
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
 
-                    <span className="block truncate text-sm font-semibold text-foreground capitalize sm:text-base">
-                      {estimateLabel(e)}
+                  <div className="flex flex-col items-end justify-between border-t border-border/40 pt-3 sm:border-t-0 sm:pt-0 gap-3">
+                    <span className="text-sm font-extrabold text-foreground sm:text-base">
+                      {money(0)}
                     </span>
-
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {project?.name ?? "No project"}
-                    </span>
-                  </Link>
-                </div>
-
-                  <div className="flex shrink-0 gap-2">
-                    {ENTRY_CHOICES.map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => {
-                          // One tap sets the job AND who paid, then goes
-                          // straight to the form.
-                          setEstimateId(e.id);
-                          setChoice(c.id);
-                          setSavedNote(null);
-                          setDialogOpen(true);
-                        }}
-                        className={`min-h-9 flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors sm:flex-none ${
-                          c.id === "i_paid"
-                            ? "bg-warning/15 text-warning hover:bg-warning/25"
-                            : "bg-primary text-primary-foreground hover:bg-primary/90"
-                        }`}
-                      >
-                        {c.shortLabel}
-                      </button>
-                    ))}
+                    <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:w-auto">
+                      {ENTRY_CHOICES.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => {
+                            setEstimateId(e.id);
+                            setChoice(c.id);
+                            setSavedNote(null);
+                            setDialogOpen(true);
+                          }}
+                          className={`h-11 px-3 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center text-center whitespace-nowrap ${
+                            c.id === "i_paid"
+                              ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
+                              : "bg-warning/15 text-warning hover:bg-warning/25"
+                          }`}
+                        >
+                          {c.shortLabel}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               );
@@ -351,7 +328,6 @@ function ExpenseV2Content() {
         )}
       </section>
 
-      {/* ---------- WHO IS OWED (display only) ---------- */}
       <section className="rounded-xl border border-border bg-card p-3 shadow-xs sm:p-4">
         <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">
           Outstanding balances
@@ -377,7 +353,6 @@ function ExpenseV2Content() {
                     <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
                       <Icon className="size-3.5 text-primary" /> {label}
                     </span>
-                    {/* Settlement lives in those modules, not here. */}
                     <Link href={href} className="text-xs font-medium text-primary hover:underline">
                       Manage
                     </Link>
@@ -400,7 +375,6 @@ function ExpenseV2Content() {
         )}
       </section>
 
-      {/* Seeded with the answer already given above. */}
       {dialogOpen && selectedChoice && (
         <ExpenseFormV2
           companyId={companyId}
@@ -408,17 +382,12 @@ function ExpenseV2Content() {
           estimateId={estimateId || null}
           initialPaidByType={selectedChoice.paidByType}
           initialReimbursable={selectedChoice.reimbursable}
-          // "I Paid" means the signed-in user fronted it, so they are
-          // who gets reimbursed. profiles.id IS the auth user id, which
-          // is what paid_by_id holds.
           initialPaidById={selectedChoice.id === "i_paid" ? profile?.userId ?? null : null}
           initialPaidByLabel={
             selectedChoice.id === "i_paid" ? profile?.fullName || "you" : null
           }
           onClose={() => setDialogOpen(false)}
           onSubmit={handleSubmit}
-          // A delete inside the form changes what's owed, so re-read the
-          // page's own figures instead of letting them drift.
           onChanged={load}
         />
       )}

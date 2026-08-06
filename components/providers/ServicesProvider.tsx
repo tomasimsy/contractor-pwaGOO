@@ -8,6 +8,7 @@ import { createRoofingAreaService } from "@/lib/services/supabase/roofingAreaSer
 import { createSupabaseEstimateAreaLineItemService } from "@/lib/services/supabase/estimateAreaLineItemService";
 import { createSupabaseExpenseService } from "@/lib/services/supabase/expenseService";
 import { createSupabaseCompanyService } from "@/lib/services/supabase/companyService";
+import { createSupabaseTeamAssignmentService } from "@/lib/services/supabase/teamAssignmentService";
 import { createSupabaseCompanyDocumentService } from "@/lib/services/supabase/companyDocumentService";
 import { createFinancialEngine } from "@/lib/services";
 import type { ClientService } from "@/lib/services/clientService";
@@ -24,6 +25,7 @@ import type { SubcontractorService } from "@/lib/services/subcontractorService";
 import type { AgentCommissionService } from "@/lib/services/agentCommissionService";
 import type { FinancialEngine } from "@/lib/services/financialEngine";
 import type { CompanyService } from "@/lib/services/companyService";
+import type { TeamAssignmentService } from "@/lib/services/teamAssignmentService";
 import type { CompanyDocumentService } from "@/lib/services/companyDocumentService";
 import type { AuditService } from "@/lib/services";
 import type { EstimateWorkflow } from "@/lib/services/estimateWorkflow";
@@ -45,6 +47,9 @@ export interface AppServices extends InMemoryServices {
   agentCommissionService: AgentCommissionService;
   financialEngine: FinancialEngine;
   companyService: CompanyService;
+  /** ADDITIVE — assignments only, no financial input. See the
+   * interface: nothing in FinancialEngine reads it. */
+  teamAssignmentService: TeamAssignmentService;
   companyDocumentService: CompanyDocumentService;
   auditService: AuditService;
   /** The single canonical estimate-signing workflow (sign/unsign) — see
@@ -120,6 +125,7 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
     const roofingAreaService = createRoofingAreaService(supabase);
     const estimateAreaLineItemService = createSupabaseEstimateAreaLineItemService(supabase, inMemory.validationService);
     const companyService = createSupabaseCompanyService(supabase, currentUserId);
+    const teamAssignmentService = createSupabaseTeamAssignmentService(supabase, inMemory.validationService, currentUserId);
     const companyDocumentService = createSupabaseCompanyDocumentService(supabase, inMemory.validationService, currentUserId);
 
     // Rebuilt over the real services rather than reusing
@@ -158,6 +164,7 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
       agentCommissionService,
       financialEngine,
       companyService,
+      teamAssignmentService,
       companyDocumentService,
       estimateWorkflow,
       changeOrderWorkflow,

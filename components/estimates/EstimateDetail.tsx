@@ -35,6 +35,7 @@ import { InvoicePaymentsPanel, type InvoicePaymentsPanelRef } from "@/components
 import { EstimateProfitSummaryCard } from "@/components/shared/EstimateProfitSummaryCard";
 import { RoofAreaSummaryCard } from "@/components/estimates/RoofAreaSummaryCard";
 import { SubAgentTabsPanel, type SubAgentTabsPanelRef } from "@/components/estimates/SubAgentTabsPanel";
+import { TeamMembersPanel, type TeamMembersPanelRef } from "@/components/estimates/TeamMembersPanel";
 import { usePermission } from "@/lib/hooks/usePermission";
 import { supabase } from "@/lib/supabase/client";
 import { sumApprovedChangeOrderRevenue, calculateRevisedEstimateTotal, calculateChangeOrderRevenue, calculateSubtotal, calculateLineItemTotal } from "@/lib/services/financialCalculations";
@@ -80,6 +81,7 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
   const expensesPanelRef = useRef<ProjectExpensesPanelRef>(null);
   const paymentsPanelRef = useRef<InvoicePaymentsPanelRef>(null);
   const subAgentTabsRef = useRef<SubAgentTabsPanelRef>(null);
+  const teamMembersRef = useRef<TeamMembersPanelRef>(null);
   const [estimate, setEstimate] = useState<(Estimate & { lineItems: EstimateLineItem[] }) | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [client, setClient] = useState<Client | null>(null);
@@ -879,6 +881,20 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
               }}
             />
           )}
+
+          {/* ADDITIVE — renders BELOW the existing Sub/Agent panel,
+              which is untouched. Assignments live in their own table
+              that no financial calculation reads, so nothing above this
+              point changes. */}
+          <TeamMembersPanel
+            ref={teamMembersRef}
+            companyId={estimate.companyId}
+            estimateId={estimate.id}
+            projectId={estimate.projectId ?? null}
+            onChanged={async () => {
+              await expensesPanelRef.current?.refresh();
+            }}
+          />
 
           <section className="rounded-xl border border-border bg-card p-5 shadow-xs">
             <h2 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">

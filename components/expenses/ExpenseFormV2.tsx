@@ -382,41 +382,56 @@ export function ExpenseFormV2({
                   {jobExpenses.length} · {money(jobTotal)}
                 </span>
               </div>
-              <div className="max-h-40 divide-y divide-border/60 overflow-y-auto rounded-lg border border-border/60">
-                {jobExpenses.map((e) => {
-                  const paidByYou = !!e.paidById && e.paidById === paidById;
-                  return (
-                    <div key={e.id} className="flex items-baseline justify-between gap-2 px-2 py-1">
-                      <span className="w-14 shrink-0 text-[11px] font-semibold tabular-nums text-foreground">
-                        {money(e.amount)}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
-                        {/* Falls through what the row actually has: this
-                            form writes only a note, ExpenseDialog writes
-                            a description, older rows have neither. */}
-                        {e.description || e.notes || e.vendor || EXPENSE_TYPE_LABEL[e.expenseType]}
-                      </span>
-                      <span
-                        className={`shrink-0 text-[11px] ${
-                          paidByYou ? "font-semibold text-warning" : "text-muted-foreground"
-                        }`}
-                      >
-                        {paidByYou ? "You" : PAID_BY_LABEL[e.paidByType]}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(e)}
-                        disabled={deletingId === e.id}
-                        aria-label={`Delete ${money(e.amount)} cost`}
-                        title="Delete this cost"
-                        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-40"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
+<div className="max-h-40 divide-y divide-border/60 overflow-y-auto rounded-lg border border-border/60">
+  {jobExpenses.map((e) => {
+    const paidByYou = !!e.paidById && e.paidById === paidById;
+    return (
+      <div
+        key={e.id}
+        className="flex items-center justify-between gap-2 px-2 py-1"
+      >
+        {/* Amount */}
+        <span className="w-14 shrink-0 text-[11px] font-semibold tabular-nums text-foreground">
+          {money(e.amount)}
+        </span>
+
+        {/* Description */}
+        <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+          {e.description || e.notes || e.vendor || EXPENSE_TYPE_LABEL[e.expenseType]}
+        </span>
+
+        {/* Date */}
+        <span className="shrink-0 text-[11px] text-muted-foreground">
+          {new Date(e.createdAt).toLocaleDateString()}
+        </span>
+
+        {/* Paid by */}
+        <span
+          className={`shrink-0 text-[11px] ${
+            paidByYou
+              ? "font-semibold text-warning"
+              : "text-muted-foreground"
+          }`}
+        >
+          {paidByYou ? "You" : PAID_BY_LABEL[e.paidByType]}
+        </span>
+
+        {/* Delete button */}
+        <button
+          type="button"
+          onClick={() => handleDelete(e)}
+          disabled={deletingId === e.id}
+          aria-label={`Delete ${money(e.amount)} cost`}
+          title="Delete this cost"
+          className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-40"
+        >
+          <Trash2 className="size-3.5" />
+        </button>
+      </div>
+    );
+  })}
+</div>
+
             </div>
           )}
         </div>

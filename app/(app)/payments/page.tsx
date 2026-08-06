@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Wallet, Search } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { NeedsPaymentPanel } from "@/components/payments/NeedsPaymentPanel";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RequirePermission } from "@/components/layout/RequirePermission";
 import { useServices } from "@/components/providers/ServicesProvider";
@@ -41,6 +42,9 @@ function PaymentsListContent() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [methodFilter, setMethodFilter] = useState("all");
+  /** "out" = money the company owes (default). "in" = the existing
+   * received-payments history, untouched. */
+  const [view, setView] = useState<"out" | "in">("out");
 
   const load = useCallback(async () => {
     if (!profile?.companyId) return;
@@ -99,8 +103,40 @@ function PaymentsListContent() {
 
   return (
     <PageContainer>
-      <PageHeader title="Payments" description="Every payment received, across all invoices." />
+      <PageHeader
+        title="Payments"
+        description={view === "out" ? "Who you owe, and paying them." : "Every payment received, across all invoices."}
+      />
 
+      {/* Money OUT is the default view: an unpaid subcontractor is a
+          question you act on, whereas received payments are a record you
+          consult. The existing received-payments list is unchanged and
+          one tap away. */}
+      <div className="mb-4 inline-flex rounded-lg border border-border bg-card p-0.5">
+        {([
+          { id: "out" as const, label: "Needs Payment" },
+          { id: "in" as const, label: "Received" },
+        ]).map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setView(t.id)}
+            aria-pressed={view === t.id}
+            className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+              view === t.id
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {view === "out" ? (
+        <NeedsPaymentPanel />
+      ) : (
+      <>
       {error && <div className="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</div>}
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -183,6 +219,8 @@ function PaymentsListContent() {
             ))}
           </div>
         </>
+      )}
+      </>
       )}
     </PageContainer>
   );
