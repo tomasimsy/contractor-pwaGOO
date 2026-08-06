@@ -15,7 +15,8 @@
 * DateRange shape getCompanyFinancials already accepts.
 */
 import { useState } from "react";
-import { DollarSign, Wallet, FileWarning, Receipt, TrendingUp, FileText, CheckCircle2, FolderKanban } from
+import Link from "next/link";
+import { DollarSign, Wallet, FileWarning, Receipt, TrendingUp, FileText, CheckCircle2, FolderKanban, Plus } from
 "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -46,7 +47,15 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
       </span>
       }
       actions={
-      <DateRangeFilter value={preset} onChange={setPreset} />}
+      <div className="flex items-center gap-2">
+        {/* Entry point for the expense flow that asks who fronted the
+            money before opening the form (/expense-v2). */}
+        <Link href="/expense-v2"
+          className="inline-flex items-center gap-1 rounded-lg bg-emerald-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 sm:text-sm">
+          <Plus className="size-4" /> Expense
+        </Link>
+        <DateRangeFilter value={preset} onChange={setPreset} />
+      </div>}
       />
 
       {error && (

@@ -13,9 +13,10 @@ import { useMemo, useState, useEffect, useRef } from "react";
 import { X, Check, Trash2 } from "lucide-react";
 import { CreateOrSelect, type DirectoryOption } from "@/components/shared/CreateOrSelect";
 import { AgentCommissionPreview } from "./AgentCommissionPreview";
-import { createAgentDirectory, createSubcontractorDirectory, createVendorDirectory } from "./directories";
+import { createAgentDirectory, createSubcontractorDirectory, createVendorDirectory, createCompanyUserDirectory } from "./directories";
 import { PAYMENT_METHODS } from "@/components/payments/paymentMethods";
 import { useServices } from "@/components/providers/ServicesProvider";
+import { useAuth } from "@/components/providers/AuthProvider";
 import { supabase } from "@/lib/supabase/client";
 import {
   EXPENSE_TYPES,
@@ -66,6 +67,7 @@ export function ExpenseDialog({
   onDelete?: (id: string) => Promise<void>;
 }) {
   const { expenseService, financialEngine } = useServices();
+  const { profile } = useAuth();
   const isEdit = !!expense;
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -94,8 +96,15 @@ export function ExpenseDialog({
   const [payeeId, setPayeeId] = useState<string | null>(expense?.payeeId ?? null);
 
   const [paidByType, setPaidByType] = useState<PaidByType>(expense?.paidByType ?? "company");
-  const [paidById, setPaidById] = useState<string | null>(expense?.paidById ?? null);
-  const [paidByLabel, setPaidByLabel] = useState<string | null>(null);
+  // Editing keeps the stored payer. A NEW expense defaults to the
+  // signed-in user: they are overwhelmingly the person who fronted it,
+  // and leaving it null means the reimbursement has no owner —
+  // ExpenseService.listPendingReimbursements filters on `paid_by_id`,
+  // so a null one can never be attributed to anybody.
+  const [paidById, setPaidById] = useState<string | null>(expense?.paidById ?? profile?.userId ?? null);
+  const [paidByLabel, setPaidByLabel] = useState<string | null>(
+    expense ? null : profile?.fullName || null
+  );
 
   const [paymentMethod, setPaymentMethod] = useState(expense?.paymentMethod ?? "");
   const [isPaid, setIsPaid] = useState(expense?.isPaid ?? true);
@@ -121,13 +130,24 @@ export function ExpenseDialog({
 
   const subcontractorDir = useMemo(() => createSubcontractorDirectory(supabase, companyId), [companyId]);
   const agentDir = useMemo(() => createAgentDirectory(supabase, companyId), [companyId]);
+  /** Company users — the people an "employee paid" expense is owed to.
+   * See createCompanyUserDirectory for why this is an RPC, not a
+   * `profiles` read. */
+  const companyUserDir = useMemo(() => createCompanyUserDirectory(supabase), []);
   const vendorDir = useMemo(() => createVendorDirectory(expenseService, companyId), [expenseService, companyId]);
 
   const payeeKind = PAYEE_KIND[expenseType];
   const reimbursable = reimbursableOverride ?? paidByType !== "company";
 
   const payeeDirectory = payeeKind === "subcontractor" ? subcontractorDir : payeeKind === "agent" ? agentDir : vendorDir;
-  const payerDirectory = paidByType === "agent" ? agentDir : paidByType === "subcontractor" ? subcontractorDir : null;
+  const payerDirectory =
+    paidByType === "agent"
+      ? agentDir
+      : paidByType === "subcontractor"
+      ? subcontractorDir
+      : paidByType === "employee"
+      ? companyUserDir
+      : null;
 
   const parsedAmount = parseFloat(amount) || 0;
 
@@ -633,8 +653,12 @@ export function ExpenseDialog({
                   onChange={(e) => {
                     const next = e.target.value as PaidByType;
                     setPaidByType(next);
-                    setPaidById(null);
-                    setPaidByLabel(null);
+                    // Switching to "employee" re-applies the signed-in
+                    // user; any other type needs its own pick, and
+                    // "company" has no person at all.
+                    const isSelf = next === "employee" && !expense;
+                    setPaidById(isSelf ? profile?.userId ?? null : null);
+                    setPaidByLabel(isSelf ? profile?.fullName || null : null);
                     setReimbursableOverride(null);
                   }}
                   className="w-full rounded border border-input bg-background px-2 py-1 text-sm outline-none focus:border-ring"

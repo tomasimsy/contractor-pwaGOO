@@ -126,6 +126,48 @@ export function createAgentDirectory(supabase: SupabaseClient, companyId: string
 }
 
 /**
+ * The company's own USERS — who an "employee paid this" expense is
+ * owed back to.
+ *
+ * Reads the `list_company_members` RPC, not the `profiles` table, for a
+ * reason that is easy to get wrong: RLS on `profiles` scopes a caller
+ * to their OWN row (verified live — a direct select returns exactly one
+ * row, the caller's), so a table read here would give every user a
+ * dropdown containing only themselves. The RPC is SECURITY DEFINER and
+ * returns every member of the caller's company. It also returns the
+ * email, which `profiles` cannot: email lives in `auth.users`.
+ *
+ * READ-ONLY — no `create`. People become company members by being
+ * invited, not by being typed into an expense form, so the picker
+ * deliberately offers no "create" affordance (CreateOrSelect hides it
+ * when `create`/`createWithFields` are absent).
+ *
+ * The id returned here is the profile id, which IS the auth user id —
+ * exactly what `estimate_expenses.paid_by_id` holds.
+ */
+export function createCompanyUserDirectory(supabase: SupabaseClient): DirectoryAdapter {
+  return {
+    noun: "User",
+    async search(query) {
+      const { data, error } = await supabase.rpc("list_company_members");
+      if (error) return [];
+      const rows = (data ?? []) as Array<{ id: string; email: string | null; role: string | null; full_name?: string | null }>;
+      const q = query.trim().toLowerCase();
+      return rows
+        .map((r): DirectoryOption => ({
+          id: r.id,
+          // full_name is nullable and null in practice today, so email
+          // is the dependable label rather than the fallback.
+          label: r.full_name?.trim() || r.email || "Unnamed user",
+          hint: r.role ?? undefined,
+        }))
+        .filter((o) => !q || o.label.toLowerCase().includes(q))
+        .slice(0, 20);
+    },
+  };
+}
+
+/**
  * Vendors are free text by design — there is no vendors table and this
  * module does not create one. "Create" therefore just accepts the typed
  * name; the suggestions come from vendor names already used on this
