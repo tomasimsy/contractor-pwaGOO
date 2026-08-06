@@ -46,7 +46,7 @@
  * omitted rather than shown as an input that silently discards its
  * value. See EXPENSE_FORM.md §8.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X, HandCoins } from "lucide-react";
 import { CreateOrSelect, type DirectoryOption } from "@/components/shared/CreateOrSelect";
 import { createVendorDirectory } from "./directories";
@@ -54,6 +54,8 @@ import { useServices } from "@/components/providers/ServicesProvider";
 import {
   EXPENSE_TYPES,
   EXPENSE_TYPE_LABEL,
+  PAID_BY_LABEL,
+  type Expense,
   type ExpenseCreateInput,
   type ExpenseType,
   type PaidByType,
@@ -69,6 +71,8 @@ const GENERAL_EXPENSE_TYPES = EXPENSE_TYPES.filter(
 const FIELD =
   "h-9 w-full rounded-lg border border-input bg-background px-2.5 text-sm text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30";
 const LABEL = "mb-1 block text-xs font-semibold text-foreground";
+
+const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 export function ExpenseFormV2({
   companyId,
@@ -109,6 +113,41 @@ export function ExpenseFormV2({
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /** What has ALREADY been recorded against this job — so you can see at
+   * the moment of entry whether you've logged this cost before, or spot
+   * one you forgot. Scoped to the estimate when there is one (the
+   * tightest match for "this job"), else to the project. */
+  const [jobExpenses, setJobExpenses] = useState<Expense[] | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (!estimateId && !projectId) {
+      setJobExpenses([]);
+      return;
+    }
+    setJobExpenses(null);
+    const load = estimateId
+      ? expenseService.listForEstimate(estimateId)
+      : expenseService.listForProject(projectId as string);
+    load
+      .then((rows) => {
+        if (active) setJobExpenses(rows);
+      })
+      .catch(() => {
+        // Never block recording a cost because the history lookup
+        // failed — the list is context, not a precondition.
+        if (active) setJobExpenses([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [estimateId, projectId, expenseService]);
+
+  const jobTotal = useMemo(
+    () => (jobExpenses ?? []).reduce((sum, e) => sum + e.amount, 0),
+    [jobExpenses]
+  );
 
   /* ------------------------------------------------------------------
    * NOT ASKED — settled before this form opened, or sensibly defaulted.
@@ -298,6 +337,48 @@ export function ExpenseFormV2({
               which is worse than not offering it. Wiring it up needs a
               storage bucket plus RLS policies — a migration, which this
               task excluded. See EXPENSE_FORM.md §8. */}
+          {/* ---- ALREADY ON THIS JOB ----
+              Deliberately at the bottom: it is a check you glance at,
+              not something to read before typing. Amount / what for /
+              who paid — the three fields that tell you whether a cost
+              is already here. */}
+          {jobExpenses !== null && jobExpenses.length > 0 && (
+            <div className="border-t border-border/60 pt-3">
+              <div className="mb-1.5 flex items-baseline justify-between gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Already on this job
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                  {jobExpenses.length} · {money(jobTotal)}
+                </span>
+              </div>
+              <div className="max-h-40 divide-y divide-border/60 overflow-y-auto rounded-lg border border-border/60">
+                {jobExpenses.map((e) => {
+                  const paidByYou = !!e.paidById && e.paidById === paidById;
+                  return (
+                    <div key={e.id} className="flex items-baseline justify-between gap-2 px-2 py-1">
+                      <span className="w-14 shrink-0 text-[11px] font-semibold tabular-nums text-foreground">
+                        {money(e.amount)}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+                        {/* Falls through what the row actually has: this
+                            form writes only a note, ExpenseDialog writes
+                            a description, older rows have neither. */}
+                        {e.description || e.notes || e.vendor || EXPENSE_TYPE_LABEL[e.expenseType]}
+                      </span>
+                      <span
+                        className={`shrink-0 text-[11px] ${
+                          paidByYou ? "font-semibold text-warning" : "text-muted-foreground"
+                        }`}
+                      >
+                        {paidByYou ? "You" : PAID_BY_LABEL[e.paidByType]}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         <footer className="flex items-center justify-between gap-3 border-t border-border px-3 py-2.5 sm:px-4">

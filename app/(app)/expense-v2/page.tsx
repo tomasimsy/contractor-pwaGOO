@@ -52,11 +52,10 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Receipt, Users, HardHat, ArrowLeft, Home, HandCoins } from "lucide-react";
+import { Users, HardHat, ArrowLeft, Home, HandCoins } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { StatCard, StatCardSkeleton } from "@/components/dashboard/StatCard";
 import { RequirePermission } from "@/components/layout/RequirePermission";
 import { ExpenseFormV2 } from "@/components/expenses/ExpenseFormV2";
 import { useServices } from "@/components/providers/ServicesProvider";
@@ -109,8 +108,6 @@ function ExpenseV2Content() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [estimates, setEstimates] = useState<Estimate[]>([]);
 
-  const [pendingReimbursementTotal, setPendingReimbursementTotal] = useState<number | null>(null);
-  const [pendingCount, setPendingCount] = useState(0);
   const [owedToMe, setOwedToMe] = useState(0);
   const [owedToMeCount, setOwedToMeCount] = useState(0);
   const [subBalances, setSubBalances] = useState<PayeeBalance[]>([]);
@@ -125,14 +122,9 @@ function ExpenseV2Content() {
     setError(null);
     try {
       const scope = { companyId };
-      const [projectList, estimateList, allExpenses, pending, mine, subs, agents] = await Promise.all([
+      const [projectList, estimateList, mine, subs, agents] = await Promise.all([
         projectService.list(scope),
         estimateService.list(scope),
-        // Company-wide cost rows, run through the SAME breakdown function
-        // ExpenseService.getTotalsForProject uses. No local re-derivation
-        // of what "outstanding reimbursement" means.
-        expenseService.listForCompany(companyId),
-        expenseService.listPendingReimbursements(companyId),
         // Same method, narrowed by payee — it filters on `paid_by_id`,
         // which is exactly the field "I Paid" now seeds with the
         // signed-in user. No new query and no new rule.
@@ -144,8 +136,6 @@ function ExpenseV2Content() {
       ]);
       setProjects(projectList);
       setEstimates(estimateList);
-      setPendingReimbursementTotal(calculateExpenseTotals(allExpenses).outstandingReimbursements);
-      setPendingCount(pending.length);
       // Reuses the same breakdown function as the company-wide figure,
       // just over this person's rows.
       setOwedToMe(calculateExpenseTotals(mine).outstandingReimbursements);
@@ -192,9 +182,6 @@ function ExpenseV2Content() {
 
   const selectedChoice = ENTRY_CHOICES.find((c) => c.id === choice) ?? null;
 
-  // Summing an already-computed field for one headline number.
-  const subOutstanding = subBalances.reduce((sum, b) => sum + b.outstanding, 0);
-  const agentOutstanding = agentBalances.reduce((sum, b) => sum + b.outstanding, 0);
 
   async function handleSubmit(
     input: Omit<ExpenseCreateInput, "companyId" | "projectId">
@@ -251,58 +238,43 @@ function ExpenseV2Content() {
         </div>
       )}
 
-      {/* ---------- SUMMARY (display only) ---------- */}
-      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {loading ? (
-          <>
-            <StatCardSkeleton />
-            <StatCardSkeleton />
-            <StatCardSkeleton />
-            <StatCardSkeleton />
-          </>
-        ) : (
-          <>
-            {/* Personal first — for whoever is looking at this page,
-                "what am I owed" is the figure they came for. Same
-                pending-reimbursement rule as the company card, just
-                filtered to their own paid_by_id. */}
-            <StatCard
-              label="Owed To You"
-              value={money(owedToMe)}
-              icon={HandCoins}
-              tone={owedToMe > 0 ? "warning" : "neutral"}
-              hint={
-                owedToMe > 0
-                  ? `${owedToMeCount} expense${owedToMeCount === 1 ? "" : "s"} you fronted`
-                  : "Nothing outstanding for you"
-              }
-            />
-            <StatCard
-              label="Pending Reimbursements"
-              value={money(pendingReimbursementTotal ?? 0)}
-              icon={Receipt}
-              tone={(pendingReimbursementTotal ?? 0) > 0 ? "warning" : "neutral"}
-              hint={`${pendingCount} expense${pendingCount === 1 ? "" : "s"} — everyone`}
-            />
-            <StatCard
-              label="Subcontractors Outstanding"
-              value={money(subOutstanding)}
-              icon={HardHat}
-              tone={subOutstanding > 0 ? "warning" : "neutral"}
-              hint={`${subBalances.length} payee${subBalances.length === 1 ? "" : "s"}`}
-            />
-            <StatCard
-              label="Agents Outstanding"
-              value={money(agentOutstanding)}
-              icon={Users}
-              tone={agentOutstanding > 0 ? "warning" : "neutral"}
-              hint={`${agentBalances.length} payee${agentBalances.length === 1 ? "" : "s"}`}
-            />
-          </>
-        )}
-      </div>
+      {/* ---------- OWED TO YOU (display only) ----------
+          One line, not a grid of tiles. The other three figures
+          (company-wide pending, subcontractor and agent outstanding)
+          were four stacked cards deep on a phone before you reached the
+          job list — and only this one is about the person holding the
+          device. Subcontractor and agent balances still appear in
+          Outstanding balances further down, so nothing was lost. */}
+      {loading ? (
+        <div className="mb-3 h-11 animate-pulse rounded-lg border border-border bg-card" />
+      ) : (
+        <div
+          className={`mb-3 flex items-center gap-2 rounded-lg border px-3 py-2 ${
+            owedToMe > 0 ? "border-warning/30 bg-warning/10" : "border-border bg-card"
+          }`}
+        >
+          <HandCoins
+            className={`size-4 shrink-0 ${owedToMe > 0 ? "text-warning" : "text-muted-foreground"}`}
+            aria-hidden="true"
+          />
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Owed to you
+          </span>
+          <span
+            className={`text-base font-bold tabular-nums ${
+              owedToMe > 0 ? "text-warning" : "text-foreground"
+            }`}
+          >
+            {money(owedToMe)}
+          </span>
+          <span className="ml-auto truncate text-[11px] text-muted-foreground">
+            {owedToMe > 0
+              ? `${owedToMeCount} expense${owedToMeCount === 1 ? "" : "s"}`
+              : "nothing outstanding"}
+          </span>
+        </div>
+      )}
 
-      {/* ---------- ENTRY CHOICE ---------- */}
       {/* ---------- RECENT JOBS ----------
           One tap records the two facts that matter: WHICH job, and WHO
           fronted the money. The project is not asked for — the estimate

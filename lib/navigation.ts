@@ -80,6 +80,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: "invoices", label: "Invoices", href: "/invoices", icon: Receipt, permission: { resource: "invoice", action: "view" } },
       { id: "payments", label: "Payments", href: "/payments", icon: Wallet, permission: { resource: "payment", action: "view" } },
       { id: "expenses", label: "Expenses", href: "/expenses", icon: ReceiptText, permission: { resource: "expense", action: "view" } },
+      { id: "expenses-v2", label: "Expenses V2", href: "/expense-v2", icon: ReceiptText, permission: { resource: "expense", action: "view" } },
+      
     ],
   },
   {
