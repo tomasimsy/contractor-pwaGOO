@@ -46,8 +46,8 @@
  * omitted rather than shown as an input that silently discards its
  * value. See EXPENSE_FORM.md §8.
  */
-import { useEffect, useMemo, useState } from "react";
-import { X, HandCoins } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { X, HandCoins, Trash2 } from "lucide-react";
 import { CreateOrSelect, type DirectoryOption } from "@/components/shared/CreateOrSelect";
 import { createVendorDirectory } from "./directories";
 import { useServices } from "@/components/providers/ServicesProvider";
@@ -84,6 +84,7 @@ export function ExpenseFormV2({
   initialPaidByLabel = null,
   onClose,
   onSubmit,
+  onChanged,
 }: {
   companyId: string;
   projectId: string | null;
@@ -101,6 +102,8 @@ export function ExpenseFormV2({
   initialPaidByLabel?: string | null;
   onClose: () => void;
   onSubmit: (input: Omit<ExpenseCreateInput, "companyId" | "projectId">) => Promise<boolean>;
+  /** Called after a delete so the page can refresh its own figures. */
+  onChanged?: () => Promise<void> | void;
 }) {
   const { expenseService } = useServices();
 
@@ -119,30 +122,57 @@ export function ExpenseFormV2({
    * one you forgot. Scoped to the estimate when there is one (the
    * tightest match for "this job"), else to the project. */
   const [jobExpenses, setJobExpenses] = useState<Expense[] | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
+  const loadJobExpenses = useCallback(async () => {
     if (!estimateId && !projectId) {
       setJobExpenses([]);
       return;
     }
-    setJobExpenses(null);
-    const load = estimateId
-      ? expenseService.listForEstimate(estimateId)
-      : expenseService.listForProject(projectId as string);
-    load
-      .then((rows) => {
-        if (active) setJobExpenses(rows);
-      })
-      .catch(() => {
-        // Never block recording a cost because the history lookup
-        // failed — the list is context, not a precondition.
-        if (active) setJobExpenses([]);
-      });
-    return () => {
-      active = false;
-    };
+    try {
+      const rows = estimateId
+        ? await expenseService.listForEstimate(estimateId)
+        : await expenseService.listForProject(projectId as string);
+      setJobExpenses(rows);
+    } catch {
+      // Never block recording a cost because the history lookup failed —
+      // the list is context, not a precondition.
+      setJobExpenses([]);
+    }
   }, [estimateId, projectId, expenseService]);
+
+  useEffect(() => {
+    setJobExpenses(null);
+    loadJobExpenses();
+  }, [loadJobExpenses]);
+
+  /** Soft delete, matching the pattern ProjectExpensesPanel already
+   * uses: confirm, then ExpenseService.softDelete with a reason (the
+   * service REQUIRES one — validationService.validateDeleteReason
+   * rejects a blank). Nothing is destroyed; the row keeps
+   * deleted_at/deleted_by/delete_reason and drops out of every
+   * calculation because the list and totals queries filter it, not
+   * because anything here subtracts.
+   *
+   * The service refuses to delete an expense whose reimbursement has
+   * already been PAID OUT — that is settled cash, not a typo. That
+   * error is surfaced verbatim rather than swallowed. */
+  async function handleDelete(e: Expense) {
+    if (!window.confirm(`Delete this ${money(e.amount)} cost? It can be restored later.`)) return;
+    setDeletingId(e.id);
+    setError(null);
+    try {
+      await expenseService.softDelete(e.id, "User deleted via UI");
+      await loadJobExpenses();
+      // Let the page re-read its own figures in the same interaction,
+      // so "Owed to you" cannot disagree with this list.
+      await onChanged?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete this cost.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   const jobTotal = useMemo(
     () => (jobExpenses ?? []).reduce((sum, e) => sum + e.amount, 0),
@@ -373,6 +403,16 @@ export function ExpenseFormV2({
                       >
                         {paidByYou ? "You" : PAID_BY_LABEL[e.paidByType]}
                       </span>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(e)}
+                        disabled={deletingId === e.id}
+                        aria-label={`Delete ${money(e.amount)} cost`}
+                        title="Delete this cost"
+                        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-40"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
                     </div>
                   );
                 })}

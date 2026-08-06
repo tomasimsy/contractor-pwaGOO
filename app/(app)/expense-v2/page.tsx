@@ -303,16 +303,21 @@ function ExpenseV2Content() {
                   className="flex flex-col gap-2 px-2.5 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
                 >
                   <div className="flex min-w-0 items-center gap-2">
-                    <Home className="size-4 shrink-0 text-primary" aria-hidden="true" />
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold text-foreground">
-                        {estimateLabel(e)}
-                      </span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {project?.name ?? "No project"}
-                      </span>
+                  <Home className="size-4 shrink-0 text-primary" aria-hidden="true" />
+
+                  <Link
+                    href={`/estimates/${e.id}`}
+                    className="min-w-0 hover:underline"
+                  >
+                    <span className="block truncate text-sm font-semibold text-foreground capitalize sm:text-base">
+                      {estimateLabel(e)}
                     </span>
-                  </div>
+
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {project?.name ?? "No project"}
+                    </span>
+                  </Link>
+                </div>
 
                   <div className="flex shrink-0 gap-2">
                     {ENTRY_CHOICES.map((c) => (
@@ -410,6 +415,9 @@ function ExpenseV2Content() {
           }
           onClose={() => setDialogOpen(false)}
           onSubmit={handleSubmit}
+          // A delete inside the form changes what's owed, so re-read the
+          // page's own figures instead of letting them drift.
+          onChanged={load}
         />
       )}
     </PageContainer>
