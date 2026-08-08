@@ -123,6 +123,17 @@ export interface Expense extends AuditedEntity {
   reimbursementStatus: ReimbursementStatus;
 
   receiptUrl: string | null;
+
+  /** ---- BILL FIELDS (additive, nullable) ----
+   * A BILL IS AN EXPENSE THAT HAS A DUE DATE. Both are pure passthrough:
+   * no calculation reads them, and an expense with `dueDate === null` is
+   * an ordinary job cost exactly as before.
+   *
+   * Setting these on an EXISTING row is how a vendor invoice gets
+   * attached to, say, a subcontractor expense — without creating a
+   * second expense for the same obligation. */
+  dueDate: string | null;
+  billNumber: string | null;
 }
 
 export interface MileageTrip {
@@ -151,6 +162,9 @@ export interface ExpenseCreateInput {
   isPaid?: boolean;
   reimbursable?: boolean;
   receiptUrl?: string | null;
+  /** Non-null makes this a Bill. See Expense.dueDate. */
+  dueDate?: string | null;
+  billNumber?: string | null;
 }
 
 export type ExpenseUpdateInput = Partial<Omit<ExpenseCreateInput, "companyId">>;
@@ -205,6 +219,12 @@ export interface ExpenseService {
    * agents, subcontractors, employees. The future payouts view is a
    * render of this plus commissions; no new schema, no new arithmetic. */
   listPendingReimbursements(companyId: UUID, payeeId?: UUID): Promise<Expense[]>;
+
+  /** Every BILL — an expense carrying a due date — for this company,
+   * unpaid first, then by due date. A plain read: the Bills page groups
+   * these into overdue/due-soon/upcoming itself and totals them with
+   * calculateExpenseTotals, so no new figure is invented here. */
+  listBills(companyId: UUID): Promise<Expense[]>;
 
   /** Distinct vendor names already used by this company — powers the
    * vendor Create-or-Select picker. Vendors are free text by design;

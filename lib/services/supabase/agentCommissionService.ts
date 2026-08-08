@@ -43,6 +43,7 @@ interface AgentRow {
 }
 
 interface AssignmentRow {
+  estimate_id: string | null;
   id: string;
   company_id: string;
   project_id: string | null;
@@ -99,6 +100,7 @@ function rowToAssignment(row: AssignmentRow): AgentAssignment {
     id: row.id as UUID,
     companyId: row.company_id as UUID,
     projectId: (row.project_id ?? "") as UUID,
+    estimateId: (row.estimate_id ?? null) as UUID | null,
     agentId: row.agent_id as UUID,
     assignedAmount: row.amount,
     notes: row.notes,

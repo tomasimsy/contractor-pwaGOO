@@ -9,6 +9,9 @@ import { createSupabaseEstimateAreaLineItemService } from "@/lib/services/supaba
 import { createSupabaseExpenseService } from "@/lib/services/supabase/expenseService";
 import { createSupabaseCompanyService } from "@/lib/services/supabase/companyService";
 import { createSupabaseTeamAssignmentService } from "@/lib/services/supabase/teamAssignmentService";
+import { createSupabaseBillScheduleService } from "@/lib/services/supabase/billScheduleService";
+import { createAccountsReceivableService } from "@/lib/services/accountsReceivableService";
+import { createAccountsPayableService } from "@/lib/services/accountsPayableService";
 import { createSupabaseCompanyDocumentService } from "@/lib/services/supabase/companyDocumentService";
 import { createFinancialEngine } from "@/lib/services";
 import type { ClientService } from "@/lib/services/clientService";
@@ -26,6 +29,9 @@ import type { AgentCommissionService } from "@/lib/services/agentCommissionServi
 import type { FinancialEngine } from "@/lib/services/financialEngine";
 import type { CompanyService } from "@/lib/services/companyService";
 import type { TeamAssignmentService } from "@/lib/services/teamAssignmentService";
+import type { BillScheduleService } from "@/lib/services/billScheduleService";
+import type { AccountsReceivableService } from "@/lib/services/accountsReceivableService";
+import type { AccountsPayableService } from "@/lib/services/accountsPayableService";
 import type { CompanyDocumentService } from "@/lib/services/companyDocumentService";
 import type { AuditService } from "@/lib/services";
 import type { EstimateWorkflow } from "@/lib/services/estimateWorkflow";
@@ -50,6 +56,14 @@ export interface AppServices extends InMemoryServices {
   /** ADDITIVE — assignments only, no financial input. See the
    * interface: nothing in FinancialEngine reads it. */
   teamAssignmentService: TeamAssignmentService;
+  /** Recurring bill TEMPLATES. Holds no cost — generating an occurrence
+   * writes one ordinary expense via ExpenseService. */
+  billScheduleService: BillScheduleService;
+  /** Layer 3 re-shapers that add NO new financial fact — AR buckets
+   * existing invoice balances, AP re-shapes getPayablesSummary. Both
+   * already existed; they were simply never exposed. */
+  accountsReceivableService: AccountsReceivableService;
+  accountsPayableService: AccountsPayableService;
   companyDocumentService: CompanyDocumentService;
   auditService: AuditService;
   /** The single canonical estimate-signing workflow (sign/unsign) — see
@@ -126,6 +140,8 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
     const estimateAreaLineItemService = createSupabaseEstimateAreaLineItemService(supabase, inMemory.validationService);
     const companyService = createSupabaseCompanyService(supabase, currentUserId);
     const teamAssignmentService = createSupabaseTeamAssignmentService(supabase, inMemory.validationService, currentUserId);
+    const billScheduleService = createSupabaseBillScheduleService(supabase, expenseService, inMemory.validationService, currentUserId);
+    const accountsReceivableService = createAccountsReceivableService({ invoiceService, paymentService });
     const companyDocumentService = createSupabaseCompanyDocumentService(supabase, inMemory.validationService, currentUserId);
 
     // Rebuilt over the real services rather than reusing
@@ -146,6 +162,8 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
       transactionService: inMemory.transactionService,
       filteringService: inMemory.filteringService,
     });
+    // After financialEngine — AP is a re-shape of getPayablesSummary.
+    const accountsPayableService = createAccountsPayableService({ financialEngine });
 
     return {
       ...inMemory,
@@ -165,6 +183,9 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
       financialEngine,
       companyService,
       teamAssignmentService,
+      billScheduleService,
+      accountsReceivableService,
+      accountsPayableService,
       companyDocumentService,
       estimateWorkflow,
       changeOrderWorkflow,

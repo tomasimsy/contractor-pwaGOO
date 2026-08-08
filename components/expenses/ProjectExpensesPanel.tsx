@@ -29,9 +29,10 @@
  * mutation, so profit updates in the same interaction as the expense.
  */
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from "react";
-import { Plus, Pencil, Trash2, Receipt, RotateCcw, HardHat, Briefcase } from "lucide-react";
+import { Plus, Pencil, Trash2, Receipt, RotateCcw, HardHat, Briefcase, FileText } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ExpenseDialog } from "./ExpenseDialog";
+import { AttachBillDialog } from "./AttachBillDialog";
 import { useExpenses } from "@/lib/hooks/useExpenses";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { formatPaymentMethod } from "@/components/payments/paymentMethods";
@@ -110,6 +111,8 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
   }));
 
   const [actionError, setActionError] = useState<string | null>(null);
+  /** Expense whose vendor invoice is being attached/edited. */
+  const [billFor, setBillFor] = useState<Expense | null>(null);
   /** Which row is mid-mutation — disables its buttons so a double
    * click can't fire two deletes, and shows the row as busy. Same
    * pattern as the payments panel. */
@@ -281,6 +284,20 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
                       className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50">
                       <Pencil className="size-3.5" />
                     </button>
+                    {/* ADDITIVE — attaching a vendor invoice UPDATES this
+                        expense's due_date/bill_number. It never creates a
+                        second cost. See AttachBillDialog. */}
+                    <button type="button" onClick={() => setBillFor(expense)}
+                      disabled={busyId === expense.id}
+                      aria-label={expense.dueDate ? `Edit bill on ${meta.label} cost` : `Attach invoice to ${meta.label} cost`}
+                      title={expense.dueDate ? "Bill attached — edit" : "Attach vendor invoice"}
+                      className={`rounded-lg p-1.5 disabled:opacity-50 ${
+                        expense.dueDate
+                          ? "text-primary hover:bg-primary/10"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      }`}>
+                      <FileText className="size-3.5" />
+                    </button>
                     <button type="button" onClick={() => handleDelete(expense, meta.label)}
                       disabled={busyId === expense.id}
                       aria-label={`Delete ${meta.label} cost`} title={`Delete ${meta.label} cost`}
@@ -294,6 +311,21 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
           })}
         </ul>
       )}
+
+      {billFor && (
+
+        <AttachBillDialog
+
+          expense={billFor}
+
+          onClose={() => setBillFor(null)}
+
+          onSaved={async () => { await loadEntries(); await onChanged?.(); }}
+
+        />
+
+      )}
+
 
       {dialogFor && (
         <ExpenseDialog

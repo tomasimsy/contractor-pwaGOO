@@ -77,6 +77,8 @@ interface ExpenseRow {
   reimbursable: boolean | null;
   reimbursement_status: string | null;
   receipt_url: string | null;
+  due_date: string | null;
+  bill_number: string | null;
   created_by: string | null;
   created_at: string;
   updated_by: string | null;
@@ -86,7 +88,7 @@ interface ExpenseRow {
   delete_reason: string | null;
 }
 
-const SELECT = "*";
+const SELECT = "*, due_date, bill_number";
 
 /** Tolerant of any legacy free-text value — an unrecognised one becomes
  * "miscellaneous" rather than throwing, because this table's history
@@ -154,6 +156,8 @@ function rowToExpense(row: ExpenseRow): Expense {
         ? row.reimbursement_status
         : "not_applicable",
     receiptUrl: row.receipt_url,
+    dueDate: row.due_date,
+    billNumber: row.bill_number,
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedBy: row.updated_by,
@@ -272,6 +276,11 @@ export function createSupabaseExpenseService(
     set("paymentMethod", "payment_method");
     set("isPaid", "is_paid");
     set("receiptUrl", "receipt_url");
+    // Passthrough. Non-null dueDate is what makes a row a Bill; setting
+    // it on an EXISTING expense is how a vendor invoice is attached
+    // without creating a second cost.
+    set("dueDate", "due_date");
+    set("billNumber", "bill_number");
 
     if (input.paidByType !== undefined || input.paidById !== undefined) {
       const paidByType = input.paidByType ?? existing?.paidByType ?? "company";
@@ -420,6 +429,21 @@ export function createSupabaseExpenseService(
     return ((data ?? []) as ExpenseRow[]).map(rowToExpense);
   }
 
+  async function listBills(companyId: UUID): Promise<Expense[]> {
+    const { data, error } = await supabase
+      .from("estimate_expenses")
+      .select(SELECT)
+      .eq("company_id", companyId)
+      .not("due_date", "is", null)
+      .is("deleted_at", null)
+      // Unpaid first, then soonest due — the order the Bills page reads
+      // in. No filtering by status here: the page needs paid bills too.
+      .order("is_paid", { ascending: true })
+      .order("due_date", { ascending: true });
+    if (error) throw new Error(`Failed to load bills: ${error.message}`);
+    return ((data ?? []) as ExpenseRow[]).map(rowToExpense);
+  }
+
   async function listKnownVendors(companyId: UUID): Promise<string[]> {
     const { data, error } = await supabase
       .from("estimate_expenses")
@@ -489,6 +513,7 @@ export function createSupabaseExpenseService(
     restore,
     markReimbursed,
     listPendingReimbursements,
+    listBills,
     listKnownVendors,
     listMileageForProject,
     recordMileageTrip,

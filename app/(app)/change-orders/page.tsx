@@ -81,7 +81,7 @@ function ChangeOrdersListContent() {
           c.changeOrderNumber.toLowerCase().includes(q) ||
           c.title.toLowerCase().includes(q) ||
           (project?.name ?? "").toLowerCase().includes(q) ||
-          (estimate?.estimateNumber ?? "").toLowerCase().includes(q)
+          (estimate?.title ?? "").toLowerCase().includes(q)
         );
       });
     }
@@ -153,7 +153,7 @@ function ChangeOrdersListContent() {
               <thead className="bg-muted/50">
                 <tr>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">CO #</th>
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Project</th>
+                  {/* <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Project</th> */}
                   <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Estimate</th>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</th>
                   <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Amount</th>
@@ -169,8 +169,8 @@ function ChangeOrdersListContent() {
                       </Link>
                       <div className="text-xs text-muted-foreground">{co.title}</div>
                     </td>
-                    <td className="px-3 py-2.5 text-muted-foreground">{projectsById[co.projectId]?.name ?? "—"}</td>
-                    <td className="px-3 py-2.5 text-muted-foreground">{estimatesById[co.estimateId]?.estimateNumber ?? "—"}</td>
+                    {/* <td className="px-3 py-2.5 text-muted-foreground">{projectsById[co.projectId]?.name ?? "—"}</td> */}
+                    <td className="px-3 py-2.5 text-muted-foreground">{estimatesById[co.estimateId]?.title ?? "—"}</td>
                     <td className="px-3 py-2.5">
                       <Badge tone={STATUS_TONE[co.status]}>{co.status}</Badge>
                     </td>

@@ -1245,6 +1245,8 @@ function createExpenseService(store: InMemoryStore, validation: ValidationServic
       reimbursable,
       reimbursementStatus: reimbursable ? "pending" : "not_applicable",
       receiptUrl: input.receiptUrl ?? null,
+      dueDate: input.dueDate ?? null,
+      billNumber: input.billNumber ?? null,
       createdBy: null,
       createdAt: now(),
       updatedBy: null,
@@ -1424,6 +1426,17 @@ function createExpenseService(store: InMemoryStore, validation: ValidationServic
     restore,
     markReimbursed,
     listPendingReimbursements,
+    async listBills(companyId: UUID) {
+      // Same rule as the Supabase impl: a bill is an expense with a due
+      // date. Unpaid first, then soonest due.
+      return [...store.expenses.values()]
+        .filter((e) => e.companyId === companyId && e.dueDate && !e.deletedAt)
+        .sort(
+          (a, b) =>
+            Number(a.isPaid) - Number(b.isPaid) ||
+            (a.dueDate ?? "").localeCompare(b.dueDate ?? "")
+        );
+    },
     listKnownVendors,
     listMileageForProject,
     recordMileageTrip,
@@ -1496,6 +1509,9 @@ function createSubcontractorService(store: InMemoryStore, validation: Validation
       companyId: input.companyId,
       projectId: input.projectId,
       subcontractorId: input.subcontractorId,
+      // Passthrough field on the real service; the in-memory
+      // double assigns to a project only, so there is no estimate.
+      estimateId: null,
       contractedAmount: input.contractedAmount,
       notes: input.notes ?? null,
       isFinal: false,
@@ -1662,6 +1678,7 @@ function createAgentCommissionService(store: InMemoryStore, validation: Validati
       companyId: input.companyId,
       projectId: input.projectId,
       agentId: input.agentId,
+      estimateId: null,
       assignedAmount: input.assignedAmount,
       notes: input.notes ?? null,
       createdBy: null,

@@ -55,6 +55,7 @@ interface SubcontractorRow {
 }
 
 interface AssignmentRow {
+  estimate_id: string | null;
   id: string;
   company_id: string;
   project_id: string | null;
@@ -113,6 +114,7 @@ function rowToAssignment(row: AssignmentRow): SubcontractorAssignment {
     id: row.id as UUID,
     companyId: row.company_id as UUID,
     projectId: (row.project_id ?? "") as UUID,
+    estimateId: (row.estimate_id ?? null) as UUID | null,
     subcontractorId: row.subcontractor_id as UUID,
     contractedAmount: row.amount,
     notes: row.notes,

@@ -22,6 +22,10 @@ export interface Subcontractor extends AuditedEntity {
 
 export interface SubcontractorAssignment extends AuditedEntity {
   projectId: UUID;
+  /** The estimate this assignment was made against. Nullable on legacy
+   * rows. PASSTHROUGH ONLY — nothing calculates with it; it exists so a
+   * payable can link to the job it came from. */
+  estimateId: UUID | null;
   subcontractorId: UUID;
   contractedAmount: number;
   notes: string | null;

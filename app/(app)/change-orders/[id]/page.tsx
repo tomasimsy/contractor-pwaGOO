@@ -184,7 +184,7 @@ function ChangeOrderDetailContent() {
               </div>
               <div>
                 <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Estimate</dt>
-                <dd className="mt-0.5 text-foreground">{estimate ? <Link href={`/estimates/${estimate.id}`} className="text-primary hover:underline">{estimate.estimateNumber ?? estimate.id.slice(0, 8)}</Link> : "—"}</dd>
+                <dd className="mt-0.5 text-foreground">{estimate ? <Link href={`/estimates/${estimate.id}`} className="text-primary hover:underline">{estimate.title ?? estimate.id.slice(0, 8)}</Link> : "—"}</dd>
               </div>
               <div>
                 <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</dt>
