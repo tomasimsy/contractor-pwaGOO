@@ -385,10 +385,14 @@ function AccountingContent() {
                       {t.type}
                       {!t.settled && <span className="ml-1 text-warning">· unpaid</span>}
                     </span>
-                    <span className="text-right text-xs font-semibold tabular-nums text-success">
+                    {/* On mobile the five cells wrap, so an empty money
+                        column would leave a stray gap — hide the side
+                        that has no value there, keep both columns on
+                        desktop so the table stays aligned. */}
+                    <span className={`text-right text-xs font-semibold tabular-nums text-success ${t.in ? "" : "hidden sm:block"}`}>
                       {t.in ? money(t.in) : ""}
                     </span>
-                    <span className="text-right text-xs font-semibold tabular-nums text-foreground">
+                    <span className={`text-right text-xs font-semibold tabular-nums text-foreground ${t.out ? "" : "hidden sm:block"}`}>
                       {t.out ? money(t.out) : ""}
                     </span>
                   </>
