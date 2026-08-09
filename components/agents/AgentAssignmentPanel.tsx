@@ -37,17 +37,23 @@ export interface AgentAssignmentPanelRef {
 export const AgentAssignmentPanel = forwardRef<AgentAssignmentPanelRef, {
   companyId: string;
   projectId: string;
+  /** The estimate being viewed. A commission recorded here is tagged
+   * with it, so the cost appears in that estimate's expenses like any
+   * other. The assignment's OWN estimate wins when it has one; this is
+   * the fallback for assignments made at project level. Omitted on
+   * project pages, where no single estimate is implied. */
+  estimateId?: string | null;
   /** Called after any cost-affecting mutation — same onChanged pattern
    * SubcontractorAssignmentPanel uses. */
   onChanged?: () => void;
   /** Drops the outer border/heading — used when a parent (e.g.
    * SubAgentTabsPanel) already provides both, so they aren't doubled. */
   compact?: boolean;
-}>(function AgentAssignmentPanel({ companyId, projectId, onChanged, compact = false }, ref) {
+}>(function AgentAssignmentPanel({ companyId, projectId, estimateId, onChanged, compact = false }, ref) {
   const {
     roster, assignments, balances, pendingReimbursements, reimbursementsOwedByAgent, compensationByAgent,
     loading, error, assign, recordCommissionPayment, recordReimbursementPayment, createAgent, refresh,
-  } = useAgentAssignments(companyId, projectId);
+  } = useAgentAssignments(companyId, projectId, estimateId);
   const [agentId, setAgentId] = useState("");
   const [assignedAmount, setAssignedAmount] = useState(0);
   const [commissionAmounts, setCommissionAmounts] = useState<Record<string, number>>({});
@@ -188,7 +194,12 @@ export const AgentAssignmentPanel = forwardRef<AgentAssignmentPanelRef, {
                     type="button"
                     disabled={!commissionAmounts[a.id]}
                     onClick={async () => {
-                      await recordCommissionPayment(a.agentId, a.agentName, commissionAmounts[a.id] ?? 0);
+                      await recordCommissionPayment(
+                        a.agentId,
+                        a.agentName,
+                        commissionAmounts[a.id] ?? 0,
+                        a.estimateId ?? estimateId ?? null
+                      );
                       onChanged?.();
                       setCommissionAmounts({ ...commissionAmounts, [a.id]: 0 });
                     }}

@@ -16,7 +16,7 @@ import { useServices } from "@/components/providers/ServicesProvider";
 import { useRefreshableResource } from "./useAsyncResource";
 import type { PayeeBalance, Subcontractor, SubcontractorAssignment } from "../services";
 
-export function useSubcontractorAssignments(companyId: string, projectId: string) {
+export function useSubcontractorAssignments(companyId: string, projectId: string, estimateId?: string | null) {
   const { subcontractorService, expenseService, financialEngine } = useServices();
   const [roster, setRoster] = useState<Subcontractor[]>([]);
   const [assignments, setAssignments] = useState<Array<SubcontractorAssignment & { subcontractorName: string; trade: string | null }>>([]);
@@ -43,10 +43,10 @@ export function useSubcontractorAssignments(companyId: string, projectId: string
 
   const assign = useCallback(
     async (subcontractorId: string, contractedAmount: number, notes?: string) => {
-      await subcontractorService.assignToProject({ companyId, projectId, subcontractorId, contractedAmount, notes });
+      await subcontractorService.assignToProject({ companyId, projectId, estimateId: estimateId ?? null, subcontractorId, contractedAmount, notes });
       await refresh();
     },
-    [subcontractorService, companyId, projectId, refresh]
+    [subcontractorService, companyId, projectId, estimateId, refresh]
   );
 
   /** Records the payment as an EXPENSE — same record ExpenseDialog

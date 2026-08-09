@@ -210,13 +210,14 @@ export function createSupabaseAgentCommissionService(
     return assignments.map((a) => ({ ...a, agentName: agentsById.get(a.agentId)?.name ?? "Unknown" }));
   }
 
-  async function assignToProject(input: { companyId: UUID; projectId: UUID; agentId: UUID; assignedAmount: number; notes?: string }): Promise<AgentAssignment> {
+  async function assignToProject(input: { companyId: UUID; projectId: UUID; estimateId?: UUID | null; agentId: UUID; assignedAmount: number; notes?: string }): Promise<AgentAssignment> {
     const actorId = await currentUserId();
     const { data, error } = await supabase
       .from("estimate_agents")
       .insert({
         company_id: input.companyId,
         project_id: input.projectId,
+        estimate_id: input.estimateId ?? null,
         agent_id: input.agentId,
         amount: input.assignedAmount,
         notes: input.notes ?? null,

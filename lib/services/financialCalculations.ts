@@ -296,10 +296,22 @@ export function derivePayableState(input: {
   return paid > 0 ? "partial" : "unpaid";
 }
 
-/** Rows a payables worklist should show: everything except "not yet"
- * and "done". Kept next to the classifier so no view re-states it. */
+/** Rows a payables worklist should show.
+ *
+ * AN ASSIGNMENT STAYS VISIBLE UNTIL IT IS FULLY PAID — including one
+ * whose job has not been completed yet ("not_due"). Committing money to
+ * somebody is the obligation; job status only says whether it is due
+ * *now*, not whether it is owed. Hiding an unfinished job's assignment
+ * made the list a poor reminder: work assigned months ago simply was
+ * not there.
+ *
+ * "settled" is the only state dropped, and only ever per ASSIGNMENT —
+ * a payee's balances are never netted together, so paying one job
+ * cannot make another disappear.
+ *
+ * Kept next to the classifier so no view re-states it. */
 export function isActionablePayable(state: PayableState): boolean {
-  return state === "needs_amount" || state === "unpaid" || state === "partial";
+  return state !== "settled";
 }
 
 /** The stored, human-driven half of an invoice's status. */
@@ -403,6 +415,20 @@ export interface JobCostInputs {
    * `expenseItems`, not an addition to it — adding it would count the
    * same payment twice. Used only for grossProfit and for display. */
   subcontractorCosts: number;
+  /** Work COMMITTED to a payee that has not been paid yet:
+   * `assigned − paid`, floored at zero, per payee.
+   *
+   * The ONE cost input that is genuinely additive, and the only shape
+   * in which a commitment can be, because it is a REMAINDER. What has
+   * been paid is already inside `expenseItems`; this is the part that
+   * has not. The two together are max(assigned, paid) — never
+   * assigned + paid — so paying the work moves money from this term
+   * into `expenseItems` and the total does not budge.
+   *
+   * This is what lets an assigned-but-unpaid team member show up as
+   * cost on the job without the double count that removed
+   * assignment-committed costing from this function before. */
+  committedRemaining?: number;
   /** Sum of expenseType === "agent_commission" rows. Same breakdown-not-
    * addition rule as subcontractorCosts. */
   agentCosts: number;
@@ -447,7 +473,7 @@ export interface JobProfit extends JobCostInputs {
 export function calculateJobProfit(revenue: number, costs: JobCostInputs): JobProfit {
   // sub/agent are buckets INSIDE expenseItems — adding them here is the
   // double-count this model exists to prevent.
-  const totalExpenses = costs.expenseItems + costs.mileageCosts;
+  const totalExpenses = costs.expenseItems + costs.mileageCosts + (costs.committedRemaining ?? 0);
   const grossProfit = revenue - (costs.subcontractorCosts + costs.agentCosts);
   const netProfit = revenue - totalExpenses;
   return {

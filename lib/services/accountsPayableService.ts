@@ -41,7 +41,13 @@ export function createAccountsPayableService(deps: { financialEngine: FinancialE
     return {
       scope,
       lines: summary.lines
-        .filter((l) => l.outstanding > 0)
+        // A/P is subcontractors and agents. `summary.lines` holds only
+        // those (team labour lives in `teamLines`), so this narrows the
+        // type without dropping anything — and keeps A/P's meaning
+        // fixed if a third role is ever added to that field.
+        .filter((l): l is typeof l & { role: "subcontractor" | "agent" } =>
+          l.outstanding > 0 && (l.role === "subcontractor" || l.role === "agent")
+        )
         .sort((a, b) => b.outstanding - a.outstanding)
         .map((l) => ({ role: l.role, payeeId: l.payeeId, payeeName: l.payeeName, assigned: l.assigned, paid: l.paid, outstanding: l.outstanding })),
       totalOutstandingSubcontractor: summary.totalOutstandingSubcontractor,

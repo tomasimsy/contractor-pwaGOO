@@ -32,8 +32,13 @@ export interface SubAgentTabsPanelRef {
 export const SubAgentTabsPanel = forwardRef<SubAgentTabsPanelRef, {
   companyId: string;
   projectId: string;
+  /** The estimate being viewed, when there is one. Payments recorded
+   * from here are tagged with it so the cost lands on the job rather
+   * than only on the project. Absent on project-level usage, where no
+   * single estimate is implied. */
+  estimateId?: string | null;
   onChanged?: () => void;
-}>(function SubAgentTabsPanel({ companyId, projectId, onChanged }, ref) {
+}>(function SubAgentTabsPanel({ companyId, projectId, estimateId, onChanged }, ref) {
   const [tab, setTab] = useState<"subcontractors" | "agents">("subcontractors");
   const agentPanelRef = useRef<AgentAssignmentPanelRef>(null);
 
@@ -68,10 +73,12 @@ export const SubAgentTabsPanel = forwardRef<SubAgentTabsPanelRef, {
 
       <div className="p-3">
         <div className={tab === "subcontractors" ? "" : "hidden"}>
-          <SubcontractorAssignmentPanel companyId={companyId} projectId={projectId} onChanged={onChanged} compact />
+          <SubcontractorAssignmentPanel companyId={companyId} projectId={projectId}
+          estimateId={estimateId} onChanged={onChanged} compact />
         </div>
         <div className={tab === "agents" ? "" : "hidden"}>
-          <AgentAssignmentPanel ref={agentPanelRef} companyId={companyId} projectId={projectId} onChanged={onChanged} compact />
+          <AgentAssignmentPanel ref={agentPanelRef} companyId={companyId} projectId={projectId}
+          estimateId={estimateId} onChanged={onChanged} compact />
         </div>
       </div>
     </div>

@@ -128,6 +128,12 @@ export interface ProjectFinancials {
   remainingBalance: number;
   outstandingSubcontractor: CommittedCost; // assigned - paid per assignment, floored at 0
   outstandingAgent: CommittedCost;
+  /** Assigned team labour not yet paid. The REMAINDER only — labour
+   * already paid is an expense row inside expenseItems, so the two
+   * together are max(assigned, paid), never assigned + paid. */
+  outstandingTeamLabour: CommittedCost;
+  /** Everything still committed and unpaid across all three: what it
+   * will still cost to finish the job. */
   outstandingTotal: CommittedCost;
   paymentStatus: PaymentStatus;
   isFullyPaid: boolean;
@@ -241,6 +247,23 @@ export interface EstimateFinancials {
   /** COMMITTED agent commission cost — same committed model and same
    * project scoping as subcontractorCosts. */
   agentCommissionCosts: number;
+  /** Subcontractor work COMMITTED to this estimate — only assignments
+   * that name this estimate; project-level ones are excluded, since
+   * attributing them to one estimate would invent cost. Display only. */
+  subcontractorAssigned: number;
+  /** The unpaid part of that commitment, added to `totalExpenses`. */
+  subcontractorRemaining: number;
+  /** Agent commission committed to this estimate — same rule. */
+  agentAssigned: number;
+  /** The unpaid part of that commitment, added to `totalExpenses`. */
+  agentRemaining: number;
+  /** Team labour COMMITTED to this estimate — the sum of
+   * `estimate_team_members.amount`. Display only. */
+  teamLabourAssigned: number;
+  /** The unpaid part of that commitment (assigned − paid per member,
+   * floored at 0) — the only piece added to `totalExpenses`, since the
+   * paid part is already an expense row. */
+  teamLabourRemaining: number;
   /** Every active expense row on this estimate (ExpenseService's own
    * total). This is the "expense rows only" figure — `totalExpenses`
    * below is the full four-source job cost. */
@@ -248,11 +271,14 @@ export interface EstimateFinancials {
   /** Mileage reimbursement (ExpenseService's `mileage_trips`),
    * project-scoped like the assignment costs above. */
   mileageCosts: number;
-  /** expenseItems + mileageCosts + subcontractorCosts + agentCommissionCosts
-   * — the SAME four-source definition ProjectFinancials.totalExpenses
-   * uses, via the shared calculateJobProfit (financialCalculations.ts).
-   * Previously this counted expense rows ONLY, so an estimate's cost and
-   * profit disagreed with its own project's. */
+  /** expenseItems + mileageCosts + teamLabourRemaining, via the shared
+   * calculateJobProfit (financialCalculations.ts) — the same definition
+   * ProjectFinancials.totalExpenses uses.
+   *
+   * subcontractorCosts and agentCommissionCosts are NOT added: they are
+   * buckets of expenseItems, and adding them would count the same
+   * payment twice. teamLabourRemaining is added because it is the part
+   * of a commitment that is NOT yet an expense row. */
   totalExpenses: number;
   grossProfit: number; // revisedTotal - (subcontractorCosts + agentCommissionCosts)
   netProfit: number; // revisedTotal - totalExpenses
@@ -493,7 +519,7 @@ export interface AuditLogEntry {
  * reduce().
  */
 export interface PayableLine {
-  role: "subcontractor" | "agent";
+  role: "subcontractor" | "agent" | "team_member";
   assignmentId: UUID;
   payeeId: UUID; // subcontractorId or agentId
   payeeName: string;
@@ -507,7 +533,14 @@ export interface PayableLine {
  * role, plus the totals. */
 export interface PayablesSummary {
   scope: QueryScope;
+  /** Subcontractor and agent assignments — what A/P has always meant.
+   * Team labour is deliberately NOT here: adding it would silently
+   * change every existing A/P total that re-shapes this field. */
   lines: PayableLine[];
+  /** Team-labour assignments, per assignment, built by the SAME
+   * estimate-aware matching as `lines`. Separate so that surfacing team
+   * labour on /payments cannot move an accounting figure. */
+  teamLines: PayableLine[];
   totalOutstandingSubcontractor: CommittedCost;
   totalOutstandingAgent: CommittedCost;
   totalOutstanding: CommittedCost;

@@ -245,7 +245,7 @@ export function createSupabaseSubcontractorService(
   }
 
   async function assignToProject(input: {
-    companyId: UUID; projectId: UUID; subcontractorId: UUID; contractedAmount: number; notes?: string;
+    companyId: UUID; projectId: UUID; estimateId?: UUID | null; subcontractorId: UUID; contractedAmount: number; notes?: string;
   }): Promise<SubcontractorAssignment> {
     const actorId = await currentUserId();
     const { data, error } = await supabase
@@ -253,6 +253,7 @@ export function createSupabaseSubcontractorService(
       .insert({
         company_id: input.companyId,
         project_id: input.projectId,
+        estimate_id: input.estimateId ?? null,
         subcontractor_id: input.subcontractorId,
         amount: input.contractedAmount,
         notes: input.notes ?? null,

@@ -405,82 +405,96 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
     Project Details
   </h2>
 
-  {/* Project + Client */}
-  <div className="mt-1.5 min-w-0">
-    <div className="text-xl sm:text-2xl font-extrabold leading-tight text-emerald-950 dark:text-white break-words">
-      {project ? (
-        <Link
-          href={`/projects/${project.id}`}
-          className="hover:text-emerald-700 dark:hover:text-emerald-300 hover:underline"
-        >
-          {project.name}
-        </Link>
-      ) : (
-        <span className="text-emerald-600 dark:text-emerald-400">
-          No project
-        </span>
-      )}
-    </div>
+{/* Project + Client */}
+<div className="mt-1.5 min-w-0">
+  {/* Estimate Title — primary */}
+  <div className="text-2xl sm:text-3xl font-extrabold leading-tight text-emerald-950 dark:text-white break-words">
+    {estimate.title || "Untitled Estimate"}
+  </div>
 
-    <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-emerald-800 dark:text-emerald-200">
-      <User className="size-3 shrink-0 text-emerald-700 dark:text-emerald-400" />
+{/* Project + Metadata */}
+<div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+  {/* Project Name */}
+  <div className="font-medium text-emerald-700 dark:text-emerald-300">
+    {project ? (
+      <Link
+        href={`/projects/${project.id}`}
+        className="hover:text-emerald-900 dark:hover:text-white hover:underline"
+      >
+        {project.name}
+      </Link>
+    ) : (
+      <span className="text-emerald-600 dark:text-emerald-400">
+        No project
+      </span>
+    )}
+  </div>
 
-      {client ? (
+  <span className="text-emerald-300 dark:text-emerald-700">·</span>
+
+  {/* Created */}
+  <div>
+    <span className="text-emerald-700 dark:text-emerald-400">
+      Created:
+    </span>{" "}
+    <span className="font-medium text-emerald-950 dark:text-white">
+      {new Date(estimate.createdAt).toLocaleDateString()}
+    </span>
+  </div>
+
+  <span className="text-emerald-300 dark:text-emerald-700">·</span>
+
+  {/* Type */}
+  <div>
+    <span className="text-emerald-700 dark:text-emerald-400">
+      Type:
+    </span>{" "}
+    <span className="font-medium capitalize text-emerald-950 dark:text-white">
+      {estimate.estimateType || "Standard"}
+    </span>
+  </div>
+</div>
+
+{/* Client */}
+<div className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs text-emerald-800 dark:text-emerald-200">
+  <User className="size-3 shrink-0 text-emerald-700 dark:text-emerald-400" />
+
+  {client ? (
+    <>
+      <Link
+        href={`/clients/${client.id}`}
+        className="font-semibold text-emerald-950 dark:text-white hover:underline"
+      >
+        {client.name}
+      </Link>
+
+      {client.phone && (
         <>
-          <Link
-            href={`/clients/${client.id}`}
-            className="font-semibold text-emerald-950 dark:text-white hover:underline"
-          >
-            {client.name}
-          </Link>
-
-          {client.phone && (
-            <>
-              <span>·</span>
-              <a href={`tel:${client.phone}`} className="hover:underline">
-                {client.phone}
-              </a>
-            </>
-          )}
-
-          {client.address && (
-            <>
-              <span>·</span>
-              <span className="max-w-[300px] truncate">
-                {client.address.replace(/\s*\n\s*/g, ", ")}
-              </span>
-            </>
-          )}
+          <span>·</span>
+          <a href={`tel:${client.phone}`} className="hover:underline">
+            {client.phone}
+          </a>
         </>
-      ) : (
-        <span>No client</span>
       )}
-    </div>
-  </div>
 
-  {/* Compact metadata */}
-  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 border-t border-emerald-200 pt-2 text-xs dark:border-emerald-800/80">
-    <div>
-      <span className="text-emerald-700 dark:text-emerald-400">Title:</span>{" "}
-      <span className="font-medium text-emerald-950 dark:text-white">
-        {estimate.title || "—"}
-      </span>
-    </div>
+      {client.address && (
+        <>
+          <span>·</span>
+          <span className="max-w-[300px] truncate">
+            {client.address.replace(/\s*\n\s*/g, ", ")}
+          </span>
+        </>
+      )}
+    </>
+  ) : (
+    <span>No client</span>
+  )}
+</div>
 
-    <div>
-      <span className="text-emerald-700 dark:text-emerald-400">Created:</span>{" "}
-      <span className="font-medium text-emerald-950 dark:text-white">
-        {new Date(estimate.createdAt).toLocaleDateString()}
-      </span>
-    </div>
 
-    <div>
-      <span className="text-emerald-700 dark:text-emerald-400">Type:</span>{" "}
-      <span className="font-medium capitalize text-emerald-950 dark:text-white">
-        {estimate.estimateType || "Standard"}
-      </span>
-    </div>
-  </div>
+</div>
+
+ 
 
   {/* Compact description */}
 {estimate.description && (
@@ -875,6 +889,9 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
               ref={subAgentTabsRef}
               companyId={estimate.companyId}
               projectId={estimate.projectId}
+              // So a payment recorded here is tagged with THIS job and
+              // shows up in its expenses, like every other cost on it.
+              estimateId={estimate.id}
               onChanged={async () => {
                 await loadFinancials();
                 await expensesPanelRef.current?.refresh();

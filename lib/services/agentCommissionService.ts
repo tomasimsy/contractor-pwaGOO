@@ -75,6 +75,12 @@ export interface AgentCommissionService {
   assignToProject(input: {
     companyId: UUID;
     projectId: UUID;
+    /** The estimate this work is for, when the assignment is made from
+     * one. Recorded so the commitment and any payment land on that job
+     * rather than floating at project level, where neither can be
+     * attributed to a single estimate. Optional: assignments made from
+     * a project page legitimately have no estimate. */
+    estimateId?: UUID | null;
     agentId: UUID;
     assignedAmount: number;
     notes?: string;

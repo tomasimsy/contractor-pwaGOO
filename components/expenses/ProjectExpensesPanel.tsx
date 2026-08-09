@@ -259,7 +259,7 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
                     {entry.date}
                     {entry.label ? ` · ${entry.label}` : ""}
                     {expense?.paymentMethod ? ` · ${formatPaymentMethod(expense.paymentMethod)}` : ""}
-                    {expense && expense.paidByType !== "company" ? ` · fronted by ${PAID_BY_LABEL[expense.paidByType].toLowerCase()}` : ""}
+                    {expense && expense.paidByType !== "company" ? ` · paid by ${PAID_BY_LABEL[expense.paidByType].toLowerCase()}` : ""}
                   </div>
                   {entry.description && <div className="mt-0.5 text-xs text-muted-foreground">{entry.description}</div>}
                 </div>

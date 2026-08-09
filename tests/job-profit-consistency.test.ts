@@ -169,3 +169,36 @@ describe("Project and estimate financials agree on cost and profit", () => {
     }
   });
 });
+
+/**
+ * An assigned team member is money this job will cost. It is added as a
+ * REMAINDER (assigned − paid) so the paid part — which is already an
+ * expense row — is never counted a second time. Paying the work moves
+ * dollars from one term to the other and the total must not move.
+ */
+describe("committedRemaining — assigned work as cost, counted once", () => {
+  const base = { expenseItems: 0, mileageCosts: 0, subcontractorCosts: 0, agentCosts: 0 };
+
+  test("an assigned but unpaid commitment counts as cost", () => {
+    const r = calculateJobProfit(1000, { ...base, expenseItems: 100, committedRemaining: 600 });
+    expect(r.totalExpenses).toBe(700);
+    expect(r.netProfit).toBe(300);
+  });
+
+  test("paying that commitment does not change the total", () => {
+    const unpaid = calculateJobProfit(1000, { ...base, expenseItems: 100, committedRemaining: 600 });
+    const paid = calculateJobProfit(1000, { ...base, expenseItems: 700, committedRemaining: 0 });
+    expect(paid.totalExpenses).toBe(unpaid.totalExpenses);
+    expect(paid.netProfit).toBe(unpaid.netProfit);
+  });
+
+  test("a partial payment is counted once", () => {
+    const r = calculateJobProfit(1000, { ...base, expenseItems: 250, committedRemaining: 350 });
+    expect(r.totalExpenses).toBe(600);
+  });
+
+  test("omitting it leaves existing behaviour unchanged", () => {
+    const r = calculateJobProfit(1000, { ...base, expenseItems: 100, mileageCosts: 50 });
+    expect(r.totalExpenses).toBe(150);
+  });
+});

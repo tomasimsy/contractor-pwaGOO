@@ -93,13 +93,24 @@ type SourceLine = {
   sublabel: string;
   amount: number;
   /** Set for assignment-backed lines so the row can offer "Enter
-   * amount" instead of a Pay button it cannot honour. */
+   * amount" instead of a Pay button it cannot honour. `not_due` means
+   * the work is committed but the job is not finished: the line is
+   * shown, because the obligation is real, with Pay disabled until
+   * there is something to settle. */
   state?: PayableState;
   role?: "subcontractor" | "agent";
   payeeId?: string;
   /** Where to go to see it. Payables hang off a project/estimate, not an
    * invoice — invoices are the customer side of the ledger. */
   href: string | null;
+  /** Set when this single line can be paid on its own.
+   *
+   * Team labour needs this: a member assigned to three estimates has
+   * one payee-level balance, so a payout made against the whole balance
+   * belongs to no particular job and lands untagged — the estimate that
+   * was actually worked on then shows none of the cost. Paying the LINE
+   * names the estimate, so the expense lands on it. */
+  payable?: Payable;
 };
 
 type Payable = {
@@ -121,6 +132,20 @@ type Payable = {
    * own assignments so the cost lands on a real job instead of becoming
    * an orphan with no project and no estimate. */
   projectId: string | null;
+  /** The estimate a payout settles, when the whole row is one job. */
+  estimateId?: string | null;
+  /** WHERE THE MONEY GOES, in the order it should be applied.
+   *
+   * One entry per assignment, each carrying the job it belongs to. A
+   * payment is spread across these in order and written as one expense
+   * PER JOB, so it lands on the estimate that was assigned instead of
+   * floating at project level. No prompt: the assignment already says
+   * which job it is for.
+   *
+   * Entries whose assignment predates `estimate_id` being recorded have
+   * a null estimateId — those still write a project-level expense,
+   * because there is genuinely no job on the record to attribute to. */
+  allocation?: Array<{ estimateId: string | null; projectId: string | null; outstanding: number }>;
   expenses: Expense[];
 };
 
@@ -240,65 +265,115 @@ export function NeedsPaymentPanel() {
       const estimateStatus = new Map(estimates.map((e) => [e.id, e.status as string]));
       const projectStatus = new Map(projects.map((p) => [p.id, p.status as string]));
 
-      /* Team labour: getPayablesSummary only builds lines for sub/agent,
-       * so there is no per-assignment breakdown to classify. Classify at
-       * payee level instead — jobComplete is true when ANY of their
-       * assigned jobs is complete, which is the same "should I be
-       * chasing this" question one level up. */
+      /* Team labour, classified PER ASSIGNMENT — the same way sub and
+       * agent already are.
+       *
+       * It used to be judged on the payee's AGGREGATE balance, and that
+       * is what hid older assignments: one member's assignments and
+       * payments were netted together, so an assignment stayed invisible
+       * until a newer one pushed the payee's total above what they had
+       * been paid. getPayablesSummary now builds a line per team
+       * assignment (`teamLines`), with the same estimate-aware matching,
+       * so each is judged on its own. */
       const teamAssignmentRows = await teamAssignmentService.listAssignments(scope);
-      const teamAssignmentsByUser = new Map<string, { complete: boolean }>();
-      for (const a of teamAssignmentRows) {
-        const est = a.estimateId ? estimateStatus.get(a.estimateId) : undefined;
-        const proj = a.projectId ? projectStatus.get(a.projectId) : undefined;
-        const complete =
+      const jobCompleteForAssignment = (estimateId: string | null, projectId: string | null): boolean => {
+        const est = estimateId ? estimateStatus.get(estimateId) : undefined;
+        const proj = projectId ? projectStatus.get(projectId) : undefined;
+        return (
           (!!est && (JOB_COMPLETE_ESTIMATE_STATUSES as readonly string[]).includes(est)) ||
-          (!!proj && (JOB_COMPLETE_PROJECT_STATUSES as readonly string[]).includes(proj));
-        const cur = teamAssignmentsByUser.get(a.userId);
-        teamAssignmentsByUser.set(a.userId, { complete: (cur?.complete ?? false) || complete });
-      }
+          (!!proj && (JOB_COMPLETE_PROJECT_STATUSES as readonly string[]).includes(proj))
+        );
+      };
+      const teamLineById = new Map(payables.teamLines.map((l) => [l.assignmentId, l]));
 
       const teamLabourRows: Payable[] = teamLabour
         .map((b) => {
-          const state = derivePayableState({
-            contracted: b.contracted,
-            paid: b.paid,
-            jobComplete: teamAssignmentsByUser.get(b.payeeId)?.complete ?? false,
-          });
-          if (!isActionablePayable(state)) return null;
+          /* Only the assignments actually worth chasing. Each carries
+             its own line's assigned/paid, so one settled job no longer
+             suppresses another that is still owed. */
+          const theirAssignments = teamAssignmentRows
+            .filter((a) => a.userId === b.payeeId)
+            .map((a) => {
+              const line = teamLineById.get(a.id);
+              const assigned = line?.assigned ?? a.amount;
+              const paid = line?.paid ?? 0;
+              return {
+                a,
+                assigned,
+                paid,
+                outstanding: line ? (line.outstanding as number) : a.amount,
+                state: derivePayableState({
+                  contracted: assigned,
+                  paid,
+                  jobComplete: jobCompleteForAssignment(a.estimateId, a.projectId),
+                }),
+              };
+            })
+            .filter((x) => isActionablePayable(x.state));
+
+          if (theirAssignments.length === 0) return null;
+          const outstanding = theirAssignments.reduce((sum, x) => sum + x.outstanding, 0);
+          const needsAmount = theirAssignments.filter((x) => x.state === "needs_amount").length;
+          const state: PayableState = needsAmount === theirAssignments.length ? "needs_amount" : "unpaid";
           return {
             kind: "team_labour" as PayeeKind,
             payeeId: b.payeeId,
             payeeName: b.payeeName,
-            outstanding: b.outstanding,
-            needsAmount: state === "needs_amount" ? 1 : 0,
-            assigned: b.contracted,
-            paidSoFar: b.paid,
-            /* One line PER ASSIGNMENT so each links to the job it came
-             * from. `amount` is that assignment's ASSIGNED figure, not
-             * its outstanding: getPayablesSummary builds no lines for
-             * team labour, so payments are only known at payee level.
-             * The row header carries the authoritative outstanding. */
-            sources: teamAssignmentRows
-              .filter((a) => a.userId === b.payeeId)
-              .map((a) => ({
-                id: a.id,
-                label: labelFor(
-                  "Assign",
-                  (a.estimateId && estimateOf.get(a.estimateId)) ||
-                    (a.projectId && projectName.get(a.projectId)) ||
-                    null
-                ),
-                sublabel:
-                  state === "needs_amount"
-                    ? "job complete · amount not entered"
-                    : `assigned ${money(a.amount)} · paid ${money(b.paid)} of ${money(b.contracted)}`,
-                amount: a.amount,
-                href: a.estimateId
-                  ? `/estimates/${a.estimateId}`
-                  : a.projectId
-                  ? `/projects/${a.projectId}`
-                  : null,
-              })),
+            // Sum of the ACTIONABLE assignments, not the payee's whole
+            // balance — the row and its breakdown now agree by
+            // construction.
+            outstanding,
+            needsAmount,
+            assigned: theirAssignments.reduce((sum, x) => sum + x.assigned, 0),
+            paidSoFar: theirAssignments.reduce((sum, x) => sum + x.paid, 0),
+            estimateId:
+              theirAssignments.length === 1 ? theirAssignments[0].a.estimateId : null,
+            allocation: theirAssignments.map((x) => ({
+              estimateId: x.a.estimateId,
+              projectId: x.a.projectId,
+              outstanding: x.outstanding,
+            })),
+            /* One line PER ASSIGNMENT, each with its OWN assigned/paid
+             * from getPayablesSummary.teamLines — no longer the payee's
+             * aggregate standing in for every job. */
+            sources: theirAssignments.map((x) => ({
+              id: x.a.id,
+              label: labelFor(
+                "Assign",
+                (x.a.estimateId && estimateOf.get(x.a.estimateId)) ||
+                  (x.a.projectId && projectName.get(x.a.projectId)) ||
+                  null
+              ),
+              sublabel:
+                x.state === "needs_amount"
+                  ? "job complete · amount not entered"
+                  : `assigned ${money(x.assigned)} · paid ${money(x.paid)}`,
+              amount: x.outstanding,
+              href: x.a.estimateId
+                ? `/estimates/${x.a.estimateId}`
+                : x.a.projectId
+                ? `/projects/${x.a.projectId}`
+                : null,
+              state: x.state,
+              /* Pay THIS assignment. Same kind, same payee, same write
+               * — only narrowed to one job, which is what lets the
+               * expense carry an estimate id. */
+              payable: {
+                kind: "team_labour" as PayeeKind,
+                payeeId: b.payeeId,
+                payeeName: b.payeeName,
+                outstanding: x.outstanding,
+                assigned: x.assigned,
+                paidSoFar: x.paid,
+                estimateId: x.a.estimateId,
+                projectId: x.a.projectId ?? b.projectIds[0] ?? null,
+                allocation: [
+                  { estimateId: x.a.estimateId, projectId: x.a.projectId, outstanding: x.outstanding },
+                ],
+                sources: [],
+                expenses: [],
+              } as Payable,
+            })),
             projectId: b.projectIds[0] ?? null,
             expenses: [],
           } as Payable;
@@ -438,6 +513,30 @@ export function NeedsPaymentPanel() {
               state,
               role: b.role as "subcontractor" | "agent",
               payeeId: b.payeeId,
+              /* Pay THIS assignment, so the expense carries the job it
+               * settles. Same reasoning as team labour: a payee working
+               * three jobs has one balance, and a payout made against
+               * the balance belongs to no job in particular. Omitted
+               * when the amount is not known yet — there is nothing to
+               * pay until it is entered. */
+              payable:
+                state === "needs_amount"
+                  ? undefined
+                  : ({
+                      kind: b.role as PayeeKind,
+                      payeeId: b.payeeId,
+                      payeeName: b.payeeName,
+                      outstanding: l.outstanding as number,
+                      assigned: l.assigned,
+                      paidSoFar: l.paid,
+                      estimateId: eid,
+                      projectId: pid ?? b.projectIds[0] ?? null,
+                      allocation: [
+                        { estimateId: eid, projectId: pid, outstanding: l.outstanding as number },
+                      ],
+                      sources: [],
+                      expenses: [],
+                    } as Payable),
             };
           });
 
@@ -456,6 +555,33 @@ export function NeedsPaymentPanel() {
             paidSoFar: lines.reduce((sum, { line }) => sum + line.paid, 0),
             sources,
             projectId: b.projectIds[0] ?? null,
+            /* Tag the payout with the job when it is unambiguous — the
+               payee is being paid for exactly one estimate. Without it
+               the expense lands with a project but no estimate, and the
+               estimate it actually paid for shows none of the cost.
+               Several open jobs cannot be attributed to one without
+               guessing, so those stay untagged. */
+            allocation: lines.map(({ line: l }) => {
+              const job = assignmentJob.get(l.assignmentId);
+              const pid = job?.projectId ?? null;
+              return {
+                estimateId: job?.estimateId ?? (pid ? soleEstimateOfProject.get(pid) ?? null : null),
+                projectId: pid,
+                outstanding: l.outstanding as number,
+              };
+            }),
+            estimateId: (() => {
+              const eids = new Set(
+                sources
+                  .map((src) => {
+                    const job = assignmentJob.get(src.id);
+                    const pid = job?.projectId ?? null;
+                    return job?.estimateId ?? (pid ? soleEstimateOfProject.get(pid) ?? null : null);
+                  })
+                  .filter((e): e is string => !!e)
+              );
+              return eids.size === 1 ? [...eids][0] : null;
+            })(),
             expenses: [],
           } as Payable;
         })
@@ -480,6 +606,34 @@ export function NeedsPaymentPanel() {
   }, [load]);
 
   const total = useMemo(() => rows.reduce((sum, r) => sum + r.outstanding, 0), [rows]);
+
+  /** Spread `value` across a payee's assignments in order, capped at
+   * each one's outstanding. Returns one chunk per job that gets money.
+   *
+   * This is what makes a payout land on the estimate it was assigned
+   * to without asking: the assignment already names the job. Anything
+   * left after every assignment is covered (an overpayment, or a payee
+   * with no assignment at all) stays as one project-level chunk rather
+   * than being silently dropped. */
+  function splitAcrossJobs(
+    row: Payable,
+    value: number
+  ): Array<{ estimateId: string | null; projectId: string | null; amount: number }> {
+    const out: Array<{ estimateId: string | null; projectId: string | null; amount: number }> = [];
+    let left = value;
+    for (const a of row.allocation ?? []) {
+      if (left <= 0) break;
+      const take = Math.min(left, a.outstanding);
+      if (take <= 0) continue;
+      out.push({ estimateId: a.estimateId, projectId: a.projectId ?? row.projectId, amount: take });
+      left -= take;
+    }
+    if (left > 0.004) {
+      // Whatever the assignments could not absorb.
+      out.push({ estimateId: row.estimateId ?? null, projectId: row.projectId, amount: left });
+    }
+    return out;
+  }
 
   function openPay(row: Payable) {
     setPaying(row);
@@ -574,21 +728,27 @@ export function NeedsPaymentPanel() {
         // subcontractor payout performs, typed `labor` and tagged with
         // the member as PAYEE (paidByType stays "company": we are
         // paying them, they did not front anything).
-        await expenseService.create({
-          companyId,
-          projectId: paying.projectId,
-          expenseType: "labor",
-          amount: value,
-          expenseDate: new Date().toISOString().slice(0, 10),
-          vendor: paying.payeeName,
-          payeeType: "employee",
-          payeeId: paying.payeeId,
-          paidByType: "company",
-          paymentMethod: method || null,
-          isPaid: true,
-          reimbursable: false,
-          notes: [reference && `Ref: ${reference}`, notes].filter(Boolean).join(" — ") || null,
-        });
+        // ONE EXPENSE PER JOB. Each chunk carries the estimate its
+        // assignment named, so the cost lands on the job that was
+        // assigned rather than at project level.
+        for (const part of splitAcrossJobs(paying, value)) {
+          await expenseService.create({
+            companyId,
+            projectId: part.projectId,
+            estimateId: part.estimateId,
+            expenseType: "labor",
+            amount: part.amount,
+            expenseDate: new Date().toISOString().slice(0, 10),
+            vendor: paying.payeeName,
+            payeeType: "employee",
+            payeeId: paying.payeeId,
+            paidByType: "company",
+            paymentMethod: method || null,
+            isPaid: true,
+            reimbursable: false,
+            notes: [reference && `Ref: ${reference}`, notes].filter(Boolean).join(" — ") || null,
+          });
+        }
         setNotice(`Paid ${paying.payeeName} ${money(value)}.`);
       } else if (paying.kind === "team_member") {
         if (!settlement || settlement.covered.length === 0) {
@@ -609,24 +769,28 @@ export function NeedsPaymentPanel() {
       } else {
         // ONE PAYMENT = ONE EXPENSE RECORD. This is the same write
         // SubcontractorAssignmentPanel's "Pay" performs.
-        await expenseService.create({
-          companyId,
-          projectId: paying.projectId,
-          expenseType: paying.kind === "subcontractor" ? "subcontractor" : "agent_commission",
-          amount: value,
-          expenseDate: new Date().toISOString().slice(0, 10),
-          vendor: paying.payeeName,
-          payeeType: paying.kind,
-          payeeId: paying.payeeId,
-          paidByType: "company",
-          paymentMethod: method || null,
-          isPaid: true,
-          // The company paid this out; nobody is owed a reimbursement
-          // for it. Passing false explicitly rather than relying on the
-          // derived default keeps the intent readable.
-          reimbursable: false,
-          notes: [reference && `Ref: ${reference}`, notes].filter(Boolean).join(" — ") || null,
-        });
+        // ONE EXPENSE PER JOB — see splitAcrossJobs.
+        for (const part of splitAcrossJobs(paying, value)) {
+          await expenseService.create({
+            companyId,
+            projectId: part.projectId,
+            estimateId: part.estimateId,
+            expenseType: paying.kind === "subcontractor" ? "subcontractor" : "agent_commission",
+            amount: part.amount,
+            expenseDate: new Date().toISOString().slice(0, 10),
+            vendor: paying.payeeName,
+            payeeType: paying.kind,
+            payeeId: paying.payeeId,
+            paidByType: "company",
+            paymentMethod: method || null,
+            isPaid: true,
+            // The company paid this out; nobody is owed a reimbursement
+            // for it. Passing false explicitly rather than relying on the
+            // derived default keeps the intent readable.
+            reimbursable: false,
+            notes: [reference && `Ref: ${reference}`, notes].filter(Boolean).join(" — ") || null,
+          });
+        }
         setNotice(`Paid ${paying.payeeName} ${money(value)}.`);
       }
 
@@ -672,6 +836,14 @@ export function NeedsPaymentPanel() {
       }))
       .sort((a, b) => b.outstanding - a.outstanding);
   })();
+
+  /** Can anything on this row actually be settled right now?
+   *
+   * False only when EVERY assignment behind it is waiting on its job to
+   * finish. Bills and reimbursements have no assignment and are always
+   * payable. Keeps the row visible either way — see isActionablePayable. */
+  const isPayableNow = (p: Payable) =>
+    p.sources.length === 0 || p.sources.some((src) => src.state !== "not_due");
 
   /** "Agent · 1 job", "Team member · 2 expenses" — the per-kind detail
    * that used to be the row's whole subtitle, now one of several. */
@@ -780,7 +952,14 @@ export function NeedsPaymentPanel() {
                         expanding to enter one is the only sensible action.
                         A Pay button here would open a sheet pre-filled
                         with $0.00. */}
-                    {single ? (
+                    {single && !isPayableNow(single) ? (
+                      <span
+                        title="The job isn't complete yet — this becomes payable when it is."
+                        className="cursor-not-allowed rounded-lg border border-input px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground"
+                      >
+                        Not due
+                      </span>
+                    ) : single ? (
                       single.outstanding > 0 ? (
                         <button
                           type="button"
@@ -817,15 +996,20 @@ export function NeedsPaymentPanel() {
                             <span className="text-[10px] font-bold tabular-nums text-warning">
                               {part.outstanding > 0 ? money(part.outstanding) : "needs amount"}
                             </span>
-                            {part.outstanding > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => openPay(part)}
-                                className="ml-auto rounded-md bg-primary px-2.5 py-1 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90"
-                              >
-                                Pay
-                              </button>
-                            )}
+                            {part.outstanding > 0 &&
+                              (isPayableNow(part) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => openPay(part)}
+                                  className="ml-auto rounded-md bg-primary px-2.5 py-1 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90"
+                                >
+                                  Pay
+                                </button>
+                              ) : (
+                                <span className="ml-auto text-[10px] font-semibold text-muted-foreground">
+                                  Not due
+                                </span>
+                              ))}
                           </div>
                         )}
                     {part.sources.length === 0 ? (
@@ -892,6 +1076,34 @@ export function NeedsPaymentPanel() {
                             <span className="shrink-0 text-[11px] font-semibold tabular-nums text-foreground">
                               {money(src.amount)}
                             </span>
+                            {src.payable &&
+                              (src.state === "not_due" ? (
+                                /* Visible, deliberately unpayable: the
+                                   money is committed but the job is not
+                                   finished, so there is nothing to
+                                   settle yet. Showing it disabled keeps
+                                   the commitment in sight without
+                                   inviting an early payout. */
+                                <span
+                                  title="The job isn't complete yet — this becomes payable when it is."
+                                  className="shrink-0 cursor-not-allowed rounded-md border border-input px-2 py-0.5 text-[10px] font-semibold text-muted-foreground"
+                                >
+                                  Not due
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    // The line may sit inside a Link.
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    openPay(src.payable!);
+                                  }}
+                                  className="shrink-0 rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90"
+                                >
+                                  Pay
+                                </button>
+                              ))}
                             {src.href && (
                               <ExternalLink className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
                             )}

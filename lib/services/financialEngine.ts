@@ -375,11 +375,57 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
 
   /** Sum of the expense rows that represent money actually paid to one
    * payee — the ONLY record of a subcontractor/agent payment now that
-   * one payment is one expense record. */
-  function sumPaidToPayee(expenses: Expense[], payeeType: "subcontractor" | "agent", payeeId: UUID): number {
+   * one payment is one expense record.
+   *
+   * `estimateId` narrows it to ONE JOB. An assignment names the estimate
+   * it is for, and so does the payment that settles it, so matching on
+   * the payee alone credits a payment made for one job against an
+   * assignment on another. Pass the assignment's estimate and only
+   * payments naming that same estimate count.
+   *
+   * Omit it to keep the payee-wide sum, which is still correct for
+   * assignments that carry no estimate — there is no job on the record
+   * to match against. */
+  function sumPaidToPayee(
+    expenses: Expense[],
+    payeeType: "subcontractor" | "agent" | "employee",
+    payeeId: UUID,
+    estimateId?: UUID | null
+  ): number {
     return expenses
-      .filter((e) => e.payeeType === payeeType && e.payeeId === payeeId)
+      .filter(
+        (e) =>
+          e.payeeType === payeeType &&
+          e.payeeId === payeeId &&
+          (estimateId === undefined || e.estimateId === estimateId)
+      )
       .reduce((sum, e) => sum + e.amount, 0);
+  }
+
+  /** Split one payee's payments into the part that names a job we have
+   * an assignment for, and the part that does not.
+   *
+   * The two halves are disjoint by construction, which is what keeps a
+   * single payment from being credited twice: an expense naming an
+   * assigned estimate settles THAT assignment and is excluded from the
+   * pool the estimate-less assignments share. */
+  function partitionPaidByJob(
+    expenses: Expense[],
+    payeeType: "subcontractor" | "agent" | "employee",
+    payeeId: UUID,
+    assignedEstimateIds: Set<UUID>
+  ): { perEstimate: Map<UUID, number>; unclaimed: number } {
+    const perEstimate = new Map<UUID, number>();
+    let unclaimed = 0;
+    for (const e of expenses) {
+      if (e.payeeType !== payeeType || e.payeeId !== payeeId) continue;
+      if (e.estimateId && assignedEstimateIds.has(e.estimateId)) {
+        perEstimate.set(e.estimateId, (perEstimate.get(e.estimateId) ?? 0) + e.amount);
+      } else {
+        unclaimed += e.amount;
+      }
+    }
+    return { perEstimate, unclaimed };
   }
 
   /** Outstanding across a set of contracts: what was CONTRACTED via
@@ -390,7 +436,7 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
   function sumOutstandingAgainstContracts(
     contracts: Array<{ payeeId: UUID; contracted: number }>,
     expenses: Expense[],
-    payeeType: "subcontractor" | "agent"
+    payeeType: "subcontractor" | "agent" | "employee"
   ): number {
     const contractedByPayee = new Map<UUID, number>();
     for (const c of contracts) {
@@ -424,13 +470,14 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     if (!project) throw new Error(`getProjectFinancials: no project found for id ${projectId}`);
     const scope: QueryScope = { companyId: project.companyId, projectId };
 
-    const [invoices, approvedChangeOrders, subAssignments, agentAssignments, expenses, mileageTrips] = await Promise.all([
+    const [invoices, approvedChangeOrders, subAssignments, agentAssignments, expenses, mileageTrips, teamAssignments] = await Promise.all([
       invoiceService.listForProject(projectId),
       changeOrderService.listApprovedChangeOrders(projectId),
       subcontractorService.listAssignments(scope),
       agentCommissionService.listAssignments(scope),
       expenseService.listForProject(projectId),
       expenseService.listMileageForProject(projectId),
+      deps.teamAssignmentService?.listAssignments(scope) ?? Promise.resolve([]),
     ]);
 
     // ---------- REVENUE (invoices + payments + approved change orders — never estimates.total) ----------
@@ -578,6 +625,31 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
         outstandingReimbursements
     );
 
+    /* Assigned team labour that has NOT been paid yet — the same
+     * contracted-minus-paid measure the two above use, for the third
+     * kind of person a job commits money to.
+     *
+     * NOT DOUBLE COUNTED, structurally: only the REMAINDER appears
+     * here. Labour actually paid is an `estimate_expenses` row typed
+     * `labor`, already inside `expenseItems`; this adds what is left of
+     * the commitment on top, so the pair equals max(assigned, paid) and
+     * never assigned + paid. The moment the labour is paid, the
+     * expense rises and this falls by the same amount.
+     *
+     * Like the other two it is an OUTSTANDING figure, not a cost:
+     * `totalExpenses` and `netProfit` are untouched, so no historical
+     * profit number moves. */
+    const outstandingTeamLabour = asCommittedCost(
+      sumOutstandingAgainstContracts(
+        (teamAssignments as Array<{ userId: UUID; amount: number }>).map((a) => ({
+          payeeId: a.userId,
+          contracted: a.amount,
+        })),
+        expenses,
+        "employee"
+      )
+    );
+
     // ---------- COST + PROFIT ----------
     // THE shared definition — the identical call getEstimateFinancials
     // makes, so a project and its estimates can never disagree about
@@ -588,6 +660,9 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
       mileageCosts,
       subcontractorCosts,
       agentCosts,
+      // Same term the estimate adds, project-scoped — so a project and
+      // its estimates cannot disagree about what the job costs.
+      committedRemaining: outstandingTeamLabour,
     });
 
     const paymentStatus = derivePaymentStatus(invoicesTotal, amountPaid);
@@ -610,7 +685,10 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
       remainingBalance,
       outstandingSubcontractor,
       outstandingAgent,
-      outstandingTotal: asCommittedCost(outstandingSubcontractor + outstandingAgent),
+      outstandingTeamLabour,
+      outstandingTotal: asCommittedCost(
+        outstandingSubcontractor + outstandingAgent + outstandingTeamLabour
+      ),
       paymentStatus,
       isFullyPaid: amountPaid >= invoicesTotal && invoicesTotal > 0,
     };
@@ -655,15 +733,22 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     const estimate = await estimateService.getById(estimateId, true);
     if (!estimate) throw new Error(`getEstimateFinancials: no estimate found for id ${estimateId}`);
 
-    // Assignments are deliberately NOT fetched: they carry no cost now
-    // that one payment is one expense record, and this estimate's
-    // subcontractor/agent cost comes from its own expense rows below.
-    const [changeOrders, projectInvoices, expenses, mileageTrips] = await Promise.all([
-      changeOrderService.listForEstimate(estimateId),
-      invoiceService.listForProject(estimate.projectId),
-      expenseService.listForEstimate(estimateId),
-      expenseService.listMileageForProject(estimate.projectId),
-    ]);
+    /* Sub/agent assignments are still deliberately NOT fetched: they
+     * belong to a PROJECT, not an estimate, so attributing one to a
+     * single estimate would be a guess. Team assignments are the
+     * exception — `estimate_team_members` carries the estimate id, so
+     * the commitment is unambiguously this job's. */
+    const estScope: QueryScope = { companyId: estimate.companyId, projectId: estimate.projectId };
+    const [changeOrders, projectInvoices, expenses, mileageTrips, teamAssignments, subAssignments, agentAssignments] =
+      await Promise.all([
+        changeOrderService.listForEstimate(estimateId),
+        invoiceService.listForProject(estimate.projectId),
+        expenseService.listForEstimate(estimateId),
+        expenseService.listMileageForProject(estimate.projectId),
+        deps.teamAssignmentService?.listForEstimate(estimateId) ?? Promise.resolve([]),
+        subcontractorService.listAssignments(estScope),
+        agentCommissionService.listAssignments(estScope),
+      ]);
 
     // Void/cancelled invoices never count as revenue — see isRevenueInvoice.
     const invoicesForEstimate = projectInvoices.filter((inv) => inv.estimateId === estimateId && isRevenueInvoice(inv));
@@ -702,6 +787,70 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     const subcontractorCosts = expenseTotals.byType.subcontractor ?? 0;
     const agentCommissionCosts = expenseTotals.byType.agent_commission ?? 0;
 
+    /* ASSIGNED TEAM LABOUR AS COST.
+     *
+     * Committing a member to this estimate at $600 is $600 this job
+     * will cost, whether or not it has been paid yet — so it belongs in
+     * the job's cost, not only in a payables list.
+     *
+     * Counted as a REMAINDER, per member: what was assigned, minus what
+     * has actually been paid to them on this estimate (labour expense
+     * rows, which are already inside `expenseItems`). Paying the labour
+     * therefore shifts the same dollars from `teamLabourRemaining` into
+     * `expenseItems` and `totalExpenses` does not move — which is
+     * exactly the double count that got assignment-committed costing
+     * removed from calculateJobProfit before. */
+    const assignedByMember = new Map<UUID, number>();
+    for (const a of teamAssignments as Array<{ userId: UUID; amount: number }>) {
+      assignedByMember.set(a.userId, (assignedByMember.get(a.userId) ?? 0) + a.amount);
+    }
+    let teamLabourRemaining = 0;
+    let teamLabourAssigned = 0;
+    for (const [userId, assigned] of assignedByMember) {
+      teamLabourAssigned += assigned;
+      teamLabourRemaining += calculateCommittedCostBalance(
+        assigned,
+        sumPaidToPayee(expenses, "employee", userId)
+      ).outstanding;
+    }
+
+    /* Subcontractor and agent commitments, treated exactly the same way.
+     *
+     * ONLY assignments that name THIS estimate count. Sub/agent
+     * assignments belong to a project and most carry no estimate id;
+     * spreading one of those across the project's estimates would
+     * invent cost on jobs it was never promised to. An assignment that
+     * does name the estimate is unambiguous, so it counts — and it is
+     * the same remainder (assigned − paid on this estimate), so a
+     * payment moves the money from this term into `expenseItems`
+     * without changing the total. */
+    const remainderFor = (
+      assignments: Array<{ estimateId: UUID | null; payeeId: UUID; contracted: number }>,
+      payeeType: "subcontractor" | "agent"
+    ): { assigned: number; remaining: number } => {
+      const byPayee = new Map<UUID, number>();
+      for (const a of assignments) {
+        if (a.estimateId !== estimateId) continue;
+        byPayee.set(a.payeeId, (byPayee.get(a.payeeId) ?? 0) + a.contracted);
+      }
+      let assigned = 0;
+      let remaining = 0;
+      for (const [payeeId, amount] of byPayee) {
+        assigned += amount;
+        remaining += calculateCommittedCostBalance(amount, sumPaidToPayee(expenses, payeeType, payeeId)).outstanding;
+      }
+      return { assigned, remaining };
+    };
+
+    const sub = remainderFor(
+      subAssignments.map((a) => ({ estimateId: a.estimateId, payeeId: a.subcontractorId, contracted: a.contractedAmount })),
+      "subcontractor"
+    );
+    const agent = remainderFor(
+      agentAssignments.map((a) => ({ estimateId: a.estimateId, payeeId: a.agentId, contracted: a.assignedAmount })),
+      "agent"
+    );
+
     // THE shared definition — identical call to the one
     // getProjectFinancials makes. This method previously summed ONLY
     // expense rows into `totalExpenses`, so an estimate's cost and
@@ -712,6 +861,7 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
       mileageCosts,
       subcontractorCosts,
       agentCosts: agentCommissionCosts,
+      committedRemaining: teamLabourRemaining + sub.remaining + agent.remaining,
     });
 
     return {
@@ -727,6 +877,12 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
       isFullyPaid: amountPaid >= invoicesTotal && invoicesTotal > 0,
       subcontractorCosts,
       agentCommissionCosts,
+      teamLabourAssigned,
+      teamLabourRemaining,
+      subcontractorAssigned: sub.assigned,
+      subcontractorRemaining: sub.remaining,
+      agentAssigned: agent.assigned,
+      agentRemaining: agent.remaining,
       expenseItems,
       mileageCosts,
       totalExpenses,
@@ -843,6 +999,13 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
       if (projectId && !row.projectIds.includes(projectId)) row.projectIds.push(projectId);
     };
 
+    /** payee -> the jobs they are assigned to, so a payment naming one
+     * of those jobs settles THAT job's assignments and no other. */
+    const assignedJobsByPayee = new Map<UUID, Set<UUID>>();
+    /** payee|estimate ("" for no estimate) -> contracted on that job. */
+    const contractedByJob = new Map<string, number>();
+    const jobKey = (payeeId: UUID, estimateId: UUID | null) => `${payeeId}|${estimateId ?? ""}`;
+
     for (const a of assignments) {
       const payeeId = role === "subcontractor"
         ? (a as { subcontractorId: UUID }).subcontractorId
@@ -862,22 +1025,59 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
       const row = ensure(payeeId, name);
       row.contracted += contracted;
       addProject(row, a.projectId);
+
+      const estimateId = (a as { estimateId: UUID | null }).estimateId ?? null;
+      if (estimateId) {
+        const jobs = assignedJobsByPayee.get(payeeId) ?? new Set<UUID>();
+        jobs.add(estimateId);
+        assignedJobsByPayee.set(payeeId, jobs);
+      }
+      const k = jobKey(payeeId, estimateId);
+      contractedByJob.set(k, (contractedByJob.get(k) ?? 0) + contracted);
     }
 
     // A team member is recorded as payeeType "employee" — there is no
     // "team_member" payee type, and inventing one would mean a new enum
     // value plus a migration.
     const payeeTypeForRole = role === "team_member" ? "employee" : role;
+    /** payee|estimate -> paid against that job. A payment naming a job
+     * the payee is assigned to lands on that job; anything else falls
+     * into the payee's estimate-less bucket, exactly as before. */
+    const paidByJob = new Map<string, number>();
     for (const e of expenses) {
       if (e.expenseType !== expenseType || e.payeeType !== payeeTypeForRole || !e.payeeId) continue;
       const row = ensure(e.payeeId, e.vendor ?? "");
       row.paid += e.amount;
       addProject(row, e.projectId);
+
+      const claimsJob = !!e.estimateId && (assignedJobsByPayee.get(e.payeeId)?.has(e.estimateId) ?? false);
+      const k = jobKey(e.payeeId, claimsJob ? (e.estimateId as UUID) : null);
+      paidByJob.set(k, (paidByJob.get(k) ?? 0) + e.amount);
     }
 
-    for (const row of byPayee.values()) {
-      // Same floored formula every other outstanding figure uses.
-      row.outstanding = calculateCommittedCostBalance(row.contracted, row.paid).outstanding;
+    /* OUTSTANDING IS SUMMED PER JOB, not per payee.
+     *
+     * `contracted` and `paid` stay payee-wide totals — they are what the
+     * UI displays. But the balance is floored per JOB, so labour paid on
+     * one estimate can no longer cancel an assignment on another. Same
+     * calculateCommittedCostBalance as everywhere else; only the buckets
+     * it is applied to are narrower.
+     *
+     * A payee with payments but no assignment has neither a job bucket
+     * nor a contract, and correctly nets to zero outstanding. */
+    for (const [payeeId, row] of byPayee) {
+      const keys = new Set<string>([
+        ...[...contractedByJob.keys()].filter((k) => k.startsWith(`${payeeId}|`)),
+        ...[...paidByJob.keys()].filter((k) => k.startsWith(`${payeeId}|`)),
+      ]);
+      let outstanding = 0;
+      for (const k of keys) {
+        outstanding += calculateCommittedCostBalance(
+          contractedByJob.get(k) ?? 0,
+          paidByJob.get(k) ?? 0
+        ).outstanding;
+      }
+      row.outstanding = outstanding;
     }
     return Array.from(byPayee.values()).sort((a, b) => a.payeeName.localeCompare(b.payeeName));
   }
@@ -1144,9 +1344,10 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
   }
 
   async function getPayablesSummary(scope: QueryScope, filter?: Filter): Promise<PayablesSummary> {
-    const [subAssignmentsAll, agentAssignmentsAll, projectIds, expenses] = await Promise.all([
+    const [subAssignmentsAll, agentAssignmentsAll, teamAssignmentsAll, projectIds, expenses] = await Promise.all([
       subcontractorService.listAssignments(scope),
       agentCommissionService.listAssignments(scope),
+      deps.teamAssignmentService?.listAssignments(scope) ?? Promise.resolve([]),
       resolveProjectIds(scope, filter),
       // Payments live here now — the same rows getProjectFinancials
       // reads, so "outstanding" on this view and on the project view
@@ -1160,43 +1361,101 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     // so "who do we owe" never mixes filtered and unfiltered payees.
     const subAssignments = projectIds ? subAssignmentsAll.filter((a) => projectIds.has(a.projectId)) : subAssignmentsAll;
     const agentAssignments = projectIds ? agentAssignmentsAll.filter((a) => projectIds.has(a.projectId)) : agentAssignmentsAll;
+    const teamAssignments = projectIds
+      ? teamAssignmentsAll.filter((a) => a.projectId && projectIds.has(a.projectId))
+      : teamAssignmentsAll;
 
+    /**
+     * THE ASSIGNMENT'S ESTIMATE DECIDES WHICH PAYMENTS SETTLE IT.
+     *
+     * Assignments are grouped by payee AND job. A payment naming an
+     * estimate settles only the assignments on that estimate — it can no
+     * longer be spread onto a different job just because the same person
+     * is owed there too.
+     *
+     * Within one job, a payee's several assignments still share that
+     * job's payments through the existing allocatePaidAcrossContracts.
+     * Assignments carrying NO estimate keep the old payee-wide pooling,
+     * fed by exactly the payments no assigned job claimed — nothing here
+     * is a new calculation, only a narrower input to the same ones.
+     */
     function buildLines<A>(
       assignments: A[],
-      role: "subcontractor" | "agent",
-      read: (a: A) => { assignmentId: UUID; payeeId: UUID; payeeName: string; contracted: number }
+      role: "subcontractor" | "agent" | "team_member",
+      /** How the payee is recorded on an expense row. A team member is
+       * `employee` — there is no "team_member" payee type. */
+      payeeType: "subcontractor" | "agent" | "employee",
+      read: (a: A) => { assignmentId: UUID; payeeId: UUID; payeeName: string; contracted: number; estimateId: UUID | null }
     ): PayableLine[] {
       const byPayee = new Map<UUID, A[]>();
       for (const a of assignments) {
         const { payeeId } = read(a);
         (byPayee.get(payeeId) ?? byPayee.set(payeeId, []).get(payeeId)!).push(a);
       }
+
       const lines: PayableLine[] = [];
-      for (const [payeeId, group] of byPayee) {
-        const contracted = group.map((a) => read(a).contracted);
-        const allocated = allocatePaidAcrossContracts(contracted, sumPaidToPayee(expenses, role, payeeId));
-        group.forEach((a, i) => {
-          const info = read(a);
-          const balance = calculateCommittedCostBalance(info.contracted, allocated[i]);
-          lines.push({
-            role,
-            assignmentId: info.assignmentId,
-            payeeId: info.payeeId,
-            payeeName: info.payeeName,
-            assigned: asCommittedCost(info.contracted),
-            paid: asCommittedCost(allocated[i]),
-            outstanding: asCommittedCost(balance.outstanding),
-          });
+      const emit = (a: A, paid: number) => {
+        const info = read(a);
+        lines.push({
+          role,
+          assignmentId: info.assignmentId,
+          payeeId: info.payeeId,
+          payeeName: info.payeeName,
+          assigned: asCommittedCost(info.contracted),
+          paid: asCommittedCost(paid),
+          outstanding: asCommittedCost(calculateCommittedCostBalance(info.contracted, paid).outstanding),
         });
+      };
+
+      for (const [payeeId, group] of byPayee) {
+        const assignedEstimateIds = new Set(
+          group.map((a) => read(a).estimateId).filter((id): id is UUID => !!id)
+        );
+        const { perEstimate, unclaimed } = partitionPaidByJob(expenses, payeeType, payeeId, assignedEstimateIds);
+
+        // One job at a time.
+        for (const estimateId of assignedEstimateIds) {
+          const onJob = group.filter((a) => read(a).estimateId === estimateId);
+          const allocated = allocatePaidAcrossContracts(
+            onJob.map((a) => read(a).contracted),
+            perEstimate.get(estimateId) ?? 0
+          );
+          onJob.forEach((a, i) => emit(a, allocated[i]));
+        }
+
+        // Assignments with no job on the record: unchanged behaviour.
+        const jobless = group.filter((a) => !read(a).estimateId);
+        if (jobless.length > 0) {
+          const allocated = allocatePaidAcrossContracts(
+            jobless.map((a) => read(a).contracted),
+            unclaimed
+          );
+          jobless.forEach((a, i) => emit(a, allocated[i]));
+        }
       }
       return lines;
     }
 
-    const subLines = buildLines(subAssignments, "subcontractor", (a) => ({
+    const subLines = buildLines(subAssignments, "subcontractor", "subcontractor", (a) => ({
       assignmentId: a.id, payeeId: a.subcontractorId, payeeName: a.subcontractorName, contracted: a.contractedAmount,
+      estimateId: a.estimateId,
     }));
-    const agentLines = buildLines(agentAssignments, "agent", (a) => ({
+    const agentLines = buildLines(agentAssignments, "agent", "agent", (a) => ({
       assignmentId: a.id, payeeId: a.agentId, payeeName: a.agentName, contracted: a.assignedAmount,
+      estimateId: a.estimateId,
+    }));
+
+    /* Team labour, per assignment, through the SAME builder.
+     *
+     * Without these, /payments has to fall back to the payee's AGGREGATE
+     * balance to decide what a team member is owed — which is why an
+     * older assignment stayed hidden until a newer one lifted the
+     * payee's total above what they had been paid. One line per
+     * assignment lets each be judged on its own, exactly as a
+     * subcontractor's or an agent's already is. */
+    const teamLines = buildLines(teamAssignments, "team_member", "employee", (a) => ({
+      assignmentId: a.id, payeeId: a.userId, payeeName: a.memberName, contracted: a.amount,
+      estimateId: a.estimateId,
     }));
 
     const lines = [...subLines, ...agentLines];
@@ -1206,6 +1465,7 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     return {
       scope,
       lines,
+      teamLines,
       totalOutstandingSubcontractor,
       totalOutstandingAgent,
       totalOutstanding: asCommittedCost(totalOutstandingSubcontractor + totalOutstandingAgent),

@@ -19,7 +19,7 @@ import { useServices } from "@/components/providers/ServicesProvider";
 import { useRefreshableResource } from "./useAsyncResource";
 import type { Agent, AgentAssignment, Expense, PayeeBalance } from "../services";
 
-export function useAgentAssignments(companyId: string, projectId: string) {
+export function useAgentAssignments(companyId: string, projectId: string, estimateId?: string | null) {
   const { agentCommissionService, expenseService, financialEngine } = useServices();
   const [roster, setRoster] = useState<Agent[]>([]);
   const [assignments, setAssignments] = useState<Array<AgentAssignment & { agentName: string }>>([]);
@@ -72,10 +72,10 @@ export function useAgentAssignments(companyId: string, projectId: string) {
 
   const assign = useCallback(
     async (agentId: string, assignedAmount: number, notes?: string) => {
-      await agentCommissionService.assignToProject({ companyId, projectId, agentId, assignedAmount, notes });
+      await agentCommissionService.assignToProject({ companyId, projectId, estimateId: estimateId ?? null, agentId, assignedAmount, notes });
       await refresh();
     },
-    [agentCommissionService, companyId, projectId, refresh]
+    [agentCommissionService, companyId, projectId, estimateId, refresh]
   );
 
   /** Commission = a real cost, so it becomes an expense row — the same

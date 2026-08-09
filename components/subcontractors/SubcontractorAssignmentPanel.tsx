@@ -25,11 +25,19 @@ const money = (n: number) => n.toLocaleString("en-US", { style: "currency", curr
 export function SubcontractorAssignmentPanel({
   companyId,
   projectId,
+  estimateId,
   onChanged,
   compact = false,
 }: {
   companyId: string;
   projectId: string;
+  /** The estimate being viewed. A payment recorded here is tagged with
+   * it, so the cost appears in that estimate's expenses like any other.
+   * The assignment's OWN estimate wins when it has one; this is the
+   * fallback for assignments made at project level. Omitted on project
+   * pages, where no single estimate is implied. */
+  estimateId?: string | null;
+
   /** Called after any cost-affecting mutation (assign/payment/mark
    * final) so the parent can reload its own financial summary
    * (FinancialEngine.getEstimateFinancials) — same onChanged pattern
@@ -40,7 +48,7 @@ export function SubcontractorAssignmentPanel({
   compact?: boolean;
 }) {
   const { roster, assignments, balances, loading, error, assign, recordPayment, markFinal, createSubcontractor, refresh } =
-    useSubcontractorAssignments(companyId, projectId);
+    useSubcontractorAssignments(companyId, projectId, estimateId);
   const [subcontractorId, setSubcontractorId] = useState("");
   const [contractedAmount, setContractedAmount] = useState(0);
   const [paymentAmounts, setPaymentAmounts] = useState<Record<string, number>>({});
@@ -166,7 +174,8 @@ export function SubcontractorAssignmentPanel({
                         a.subcontractorId,
                         a.subcontractorName,
                         paymentAmounts[a.id] ?? 0,
-                        new Date().toISOString().slice(0, 10)
+                        new Date().toISOString().slice(0, 10),
+                        a.estimateId ?? estimateId ?? null
                       );
                       onChanged?.();
                       setPaymentAmounts({ ...paymentAmounts, [a.id]: 0 });
