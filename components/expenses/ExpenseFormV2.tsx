@@ -69,8 +69,8 @@ const GENERAL_EXPENSE_TYPES = EXPENSE_TYPES.filter(
 );
 
 const FIELD =
-  "h-9 w-full rounded-lg border border-input bg-background px-2.5 text-sm text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30";
-const LABEL = "mb-1 block text-xs font-semibold text-foreground";
+  "h-9 w-full rounded-lg bg-neutral-50 px-2.5 text-sm text-neutral-900 outline-none transition-colors focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-red-500/20";
+const LABEL = "mb-1 block text-xs font-semibold text-neutral-700";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
@@ -248,21 +248,21 @@ export function ExpenseFormV2({
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4">
       <form
         onSubmit={handleSubmit}
-        className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-xl border border-border bg-card shadow-lg sm:max-w-lg sm:rounded-xl"
+        className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-xl bg-white shadow-xl sm:max-w-lg sm:rounded-xl"
       >
         {/* The reimbursement case is called out here, not left to be
             inferred from a checkbox further down: it is the difference
             between a plain job cost and one the company now owes
             somebody back, and it was chosen a screen ago. */}
         <header
-          className={`flex items-center justify-between gap-3 border-b px-3 py-2.5 sm:px-4 ${
-            reimbursable ? "border-warning/30 bg-warning/10" : "border-border"
+          className={`flex items-center justify-between gap-3 px-3.5 py-3 sm:px-4 ${
+            reimbursable ? "bg-red-50" : "bg-neutral-50/80"
           }`}
         >
           <div className="flex min-w-0 items-center gap-2">
-            <h2 className="text-sm font-bold text-foreground">Record expense</h2>
+            <h2 className="text-sm font-bold text-neutral-900">Record expense</h2>
             {reimbursable && (
-              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-warning">
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-700">
                 <HandCoins className="size-3" /> Reimbursement
               </span>
             )}
@@ -271,21 +271,21 @@ export function ExpenseFormV2({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-200/60 hover:text-neutral-900"
           >
             <X className="size-4" />
           </button>
         </header>
 
-        <div className="flex-1 space-y-3 overflow-y-auto p-3 sm:p-4">
+        <div className="flex-1 space-y-3.5 overflow-y-auto p-3.5 sm:p-4">
           {error && (
-            <div role="alert" className="rounded-lg bg-danger/10 px-2.5 py-2 text-xs font-medium text-danger">
+            <div role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
               {error}
             </div>
           )}
 
           {reimbursable && (
-            <p className="rounded-lg border border-warning/30 bg-warning/10 px-2.5 py-2 text-xs text-warning">
+            <p className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
               This will be recorded as money the company owes{" "}
               <span className="font-semibold">{paidByLabel ?? "whoever paid"}</span> back.
             </p>
@@ -302,7 +302,7 @@ export function ExpenseFormV2({
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0.00"
-              className="h-11 w-full rounded-lg border border-input bg-background px-2.5 text-base font-semibold text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+              className="h-11 w-full rounded-lg bg-neutral-50 px-3 text-base font-semibold text-neutral-900 outline-none transition-colors focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-red-500/20"
               required
               autoFocus
             />
@@ -317,10 +317,10 @@ export function ExpenseFormV2({
                   type="button"
                   onClick={() => setExpenseType(t)}
                   aria-pressed={expenseType === t}
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                  className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
                     expenseType === t
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-input bg-background text-foreground hover:bg-muted"
+                      ? "bg-red-600 text-white shadow-sm"
+                      : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200/60"
                   }`}
                 >
                   {EXPENSE_TYPE_LABEL[t]}
@@ -330,7 +330,7 @@ export function ExpenseFormV2({
           </div>
 
           {/* ---- OPTIONAL ---- */}
-          <p className="border-t border-border/60 pt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <p className="border-t border-neutral-100 pt-3 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
             Optional
           </p>
 
@@ -355,89 +355,76 @@ export function ExpenseFormV2({
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
               placeholder="Anything worth remembering about this cost"
-              className="w-full rounded-lg border border-input bg-background px-2.5 py-2 text-sm text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+              className="w-full rounded-lg bg-neutral-50 px-3 py-2 text-sm text-neutral-900 outline-none transition-colors focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-red-500/20"
             />
           </label>
 
-          {/* RECEIPT (optional) is intentionally absent, not forgotten.
-              Nothing in this app can store one: there is no expense
-              receipts bucket, no upload route, and all three receipt
-              columns are empty across every live row. Rendering a file
-              input here would accept a photo and silently drop it,
-              which is worse than not offering it. Wiring it up needs a
-              storage bucket plus RLS policies — a migration, which this
-              task excluded. See EXPENSE_FORM.md §8. */}
-          {/* ---- ALREADY ON THIS JOB ----
-              Deliberately at the bottom: it is a check you glance at,
-              not something to read before typing. Amount / what for /
-              who paid — the three fields that tell you whether a cost
-              is already here. */}
+          {/* ---- ALREADY ON THIS JOB ---- */}
           {jobExpenses !== null && jobExpenses.length > 0 && (
-            <div className="border-t border-border/60 pt-3">
+            <div className="border-t border-neutral-100 pt-3">
               <div className="mb-1.5 flex items-baseline justify-between gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                   Already on this job
                 </span>
-                <span className="text-[11px] text-muted-foreground">
+                <span className="text-[11px] font-medium text-neutral-500">
                   {jobExpenses.length} · {money(jobTotal)}
                 </span>
               </div>
-<div className="max-h-40 divide-y divide-border/60 overflow-y-auto rounded-lg border border-border/60">
-  {jobExpenses.map((e) => {
-    const paidByYou = !!e.paidById && e.paidById === paidById;
-    return (
-      <div
-        key={e.id}
-        className="flex items-center justify-between gap-2 px-2 py-1"
-      >
-        {/* Amount */}
-        <span className="w-14 shrink-0 text-[11px] font-semibold tabular-nums text-foreground">
-          {money(e.amount)}
-        </span>
+              <div className="max-h-40 divide-y divide-neutral-100 overflow-y-auto rounded-lg bg-neutral-50">
+                {jobExpenses.map((e) => {
+                  const paidByYou = !!e.paidById && e.paidById === paidById;
+                  return (
+                    <div
+                      key={e.id}
+                      className="flex items-center justify-between gap-2 px-2.5 py-2 text-xs"
+                    >
+                      {/* Amount */}
+                      <span className="w-16 shrink-0 font-semibold tabular-nums text-neutral-900">
+                        {money(e.amount)}
+                      </span>
 
-        {/* Description */}
-        <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
-          {e.description || e.notes || e.vendor || EXPENSE_TYPE_LABEL[e.expenseType]}
-        </span>
+                      {/* Description */}
+                      <span className="min-w-0 flex-1 truncate text-neutral-600">
+                        {e.description || e.notes || e.vendor || EXPENSE_TYPE_LABEL[e.expenseType]}
+                      </span>
 
-        {/* Date */}
-        <span className="shrink-0 text-[11px] text-muted-foreground">
-          {new Date(e.createdAt).toLocaleDateString()}
-        </span>
+                      {/* Date */}
+                      <span className="shrink-0 text-neutral-400">
+                        {new Date(e.createdAt).toLocaleDateString()}
+                      </span>
 
-        {/* Paid by */}
-        <span
-          className={`shrink-0 text-[11px] ${
-            paidByYou
-              ? "font-semibold text-warning"
-              : "text-muted-foreground"
-          }`}
-        >
-          {paidByYou ? "You" : PAID_BY_LABEL[e.paidByType]}
-        </span>
+                      {/* Paid by */}
+                      <span
+                        className={`shrink-0 ${
+                          paidByYou
+                            ? "font-semibold text-red-600"
+                            : "text-neutral-500"
+                        }`}
+                      >
+                        {paidByYou ? "You" : PAID_BY_LABEL[e.paidByType]}
+                      </span>
 
-        {/* Delete button */}
-        <button
-          type="button"
-          onClick={() => handleDelete(e)}
-          disabled={deletingId === e.id}
-          aria-label={`Delete ${money(e.amount)} cost`}
-          title="Delete this cost"
-          className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-40"
-        >
-          <Trash2 className="size-3.5" />
-        </button>
-      </div>
-    );
-  })}
-</div>
-
+                      {/* Delete button */}
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(e)}
+                        disabled={deletingId === e.id}
+                        aria-label={`Delete ${money(e.amount)} cost`}
+                        title="Delete this cost"
+                        className="shrink-0 rounded p-1 text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
 
-        <footer className="flex items-center justify-between gap-3 border-t border-border px-3 py-2.5 sm:px-4">
-          <span className="min-w-0 truncate text-xs text-muted-foreground">
+        <footer className="flex items-center justify-between gap-3 bg-neutral-50 px-3.5 py-3 sm:px-4">
+          <span className="min-w-0 truncate text-xs text-neutral-500">
             {reimbursable
               ? `Reimbursing ${paidByLabel ?? "whoever paid"}`
               : "Company paid — no reimbursement"}
@@ -446,14 +433,14 @@ export function ExpenseFormV2({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
+              className="rounded-lg bg-neutral-200/60 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-200"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+              className="rounded-lg bg-red-600 px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-red-700 disabled:opacity-60"
             >
               {saving ? "Saving…" : "Save expense"}
             </button>
