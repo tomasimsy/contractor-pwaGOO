@@ -1,24 +1,23 @@
 "use client";
 
 /**
-* Real Dashboard content — every figure here is read from
-* FinancialEngine.getCompanyFinancials (revenue, payments, expenses,
-* net profit, outstanding invoices) or from EstimateService/
-* ProjectService's own status fields (pending/signed estimates, active
-* projects). Nothing on this page recomputes a financial number
-* itself — see lib/hooks/useDashboardData.ts's header for the full
-* composition.
-*
-* Company scoping: profile.companyId (this app's data model is one
-* profile -> one company today — see CompanySwitcher.tsx's own doc
-* comment). Date range: a preset picker resolving to the exact
-* DateRange shape getCompanyFinancials already accepts.
-*/
+ * Real Dashboard content — every figure here is read from
+ * FinancialEngine.getCompanyFinancials (revenue, payments, expenses,
+ * net profit, outstanding invoices) or from EstimateService/
+ * ProjectService's own status fields (pending/signed estimates, active
+ * projects). Nothing on this page recomputes a financial number
+ * itself — see lib/hooks/useDashboardData.ts's header for the full
+ * composition.
+ *
+ * Company scoping: profile.companyId (this app's data model is one
+ * profile -> one company today — see CompanySwitcher.tsx's own doc
+ * comment). Date range: a preset picker resolving to the exact
+ * DateRange shape getCompanyFinancials already accepts.
+ */
 import { useState } from "react";
 import Link from "next/link";
 import { useEffect } from "react";
-import { DollarSign, Wallet, FileWarning, Receipt, TrendingUp, FileText, CheckCircle2, FolderKanban, Plus, HandCoins } from
-"lucide-react";
+import { DollarSign, Wallet, FileWarning, Receipt, TrendingUp, FileText, CheckCircle2, FolderKanban, Plus, HandCoins } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -34,8 +33,8 @@ import { getActionablePayables, type ActionablePayables } from "@/lib/services/p
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 export default function DashboardPage() {
-const { profile } = useAuth();
-const [preset, setPreset] = useState<DateRangePreset>("this_year");
+  const { profile } = useAuth();
+  const [preset, setPreset] = useState<DateRangePreset>("this_year");
   const [payables, setPayables] = useState<ActionablePayables | null>(null);
   const services = useServices();
 
@@ -51,59 +50,93 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
       .catch(() => { /* the tile is informational; never break the page */ });
     return () => { active = false; };
   }, [services, profile?.companyId]);
+
   const {
-  loading, error, refresh, financials, projects, estimates, invoices, monthly,
-  pendingEstimatesCount, signedEstimatesCount, activeProjectsCount,
+    loading, error, refresh, financials, projects, estimates, invoices, monthly,
+    pendingEstimatesCount, signedEstimatesCount, activeProjectsCount,
   } = useDashboardData(profile?.companyId, preset);
 
   const isEmpty = !loading && !error && projects.length === 0 && estimates.length === 0 && invoices.length === 0;
 
   return (
-  <PageContainer>
-    <PageHeader title="Dashboard" description={ <span className="hidden sm:inline">
-      Your business at a glance.
-      </span>
-      }
-      actions={
-      <div className="flex items-center gap-2">
-        {/* Entry point for the expense flow that asks who fronted the
-            money before opening the form (/expense-v2). */}
-        <Link href="/expense-v2"
-          className="inline-flex items-center gap-1 rounded-lg bg-emerald-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 sm:text-sm">
-          <Plus className="size-4" /> Expense
-        </Link>
-        <DateRangeFilter value={preset} onChange={setPreset} />
-      </div>}
+    <PageContainer>
+      <PageHeader 
+        title="Dashboard" 
+        description={
+          <span className="hidden sm:inline">
+            Your business at a glance.
+          </span>
+        }
+        actions={
+          <div className="flex items-center gap-2">
+            {/* Entry point for the expense flow that asks who fronted the
+                money before opening the form (/expense-v2). */}
+            <Link 
+              href="/expense-v2"
+              className="inline-flex items-center gap-1 rounded-lg bg-emerald-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 sm:text-sm"
+            >
+              <Plus className="size-4" /> Expense
+            </Link>
+            <DateRangeFilter value={preset} onChange={setPreset} />
+          </div>
+        }
       />
 
       {error && (
-      <div
-        className="mb-4 flex items-center justify-between gap-2 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
-        <span>{error}</span>
-        <button type="button" onClick={()=> refresh()} className="font-medium underline">Retry</button>
-      </div>
+        <div className="mb-4 flex items-center justify-between gap-2 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
+          <span>{error}</span>
+          <button type="button" onClick={() => refresh()} className="font-medium underline">Retry</button>
+        </div>
       )}
 
       {isEmpty ? (
-      <EmptyState icon={FolderKanban} title="Nothing to show yet"
-        description="Once you have projects, estimates, or invoices, your business summary will appear here." />
+        <EmptyState 
+          icon={FolderKanban} 
+          title="Nothing to show yet"
+          description="Once you have projects, estimates, or invoices, your business summary will appear here." 
+        />
       ) : (
-      <div className="space-y-6">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          {loading || !financials ? (
-          Array.from({ length: 8 }).map((_, i) =>
-          <StatCardSkeleton key={i} />)
-          ) : (
-          <>
-            <StatCard label="Revenue" value={money(financials.totalRevenue)} icon={DollarSign} tone="success" />
-            <StatCard label="Payments Received" value={money(financials.totalPaid)} icon={Wallet} />
-            <StatCard label="Outstanding Invoices" value={money(financials.totalOutstanding)} icon={FileWarning}
-              tone={financials.totalOutstanding> 0 ? "warning" : "neutral"}
-              />
-              <StatCard label="Expenses" value={money(financials.totalExpenses)} icon={Receipt} />
-              <StatCard label="Net Profit" value={money(financials.netProfit)} icon={TrendingUp}
-                tone={financials.netProfit>= 0 ? "success" : "danger"}
-                hint={`${financials.profitMargin.toFixed(1)}% margin`}
+        <div className="space-y-6">
+          <div className="grid grid-cols-4 gap-1.5 sm:gap-3">
+            {loading || !financials ? (
+              Array.from({ length: 8 }).map((_, i) => (
+                <StatCardSkeleton key={i} />
+              ))
+            ) : (
+              <>
+                <StatCard 
+                  label="Revenue" 
+                  value={money(financials.totalRevenue)} 
+                  icon={DollarSign} 
+                  tone="success" 
+                  size="sm"
+                />
+                <StatCard 
+                  label="Payments Received" 
+                  value={money(financials.totalPaid)} 
+                  icon={Wallet} 
+                  size="sm"
+                />
+                <StatCard 
+                  label="Outstanding Invoices" 
+                  value={money(financials.totalOutstanding)} 
+                  icon={FileWarning}
+                  tone={financials.totalOutstanding > 0 ? "warning" : "neutral"}
+                  size="sm"
+                />
+                <StatCard 
+                  label="Expenses" 
+                  value={money(financials.totalExpenses)} 
+                  icon={Receipt} 
+                  size="sm"
+                />
+                <StatCard 
+                  label="Net Profit" 
+                  value={money(financials.netProfit)} 
+                  icon={TrendingUp}
+                  tone={financials.netProfit >= 0 ? "success" : "danger"}
+                  hint={`${financials.profitMargin.toFixed(1)}% margin`}
+                  size="sm"
                 />
                 {/* All time, not scoped to the date-range picker above —
                 a "pending estimate" or "active project" count is a
@@ -111,12 +144,28 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
                 cash tiles. Labeled explicitly so that stays a
                 deliberate distinction, not something that reads as
                 a stuck/non-updating card when the date range changes. */}
-                <StatCard label="Pending Estimates" value={String(pendingEstimatesCount)} icon={FileText}
-                  hint="All time" />
-                <StatCard label="Signed Estimates" value={String(signedEstimatesCount)} icon={CheckCircle2}
-                  tone="success" hint="All time" />
-                <StatCard label="Active Projects" value={String(activeProjectsCount)} icon={FolderKanban}
-                  hint="All time" />
+                <StatCard 
+                  label="Pending Estimates" 
+                  value={String(pendingEstimatesCount)} 
+                  icon={FileText}
+                  hint="All time" 
+                  size="sm"
+                />
+                <StatCard 
+                  label="Signed Estimates" 
+                  value={String(signedEstimatesCount)} 
+                  icon={CheckCircle2}
+                  tone="success" 
+                  hint="All time" 
+                  size="sm"
+                />
+                <StatCard 
+                  label="Active Projects" 
+                  value={String(activeProjectsCount)} 
+                  icon={FolderKanban}
+                  hint="All time" 
+                  size="sm"
+                />
                 {/* Money OUT. Deliberately reads getActionablePayables —
                     the SAME function /payments Needs Payment uses — so a
                     tile can never quote a figure the page it links to
@@ -134,20 +183,24 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
                         ? `${payables?.needsAmount} need${payables?.needsAmount === 1 ? "s" : ""} an amount`
                         : "Subs, agents, team, bills"
                     }
+                    size="sm"
                   />
                 </Link>
-          </>
+              </>
+            )}
+          </div>
+
+          {loading ? (
+            <RevenueExpenseChartSkeleton />
+          ) : (
+            <RevenueExpenseChart data={monthly} />
+          )}
+
+          {!loading && (
+            <RecentActivityFeed projects={projects} estimates={estimates} invoices={invoices} />
           )}
         </div>
-
-        {loading ?
-        <RevenueExpenseChartSkeleton /> :
-        <RevenueExpenseChart data={monthly} />}
-
-        {!loading &&
-        <RecentActivityFeed projects={projects} estimates={estimates} invoices={invoices} />}
-      </div>
       )}
-  </PageContainer>
+    </PageContainer>
   );
-  }
+}
