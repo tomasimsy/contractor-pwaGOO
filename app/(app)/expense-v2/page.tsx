@@ -16,8 +16,6 @@ import {
   HandCoins,
   ArrowRight,
   Receipt,
-  PlusCircle,
-  TrendingUp,
 } from "lucide-react";
 
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -376,7 +374,7 @@ function ExpenseV2Content() {
                 return (
                   <div
                     key={e.id}
-                    className="group relative flex flex-col justify-between gap-4 rounded-2xl bg-white p-5 shadow-xs ring-1 ring-neutral-200/70 transition-all hover:shadow-md hover:ring-neutral-300 sm:flex-row sm:items-center"
+                    className="group relative flex flex-col justify-between gap-4 rounded-2xl bg-white p-5 shadow-xs ring-1 ring-red-200/80 transition-all hover:shadow-md hover:ring-red-300 sm:flex-row sm:items-center"
                   >
                     {/* Left Side: Info & Context */}
                     <div className="flex min-w-0 flex-1 items-start gap-4">
