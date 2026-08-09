@@ -93,6 +93,7 @@ import type {
   CompanyFinancials,
   CostEntry,
   PayeeBalance,
+  PayeeRole,
   ProfitSummary,
   PayablesSummary,
   PayableLine,
@@ -134,6 +135,7 @@ import type { AgentCommissionService } from "./agentCommissionService";
 import type { TransactionService } from "./transactionService";
 import { EXPENSE_TYPE_LABEL, type Expense, type ExpenseService } from "./expenseService";
 import type { FilteringService } from "./filteringService";
+import type { TeamAssignmentService } from "./teamAssignmentService";
 
 export interface FinancialEngine {
   /** Composes ChangeOrderService (approved change orders), InvoiceService
@@ -191,7 +193,14 @@ export interface FinancialEngine {
    * Scope-wide: pass `{ companyId }` for the roster pages, or
    * `{ companyId, projectId }` for a single project's panel.
    */
-  getPayeeBalances(scope: QueryScope, role: "subcontractor" | "agent"): Promise<PayeeBalance[]>;
+  /** Per-payee contracted/paid/outstanding.
+   *
+   * "team_member" is the same shape as the other two: assignments come
+   * from estimate_team_members, `paid` from expense rows typed `labor`
+   * and tagged with that person as PAYEE. It reuses the identical
+   * calculateCommittedCostBalance — a third role, not a third formula.
+   * Existing callers passing "subcontractor"/"agent" are unaffected. */
+  getPayeeBalances(scope: QueryScope, role: PayeeRole): Promise<PayeeBalance[]>;
 
   /** Composes TransactionService.getCompanyLedger (cash-basis revenue/
    * expense within range) with lifetime (not period-scoped) outstanding
@@ -314,6 +323,10 @@ export interface FinancialEngineDeps {
   transactionService: TransactionService;
   expenseService: ExpenseService;
   filteringService: FilteringService;
+  /** OPTIONAL. Only getPayeeBalances(scope, "team_member") uses it, so
+   * every existing construction of the engine keeps working untouched.
+   * Without it that role simply returns no assignment-backed rows. */
+  teamAssignmentService?: TeamAssignmentService;
 }
 
 /** Inclusive date-range test on a plain YYYY-MM-DD string. Expense dates
@@ -798,12 +811,15 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     return buildCostEntries(project.companyId, projectId, expenses);
   }
 
-  async function getPayeeBalances(scope: QueryScope, role: "subcontractor" | "agent"): Promise<PayeeBalance[]> {
-    const expenseType = role === "subcontractor" ? "subcontractor" : "agent_commission";
+  async function getPayeeBalances(scope: QueryScope, role: PayeeRole): Promise<PayeeBalance[]> {
+    const expenseType =
+      role === "subcontractor" ? "subcontractor" : role === "agent" ? "agent_commission" : "labor";
     const [assignments, expenses] = await Promise.all([
       role === "subcontractor"
         ? subcontractorService.listAssignments(scope)
-        : agentCommissionService.listAssignments(scope),
+        : role === "agent"
+        ? agentCommissionService.listAssignments(scope)
+        : deps.teamAssignmentService?.listAssignments(scope) ?? Promise.resolve([]),
       scope.projectId
         ? expenseService.listForProject(scope.projectId)
         : expenseService.listForCompany(scope.companyId),
@@ -830,20 +846,30 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     for (const a of assignments) {
       const payeeId = role === "subcontractor"
         ? (a as { subcontractorId: UUID }).subcontractorId
-        : (a as { agentId: UUID }).agentId;
+        : role === "agent"
+        ? (a as { agentId: UUID }).agentId
+        : (a as { userId: UUID }).userId;
       const name = role === "subcontractor"
         ? (a as { subcontractorName: string }).subcontractorName
-        : (a as { agentName: string }).agentName;
+        : role === "agent"
+        ? (a as { agentName: string }).agentName
+        : (a as { memberName: string }).memberName;
       const contracted = role === "subcontractor"
         ? (a as { contractedAmount: number }).contractedAmount
-        : (a as { assignedAmount: number }).assignedAmount;
+        : role === "agent"
+        ? (a as { assignedAmount: number }).assignedAmount
+        : (a as { amount: number }).amount;
       const row = ensure(payeeId, name);
       row.contracted += contracted;
       addProject(row, a.projectId);
     }
 
+    // A team member is recorded as payeeType "employee" — there is no
+    // "team_member" payee type, and inventing one would mean a new enum
+    // value plus a migration.
+    const payeeTypeForRole = role === "team_member" ? "employee" : role;
     for (const e of expenses) {
-      if (e.expenseType !== expenseType || e.payeeType !== role || !e.payeeId) continue;
+      if (e.expenseType !== expenseType || e.payeeType !== payeeTypeForRole || !e.payeeId) continue;
       const row = ensure(e.payeeId, e.vendor ?? "");
       row.paid += e.amount;
       addProject(row, e.projectId);

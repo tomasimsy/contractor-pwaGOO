@@ -226,6 +226,82 @@ export function derivePaymentStatus(totalAmount: number, amountPaid: number): Pa
   return "unpaid";
 }
 
+// ============================================================
+// Payable state — is somebody assigned to a job still owed money?
+// ============================================================
+
+/** Which estimate/project statuses mean "the work is done, so the
+ * people who worked it should be paid".
+ *
+ * Deliberately a single exported constant, because the live data has
+ * drifted: `converted` (3 rows) and `converted_to_invoice` (17) both
+ * exist alongside `completed` (6). Any set that omits one of those
+ * silently never prompts for those jobs. One list, one place to fix. */
+export const JOB_COMPLETE_ESTIMATE_STATUSES = [
+  "completed",
+  "converted",
+  "converted_to_invoice",
+] as const;
+
+export const JOB_COMPLETE_PROJECT_STATUSES = ["completed"] as const;
+
+export type PayableState =
+  /** Work isn't finished — nothing is owed yet, so stay silent. */
+  | "not_due"
+  /** Finished, but nobody has said what they're owed. Cannot be paid
+   * until an amount exists. */
+  | "needs_amount"
+  | "unpaid"
+  | "partial"
+  | "settled";
+
+/**
+ * THE rule for "does this assignment still need my attention".
+ *
+ * A CLASSIFIER, NOT A CALCULATION. It computes no money: `contracted`
+ * and `paid` are handed in exactly as FinancialEngine.getPayeeBalances
+ * produced them. It is the sibling of derivePaymentStatus above — same
+ * shape, same file, same purpose — for the payables side.
+ *
+ * WHY THIS EXISTS. Every payables view previously filtered on
+ * `outstanding > 0`, which silently hides the case that matters most:
+ * somebody assigned to a finished job whose amount was never entered.
+ * `contracted = 0` gives `outstanding = 0`, so the row vanishes at
+ * precisely the moment you need reminding. Verified live: 8 of 25
+ * subcontractor assignments currently carry `amount = 0` and are
+ * invisible in every payables view.
+ *
+ * AMBIGUITY OF ZERO — a known, accepted limitation. A `contracted` of 0
+ * cannot distinguish "not priced yet" from "genuinely costs nothing",
+ * so a deliberately-free assignment on a finished job will keep asking.
+ * The semantically correct fix is a nullable amount (NULL = unpriced,
+ * 0 = priced at zero), which alters an existing NOT NULL column on
+ * three tables — not worth it unless false positives actually appear.
+ * All 8 current cases are genuinely unpriced.
+ */
+export function derivePayableState(input: {
+  contracted: number;
+  paid: number;
+  jobComplete: boolean;
+}): PayableState {
+  const { contracted, paid, jobComplete } = input;
+
+  // Money already moved always matters, finished or not — a part-paid
+  // assignment is a live obligation regardless of job status.
+  if (paid > 0 && paid < contracted) return "partial";
+  if (contracted > 0 && paid >= contracted) return "settled";
+
+  if (!jobComplete) return "not_due";
+  if (contracted <= 0) return paid > 0 ? "settled" : "needs_amount";
+  return paid > 0 ? "partial" : "unpaid";
+}
+
+/** Rows a payables worklist should show: everything except "not yet"
+ * and "done". Kept next to the classifier so no view re-states it. */
+export function isActionablePayable(state: PayableState): boolean {
+  return state === "needs_amount" || state === "unpaid" || state === "partial";
+}
+
 /** The stored, human-driven half of an invoice's status. */
 export type InvoiceLifecycleStatusLike = "draft" | "sent" | "viewed" | "cancelled" | "void";
 /** The full status a user sees — lifecycle plus the payment/date-derived states. */

@@ -1693,6 +1693,15 @@ function createAgentCommissionService(store: InMemoryStore, validation: Validati
     store.agentAssignments.set(assignment.id, assignment);
     return assignment;
   }
+
+  async function updateAgentAssignmentAmount(assignmentId: UUID, assignedAmount: number) {
+    const assignment = store.agentAssignments.get(assignmentId);
+    if (!assignment) throw new Error("Assignment not found");
+    if (assignedAmount < 0) throw new Error("An assigned amount cannot be negative.");
+    const updated = { ...assignment, assignedAmount, updatedAt: now() };
+    store.agentAssignments.set(assignmentId, updated);
+    return updated;
+  }
   async function recordPayment(input: { companyId: UUID; agentId: UUID; assignmentId?: UUID | null; amount: number; paymentType: "commission" | "reimbursement"; paymentDate: string; reimbursementFromAgentId?: UUID | null; reimbursesExpenseId?: UUID | null; changeOrderId?: UUID | null }): Promise<AgentPayment> {
     const payment: AgentPayment & { reimbursesExpenseId: UUID | null } = {
       id: id(),
@@ -1818,7 +1827,8 @@ function createAgentCommissionService(store: InMemoryStore, validation: Validati
 
   return {
     getRoster, createAgent, updateAgent, softDeleteAgent, restoreAgent,
-    listAssignments, assignToProject, recordPayment, listPayments, softDelete, restore, getBalance, getCompensationSummary,
+    listAssignments, assignToProject, updateAssignmentAmount: updateAgentAssignmentAmount,
+    recordPayment, listPayments, softDelete, restore, getBalance, getCompensationSummary,
   };
 }
 

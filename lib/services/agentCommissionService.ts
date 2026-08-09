@@ -90,6 +90,16 @@ export interface AgentCommissionService {
    * so the expense itself (the one place the rest of the app asks "is
    * this still owed?") reflects settlement immediately. ValidationService
    * requires reimbursesExpenseId whenever paymentType is "reimbursement". */
+  /** Set (or correct) what an agent is owed on an assignment.
+   *
+   * Mirrors SubcontractorService.updateAssignmentAmount, which already
+   * existed — agents simply never got the equivalent, so an assignment
+   * created without an amount could not be priced later without
+   * deleting and re-creating it. Additive: no existing method changes,
+   * and `assignedAmount` is the same field getPayeeBalances already
+   * reads as `contracted`. */
+  updateAssignmentAmount(assignmentId: UUID, assignedAmount: number): Promise<AgentAssignment>;
+
   recordPayment(input: {
     companyId: UUID;
     agentId: UUID;

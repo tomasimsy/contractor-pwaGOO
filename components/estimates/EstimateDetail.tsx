@@ -626,10 +626,10 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
 
         {/* Totals – more compact */}
         <div className="mt-3 rounded-xl border border-emerald-200 dark:border-emerald-700/80 bg-white dark:bg-emerald-900/70 p-2 sm:p-3 space-y-1.5 text-xs shadow-xs dark:shadow-inner">
-          <div className="flex justify-between text-emerald-800 dark:text-emerald-200">
+          {/* <div className="flex justify-between text-emerald-800 dark:text-emerald-200">
             <span>Subtotal</span>
             <span className="text-emerald-950 dark:text-white">{formatMoney(estimate.subtotal)}</span>
-          </div>
+          </div> */}
           {estimate.markup !== 0 && (
             <div className="flex justify-between text-emerald-800 dark:text-emerald-200">
               <span>Markup</span>

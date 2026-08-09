@@ -228,6 +228,19 @@ export function createSupabaseAgentCommissionService(
     return rowToAssignment(data as AssignmentRow);
   }
 
+  async function updateAssignmentAmount(assignmentId: UUID, assignedAmount: number): Promise<AgentAssignment> {
+    if (assignedAmount < 0) throw new Error("An assigned amount cannot be negative.");
+    const actorId = await currentUserId();
+    const { data, error } = await supabase
+      .from("estimate_agents")
+      .update({ amount: assignedAmount, updated_by: actorId })
+      .eq("id", assignmentId)
+      .select()
+      .single();
+    if (error) throw new Error(`Failed to update assignment amount: ${error.message}`);
+    return rowToAssignment(data as AssignmentRow);
+  }
+
   async function recordPayment(input: {
     companyId: UUID; agentId: UUID; assignmentId?: UUID | null; amount: number; paymentType: "commission" | "reimbursement";
     paymentDate: string; reimbursementFromAgentId?: UUID | null; reimbursesExpenseId?: UUID | null; changeOrderId?: UUID | null;
@@ -385,6 +398,7 @@ export function createSupabaseAgentCommissionService(
     restoreAgent,
     listAssignments,
     assignToProject,
+    updateAssignmentAmount,
     recordPayment,
     listPayments,
     softDelete,

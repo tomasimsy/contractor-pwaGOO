@@ -14,6 +14,7 @@ import { INVOICE_STATUS_TONE, formatMoney } from "@/components/invoices/invoiceS
 import type { Invoice, InvoiceStatus } from "@/lib/services/invoiceService";
 import type { Project } from "@/lib/services/projectService";
 import type { Client } from "@/lib/services/clientService";
+import type { Estimate } from "@/lib/services/estimateService";
 
 type SortKey = "createdAt" | "dueDate" | "total";
 type StatusFilter = InvoiceStatus | "all";
@@ -30,8 +31,10 @@ const STATUS_OPTIONS: InvoiceStatus[] = [
 ];
 
 function InvoicesListContent() {
-  const { invoiceService, projectService, clientService } = useServices();
+  const { invoiceService, projectService, clientService, estimateService } = useServices();
   const { profile } = useAuth();
+
+  const [estimatesById, setEstimatesById] = useState<Record<string, Estimate>>({});
 
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [projectsById, setProjectsById] = useState<Record<string, Project>>({});
@@ -55,6 +58,7 @@ function InvoicesListContent() {
         invoiceList,
         projectList,
         clientList,
+        estimateList,
       ] = await Promise.all([
         invoiceService.listForCompany({
           companyId: profile.companyId,
@@ -65,9 +69,17 @@ function InvoicesListContent() {
         clientService.list({
           companyId: profile.companyId,
         }),
+        estimateService.list({
+          companyId: profile.companyId,
+        }),
       ]);
 
       setInvoices(invoiceList);
+      setEstimatesById(
+        Object.fromEntries(
+          estimateList.map((e) => [e.id, e])
+        )
+      );
 
       setProjectsById(
         Object.fromEntries(
@@ -95,6 +107,7 @@ function InvoicesListContent() {
     invoiceService,
     projectService,
     clientService,
+    estimateService,
     profile,
   ]);
 
@@ -131,6 +144,12 @@ function InvoicesListContent() {
             ? clientsById[i.clientId]
             : undefined;
 
+        const estId = (i as any).estimateId;
+        const estimate =
+          estId
+            ? estimatesById[estId]
+            : undefined;
+
 
         return (
           i.invoiceNumber
@@ -140,6 +159,9 @@ function InvoicesListContent() {
             .toLowerCase()
             .includes(q) ||
           (client?.name ?? "")
+            .toLowerCase()
+            .includes(q) ||
+          (estimate?.title ?? "")
             .toLowerCase()
             .includes(q)
         );
@@ -169,7 +191,16 @@ function InvoicesListContent() {
     sortKey,
     projectsById,
     clientsById,
+    estimatesById,
   ]);
+
+  const sortedFilteredInvoices = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      const aPaid = a.status === "paid" ? 1 : 0;
+      const bPaid = b.status === "paid" ? 1 : 0;
+      return aPaid - bPaid;
+    });
+  }, [filtered]);
 
     return (
     <PageContainer>
@@ -190,7 +221,7 @@ function InvoicesListContent() {
 
 
       {error && (
-        <div className="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
+        <div className="mb-4 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </div>
       )}
@@ -274,7 +305,7 @@ function InvoicesListContent() {
         </div>
 
 
-      ) : filtered.length === 0 ? (
+      ) : sortedFilteredInvoices.length === 0 ? (
 
         <EmptyState
           icon={Receipt}
@@ -334,17 +365,20 @@ function InvoicesListContent() {
 
               <tbody className="divide-y divide-border">
 
-                {filtered.map((invoice)=>{
+                {sortedFilteredInvoices.map((invoice)=>{
 
 
                   const border =
                     invoice.status==="paid"
-                      ? "border-l-emerald-800"
+                      ? "border-l-emerald-500"
                       : invoice.status==="partially_paid"
-                      ? "border-l-amber-700"
+                      ? "border-l-amber-500"
                       : invoice.status==="overdue"
-                      ? "border-l-rose-700"
-                      : "border-l-slate-700";
+                      ? "border-l-rose-500"
+                      : "border-l-muted-foreground/30";
+
+                  const estId = (invoice as any).estimateId;
+                  const estimateTitle = estId ? estimatesById[estId]?.title : null;
 
 
                   return (
@@ -376,8 +410,24 @@ function InvoicesListContent() {
                       </td>
 
 
-                      <td className="px-4 py-3 text-muted-foreground">
-                        {projectsById[invoice.projectId]?.name ?? "—"}
+                      <td className="px-4 py-3">
+                        {estId ? (
+                          <Link
+                            href={`/estimates/${estId}`}
+                            className="text-sm font-semibold text-foreground hover:text-primary hover:underline"
+                          >
+                            {estimateTitle ?? "Estimate"}
+                          </Link>
+                        ) : (
+                          estimateTitle && (
+                            <div className="text-sm font-semibold text-foreground">
+                              {estimateTitle}
+                            </div>
+                          )
+                        )}
+                        <div className="text-xs text-muted-foreground">
+                          {projectsById[invoice.projectId]?.name ?? "—"}
+                        </div>
                       </td>
 
 
@@ -430,44 +480,22 @@ function InvoicesListContent() {
 
 
           {/* MOBILE CARDS */}
-          <div className="space-y-2 sm:hidden">
+          <div className="space-y-3 sm:hidden">
 
-            {filtered.map((invoice)=>{
+            {sortedFilteredInvoices.map((invoice)=>{
 
+              const cardStyle =
+                invoice.status === "paid"
+                  ? "bg-emerald-500/10 border-emerald-500/30 dark:bg-emerald-500/10 dark:border-emerald-500/20 opacity-75 hover:opacity-100"
+                  : invoice.status === "partially_paid"
+                  ? "bg-amber-500/10 border-amber-500/30 dark:bg-amber-500/10 dark:border-amber-500/20"
+                  : invoice.status === "overdue"
+                  ? "bg-rose-500/10 border-rose-500/30 dark:bg-rose-500/10 dark:border-rose-500/20"
+                  : "bg-card border-border";
 
-              const style =
-                invoice.status==="paid"
-                ? {
-                    strip:"bg-emerald-800",
-                    border:"border-emerald-800",
-                    amount:"text-emerald-700 dark:text-emerald-400",
-                    sub:"text-emerald-100",
-                  }
-
-                : invoice.status==="partially_paid"
-                ? {
-                    strip:"bg-amber-700",
-                    border:"border-amber-700",
-                    amount:"text-amber-700 dark:text-amber-400",
-                    sub:"text-amber-100",
-                  }
-
-                : invoice.status==="overdue"
-                ? {
-                    strip:"bg-rose-700",
-                    border:"border-rose-700",
-                    amount:"text-rose-700 dark:text-rose-400",
-                    sub:"text-rose-100",
-                  }
-
-                : {
-                    strip:"bg-slate-700",
-                    border:"border-slate-700",
-                    amount:"text-foreground",
-                    sub:"text-slate-200",
-                  };
-
-
+              const estId = (invoice as any).estimateId;
+              const estimateTitle = estId ? estimatesById[estId]?.title : null;
+              const projectName = projectsById[invoice.projectId]?.name ?? "—";
 
               return (
 
@@ -476,140 +504,49 @@ function InvoicesListContent() {
                   href={`/invoices/${invoice.id}`}
                   className={`
                     block
-                    overflow-hidden
-                    rounded-lg
-                    border-2
-                    ${style.border}
-                    bg-card
+                    rounded-xl
+                    border
+                    ${cardStyle}
+                    p-4
                     shadow-sm
                     transition
                     hover:shadow-md
                   `}
                 >
 
-
-                  {/* Header */}
-
-                  <div className={`${style.strip} px-3 py-2`}>
-
-                    <div className="flex justify-between gap-3">
-
-
-                      <div className="min-w-0">
-
-                        <div className="truncate text-sm font-bold uppercase text-white">
-
-                          {invoice.invoiceNumber ||
-                           invoice.id.slice(0,8)}
-
-                        </div>
-
-
-                        <div className={`truncate text-[11px] uppercase ${style.sub}`}>
-
-                          {projectsById[invoice.projectId]?.name ??
-                           "NO PROJECT"}
-
-                        </div>
-
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-foreground">
+                        {invoice.invoiceNumber || invoice.id.slice(0,8)}
                       </div>
-
-
-
-                      <div className="text-right">
-
-                        <div className="text-base font-bold text-white">
-
-                          {formatMoney(invoice.total)}
-
-                        </div>
-
-
-                        <div className={`text-[10px] font-bold uppercase ${style.sub}`}>
-
-                          {invoice.status.replace(/_/g," ")}
-
-                        </div>
-
+                      <div className="text-xs text-muted-foreground">
+                        {projectName}
+                        {estimateTitle && ` • ${estimateTitle}`}
                       </div>
-
-
                     </div>
 
+                    <div className="text-right">
+                      <div className="text-sm font-bold text-foreground">
+                        {formatMoney(invoice.total)}
+                      </div>
+                      <div className="mt-1">
+                        <Badge tone={INVOICE_STATUS_TONE[invoice.status]}>
+                          {invoice.status.replace(/_/g, " ")}
+                        </Badge>
+                      </div>
+                    </div>
                   </div>
 
-
-
-
-
-                  {/* Body */}
-
-                  <div className="px-3 py-2">
-
-
-                    <div className="flex justify-between gap-2">
-
-
-                      <div className="truncate text-sm font-semibold uppercase">
-
-                        {
-                          invoice.clientId
-                          ? clientsById[invoice.clientId]?.name ?? "NO CLIENT"
-                          : "NO CLIENT"
-                        }
-
-                      </div>
-
-
-
-                      <div className={`text-xs font-bold uppercase ${style.amount}`}>
-
-                        {
-                          invoice.status==="paid"
-                          ? "PAID"
-                          : invoice.status==="partially_paid"
-                          ? "BALANCE DUE"
-                          : invoice.status==="overdue"
-                          ? "OVERDUE"
-                          : "OPEN"
-                        }
-
-                      </div>
-
-
+                  <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-3 text-xs text-muted-foreground">
+                    <div>
+                      {invoice.clientId ? clientsById[invoice.clientId]?.name ?? "—" : "—"}
                     </div>
-
-
-
                     {invoice.dueDate && (
-
-                      <div className="
-                        mt-2
-                        flex
-                        justify-between
-                        border-t
-                        border-border
-                        pt-2
-                        text-[11px]
-                        uppercase
-                        text-muted-foreground
-                      ">
-
-                        <span>
-                          Due Date
-                        </span>
-
-                        <span className="font-semibold text-foreground">
-                          {invoice.dueDate}
-                        </span>
-
+                      <div>
+                        Due: <span className="font-medium text-foreground">{invoice.dueDate}</span>
                       </div>
-
                     )}
-
-
                   </div>
-
 
                 </Link>
 

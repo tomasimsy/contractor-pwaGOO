@@ -48,12 +48,38 @@ import { PAYMENT_METHODS } from "@/components/payments/paymentMethods";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { supabase } from "@/lib/supabase/client";
-import { calculateExpenseTotals } from "@/lib/services/financialCalculations";
+import {
+  calculateExpenseTotals,
+  derivePayableState,
+  isActionablePayable,
+  JOB_COMPLETE_ESTIMATE_STATUSES,
+  JOB_COMPLETE_PROJECT_STATUSES,
+  type PayableState,
+} from "@/lib/services/financialCalculations";
 import { EXPENSE_TYPE_LABEL, type Expense } from "@/lib/services/expenseService";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
-type PayeeKind = "subcontractor" | "agent" | "team_member" | "bill";
+/** "Materials for Roof-estimate-one", "Assign for Smith Remodel".
+ *
+ * Every breakdown line answers the same question — what is this amount
+ * FOR — in the same shape, so the two kinds of money owed are
+ * distinguishable at a glance:
+ *
+ *   an EXPENSE row      -> "<type> for <job>"    (a cost already incurred)
+ *   an ASSIGNMENT       -> "Assign for <job>"    (work committed, not yet a cost)
+ *
+ * The job name is dropped rather than faked when a row has neither an
+ * estimate nor a project. */
+const labelFor = (what: string, job: string | null) => (job ? `${what} for ${job}` : what);
+
+/** `team_member` = money they FRONTED (a reimbursement, settled by
+ * flipping existing expense rows). `team_labour` = money we owe them
+ * for ASSIGNED WORK (settled by creating an expense, exactly like a
+ * subcontractor payout). Two different debts to the same person, and
+ * two different settlement mechanics — conflating them made labour
+ * unpayable, because the reimbursement branch had no rows to flip. */
+type PayeeKind = "subcontractor" | "agent" | "team_member" | "team_labour" | "bill";
 
 /** One row on the list. `expenses` is populated only for team members —
  * a reimbursement is settled by flipping specific expense rows, so the
@@ -66,6 +92,11 @@ type SourceLine = {
   label: string;
   sublabel: string;
   amount: number;
+  /** Set for assignment-backed lines so the row can offer "Enter
+   * amount" instead of a Pay button it cannot honour. */
+  state?: PayableState;
+  role?: "subcontractor" | "agent";
+  payeeId?: string;
   /** Where to go to see it. Payables hang off a project/estimate, not an
    * invoice — invoices are the customer side of the ledger. */
   href: string | null;
@@ -78,6 +109,14 @@ type Payable = {
   outstanding: number;
   /** Where the outstanding figure comes from. */
   sources: SourceLine[];
+  /** How many of those lines are finished jobs with no amount entered. */
+  needsAmount?: number;
+  /** What was COMMITTED, and what has gone out against it. Only
+   * assignment-backed kinds have these — a bill or a reimbursement was
+   * never "assigned" to anyone, it was simply incurred. Read straight
+   * off the engine's balances; `outstanding` stays the payable figure. */
+  assigned?: number;
+  paidSoFar?: number;
   /** Which project to attach a payout expense to. Taken from the payee's
    * own assignments so the cost lands on a real job instead of becoming
    * an orphan with no project and no estimate. */
@@ -90,10 +129,11 @@ const KIND_META: Record<PayeeKind, { label: string; icon: typeof HardHat }> = {
   subcontractor: { label: "Subcontractor", icon: HardHat },
   agent: { label: "Agent", icon: Briefcase },
   team_member: { label: "Team member", icon: UsersRound },
+  team_labour: { label: "Team labour", icon: UsersRound },
 };
 
 export function NeedsPaymentPanel() {
-  const { financialEngine, expenseService, subcontractorService, agentCommissionService, projectService, estimateService } = useServices();
+  const { financialEngine, expenseService, subcontractorService, agentCommissionService, projectService, estimateService, teamAssignmentService } = useServices();
   const { profile } = useAuth();
   const companyId = profile?.companyId ?? null;
 
@@ -110,6 +150,10 @@ export function NeedsPaymentPanel() {
   const [saving, setSaving] = useState(false);
   /** Which payee rows are expanded. Keyed the same way the list is. */
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  /** assignmentId currently being priced inline, and its draft value. */
+  const [pricing, setPricing] = useState<string | null>(null);
+  const [priceValue, setPriceValue] = useState("");
+  const [pricingBusy, setPricingBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!companyId) return;
@@ -117,10 +161,13 @@ export function NeedsPaymentPanel() {
     setError(null);
     try {
       const scope = { companyId };
-      const [subs, agents, pending, billRows, members, payables, subAssign, agentAssign, projects, estimates] =
+      const [subs, agents, teamLabour, pending, billRows, members, payables, subAssign, agentAssign, projects, estimates] =
         await Promise.all([
           financialEngine.getPayeeBalances(scope, "subcontractor"),
           financialEngine.getPayeeBalances(scope, "agent"),
+          // Team-member LABOUR (assigned work), distinct from their
+          // reimbursements below — same person can be owed both.
+          financialEngine.getPayeeBalances(scope, "team_member"),
           expenseService.listPendingReimbursements(companyId),
           // Unpaid vendor bills — expenses carrying a due date. Same
           // rows the Bills page shows; nothing is recomputed.
@@ -190,6 +237,74 @@ export function NeedsPaymentPanel() {
         byUser.set(e.paidById, list);
       }
 
+      const estimateStatus = new Map(estimates.map((e) => [e.id, e.status as string]));
+      const projectStatus = new Map(projects.map((p) => [p.id, p.status as string]));
+
+      /* Team labour: getPayablesSummary only builds lines for sub/agent,
+       * so there is no per-assignment breakdown to classify. Classify at
+       * payee level instead — jobComplete is true when ANY of their
+       * assigned jobs is complete, which is the same "should I be
+       * chasing this" question one level up. */
+      const teamAssignmentRows = await teamAssignmentService.listAssignments(scope);
+      const teamAssignmentsByUser = new Map<string, { complete: boolean }>();
+      for (const a of teamAssignmentRows) {
+        const est = a.estimateId ? estimateStatus.get(a.estimateId) : undefined;
+        const proj = a.projectId ? projectStatus.get(a.projectId) : undefined;
+        const complete =
+          (!!est && (JOB_COMPLETE_ESTIMATE_STATUSES as readonly string[]).includes(est)) ||
+          (!!proj && (JOB_COMPLETE_PROJECT_STATUSES as readonly string[]).includes(proj));
+        const cur = teamAssignmentsByUser.get(a.userId);
+        teamAssignmentsByUser.set(a.userId, { complete: (cur?.complete ?? false) || complete });
+      }
+
+      const teamLabourRows: Payable[] = teamLabour
+        .map((b) => {
+          const state = derivePayableState({
+            contracted: b.contracted,
+            paid: b.paid,
+            jobComplete: teamAssignmentsByUser.get(b.payeeId)?.complete ?? false,
+          });
+          if (!isActionablePayable(state)) return null;
+          return {
+            kind: "team_labour" as PayeeKind,
+            payeeId: b.payeeId,
+            payeeName: b.payeeName,
+            outstanding: b.outstanding,
+            needsAmount: state === "needs_amount" ? 1 : 0,
+            assigned: b.contracted,
+            paidSoFar: b.paid,
+            /* One line PER ASSIGNMENT so each links to the job it came
+             * from. `amount` is that assignment's ASSIGNED figure, not
+             * its outstanding: getPayablesSummary builds no lines for
+             * team labour, so payments are only known at payee level.
+             * The row header carries the authoritative outstanding. */
+            sources: teamAssignmentRows
+              .filter((a) => a.userId === b.payeeId)
+              .map((a) => ({
+                id: a.id,
+                label: labelFor(
+                  "Assign",
+                  (a.estimateId && estimateOf.get(a.estimateId)) ||
+                    (a.projectId && projectName.get(a.projectId)) ||
+                    null
+                ),
+                sublabel:
+                  state === "needs_amount"
+                    ? "job complete · amount not entered"
+                    : `assigned ${money(a.amount)} · paid ${money(b.paid)} of ${money(b.contracted)}`,
+                amount: a.amount,
+                href: a.estimateId
+                  ? `/estimates/${a.estimateId}`
+                  : a.projectId
+                  ? `/projects/${a.projectId}`
+                  : null,
+              })),
+            projectId: b.projectIds[0] ?? null,
+            expenses: [],
+          } as Payable;
+        })
+        .filter((r): r is Payable => r !== null);
+
       const teamRows: Payable[] = [...byUser.entries()].map(([userId, theirs]) => ({
         kind: "team_member",
         payeeId: userId,
@@ -202,12 +317,17 @@ export function NeedsPaymentPanel() {
           .sort((a, b) => a.expenseDate.localeCompare(b.expenseDate))
           .map((e) => ({
             id: e.id,
-            label:
-              e.description || e.notes || e.vendor || EXPENSE_TYPE_LABEL[e.expenseType],
-            sublabel: [
-              e.expenseDate,
-              e.estimateId ? estimateOf.get(e.estimateId) : e.projectId ? projectName.get(e.projectId) : null,
-            ]
+            // The TYPE, not the description: "Materials for Roof-estimate-one"
+            // says what the money was for at a glance, where a free-text
+            // note may say anything or nothing. The note still shows on
+            // the second line when there is one.
+            label: labelFor(
+              EXPENSE_TYPE_LABEL[e.expenseType],
+              (e.estimateId && estimateOf.get(e.estimateId)) ||
+                (e.projectId && projectName.get(e.projectId)) ||
+                null
+            ),
+            sublabel: [e.expenseDate, e.description || e.notes || e.vendor]
               .filter(Boolean)
               .join(" · "),
             amount: e.amount,
@@ -244,8 +364,15 @@ export function NeedsPaymentPanel() {
           .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""))
           .map((b) => ({
             id: b.id,
-            label: b.billNumber ? `#${b.billNumber}` : EXPENSE_TYPE_LABEL[b.expenseType],
-            sublabel: `due ${b.dueDate}`,
+            label: labelFor(
+              EXPENSE_TYPE_LABEL[b.expenseType],
+              (b.estimateId && estimateOf.get(b.estimateId)) ||
+                (b.projectId && projectName.get(b.projectId)) ||
+                null
+            ),
+            sublabel: [`due ${b.dueDate}`, b.billNumber && `#${b.billNumber}`]
+              .filter(Boolean)
+              .join(" · "),
             amount: b.amount,
             href: b.estimateId
               ? `/estimates/${b.estimateId}`
@@ -257,42 +384,88 @@ export function NeedsPaymentPanel() {
         expenses: theirs,
       }));
 
+      // Job status per assignment — the estimate is the job, the
+      // project is the fallback for assignments made before estimate_id
+      // was recorded.
+      const jobCompleteFor = (assignmentId: string): boolean => {
+        const job = assignmentJob.get(assignmentId);
+        const pid = job?.projectId ?? null;
+        const eid = job?.estimateId ?? (pid ? soleEstimateOfProject.get(pid) ?? null : null);
+        const est = eid ? estimateStatus.get(eid) : undefined;
+        if (est && (JOB_COMPLETE_ESTIMATE_STATUSES as readonly string[]).includes(est)) return true;
+        const proj = pid ? projectStatus.get(pid) : undefined;
+        return !!proj && (JOB_COMPLETE_PROJECT_STATUSES as readonly string[]).includes(proj);
+      };
+
+      /* Classify PER ASSIGNMENT, then roll up.
+       *
+       * Payee-level would be wrong: somebody with one finished job and
+       * one still in progress should only be chased for the finished
+       * one. The engine already gives per-assignment assigned/paid via
+       * getPayablesSummary; derivePayableState only labels them. */
       const payeeRows: Payable[] = [...subs, ...agents]
-        .filter((b) => b.outstanding > 0)
-        .map((b) => ({
-          kind: b.role as PayeeKind,
-          payeeId: b.payeeId,
-          payeeName: b.payeeName,
-          outstanding: b.outstanding,
-          // The engine's own per-assignment lines for this payee. Only
-          // those still owing anything are shown.
-          sources: payables.lines
-            .filter((l) => l.payeeId === b.payeeId && l.role === b.role && l.outstanding > 0)
-            .map((l) => {
-              const job = assignmentJob.get(l.assignmentId);
-              const pid = job?.projectId ?? null;
-              const eid =
-                job?.estimateId ?? (pid ? soleEstimateOfProject.get(pid) ?? null : null);
-              return {
-                id: l.assignmentId,
-                label:
-                  (eid && estimateOf.get(eid)) ||
-                  (pid && projectName.get(pid)) ||
-                  "Unassigned job",
-                sublabel: `assigned ${money(l.assigned)} · paid ${money(l.paid)}`,
-                amount: l.outstanding as number,
-                // Estimate first — that is the job. Project only when the
-                // assignment predates estimate_id being recorded.
-                href: eid ? `/estimates/${eid}` : pid ? `/projects/${pid}` : null,
-              };
-            }),
-          projectId: b.projectIds[0] ?? null,
-          expenses: [],
-        }));
+        .map((b) => {
+          const lines = payables.lines
+            .filter((l) => l.payeeId === b.payeeId && l.role === b.role)
+            .map((l) => ({
+              line: l,
+              state: derivePayableState({
+                contracted: l.assigned,
+                paid: l.paid,
+                jobComplete: jobCompleteFor(l.assignmentId),
+              }),
+            }))
+            .filter(({ state }) => isActionablePayable(state));
+
+          if (lines.length === 0) return null;
+
+          const sources = lines.map(({ line: l, state }) => {
+            const job = assignmentJob.get(l.assignmentId);
+            const pid = job?.projectId ?? null;
+            const eid = job?.estimateId ?? (pid ? soleEstimateOfProject.get(pid) ?? null : null);
+            return {
+              id: l.assignmentId,
+              label: labelFor(
+                "Assign",
+                (eid && estimateOf.get(eid)) || (pid && projectName.get(pid)) || null
+              ),
+              sublabel:
+                state === "needs_amount"
+                  ? "job complete · amount not entered"
+                  : `assigned ${money(l.assigned)} · paid ${money(l.paid)}`,
+              amount: l.outstanding as number,
+              href: eid ? `/estimates/${eid}` : pid ? `/projects/${pid}` : null,
+              state,
+              role: b.role as "subcontractor" | "agent",
+              payeeId: b.payeeId,
+            };
+          });
+
+          return {
+            kind: b.role as PayeeKind,
+            payeeId: b.payeeId,
+            payeeName: b.payeeName,
+            // Only the actionable assignments' outstanding — a payee
+            // owed nothing on a finished job still shows, at $0, with
+            // "needs amount".
+            outstanding: lines.reduce((sum, { line }) => sum + (line.outstanding as number), 0),
+            needsAmount: lines.filter(({ state }) => state === "needs_amount").length,
+            // Only the actionable lines, so the assigned figure and the
+            // outstanding figure describe the same set of jobs.
+            assigned: lines.reduce((sum, { line }) => sum + line.assigned, 0),
+            paidSoFar: lines.reduce((sum, { line }) => sum + line.paid, 0),
+            sources,
+            projectId: b.projectIds[0] ?? null,
+            expenses: [],
+          } as Payable;
+        })
+        .filter((r): r is Payable => r !== null);
 
       setRows(
-        [...billRowsGrouped, ...payeeRows, ...teamRows]
-          .filter((r) => r.outstanding > 0)
+        [...billRowsGrouped, ...payeeRows, ...teamLabourRows, ...teamRows]
+          // Keep rows worth $0 when they are asking for an amount —
+          // that row IS the reminder.
+          .filter((r) => r.outstanding > 0 || (r.needsAmount ?? 0) > 0)
           .sort((a, b) => b.outstanding - a.outstanding)
       );
     } catch (err) {
@@ -336,6 +509,37 @@ export function NeedsPaymentPanel() {
     return { covered, coveredTotal: running, of: paying.expenses.length };
   }, [paying, amount]);
 
+  /** Set the amount on an assignment that was never priced.
+   *
+   * Writes through the assignment services' own amount mutators — the
+   * same field getPayeeBalances reads as `contracted`. Once it lands,
+   * derivePayableState reclassifies the row from "needs_amount" to
+   * "unpaid" on the next load and the Pay button appears. Nothing here
+   * creates an expense: no money has moved yet. */
+  async function savePrice(src: SourceLine) {
+    const value = parseFloat(priceValue) || 0;
+    if (value <= 0) {
+      setError("Enter an amount greater than zero.");
+      return;
+    }
+    setPricingBusy(true);
+    setError(null);
+    try {
+      if (src.role === "subcontractor") {
+        await subcontractorService.updateAssignmentAmount(src.id, value);
+      } else {
+        await agentCommissionService.updateAssignmentAmount(src.id, value);
+      }
+      setPricing(null);
+      setPriceValue("");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save that amount.");
+    } finally {
+      setPricingBusy(false);
+    }
+  }
+
   async function handlePay() {
     if (!paying || !companyId) return;
     const value = parseFloat(amount) || 0;
@@ -365,6 +569,27 @@ export function NeedsPaymentPanel() {
             settlement.covered.length === 1 ? "" : "s"
           }, ${money(settlement.coveredTotal)}.`
         );
+      } else if (paying.kind === "team_labour") {
+        // ONE PAYMENT = ONE EXPENSE RECORD — the same write a
+        // subcontractor payout performs, typed `labor` and tagged with
+        // the member as PAYEE (paidByType stays "company": we are
+        // paying them, they did not front anything).
+        await expenseService.create({
+          companyId,
+          projectId: paying.projectId,
+          expenseType: "labor",
+          amount: value,
+          expenseDate: new Date().toISOString().slice(0, 10),
+          vendor: paying.payeeName,
+          payeeType: "employee",
+          payeeId: paying.payeeId,
+          paidByType: "company",
+          paymentMethod: method || null,
+          isPaid: true,
+          reimbursable: false,
+          notes: [reference && `Ref: ${reference}`, notes].filter(Boolean).join(" — ") || null,
+        });
+        setNotice(`Paid ${paying.payeeName} ${money(value)}.`);
       } else if (paying.kind === "team_member") {
         if (!settlement || settlement.covered.length === 0) {
           setError("That amount doesn't cover any single outstanding expense.");
@@ -415,6 +640,48 @@ export function NeedsPaymentPanel() {
     }
   }
 
+  /* ONE ROW PER PERSON.
+   *
+   * `rows` is built per KIND, because paying an assignment, a bill and a
+   * reimbursement are three different writes. But Agent-1 is one human,
+   * and seeing them listed twice — once for an assignment, once for an
+   * expense — reads as two debts when it is one.
+   *
+   * So the kinds are merged for DISPLAY only. Each part keeps its own
+   * kind, its own sources and its own Pay button, so nothing about the
+   * payment paths changes; the sum is a plain total of the same amounts
+   * already shown. Merging on the displayed name rather than the id is
+   * deliberate: the same person is a different id as an agent than as a
+   * team member, and the name is what makes the duplicate obvious.
+   */
+  const payees = (() => {
+    const byName = new Map<string, Payable[]>();
+    for (const r of rows) {
+      const k = r.payeeName.trim().toLowerCase();
+      byName.set(k, [...(byName.get(k) ?? []), r]);
+    }
+    return [...byName.entries()]
+      .map(([key, parts]) => ({
+        key,
+        payeeName: parts[0].payeeName,
+        parts,
+        outstanding: parts.reduce((s, p) => s + p.outstanding, 0),
+        needsAmount: parts.reduce((s, p) => s + (p.needsAmount ?? 0), 0),
+        assigned: parts.reduce((s, p) => s + (p.assigned ?? 0), 0),
+        paidSoFar: parts.reduce((s, p) => s + (p.paidSoFar ?? 0), 0),
+      }))
+      .sort((a, b) => b.outstanding - a.outstanding);
+  })();
+
+  /** "Agent · 1 job", "Team member · 2 expenses" — the per-kind detail
+   * that used to be the row's whole subtitle, now one of several. */
+  const describePart = (p: Payable) => {
+    const n = p.sources.length;
+    const noun =
+      p.kind === "team_member" ? "expense" : p.kind === "team_labour" ? "assignment" : p.kind === "bill" ? "bill" : "job";
+    return `${KIND_META[p.kind].label} · ${n} ${noun}${n === 1 ? "" : "s"}`;
+  };
+
   return (
     <div>
       <div className="mb-3 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
@@ -426,7 +693,7 @@ export function NeedsPaymentPanel() {
           {money(total)}
         </span>
         <span className="ml-auto text-[11px] text-muted-foreground">
-          {rows.length} {rows.length === 1 ? "payee" : "payees"}
+          {payees.length} {payees.length === 1 ? "payee" : "payees"}
         </span>
       </div>
 
@@ -452,10 +719,14 @@ export function NeedsPaymentPanel() {
         />
       ) : (
         <div className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">
-          {rows.map((r) => {
-            const Icon = KIND_META[r.kind].icon;
-            const key = `${r.kind}:${r.payeeId}`;
+          {payees.map((g) => {
+            const Icon = KIND_META[g.parts[0].kind].icon;
+            const key = g.key;
             const isOpen = expanded.has(key);
+            /* Only a single-kind payee can be paid from the row itself:
+               with two kinds there are two different writes, so the Pay
+               buttons live per part inside the expansion. */
+            const single = g.parts.length === 1 ? g.parts[0] : null;
             return (
               <div key={key}>
                 <div className="flex items-center justify-between gap-2 px-2 py-2.5 sm:px-3">
@@ -472,7 +743,7 @@ export function NeedsPaymentPanel() {
                       })
                     }
                     aria-expanded={isOpen}
-                    aria-label={`${isOpen ? "Hide" : "Show"} what ${r.payeeName} is owed for`}
+                    aria-label={`${isOpen ? "Hide" : "Show"} what ${g.payeeName} is owed for`}
                     className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md py-0.5 text-left hover:bg-muted/50"
                   >
                     {isOpen ? (
@@ -482,39 +753,132 @@ export function NeedsPaymentPanel() {
                     )}
                     <Icon className="size-4 shrink-0 text-primary" aria-hidden="true" />
                     <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold text-foreground">{r.payeeName}</span>
+                      <span className="block truncate text-sm font-semibold text-foreground">{g.payeeName}</span>
                       <span className="block truncate text-[11px] text-muted-foreground">
-                        {KIND_META[r.kind].label} · {r.sources.length}{" "}
-                        {r.kind === "team_member"
-                          ? `expense${r.sources.length === 1 ? "" : "s"}`
-                          : r.kind === "bill"
-                          ? `bill${r.sources.length === 1 ? "" : "s"}`
-                          : `job${r.sources.length === 1 ? "" : "s"}`}
+                        {g.parts.map(describePart).join(" + ")}
+                        {/* What was committed, next to what is left, so
+                            the row says how much of the job's price has
+                            already gone out. */}
+                        {g.assigned > 0 && (
+                          <span> · assigned {money(g.assigned)}</span>
+                        )}
+                        {g.paidSoFar > 0 && <span> · paid {money(g.paidSoFar)}</span>}
+                        {g.needsAmount > 0 && (
+                          <span className="ml-1 font-semibold text-warning">
+                            · {g.needsAmount} need{g.needsAmount === 1 ? "s" : ""} amount
+                          </span>
+                        )}
                       </span>
                     </span>
                   </button>
 
                   <div className="flex shrink-0 items-center gap-2">
-                    <span className="text-sm font-bold tabular-nums text-warning">{money(r.outstanding)}</span>
-                    <button
-                      type="button"
-                      onClick={() => openPay(r)}
-                      className="min-h-9 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
-                    >
-                      Pay Now
-                    </button>
+                    <span className="text-sm font-bold tabular-nums text-warning">
+                      {g.outstanding > 0 ? money(g.outstanding) : "—"}
+                    </span>
+                    {/* Nothing priced yet — there is no amount to pay, so
+                        expanding to enter one is the only sensible action.
+                        A Pay button here would open a sheet pre-filled
+                        with $0.00. */}
+                    {single ? (
+                      single.outstanding > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => openPay(single)}
+                          className="min-h-9 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+                        >
+                          Pay Now
+                        </button>
+                      ) : (
+                        <span className="rounded-lg border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-[11px] font-semibold text-warning">
+                          Needs amount
+                        </span>
+                      )
+                    ) : (
+                      <span className="rounded-lg border border-input px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground">
+                        {g.parts.length} to pay
+                      </span>
+                    )}
                   </div>
                 </div>
 
                 {isOpen && (
                   <div className="border-t border-border/60 bg-muted/30 px-2 py-1.5 sm:px-3">
-                    {r.sources.length === 0 ? (
+                    {g.parts.map((part) => (
+                      <div key={part.kind}>
+                        {/* Only worth a heading when there is more than one
+                            kind to tell apart — and it carries the Pay
+                            button for that kind. */}
+                        {g.parts.length > 1 && (
+                          <div className="flex items-center gap-2 border-b border-border/40 px-1 pb-1 pt-2 first:pt-0.5">
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                              {KIND_META[part.kind].label}
+                            </span>
+                            <span className="text-[10px] font-bold tabular-nums text-warning">
+                              {part.outstanding > 0 ? money(part.outstanding) : "needs amount"}
+                            </span>
+                            {part.outstanding > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => openPay(part)}
+                                className="ml-auto rounded-md bg-primary px-2.5 py-1 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90"
+                              >
+                                Pay
+                              </button>
+                            )}
+                          </div>
+                        )}
+                    {part.sources.length === 0 ? (
                       <p className="py-1.5 text-[11px] text-muted-foreground">
                         No itemised source — this balance comes from payments recorded without an
                         assignment.
                       </p>
                     ) : (
-                      r.sources.map((src) => {
+                      part.sources.map((src) => {
+                        if (src.state === "needs_amount") {
+                          const open = pricing === src.id;
+                          return (
+                            <div key={src.id} className="flex items-center gap-2 px-1 py-1">
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[11px] font-medium text-foreground">
+                                  {src.label}
+                                </span>
+                                <span className="block truncate text-[10px] text-warning">{src.sublabel}</span>
+                              </span>
+                              {open ? (
+                                <>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    inputMode="decimal"
+                                    autoFocus
+                                    value={priceValue}
+                                    onChange={(e) => setPriceValue(e.target.value)}
+                                    placeholder="0.00"
+                                    className="h-7 w-20 shrink-0 rounded-md border border-input bg-background px-1.5 text-[11px] text-foreground outline-none focus-visible:border-ring"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => savePrice(src)}
+                                    disabled={pricingBusy}
+                                    className="shrink-0 rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-primary-foreground disabled:opacity-60"
+                                  >
+                                    Save
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => { setPricing(src.id); setPriceValue(""); setError(null); }}
+                                  className="shrink-0 rounded-md border border-warning/40 bg-warning/10 px-2 py-1 text-[11px] font-semibold text-warning"
+                                >
+                                  Enter amount
+                                </button>
+                              )}
+                            </div>
+                          );
+                        }
                         const body = (
                           <>
                             <span className="min-w-0 flex-1">
@@ -548,6 +912,8 @@ export function NeedsPaymentPanel() {
                         );
                       })
                     )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

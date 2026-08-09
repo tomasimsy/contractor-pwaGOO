@@ -161,6 +161,7 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
       agentCommissionService,
       transactionService: inMemory.transactionService,
       filteringService: inMemory.filteringService,
+      teamAssignmentService,
     });
     // After financialEngine — AP is a re-shape of getPayablesSummary.
     const accountsPayableService = createAccountsPayableService({ financialEngine });

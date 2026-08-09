@@ -16,7 +16,8 @@
 */
 import { useState } from "react";
 import Link from "next/link";
-import { DollarSign, Wallet, FileWarning, Receipt, TrendingUp, FileText, CheckCircle2, FolderKanban, Plus } from
+import { useEffect } from "react";
+import { DollarSign, Wallet, FileWarning, Receipt, TrendingUp, FileText, CheckCircle2, FolderKanban, Plus, HandCoins } from
 "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -27,12 +28,29 @@ import { StatCard, StatCardSkeleton } from "@/components/dashboard/StatCard";
 import { DateRangeFilter, type DateRangePreset } from "@/components/dashboard/DateRangeFilter";
 import { RevenueExpenseChart, RevenueExpenseChartSkeleton } from "@/components/dashboard/RevenueExpenseChart";
 import { RecentActivityFeed } from "@/components/dashboard/RecentActivityFeed";
+import { useServices } from "@/components/providers/ServicesProvider";
+import { getActionablePayables, type ActionablePayables } from "@/lib/services/payablesWorklist";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 export default function DashboardPage() {
 const { profile } = useAuth();
 const [preset, setPreset] = useState<DateRangePreset>("this_year");
+  const [payables, setPayables] = useState<ActionablePayables | null>(null);
+  const services = useServices();
+
+  // Not period-scoped, on purpose: a debt does not stop existing
+  // because the date filter above moved. getPayablesSummary is called
+  // without a dateRange for the same reason.
+  useEffect(() => {
+    const companyId = profile?.companyId;
+    if (!companyId) return;
+    let active = true;
+    getActionablePayables(services, companyId)
+      .then((p) => { if (active) setPayables(p); })
+      .catch(() => { /* the tile is informational; never break the page */ });
+    return () => { active = false; };
+  }, [services, profile?.companyId]);
   const {
   loading, error, refresh, financials, projects, estimates, invoices, monthly,
   pendingEstimatesCount, signedEstimatesCount, activeProjectsCount,
@@ -99,6 +117,25 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
                   tone="success" hint="All time" />
                 <StatCard label="Active Projects" value={String(activeProjectsCount)} icon={FolderKanban}
                   hint="All time" />
+                {/* Money OUT. Deliberately reads getActionablePayables —
+                    the SAME function /payments Needs Payment uses — so a
+                    tile can never quote a figure the page it links to
+                    disagrees with. Not A/P: that is lifetime and
+                    subcontractor+agent only, which answers a different
+                    question (see payablesWorklist's header). */}
+                <Link href="/payments" className="contents">
+                  <StatCard
+                    label="Owed To People"
+                    value={money(payables?.total ?? 0)}
+                    icon={HandCoins}
+                    tone={(payables?.total ?? 0) > 0 ? "warning" : "neutral"}
+                    hint={
+                      (payables?.needsAmount ?? 0) > 0
+                        ? `${payables?.needsAmount} need${payables?.needsAmount === 1 ? "s" : ""} an amount`
+                        : "Subs, agents, team, bills"
+                    }
+                  />
+                </Link>
           </>
           )}
         </div>

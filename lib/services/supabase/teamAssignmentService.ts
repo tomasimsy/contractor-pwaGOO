@@ -167,11 +167,68 @@ export function createSupabaseTeamAssignmentService(
     return rowToAssignment(data as Row);
   }
 
+  /**
+   * Labour ALREADY PAID to this member on this estimate.
+   *
+   * Paying assigned labour writes one `estimate_expenses` row typed
+   * `labor` and tagged with the payee — the same shape a subcontractor
+   * payout uses. So "have they been paid?" is a question about expense
+   * rows, and it is read here rather than stored, keeping this table
+   * free of balances exactly as the interface describes.
+   *
+   * Read-only. This service still writes nothing to expenses.
+   */
+  async function labourPaidTo(estimateId: UUID, userId: UUID): Promise<number> {
+    const { data, error } = await supabase
+      .from("estimate_expenses")
+      .select("amount")
+      .eq("estimate_id", estimateId)
+      .eq("expense_type", "labor")
+      .eq("payee_type", "employee")
+      .eq("payee_id", userId)
+      .eq("is_paid", true)
+      .is("deleted_at", null);
+    if (error) throw new Error(`Failed to check labour payments: ${error.message}`);
+    return (data ?? []).reduce((sum, r) => sum + Number(r.amount ?? 0), 0);
+  }
+
   async function softDelete(assignmentId: UUID, reason: string): Promise<void> {
     const validation = validationService.validateDeleteReason(reason);
     if (!validation.valid) {
       throw new Error(validation.issues[0]?.message ?? "A delete reason is required.");
     }
+
+    /* PAID WORK CANNOT BE UNASSIGNED.
+     *
+     * Once money has gone out against an assignment, the assignment is
+     * the only record of what that payment was FOR. Removing it would
+     * leave a paid labour expense pointing at nothing — the job would
+     * still show the cost, with no way to see who was committed to it
+     * or at what price.
+     *
+     * The expense row is deliberately left alone either way: money that
+     * actually moved is never erased by an assignment edit. So the
+     * guard is here, on the assignment, and the caller is told what to
+     * do instead — reverse the payment first, if it was a mistake.
+     */
+    const { data: existing, error: readErr } = await supabase
+      .from("estimate_team_members")
+      .select("estimate_id, user_id")
+      .eq("id", assignmentId)
+      .is("deleted_at", null)
+      .single();
+    if (readErr) throw new Error(`Failed to load assignment: ${readErr.message}`);
+
+    const paid = await labourPaidTo(existing.estimate_id as UUID, existing.user_id as UUID);
+    if (paid > 0) {
+      throw new Error(
+        `This assignment has already been paid (${paid.toLocaleString("en-US", {
+          style: "currency",
+          currency: "USD",
+        })} in labour). Delete or reverse that payment first if it was recorded in error.`
+      );
+    }
+
     const actorId = await currentUserId();
     const { error } = await supabase
       .from("estimate_team_members")

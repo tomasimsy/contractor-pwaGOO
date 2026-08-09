@@ -202,10 +202,13 @@ export interface CostEntry {
  * from EXPENSE ROWS — one payment is one expense record, so there is no
  * separate payment table to consult and no way for the two to disagree.
  * Assignments contribute no cost; only `paid` does. */
+/** Who the company can owe money to against an assignment. */
+export type PayeeRole = "subcontractor" | "agent" | "team_member";
+
 export interface PayeeBalance {
   payeeId: UUID;
   payeeName: string;
-  role: "subcontractor" | "agent";
+  role: PayeeRole;
   /** Sum of this payee's assignment amounts in scope. */
   contracted: number;
   /** Sum of this payee's expense rows in scope — the real cost. */

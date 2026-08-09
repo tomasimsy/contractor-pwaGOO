@@ -187,18 +187,20 @@ function ExpenseV2Content() {
 
   return (
     <PageContainer>
-      <PageHeader
-        title="Reports"
-        description="Tap a job, then say who paid."
-        actions={
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted sm:text-sm"
-          >
-            <ArrowLeft className="size-4" /> Dashboard
-          </Link>
-        }
-      />
+<div className="hidden sm:block">
+  <PageHeader
+    title="Record Expenses"
+    description="Tap a job, then say who paid."
+    actions={
+      <Link
+        href="/dashboard"
+        className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted sm:text-sm"
+      >
+        <ArrowLeft className="size-4" /> Dashboard
+      </Link>
+    }
+  />
+</div>
 
       {error && (
         <div className="mb-3 flex items-center justify-between gap-2 rounded-lg bg-danger/10 px-3 py-2 text-xs text-danger sm:text-sm">
@@ -215,7 +217,7 @@ function ExpenseV2Content() {
       )}
 
       {loading ? (
-        <div className="mb-3 h-11 animate-pulse rounded-lg border border-border bg-card" />
+        <div className="m b-3 h-11 animate-pulse rounded-lg border border-border bg-card" />
       ) : (
         <div
           className={`mb-3 flex items-center gap-2 rounded-lg border px-3 py-2 ${
@@ -297,7 +299,7 @@ function ExpenseV2Content() {
 
                   <div className="flex flex-col items-end justify-between border-t border-border/40 pt-3 sm:border-t-0 sm:pt-0 gap-3">
                     <span className="text-sm font-extrabold text-foreground sm:text-base">
-                      {money(0)}
+                      {/* {money(0)} */}
                     </span>
                     <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:w-auto">
                       {ENTRY_CHOICES.map((c) => (

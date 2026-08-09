@@ -299,7 +299,7 @@ function InvoiceDetailContent() {
             )}
 
             <div className="mt-4 space-y-1 rounded-lg bg-muted/50 px-4 py-3 text-sm">
-              <div className="flex justify-between text-muted-foreground"><span>Subtotal</span><span>{formatMoney(invoice.subtotal)}</span></div>
+              {/* <div className="flex justify-between text-muted-foreground"><span>Subtotal</span><span>{formatMoney(invoice.subtotal)}</span></div> */}
               {invoice.tax !== 0 && <div className="flex justify-between text-muted-foreground"><span>Tax</span><span>{formatMoney(invoice.tax)}</span></div>}
               <div className="flex justify-between border-t border-border pt-1 font-semibold text-foreground"><span>Invoice total</span><span>{formatMoney(invoice.total)}</span></div>
               {invoice.hasTotalDrift && (

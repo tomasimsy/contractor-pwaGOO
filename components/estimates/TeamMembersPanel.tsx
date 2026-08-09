@@ -46,7 +46,7 @@
  * schema change.
  */
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from "react";
-import { UsersRound, Plus, Trash2 } from "lucide-react";
+import { UsersRound, Plus, Trash2, Lock } from "lucide-react";
 import { CreateOrSelect, type DirectoryOption } from "@/components/shared/CreateOrSelect";
 import { createCompanyUserDirectory } from "@/components/expenses/directories";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -66,6 +66,9 @@ type MemberCard = TeamAssignmentWithName & {
   personallyPaid: number;
   reimbursed: number;
   pending: number;
+  /** Assigned labour that has actually been PAID to them on this
+   * estimate. Non-zero locks the assignment: see handleRemove. */
+  labourPaid: number;
 };
 
 export const TeamMembersPanel = forwardRef<
@@ -113,6 +116,16 @@ export const TeamMembersPanel = forwardRef<
         byUser.set(e.paidById, list);
       }
 
+      /* Labour PAID OUT to a member — the company paying them for
+       * assigned work, which is the opposite direction to the
+       * personally-paid rows above and so a separate grouping. Same
+       * expense rows a labour payout writes, read back. */
+      const labourByUser = new Map<string, number>();
+      for (const e of expenses) {
+        if (e.expenseType !== "labor" || e.payeeType !== "employee" || !e.payeeId || !e.isPaid) continue;
+        labourByUser.set(e.payeeId, (labourByUser.get(e.payeeId) ?? 0) + e.amount);
+      }
+
       setCards(
         assignments.map((a) => {
           const theirs = byUser.get(a.userId) ?? [];
@@ -124,6 +137,7 @@ export const TeamMembersPanel = forwardRef<
               .reduce((sum, e) => sum + e.amount, 0),
             // The shared rule, not a local re-filter.
             pending: calculateExpenseTotals(theirs).outstandingReimbursements,
+            labourPaid: labourByUser.get(a.userId) ?? 0,
           };
         })
       );
@@ -171,6 +185,16 @@ export const TeamMembersPanel = forwardRef<
   }
 
   async function handleRemove(card: MemberCard) {
+    /* Mirrors the guard in TeamAssignmentService.softDelete, which is
+       the authoritative one. Repeated here only so the user gets a
+       plain sentence instead of a thrown error after a confirm. */
+    if (card.labourPaid > 0) {
+      setError(
+        `${card.memberName} has already been paid ${money(card.labourPaid)} for this assignment. ` +
+          `Reverse that payment first if it was recorded in error.`
+      );
+      return;
+    }
     if (!window.confirm(`Remove ${card.memberName} from this estimate? Their recorded expenses are not affected.`)) return;
     setBusyId(card.id);
     setError(null);
@@ -298,15 +322,27 @@ export const TeamMembersPanel = forwardRef<
                     <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{c.notes}</div>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleRemove(c)}
-                  disabled={busyId === c.id}
-                  aria-label={`Remove ${c.memberName}`}
-                  className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-40"
-                >
-                  <Trash2 className="size-3.5" />
-                </button>
+                {/* Paid work is locked: the assignment is the only record
+                    of what the labour payment was for, so it outlives the
+                    ability to unassign. */}
+                {c.labourPaid > 0 ? (
+                  <span
+                    title={`Paid ${money(c.labourPaid)} — reverse that payment before unassigning.`}
+                    className="flex shrink-0 items-center gap-1 rounded border border-border px-1.5 py-1 text-[10px] font-semibold text-muted-foreground"
+                  >
+                    <Lock className="size-3" aria-hidden="true" /> Paid
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleRemove(c)}
+                    disabled={busyId === c.id}
+                    aria-label={`Remove ${c.memberName}`}
+                    className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-40"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">

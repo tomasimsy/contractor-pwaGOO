@@ -500,6 +500,18 @@ function AccountingContent() {
         )}
       </Section>
 
+      {/* A/P and the Needs Payment list answer different questions and
+          will show different numbers. Said out loud here so the gap
+          reads as design rather than drift — measured live at $695.20
+          vs $2,708.33, entirely scope. */}
+      <p className="-mt-2 mb-4 text-[11px] text-muted-foreground">
+        A/P is <span className="font-medium text-foreground">lifetime</span> and covers
+        subcontractors and agents only, so it ignores the date filter above.{" "}
+        <Link href="/payments" className="text-primary hover:underline">Needs Payment</Link>{" "}
+        shows a different total: it adds team labour, vendor bills and reimbursements, and hides
+        assignments on jobs that aren&apos;t finished yet.
+      </p>
+
       {/* ---------- 5. RECONCILIATION ----------
           Deliberately not built. There is no bank feed, no imported
           statement and no cleared/uncleared flag anywhere in the schema,
