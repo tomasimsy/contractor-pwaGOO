@@ -22,6 +22,7 @@
  *     any write, same as a real implementation would.
  */
 import { createFinancialEngine, type FinancialEngine } from "../financialEngine";
+import { DEFAULT_ESTIMATE_TERMS_TEMPLATE, type EstimateTermsTemplateKey } from "../../estimateTerms";
 import { createFilteringService, type FilteringService } from "../filteringService";
 import { createValidationService, type ValidationService } from "../validationService";
 import { createReconciliationService, type ReconciliationLogSink, type MutationTrigger } from "../reconciliationService";
@@ -478,6 +479,7 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
     companyId: UUID; projectId: UUID; clientId: UUID | null; title?: string; description?: string;
     lineItems: Omit<EstimateLineItem, "id" | "total">[]; markup: number; discount: number; taxRate: number; depositAmount?: number;
     estimateType?: "standard" | "roofing";
+    termsTemplate?: EstimateTermsTemplateKey;
   }): Promise<Estimate> {
     for (const li of input.lineItems) {
       const check = validation.validateLineItem(li);
@@ -505,6 +507,7 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
       total,
       depositAmount: input.depositAmount ?? 0,
       estimateType: input.estimateType ?? "standard",
+      termsTemplate: input.termsTemplate ?? DEFAULT_ESTIMATE_TERMS_TEMPLATE,
       signature: null,
       customerToken: null,
       createdBy: null,
@@ -549,7 +552,7 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
   }
   async function update(
     estimateId: UUID,
-    changes: Partial<{ title: string | null; description: string | null; projectId: UUID; clientId: UUID | null; markup: number; discount: number; taxRate: number; depositAmount: number; estimateType: "standard" | "roofing" }>
+    changes: Partial<{ title: string | null; description: string | null; projectId: UUID; clientId: UUID | null; markup: number; discount: number; taxRate: number; depositAmount: number; estimateType: "standard" | "roofing"; termsTemplate: EstimateTermsTemplateKey }>
   ) {
     // Defense-in-depth, matching the real Supabase-backed
     // implementation's guard — subtotal/total are derived and must
@@ -585,6 +588,7 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
       taxRate: changes.taxRate !== undefined ? changes.taxRate : estimate.taxRate,
       depositAmount: changes.depositAmount !== undefined ? changes.depositAmount : estimate.depositAmount,
       estimateType: changes.estimateType !== undefined ? changes.estimateType : estimate.estimateType,
+      termsTemplate: changes.termsTemplate !== undefined ? changes.termsTemplate : estimate.termsTemplate,
       updatedAt: now(),
     };
     store.estimates.set(estimateId, updated);
@@ -1544,6 +1548,21 @@ function createSubcontractorService(store: InMemoryStore, validation: Validation
     store.subAssignments.set(assignmentId, updated);
     return updated;
   }
+  /** Mirrors the real service's removeAssignment: same paid-guard
+   * (via this double's own balance source), same soft-delete shape. */
+  async function removeAssignment(assignmentId: UUID, reason: string) {
+    const check = validation.validateDeleteReason(reason);
+    if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
+    const assignment = store.subAssignments.get(assignmentId);
+    if (!assignment) throw new Error("Assignment not found");
+    const balance = await transactionService.getAssignmentBalance(assignmentId);
+    if (balance.paid > 0) {
+      throw new Error(
+        `This assignment has already been paid (${balance.paid.toLocaleString("en-US", { style: "currency", currency: "USD" })}). Reverse that payment first if it was recorded in error.`
+      );
+    }
+    store.subAssignments.set(assignmentId, { ...assignment, deletedAt: now(), deleteReason: reason });
+  }
   async function recordPayment(input: { companyId: UUID; assignmentId: UUID; amount: number; paymentMethod?: string; paymentDate: string; paymentType?: "payment" | "reimbursement"; reimbursementFromAgentId?: UUID | null; changeOrderId?: UUID | null }) {
     const assignment = store.subAssignments.get(input.assignmentId);
     if (!assignment) throw new Error("Assignment not found");
@@ -1617,7 +1636,7 @@ function createSubcontractorService(store: InMemoryStore, validation: Validation
 
   return {
     getRoster, createSubcontractor, updateSubcontractor, softDeleteSubcontractor, restoreSubcontractor,
-    listAssignments, assignToProject, updateAssignmentAmount, markAssignmentFinal, recordPayment, listPayments, softDelete, restore, getBalance, getTotalPaidForYear,
+    listAssignments, assignToProject, updateAssignmentAmount, markAssignmentFinal, removeAssignment, recordPayment, listPayments, softDelete, restore, getBalance, getTotalPaidForYear,
   };
 }
 
@@ -1702,6 +1721,22 @@ function createAgentCommissionService(store: InMemoryStore, validation: Validati
     store.agentAssignments.set(assignmentId, updated);
     return updated;
   }
+  /** Mirrors the real service's removeAssignment: same paid-guard
+   * (via this double's own balance source), same soft-delete shape. */
+  async function removeAssignment(assignmentId: UUID, reason: string) {
+    const check = validation.validateDeleteReason(reason);
+    if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
+    const assignment = store.agentAssignments.get(assignmentId);
+    if (!assignment) throw new Error("Assignment not found");
+    const balance = await transactionService.getAssignmentBalance(assignmentId);
+    if (balance.paid > 0) {
+      throw new Error(
+        `This assignment has already been paid (${balance.paid.toLocaleString("en-US", { style: "currency", currency: "USD" })}). Reverse that payment first if it was recorded in error.`
+      );
+    }
+    store.agentAssignments.set(assignmentId, { ...assignment, deletedAt: now(), deleteReason: reason });
+  }
+
   async function recordPayment(input: { companyId: UUID; agentId: UUID; assignmentId?: UUID | null; amount: number; paymentType: "commission" | "reimbursement"; paymentDate: string; reimbursementFromAgentId?: UUID | null; reimbursesExpenseId?: UUID | null; changeOrderId?: UUID | null }): Promise<AgentPayment> {
     const payment: AgentPayment & { reimbursesExpenseId: UUID | null } = {
       id: id(),
@@ -1827,7 +1862,7 @@ function createAgentCommissionService(store: InMemoryStore, validation: Validati
 
   return {
     getRoster, createAgent, updateAgent, softDeleteAgent, restoreAgent,
-    listAssignments, assignToProject, updateAssignmentAmount: updateAgentAssignmentAmount,
+    listAssignments, assignToProject, updateAssignmentAmount: updateAgentAssignmentAmount, removeAssignment,
     recordPayment, listPayments, softDelete, restore, getBalance, getCompensationSummary,
   };
 }

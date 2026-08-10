@@ -146,6 +146,7 @@ describe("Roofing estimate -> invoice conversion includes estimated_repair_cost"
       deleteReason: null,
       lineItems: [],
       estimateType: "roofing" as const,
+      termsTemplate: "custom" as const,
     };
 
     const estimateServiceFake: Partial<EstimateService> = {
@@ -259,6 +260,7 @@ describe("Roofing estimate -> invoice conversion includes estimated_repair_cost"
         { id: "li-2", category: "labor" as const, name: "Prep", description: null, quantity: 1, unitPrice: 150, total: 150, taxable: true },
       ],
       estimateType: "standard" as const,
+      termsTemplate: "custom" as const,
     };
 
     const estimateServiceFake: Partial<EstimateService> = {

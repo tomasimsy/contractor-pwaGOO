@@ -106,6 +106,14 @@ export interface AgentCommissionService {
    * reads as `contracted`. */
   updateAssignmentAmount(assignmentId: UUID, assignedAmount: number): Promise<AgentAssignment>;
 
+  /** Removes an ASSIGNMENT — distinct from `softDelete` below, which
+   * targets PAYMENT rows. Refuses when a commission has already been
+   * paid against this specific assignment's job (the same estimate-
+   * aware matching FinancialEngine uses): the assignment is the only
+   * record of what that payment was for. The expense itself is never
+   * touched. Mirrors SubcontractorService.removeAssignment. */
+  removeAssignment(assignmentId: UUID, reason: string): Promise<void>;
+
   recordPayment(input: {
     companyId: UUID;
     agentId: UUID;

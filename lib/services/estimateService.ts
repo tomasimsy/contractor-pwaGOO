@@ -14,6 +14,7 @@
  * for why. This service now owns only the proposal document itself.
  */
 import type { UUID, AuditedEntity, EstimateStatus, ValidationResult, QueryScope } from "./types";
+import type { EstimateTermsTemplateKey } from "../estimateTerms";
 
 export type EstimateLineItemUnit = "EA" | "SF" | "SQFT" | "SQ" | "LF" | "FT" | "HR" | "DAY" | "LS";
 
@@ -88,6 +89,12 @@ export interface Estimate extends AuditedEntity {
   /** Estimate classification: 'standard' (line-item based) or
    * 'roofing' (area-based with photos). Defaults to 'standard'. */
   estimateType?: "standard" | "roofing";
+  /** Which Terms & Conditions template this estimate was created with
+   * (lib/estimateTerms.ts is the single source of truth for the actual
+   * text). Frozen at creation, editable afterward like any other
+   * document field — never recomputed, never inferred from
+   * `estimateType`. Defaults to "custom". */
+  termsTemplate: EstimateTermsTemplateKey;
 }
 
 /**
@@ -166,6 +173,9 @@ export interface EstimateService {
     taxRate: number;
     depositAmount?: number;
     estimateType?: "standard" | "roofing";
+    /** Defaults to "custom" (lib/estimateTerms.ts's
+     * DEFAULT_ESTIMATE_TERMS_TEMPLATE) when omitted. */
+    termsTemplate?: EstimateTermsTemplateKey;
   }): Promise<Estimate>;
 
   updateLineItems(estimateId: UUID, lineItems: Omit<EstimateLineItem, "id" | "total">[]): Promise<Estimate>;
@@ -176,7 +186,7 @@ export interface EstimateService {
    * taxRate recalculates the total the same way updateLineItems does
    * (both funnel through recalculateTotal internally) — never a bare
    * column write that leaves `total` stale. */
-  update(estimateId: UUID, changes: Partial<{ title: string | null; description: string | null; projectId: UUID; clientId: UUID | null; markup: number; discount: number; taxRate: number; depositAmount: number; estimateType: "standard" | "roofing" }>): Promise<Estimate>;
+  update(estimateId: UUID, changes: Partial<{ title: string | null; description: string | null; projectId: UUID; clientId: UUID | null; markup: number; discount: number; taxRate: number; depositAmount: number; estimateType: "standard" | "roofing"; termsTemplate: EstimateTermsTemplateKey }>): Promise<Estimate>;
 
   /** Recomputes subtotal/total from current line items + markup/
    * discount/tax — the ONE implementation of that formula (replaces

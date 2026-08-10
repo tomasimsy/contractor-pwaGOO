@@ -104,6 +104,15 @@ export interface SubcontractorService {
   updateAssignmentAmount(assignmentId: UUID, amount: number): Promise<SubcontractorAssignment>;
   markAssignmentFinal(assignmentId: UUID): Promise<SubcontractorAssignment>;
 
+  /** Removes an ASSIGNMENT — distinct from `softDelete` below, which
+   * targets PAYMENT rows. Refuses when money has already been paid
+   * against this specific assignment's job (the same estimate-aware
+   * matching FinancialEngine uses): the assignment is the only record
+   * of what that payment was for, so erasing it would leave a paid
+   * expense pointing at nothing. The expense itself is never touched —
+   * only the commitment record, and only while nothing has settled it. */
+  removeAssignment(assignmentId: UUID, reason: string): Promise<void>;
+
   /** Appends "subcontractor_payment" to the ledger, referencing this
    * payment row — a cost, booked when cash actually goes out (unlike
    * agent commissions, subcontractor work has no separate "owed"

@@ -28,6 +28,14 @@ export type CompanySettings = {
   payment_instructions: string;
   warranty_text: string;
   default_deposit_percentage: number;
+  /** Per-company overrides of the three built-in Terms & Conditions
+   * templates (lib/estimateTerms.ts is the single source of the
+   * DEFAULT text for each). Null/empty means "use the built-in
+   * default" — same convention as terms_conditions/warranty_text
+   * above. Read through getEstimateTermsTemplate(), never directly. */
+  terms_roofing: string | null;
+  terms_custom: string | null;
+  terms_home_remodel: string | null;
 };
 
 // Used whenever a company hasn't configured a field yet, so documents never
@@ -69,6 +77,9 @@ export const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
   warranty_text:
     "Warranty excludes: weather, tree roots, drainage, soil movement, customer neglect, or third-party work.",
   default_deposit_percentage: 50,
+  terms_roofing: null,
+  terms_custom: null,
+  terms_home_remodel: null,
 };
 
 // Fills in any missing/empty fields with the defaults above.
@@ -98,6 +109,9 @@ export function mergeCompanyDefaults(row: Partial<CompanySettings> | null | unde
     payment_instructions: row?.payment_instructions || DEFAULT_COMPANY_SETTINGS.payment_instructions,
     warranty_text: row?.warranty_text || DEFAULT_COMPANY_SETTINGS.warranty_text,
     default_deposit_percentage: row?.default_deposit_percentage || DEFAULT_COMPANY_SETTINGS.default_deposit_percentage,
+    terms_roofing: row?.terms_roofing || null,
+    terms_custom: row?.terms_custom || null,
+    terms_home_remodel: row?.terms_home_remodel || null,
   };
 }
 

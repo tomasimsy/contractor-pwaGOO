@@ -211,6 +211,25 @@ export function createSupabaseAgentCommissionService(
   }
 
   async function assignToProject(input: { companyId: UUID; projectId: UUID; estimateId?: UUID | null; agentId: UUID; assignedAmount: number; notes?: string }): Promise<AgentAssignment> {
+    /* ONE ASSIGNMENT PER (AGENT, ESTIMATE) — same rule, same reasoning,
+     * as SubcontractorService.assignToProject's check: application-
+     * layer rather than a DB constraint, because duplicate pairs
+     * already exist live from before this rule. Only applies when an
+     * estimate is named; project-level assignments are unaffected. */
+    if (input.estimateId) {
+      const { data: existing, error: dupErr } = await supabase
+        .from("estimate_agents")
+        .select("id")
+        .eq("agent_id", input.agentId)
+        .eq("estimate_id", input.estimateId)
+        .is("deleted_at", null)
+        .limit(1);
+      if (dupErr) throw new Error(`Failed to check existing assignment: ${dupErr.message}`);
+      if (existing && existing.length > 0) {
+        throw new Error("This agent is already assigned to this estimate.");
+      }
+    }
+
     const actorId = await currentUserId();
     const { data, error } = await supabase
       .from("estimate_agents")
@@ -391,6 +410,55 @@ export function createSupabaseAgentCommissionService(
     return { totalCommissions, totalReimbursements, totalPaid, outstandingPayable, ytdEarnings };
   }
 
+  /** Money already paid against THIS assignment's own job. Mirrors
+   * SubcontractorService.paidAgainstAssignment — estimate matched
+   * exactly, including the null case, so the guard cannot be tripped
+   * (or bypassed) by a payment on some unrelated job. */
+  async function paidAgainstAssignment(estimateId: UUID | null, agentId: UUID): Promise<number> {
+    let query = supabase
+      .from("estimate_expenses")
+      .select("amount")
+      .eq("expense_type", "agent_commission")
+      .eq("payee_type", "agent")
+      .eq("payee_id", agentId)
+      .eq("is_paid", true)
+      .is("deleted_at", null);
+    query = estimateId ? query.eq("estimate_id", estimateId) : query.is("estimate_id", null);
+    const { data, error } = await query;
+    if (error) throw new Error(`Failed to check existing payments: ${error.message}`);
+    return (data ?? []).reduce((sum, r) => sum + Number((r as { amount: number }).amount ?? 0), 0);
+  }
+
+  async function removeAssignment(assignmentId: UUID, reason: string): Promise<void> {
+    const check = validationService.validateDeleteReason(reason);
+    if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
+
+    const { data: row, error: readErr } = await supabase
+      .from("estimate_agents")
+      .select("estimate_id, agent_id")
+      .eq("id", assignmentId)
+      .is("deleted_at", null)
+      .single();
+    if (readErr) throw new Error(`Failed to load assignment: ${readErr.message}`);
+
+    const paid = await paidAgainstAssignment(row.estimate_id as UUID | null, row.agent_id as UUID);
+    if (paid > 0) {
+      throw new Error(
+        `This assignment has already been paid (${paid.toLocaleString("en-US", {
+          style: "currency",
+          currency: "USD",
+        })}). Reverse that payment first if it was recorded in error.`
+      );
+    }
+
+    const actorId = await currentUserId();
+    const { error } = await supabase
+      .from("estimate_agents")
+      .update({ deleted_at: new Date().toISOString(), deleted_by: actorId, delete_reason: reason })
+      .eq("id", assignmentId);
+    if (error) throw new Error(`Failed to remove assignment: ${error.message}`);
+  }
+
   return {
     getRoster,
     createAgent,
@@ -400,6 +468,7 @@ export function createSupabaseAgentCommissionService(
     listAssignments,
     assignToProject,
     updateAssignmentAmount,
+    removeAssignment,
     recordPayment,
     listPayments,
     softDelete,

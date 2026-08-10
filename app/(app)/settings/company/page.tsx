@@ -20,6 +20,7 @@ import { usePermission } from "@/lib/hooks/usePermission";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { DEFAULT_COMPANY_SETTINGS } from "@/lib/company";
+import { ESTIMATE_TERMS_TEMPLATES } from "@/lib/estimateTerms";
 import type { CompanySettings } from "@/lib/services/companyService";
 
 type FormState = CompanySettings;
@@ -299,6 +300,55 @@ function CompanySettingsContent() {
             <div>
               <Field name="brand_color" value={form.brand_color ?? ""} onChange={setField} placeholder="#1E40AF" />
               {fieldErrors.brand_color && <p className="mt-1 text-xs text-danger">{fieldErrors.brand_color}</p>}
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
+          <h2 className="mb-1 text-sm font-semibold text-foreground">Terms &amp; Conditions</h2>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Shown on Estimate Detail, the customer portal, and the generated PDF for any
+            estimate using that template — including estimates already created. Leave a box
+            empty to use the built-in default. A line wrapped in <code>**like this**</code>{" "}
+            becomes a bold sub-heading; a line starting with <code>-</code> or <code>* </code>{" "}
+            becomes a bullet.
+          </p>
+          <div className="space-y-4">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-foreground">
+                {ESTIMATE_TERMS_TEMPLATES.custom.label}
+              </label>
+              <textarea
+                value={form.terms_custom ?? ""}
+                onChange={(e) => setField("terms_custom", e.target.value)}
+                rows={6}
+                placeholder={ESTIMATE_TERMS_TEMPLATES.custom.body}
+                className="w-full rounded-lg border border-input bg-background px-2.5 py-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-foreground">
+                {ESTIMATE_TERMS_TEMPLATES.roofing.label}
+              </label>
+              <textarea
+                value={form.terms_roofing ?? ""}
+                onChange={(e) => setField("terms_roofing", e.target.value)}
+                rows={6}
+                placeholder={ESTIMATE_TERMS_TEMPLATES.roofing.body}
+                className="w-full rounded-lg border border-input bg-background px-2.5 py-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-foreground">
+                {ESTIMATE_TERMS_TEMPLATES.home_remodel.label}
+              </label>
+              <textarea
+                value={form.terms_home_remodel ?? ""}
+                onChange={(e) => setField("terms_home_remodel", e.target.value)}
+                rows={6}
+                placeholder={ESTIMATE_TERMS_TEMPLATES.home_remodel.body}
+                className="w-full rounded-lg border border-input bg-background px-2.5 py-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+              />
             </div>
           </div>
         </section>

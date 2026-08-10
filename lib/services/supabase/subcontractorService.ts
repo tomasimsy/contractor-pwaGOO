@@ -247,6 +247,34 @@ export function createSupabaseSubcontractorService(
   async function assignToProject(input: {
     companyId: UUID; projectId: UUID; estimateId?: UUID | null; subcontractorId: UUID; contractedAmount: number; notes?: string;
   }): Promise<SubcontractorAssignment> {
+    /* ONE ASSIGNMENT PER (SUBCONTRACTOR, ESTIMATE).
+     *
+     * Enforced here rather than with a DB constraint: several duplicate
+     * pairs already exist live from before this rule, and a unique
+     * index would fail to create — or would need to silently merge or
+     * discard someone's existing data, which is not this function's
+     * call to make. Checked at the application layer instead, the same
+     * place TeamAssignmentService's message is worded, so a second
+     * assign attempt fails the same way for all three payee kinds.
+     *
+     * Only applies when an estimate is named. A project-level
+     * assignment (no estimateId) can still recur — that scope predates
+     * this rule and multiple contracts on one project with no estimate
+     * attached is a legitimate, unrelated case this does not touch. */
+    if (input.estimateId) {
+      const { data: existing, error: dupErr } = await supabase
+        .from("estimate_subcontractors")
+        .select("id")
+        .eq("subcontractor_id", input.subcontractorId)
+        .eq("estimate_id", input.estimateId)
+        .is("deleted_at", null)
+        .limit(1);
+      if (dupErr) throw new Error(`Failed to check existing assignment: ${dupErr.message}`);
+      if (existing && existing.length > 0) {
+        throw new Error("This subcontractor is already assigned to this estimate.");
+      }
+    }
+
     const actorId = await currentUserId();
     const { data, error } = await supabase
       .from("estimate_subcontractors")
@@ -297,6 +325,50 @@ export function createSupabaseSubcontractorService(
       .single();
     if (error) throw new Error(`Failed to mark assignment final: ${error.message}`);
     return rowToAssignment(data as AssignmentRow);
+  }
+
+  /** Money already paid against THIS assignment's own job — estimate-
+   * aware, mirroring FinancialEngine's `sumPaidToPayee`. `estimate_id`
+   * is matched exactly, including the null case, so a project-level
+   * assignment (no estimate) is only guarded by project-level, equally
+   * estimate-less payments — never by a payment that named some other
+   * job. */
+  async function paidAgainstAssignment(a: AssignmentRow): Promise<number> {
+    let query = supabase
+      .from("estimate_expenses")
+      .select("amount")
+      .eq("expense_type", "subcontractor")
+      .eq("payee_type", "subcontractor")
+      .eq("payee_id", a.subcontractor_id)
+      .eq("is_paid", true)
+      .is("deleted_at", null);
+    query = a.estimate_id ? query.eq("estimate_id", a.estimate_id) : query.is("estimate_id", null);
+    const { data, error } = await query;
+    if (error) throw new Error(`Failed to check existing payments: ${error.message}`);
+    return (data ?? []).reduce((sum, r) => sum + Number((r as { amount: number }).amount ?? 0), 0);
+  }
+
+  async function removeAssignment(assignmentId: UUID, reason: string): Promise<void> {
+    const check = validationService.validateDeleteReason(reason);
+    if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
+
+    const row = await getAssignmentRow(assignmentId);
+    const paid = await paidAgainstAssignment(row);
+    if (paid > 0) {
+      throw new Error(
+        `This assignment has already been paid (${paid.toLocaleString("en-US", {
+          style: "currency",
+          currency: "USD",
+        })}). Reverse that payment first if it was recorded in error.`
+      );
+    }
+
+    const actorId = await currentUserId();
+    const { error } = await supabase
+      .from("estimate_subcontractors")
+      .update({ deleted_at: new Date().toISOString(), deleted_by: actorId, delete_reason: reason })
+      .eq("id", assignmentId);
+    if (error) throw new Error(`Failed to remove assignment: ${error.message}`);
   }
 
   async function recordPayment(input: {
@@ -412,6 +484,7 @@ export function createSupabaseSubcontractorService(
     assignToProject,
     updateAssignmentAmount,
     markAssignmentFinal,
+    removeAssignment,
     recordPayment,
     listPayments,
     softDelete,

@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabase/env";
 import { mergeCompanyDefaults } from "@/lib/company";
+import { getEstimateTermsTemplate } from "@/lib/estimateTerms";
+import { TermsBody } from "@/components/shared/TermsBody";
 import { SignEstimateForm } from "@/components/portal/SignEstimateForm";
 import { ChangeOrderApprovalCard, type PortalChangeOrder } from "@/components/portal/ChangeOrderApprovalCard";
 import {
@@ -41,8 +43,25 @@ export default async function CustomerPortalPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ token?: string }>;
 }) {
-  await params;
-  const { token } = await searchParams;
+  /* TOKEN, NOT ESTIMATE ID.
+   *
+   * The [id] path segment was never actually used to look up the
+   * estimate — every RPC call below has only ever been keyed on
+   * `token` from the query string. That made it free to repurpose: a
+   * NEW share link puts the customer_token itself in the path
+   * (/portal/<token>, no query string at all — see
+   * EstimateDetail.tsx's portalUrl), so the one real credential this
+   * page needs never appears as a `?token=` param, in browser history,
+   * or in a referrer header.
+   *
+   * `?token=` is still honoured as a fallback, so a link already sent
+   * to a customer before this change (/portal/<estimateId>?token=<t>)
+   * keeps working: for that shape, `id` is an estimate id (not a valid
+   * token, so it simply matches no row) and `queryToken` carries the
+   * real credential. */
+  const { id } = await params;
+  const { token: queryToken } = await searchParams;
+  const token = queryToken || id;
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const { data } = token ? await supabase.rpc("get_customer_portal", { p_token: token }) : { data: null };
@@ -53,6 +72,18 @@ export default async function CustomerPortalPage({
     ? await supabase.rpc("get_portal_change_orders", { p_token: token })
     : { data: null };
   const allChangeOrders = (allChangeOrdersData as PortalChangeOrder[] | null) ?? [];
+
+  // Second, narrowly-scoped read (see the migration's own comment on
+  // why this is a separate function rather than editing
+  // get_customer_portal in place). Returns {key, override} — `override`
+  // is this company's own edited text for that key (Settings → Company
+  // → Terms & Conditions), if they've customized it; getEstimateTermsTemplate
+  // falls back to the built-in default the same way it does everywhere
+  // else. Failure is non-fatal — a null here still renders the default.
+  const { data: termsData } = token && estimate
+    ? await supabase.rpc("get_estimate_terms_template", { p_token: token })
+    : { data: null };
+  const termsPayload = termsData as { key: string | null; override: string | null } | null;
 
   if (!estimate) {
     return (
@@ -394,6 +425,27 @@ export default async function CustomerPortalPage({
             })()}
           </dl>
         </section>
+
+        {/* This estimate's own selected Terms & Conditions — the SAME
+            source (lib/estimateTerms.ts) EstimateDetail and the PDF
+            read, keyed by the template chosen when the estimate was
+            created. Separate from, and shown alongside, the company's
+            own general terms below (an existing, unrelated field). */}
+        {(() => {
+          const terms = getEstimateTermsTemplate(termsPayload?.key ?? null, termsPayload?.override ?? null);
+          return (
+            <details className="group rounded-2xl border border-gray-200 bg-white shadow-sm">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-2xl px-5 py-4 text-sm font-semibold text-gray-900 hover:bg-gray-50">
+                Terms &amp; Conditions
+                <span aria-hidden className="text-gray-600 transition-transform group-open:rotate-180">▾</span>
+              </summary>
+              <div className="border-t border-gray-200 px-5 py-4">
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">{terms.label}</p>
+                <TermsBody className="text-xs leading-relaxed text-gray-600" body={terms.body} />
+              </div>
+            </details>
+          );
+        })()}
 
         {/* Terms — collapsed by default so it never buries the action. */}
         {company.terms_conditions && (

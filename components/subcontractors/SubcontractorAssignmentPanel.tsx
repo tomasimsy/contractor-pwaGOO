@@ -16,7 +16,7 @@
  * Keyed by PAYEE (not assignment) because one payee has one balance.
  */
 import { useState } from "react";
-import { HardHat, Plus } from "lucide-react";
+import { HardHat, Plus, Trash2, Lock } from "lucide-react";
 import { useSubcontractorAssignments } from "@/lib/hooks/useSubcontractorAssignments";
 import { EmptyState } from "@/components/ui/EmptyState";
 
@@ -47,16 +47,31 @@ export function SubcontractorAssignmentPanel({
    * SubAgentTabsPanel) already provides both, so they aren't doubled. */
   compact?: boolean;
 }) {
-  const { roster, assignments, balances, loading, error, assign, recordPayment, markFinal, createSubcontractor, refresh } =
+  const { roster, assignments, balances, paidByAssignment, loading, error, assign, recordPayment, markFinal, removeAssignment, createSubcontractor, refresh } =
     useSubcontractorAssignments(companyId, projectId, estimateId);
   const [subcontractorId, setSubcontractorId] = useState("");
   const [contractedAmount, setContractedAmount] = useState(0);
   const [paymentAmounts, setPaymentAmounts] = useState<Record<string, number>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [assignError, setAssignError] = useState<string | null>(null);
   const [showNewSub, setShowNewSub] = useState(false);
   const [newSubName, setNewSubName] = useState("");
   const [newSubTrade, setNewSubTrade] = useState("");
 
   if (loading) return <div className={compact ? "text-xs text-muted-foreground" : "rounded-xl border border-border bg-card p-3 text-xs text-muted-foreground"}>Loading subcontractors…</div>;
+
+  async function handleRemove(a: (typeof assignments)[number]) {
+    if (!window.confirm(`Remove ${a.subcontractorName} from this estimate? Their recorded payments are not affected.`)) return;
+    setBusyId(a.id);
+    try {
+      await removeAssignment(a.id, "User removed assignment via UI");
+      onChanged?.();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Could not remove this assignment.");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   const Wrapper = compact ? "div" : "section";
 
@@ -100,16 +115,24 @@ export function SubcontractorAssignmentPanel({
             type="button"
             disabled={!subcontractorId || contractedAmount <= 0}
             onClick={async () => {
-              await assign(subcontractorId, contractedAmount);
-              onChanged?.();
-              setSubcontractorId("");
-              setContractedAmount(0);
+              setAssignError(null);
+              try {
+                await assign(subcontractorId, contractedAmount);
+                onChanged?.();
+                setSubcontractorId("");
+                setContractedAmount(0);
+              } catch (err) {
+                setAssignError(err instanceof Error ? err.message : "Could not assign this subcontractor.");
+              }
             }}
             className="inline-flex h-7 items-center rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
             Assign
           </button>
         </div>
+        {assignError && (
+          <p role="alert" className="text-[11px] font-medium text-danger">{assignError}</p>
+        )}
 
         {showNewSub && (
           <div className="flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-2">
@@ -148,9 +171,32 @@ export function SubcontractorAssignmentPanel({
             return (
               <li key={a.id} className="space-y-2 py-2.5 text-xs">
                 <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <div className="font-medium text-foreground">{a.subcontractorName}{a.trade ? ` · ${a.trade}` : ""}</div>
-                    {a.isFinal && <span className="text-[11px] text-muted-foreground">Final — amount locked</span>}
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <div>
+                      <div className="font-medium text-foreground">{a.subcontractorName}{a.trade ? ` · ${a.trade}` : ""}</div>
+                      {a.isFinal && <span className="text-[11px] text-muted-foreground">Final — amount locked</span>}
+                    </div>
+                    {/* Money already paid against THIS assignment locks
+                        it: the assignment is the only record of what
+                        that payment was for. See removeAssignment. */}
+                    {(paidByAssignment[a.id] ?? 0) > 0 ? (
+                      <span
+                        title={`Paid ${money(paidByAssignment[a.id] ?? 0)} on this job — reverse that payment before unassigning.`}
+                        className="flex shrink-0 items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground"
+                      >
+                        <Lock className="size-3" aria-hidden="true" /> Paid
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleRemove(a)}
+                        disabled={busyId === a.id}
+                        aria-label={`Remove ${a.subcontractorName}`}
+                        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-40"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    )}
                   </div>
                   {balance && (
                     <div className="text-right text-[11px] text-muted-foreground">

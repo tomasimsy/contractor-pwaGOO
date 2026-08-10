@@ -21,8 +21,18 @@ export function useSubcontractorAssignments(companyId: string, projectId: string
   const [roster, setRoster] = useState<Subcontractor[]>([]);
   const [assignments, setAssignments] = useState<Array<SubcontractorAssignment & { subcontractorName: string; trade: string | null }>>([]);
   /** Keyed by SUBCONTRACTOR id (not assignment id) — a payee with two
-   * assignments on one project has one running balance. */
+   * assignments on one project has one running balance. Used for the
+   * balance breakdown ("Contracted / Paid / Out"), which is deliberately
+   * a payee-wide figure. */
   const [balances, setBalances] = useState<Record<string, PayeeBalance>>({});
+  /** Keyed by ASSIGNMENT id — what has been paid against THIS
+   * assignment's own job specifically, from getPayablesSummary's
+   * per-assignment lines (the same estimate-aware matching /payments
+   * uses). Deciding whether ONE assignment can be unassigned must use
+   * this, not the payee-wide `balances` above: a payee paid in full on
+   * a DIFFERENT job would otherwise lock an assignment that has never
+   * been paid a cent. */
+  const [paidByAssignment, setPaidByAssignment] = useState<Record<string, number>>({});
 
   // Previously a bare useEffect with no error handling at all — a
   // failed refresh (e.g. the service call rejecting) was an uncaught
@@ -39,6 +49,13 @@ export function useSubcontractorAssignments(companyId: string, projectId: string
     setAssignments(assignmentList);
     const payeeBalances = await financialEngine.getPayeeBalances({ companyId, projectId }, "subcontractor");
     setBalances(Object.fromEntries(payeeBalances.map((b) => [b.payeeId, b] as const)));
+
+    const payables = await financialEngine.getPayablesSummary({ companyId, projectId });
+    setPaidByAssignment(
+      Object.fromEntries(
+        payables.lines.filter((l) => l.role === "subcontractor").map((l) => [l.assignmentId, l.paid] as const)
+      )
+    );
   }, [subcontractorService, financialEngine, companyId, projectId]);
 
   const assign = useCallback(
@@ -83,6 +100,17 @@ export function useSubcontractorAssignments(companyId: string, projectId: string
     [subcontractorService, refresh]
   );
 
+  /** Unassign — refused by the service itself when this specific
+   * assignment has already been paid. See
+   * SubcontractorService.removeAssignment. */
+  const removeAssignment = useCallback(
+    async (assignmentId: string, reason: string) => {
+      await subcontractorService.removeAssignment(assignmentId, reason);
+      await refresh();
+    },
+    [subcontractorService, refresh]
+  );
+
   const createSubcontractor = useCallback(
     async (name: string, trade?: string) => {
       const created = await subcontractorService.createSubcontractor({ companyId, name, trade: trade || null });
@@ -92,5 +120,5 @@ export function useSubcontractorAssignments(companyId: string, projectId: string
     [subcontractorService, companyId, refresh]
   );
 
-  return { roster, assignments, balances, loading, error, assign, recordPayment, markFinal, createSubcontractor, refresh };
+  return { roster, assignments, balances, paidByAssignment, loading, error, assign, recordPayment, markFinal, removeAssignment, createSubcontractor, refresh };
 }

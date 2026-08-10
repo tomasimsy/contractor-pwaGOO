@@ -23,7 +23,7 @@
  * reimbursement record, it only reads it via useAgentAssignments.
  */
 import { forwardRef, useImperativeHandle, useState } from "react";
-import { Briefcase, Plus, Receipt } from "lucide-react";
+import { Briefcase, Plus, Receipt, Trash2, Lock } from "lucide-react";
 import { useAgentAssignments } from "@/lib/hooks/useAgentAssignments";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { calculateAgentOutstandingBalance } from "@/lib/services/financialCalculations";
@@ -51,14 +51,16 @@ export const AgentAssignmentPanel = forwardRef<AgentAssignmentPanelRef, {
   compact?: boolean;
 }>(function AgentAssignmentPanel({ companyId, projectId, estimateId, onChanged, compact = false }, ref) {
   const {
-    roster, assignments, balances, pendingReimbursements, reimbursementsOwedByAgent, compensationByAgent,
-    loading, error, assign, recordCommissionPayment, recordReimbursementPayment, createAgent, refresh,
+    roster, assignments, balances, paidByAssignment, pendingReimbursements, reimbursementsOwedByAgent, compensationByAgent,
+    loading, error, assign, recordCommissionPayment, recordReimbursementPayment, removeAssignment, createAgent, refresh,
   } = useAgentAssignments(companyId, projectId, estimateId);
   const [agentId, setAgentId] = useState("");
   const [assignedAmount, setAssignedAmount] = useState(0);
   const [commissionAmounts, setCommissionAmounts] = useState<Record<string, number>>({});
   const [reimbursementAmount, setReimbursementAmount] = useState<Record<string, number>>({});
   const [reimbursementExpense, setReimbursementExpense] = useState<Record<string, string>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [assignError, setAssignError] = useState<string | null>(null);
   const [showNewAgent, setShowNewAgent] = useState(false);
   const [newAgentName, setNewAgentName] = useState("");
   const [newAgentRate, setNewAgentRate] = useState("");
@@ -66,6 +68,19 @@ export const AgentAssignmentPanel = forwardRef<AgentAssignmentPanelRef, {
   useImperativeHandle(ref, () => ({ refresh }), [refresh]);
 
   if (loading) return <div className={compact ? "text-xs text-muted-foreground" : "rounded-xl border border-border bg-card p-3 text-xs text-muted-foreground"}>Loading agents…</div>;
+
+  async function handleRemove(a: (typeof assignments)[number]) {
+    if (!window.confirm(`Remove ${a.agentName} from this estimate? Their recorded payments are not affected.`)) return;
+    setBusyId(a.id);
+    try {
+      await removeAssignment(a.id, "User removed assignment via UI");
+      onChanged?.();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Could not remove this assignment.");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   const Wrapper = compact ? "div" : "section";
 
@@ -109,16 +124,24 @@ export const AgentAssignmentPanel = forwardRef<AgentAssignmentPanelRef, {
             type="button"
             disabled={!agentId || assignedAmount <= 0}
             onClick={async () => {
-              await assign(agentId, assignedAmount);
-              onChanged?.();
-              setAgentId("");
-              setAssignedAmount(0);
+              setAssignError(null);
+              try {
+                await assign(agentId, assignedAmount);
+                onChanged?.();
+                setAgentId("");
+                setAssignedAmount(0);
+              } catch (err) {
+                setAssignError(err instanceof Error ? err.message : "Could not assign this agent.");
+              }
             }}
             className="inline-flex h-7 items-center rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
             Assign
           </button>
         </div>
+        {assignError && (
+          <p role="alert" className="text-[11px] font-medium text-danger">{assignError}</p>
+        )}
 
         {showNewAgent && (
           <div className="flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-2">
@@ -168,7 +191,30 @@ export const AgentAssignmentPanel = forwardRef<AgentAssignmentPanelRef, {
 
             return (
               <li key={a.id} className="space-y-2 py-2.5 text-xs">
-                <div className="font-medium text-foreground">{a.agentName}</div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-medium text-foreground">{a.agentName}</div>
+                  {/* Money already paid against THIS assignment locks
+                      it: the assignment is the only record of what
+                      that payment was for. See removeAssignment. */}
+                  {(paidByAssignment[a.id] ?? 0) > 0 ? (
+                    <span
+                      title={`Paid ${money(paidByAssignment[a.id] ?? 0)} on this job — reverse that payment before unassigning.`}
+                      className="flex shrink-0 items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground"
+                    >
+                      <Lock className="size-3" aria-hidden="true" /> Paid
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleRemove(a)}
+                      disabled={busyId === a.id}
+                      aria-label={`Remove ${a.agentName}`}
+                      className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-40"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  )}
+                </div>
 
                 {/* Balance breakdown — every figure is read from
                     AgentCommissionService/ExpenseService, never

@@ -23,8 +23,15 @@ export function useAgentAssignments(companyId: string, projectId: string, estima
   const { agentCommissionService, expenseService, financialEngine } = useServices();
   const [roster, setRoster] = useState<Agent[]>([]);
   const [assignments, setAssignments] = useState<Array<AgentAssignment & { agentName: string }>>([]);
-  /** Keyed by AGENT id (not assignment id) — one payee, one balance. */
+  /** Keyed by AGENT id (not assignment id) — one payee, one balance.
+   * Used for the balance breakdown, which is deliberately a payee-wide
+   * figure. */
   const [balances, setBalances] = useState<Record<string, PayeeBalance>>({});
+  /** Keyed by ASSIGNMENT id — what has been paid against THIS
+   * assignment's own job. See the matching field on
+   * useSubcontractorAssignments for why this must not be the payee-wide
+   * balance when deciding if ONE assignment can be unassigned. */
+  const [paidByAssignment, setPaidByAssignment] = useState<Record<string, number>>({});
   const [pendingReimbursements, setPendingReimbursements] = useState<Record<string, Expense[]>>({});
   /** Sum of each agent's pendingReimbursements — "Reimbursements Owed"
    * in the balance breakdown. Derived from the exact same ExpenseService
@@ -49,6 +56,11 @@ export function useAgentAssignments(companyId: string, projectId: string, estima
 
     const payeeBalances = await financialEngine.getPayeeBalances({ companyId, projectId }, "agent");
     setBalances(Object.fromEntries(payeeBalances.map((b) => [b.payeeId, b] as const)));
+
+    const payables = await financialEngine.getPayablesSummary({ companyId, projectId });
+    setPaidByAssignment(
+      Object.fromEntries(payables.lines.filter((l) => l.role === "agent").map((l) => [l.assignmentId, l.paid] as const))
+    );
 
     // Expenses this agent covered that are still owed back to them —
     // populates the reimbursement picker so a payment can be linked to
@@ -123,8 +135,19 @@ export function useAgentAssignments(companyId: string, projectId: string, estima
     [agentCommissionService, companyId, refresh]
   );
 
+  /** Unassign — refused by the service itself when this specific
+   * assignment has already been paid. See
+   * AgentCommissionService.removeAssignment. */
+  const removeAssignment = useCallback(
+    async (assignmentId: string, reason: string) => {
+      await agentCommissionService.removeAssignment(assignmentId, reason);
+      await refresh();
+    },
+    [agentCommissionService, refresh]
+  );
+
   return {
-    roster, assignments, balances, pendingReimbursements, reimbursementsOwedByAgent, compensationByAgent,
-    loading, error, assign, recordCommissionPayment, recordReimbursementPayment, createAgent, refresh,
+    roster, assignments, balances, paidByAssignment, pendingReimbursements, reimbursementsOwedByAgent, compensationByAgent,
+    loading, error, assign, recordCommissionPayment, recordReimbursementPayment, removeAssignment, createAgent, refresh,
   };
 }

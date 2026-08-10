@@ -33,6 +33,11 @@ import { ClientForm } from "@/components/clients/ClientForm";
 import { calculateSubtotal, calculateLineItemTotal, calculateDocumentTotal } from "@/lib/services/financialCalculations";
 import { createEstimateForClient } from "@/lib/services/estimateCreationWorkflow";
 import type { Estimate, EstimateLineItem } from "@/lib/services/estimateService";
+import {
+  ESTIMATE_TERMS_TEMPLATE_OPTIONS,
+  DEFAULT_ESTIMATE_TERMS_TEMPLATE,
+  type EstimateTermsTemplateKey,
+} from "@/lib/estimateTerms";
 import type { EstimatePhoto } from "@/lib/services/estimatePhotoService";
 import type { RoofingArea } from "@/lib/services";
 import type { Project } from "@/lib/services/projectService";
@@ -197,6 +202,13 @@ const [pricingOpen, setPricingOpen] = useState(true);
   const [title, setTitle] = useState(estimate?.title ?? "");
   const [description, setDescription] = useState(estimate?.description ?? "");
   const [estimateType, setEstimateType] = useState<"standard" | "roofing">(estimate?.estimateType ?? (roofV2 ? "roofing" : "standard"));
+  /** Independent of estimateType — Roofing/Custom/Home Remodel are
+   * legal-language categories, not the standard/roofing scope model.
+   * Frozen onto the estimate at save; see lib/estimateTerms.ts for why
+   * only the KEY is persisted, never the template text. */
+  const [termsTemplate, setTermsTemplate] = useState<EstimateTermsTemplateKey>(
+    estimate?.termsTemplate ?? DEFAULT_ESTIMATE_TERMS_TEMPLATE
+  );
   const [lineItems, setLineItems] = useState<DraftLineItem[]>(
     initialLineItems?.map((li) => ({ category: li.category, name: li.name, description: li.description, quantity: li.quantity, unitPrice: li.unitPrice, unit: li.unit ?? null, taxable: li.taxable })) ?? []
   );
@@ -314,6 +326,7 @@ const [pricingOpen, setPricingOpen] = useState(true);
           taxRate,
           depositAmount,
           estimateType,
+          termsTemplate,
         });
         // Roofing scope lives in roof areas — EstimateService rejects
         // this call for a roofing estimate, so don't make it.
@@ -353,6 +366,7 @@ const [pricingOpen, setPricingOpen] = useState(true);
             taxRate,
             depositAmount,
             estimateType,
+            termsTemplate,
           },
           basePath
         );
@@ -596,6 +610,28 @@ const [pricingOpen, setPricingOpen] = useState(true);
           placeholder="Project overview shown on the estimate and its PDF"
           className={FIELD}
         />
+      </div>
+
+      {/* Terms & Conditions template — the KEY is saved with the
+          estimate; the text itself lives once in lib/estimateTerms.ts
+          and is shown on Estimate Detail, the customer portal, and the
+          PDF, all reading through the same source. */}
+      <div className="space-y-1.5">
+        <label className={LABEL}>Terms &amp; Conditions</label>
+        <select
+          value={termsTemplate}
+          onChange={(e) => setTermsTemplate(e.target.value as EstimateTermsTemplateKey)}
+          className={FIELD}
+        >
+          {ESTIMATE_TERMS_TEMPLATE_OPTIONS.map((t) => (
+            <option key={t.key} value={t.key}>
+              {t.label}
+            </option>
+          ))}
+        </select>
+        <p className="text-[10.5px] leading-relaxed text-muted-foreground line-clamp-2">
+          {ESTIMATE_TERMS_TEMPLATE_OPTIONS.find((t) => t.key === termsTemplate)?.body}
+        </p>
       </div>
 
       {/* Locked message – shown only when type is locked */}

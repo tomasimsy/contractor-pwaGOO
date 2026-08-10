@@ -37,7 +37,9 @@ import { RoofAreaSummaryCard } from "@/components/estimates/RoofAreaSummaryCard"
 import { SubAgentTabsPanel, type SubAgentTabsPanelRef } from "@/components/estimates/SubAgentTabsPanel";
 import { TeamMembersPanel, type TeamMembersPanelRef } from "@/components/estimates/TeamMembersPanel";
 import { usePermission } from "@/lib/hooks/usePermission";
-import { supabase } from "@/lib/supabase/client";
+import { getEstimateTermsTemplate, overrideForTemplateKey } from "@/lib/estimateTerms";
+import { TermsBody } from "@/components/shared/TermsBody";
+import type { CompanySettings } from "@/lib/services/companyService";
 import { sumApprovedChangeOrderRevenue, calculateRevisedEstimateTotal, calculateChangeOrderRevenue, calculateSubtotal, calculateLineItemTotal } from "@/lib/services/financialCalculations";
 import type { Estimate, EstimateLineItem } from "@/lib/services/estimateService";
 import type { Project } from "@/lib/services/projectService";
@@ -71,7 +73,7 @@ const formatMoney = (n: number) => n.toLocaleString("en-US", { style: "currency"
 
 export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { estimateId: string; editBasePath?: string }) {
   const router = useRouter();
-  const { estimateService, projectService, clientService, changeOrderService, auditService, financialEngine, roofingAreaService, estimateAreaLineItemService, invoiceService, paymentService, estimateWorkflow } = useServices();
+  const { estimateService, projectService, clientService, changeOrderService, auditService, financialEngine, roofingAreaService, estimateAreaLineItemService, invoiceService, paymentService, estimateWorkflow, companyService } = useServices();
   const canEditExpenses = usePermission("expense", "create");
   const canEditPayments = usePermission("payment", "create");
 
@@ -89,6 +91,12 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
   const [activity, setActivity] = useState<AuditLogEntry[]>([]);
   const [financials, setFinancials] = useState<EstimateFinancials | null>(null);
   const [roofingAreas, setRoofingAreas] = useState<RoofingArea[]>([]);
+  /** For resolving this company's own override of the estimate's
+   * Terms & Conditions template (lib/estimateTerms.ts). Null until
+   * loaded; the Terms section falls back to the built-in default in
+   * the meantime (getEstimateTermsTemplate handles a missing override
+   * the same way either way). */
+  const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
   /** The estimate's scope, normalized by EstimateService — items for a
    * standard estimate, roof-area scope for a roofing one. Rendering
    * `estimate.lineItems` directly showed a roofing estimate's dead
@@ -152,19 +160,21 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
         // includeDeleted: true on project/client — this estimate's own
         // context must never disappear just because either was later
         // deleted; financial history is permanent.
-        const [p, c, cos, scope, history, projectInvoices] = await Promise.all([
+        const [p, c, cos, scope, history, projectInvoices, companySettingsResult] = await Promise.all([
           projectService.getById(e.projectId, true),
           e.clientId ? clientService.getById(e.clientId, true) : Promise.resolve(null),
           changeOrderService.listForEstimate(e.id),
           estimateService.getScopeLines(e.id, e.estimateType),
           auditService.getHistory(e.companyId, "estimates", e.id),
           invoiceService.listForProject(e.projectId),
+          companyService.getByCompanyId(e.companyId),
         ]);
         setProject(p);
         if (c) setClient(c);
         setChangeOrders(cos);
         setScopeLines(scope);
         setActivity(history);
+        setCompanySettings(companySettingsResult);
 
         if (e.estimateType === "roofing") {
           const areas = await roofingAreaService.listForEstimate(e.id, true);
@@ -279,11 +289,17 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
     }
   }
 
-  async function handleDownloadPdf() {
+  // Synchronous, no `await` before window.open. The route now
+  // authenticates from the browser's own session cookie (see
+  // app/api/estimates/[id]/pdf/route.ts) — no bearer token, so nothing
+  // needs fetching first. That matters beyond tidiness: a `window.open`
+  // called AFTER an `await` loses the browser's "this came from a real
+  // click" signal, and gets silently blocked as a popup by exactly the
+  // browsers/conditions a local dev session tends not to hit — which is
+  // why this worked while testing locally and not for real users.
+  function handleDownloadPdf() {
     if (!estimate) return;
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    window.open(`/api/estimates/${estimate.id}/pdf${token ? `?token=${token}` : ""}`, "_blank");
+    window.open(`/api/estimates/${estimate.id}/pdf`, "_blank");
   }
 
   if (loading) return <PageContainer><div className="py-16 text-center text-sm font-medium text-muted-foreground animate-pulse">Loading estimate details...</div></PageContainer>;
@@ -870,6 +886,38 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
               -> Expenses/Invoices/Payments). Same EstimateFinancials
               object the top summary strip reads from. */}
           <EstimateProfitSummaryCard financials={financials} />
+
+          {/* Read-only — WHICH template is picked once, on Create/Edit
+              (EstimateForm) and frozen onto the estimate. The template's
+              TEXT is not frozen: it's resolved live from this company's
+              own override (Settings → Company → Terms & Conditions),
+              falling back to the built-in default in
+              lib/estimateTerms.ts. Same resolution, same source, on the
+              customer portal and in the generated PDF — editing a
+              template in Settings changes what this section (and
+              every other estimate on that key) shows immediately. */}
+          <section className="rounded-xl border border-border bg-card p-5 shadow-xs">
+            <h2 className="mb-3 flex items-center justify-between gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              <span className="flex items-center gap-2">
+                <FileText className="size-4 text-primary" /> Terms &amp; Conditions
+              </span>
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold normal-case text-foreground">
+                {getEstimateTermsTemplate(
+                  estimate.termsTemplate,
+                  companySettings ? overrideForTemplateKey(companySettings, estimate.termsTemplate) : null
+                ).label}
+              </span>
+            </h2>
+            <TermsBody
+              className="text-xs leading-relaxed text-muted-foreground"
+              body={
+                getEstimateTermsTemplate(
+                  estimate.termsTemplate,
+                  companySettings ? overrideForTemplateKey(companySettings, estimate.termsTemplate) : null
+                ).body
+              }
+            />
+          </section>
         </div>
 
         {/* Right Sidebar (Sub/Agent, Portal, Client & Signature, Activity Timeline) */}
@@ -919,7 +967,13 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
             </h2>
             {estimate.customerToken ? (
               <SharePortalPanel
-                portalUrl={`${origin}/portal/${estimate.id}?token=${encodeURIComponent(estimate.customerToken)}`}
+                // The token itself IS the path — no ?token= query
+                // string, so the credential never shows up in browser
+                // history, referrer headers, or server access logs.
+                // app/portal/[id]/page.tsx accepts this directly (and
+                // still honours the old ?token= form for any link
+                // already sent to a customer before this change).
+                portalUrl={`${origin}/portal/${estimate.customerToken}`}
                 clientName={client?.name ?? null}
                 clientPhone={client?.phone ?? null}
                 clientEmail={client?.email ?? null}

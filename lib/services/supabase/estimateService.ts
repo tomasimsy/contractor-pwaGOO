@@ -68,6 +68,7 @@ import type { ValidationService } from "../validationService";
 import type { AuditService } from "../auditService";
 import type { ProjectService } from "../projectService";
 import { calculateLineItemTotal, calculateSubtotal, calculateDocumentTotal, validateDepositAmount, needsTotalRecalculation } from "../financialCalculations";
+import { DEFAULT_ESTIMATE_TERMS_TEMPLATE, type EstimateTermsTemplateKey } from "../../estimateTerms";
 
 interface EstimateRow {
   id: string;
@@ -94,6 +95,7 @@ interface EstimateRow {
   delete_reason: string | null;
   customer_token: string | null;
   estimate_type: "standard" | "roofing";
+  terms_template: string | null;
 }
 
 interface EstimateItemRow {
@@ -129,6 +131,12 @@ function rowToEstimate(row: EstimateRow): Estimate {
     signature: row.signature,
     customerToken: row.customer_token,
     estimateType: row.estimate_type,
+    // Nullish-coalesced rather than trusted verbatim: a row written
+    // before this column existed (or a stale REST schema cache mid-
+    // deploy) has no value here, and "custom" is this app's own
+    // documented default for exactly that case — see the migration's
+    // header on why "custom" specifically.
+    termsTemplate: (row.terms_template as EstimateTermsTemplateKey | null) ?? "custom",
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedBy: row.updated_by,
@@ -428,6 +436,7 @@ export function createSupabaseEstimateService(
     taxRate: number;
     depositAmount?: number;
     estimateType?: "standard" | "roofing";
+    termsTemplate?: EstimateTermsTemplateKey;
   }): Promise<Estimate> {
     // Project ownership: the project must belong to the caller's own
     // company — mirrors ProjectService's own clientOwnership check.
@@ -470,6 +479,7 @@ export function createSupabaseEstimateService(
           total,
           deposit_amount: input.depositAmount ?? 0,
           estimate_type: input.estimateType ?? "standard",
+          terms_template: input.termsTemplate ?? DEFAULT_ESTIMATE_TERMS_TEMPLATE,
           // Portal capability token, minted at creation so every new
           // estimate is shareable immediately. Without this only rows
           // touched by the backfill migration would have one, and any
@@ -572,7 +582,7 @@ export function createSupabaseEstimateService(
 
   async function update(
     estimateId: UUID,
-    changes: Partial<{ title: string | null; description: string | null; projectId: UUID; clientId: UUID | null; markup: number; discount: number; taxRate: number; depositAmount: number; estimateType: "standard" | "roofing" }>
+    changes: Partial<{ title: string | null; description: string | null; projectId: UUID; clientId: UUID | null; markup: number; discount: number; taxRate: number; depositAmount: number; estimateType: "standard" | "roofing"; termsTemplate: EstimateTermsTemplateKey }>
   ): Promise<Estimate> {
     // Defense-in-depth: `changes`'s type already excludes subtotal/
     // total, so this can only fire if that type is loosened later (an
@@ -629,6 +639,7 @@ export function createSupabaseEstimateService(
     if (changes.taxRate !== undefined) payload.tax_rate = changes.taxRate;
     if (changes.depositAmount !== undefined) payload.deposit_amount = changes.depositAmount;
     if (changes.estimateType !== undefined) payload.estimate_type = changes.estimateType;
+    if (changes.termsTemplate !== undefined) payload.terms_template = changes.termsTemplate;
 
     if (Object.keys(payload).length > 0) {
       const { error } = await supabase.from("estimates").update(payload).eq("id", estimateId);
