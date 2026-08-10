@@ -28,7 +28,9 @@
  * `onChanged` lets the parent page re-read its own financials after any
  * mutation, so profit updates in the same interaction as the expense.
  */
+ 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from "react";
+// import { Plus, Pencil, Trash2, Receipt, RotateCcw, HardHat, Briefcase, FileText } from "lucide-react";
 import { Plus, Pencil, Trash2, Receipt, RotateCcw, HardHat, Briefcase, FileText } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ExpenseDialog } from "./ExpenseDialog";
@@ -287,17 +289,24 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
                     {/* ADDITIVE — attaching a vendor invoice UPDATES this
                         expense's due_date/bill_number. It never creates a
                         second cost. See AttachBillDialog. */}
-                    <button type="button" onClick={() => setBillFor(expense)}
-                      disabled={busyId === expense.id}
-                      aria-label={expense.dueDate ? `Edit bill on ${meta.label} cost` : `Attach invoice to ${meta.label} cost`}
-                      title={expense.dueDate ? "Bill attached — edit" : "Attach vendor invoice"}
-                      className={`rounded-lg p-1.5 disabled:opacity-50 ${
-                        expense.dueDate
-                          ? "text-primary hover:bg-primary/10"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                      }`}>
-                      <FileText className="size-3.5" />
-                    </button>
+                    <button
+  type="button"
+  onClick={() => setBillFor(expense)}
+  disabled={busyId === expense.id}
+  aria-label={
+    expense.dueDate
+      ? `Edit bill on ${meta.label} cost`
+      : `Attach invoice to ${meta.label} cost`
+  }
+  title={expense.dueDate ? "Bill attached — edit" : "Attach vendor invoice"}
+  className={`rounded-lg p-1.5 disabled:opacity-50 ${
+    expense.dueDate
+      ? "text-primary hover:bg-primary/10"
+      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+  }`}
+>
+  <FileText className="size-3.5" />
+</button>
                     <button type="button" onClick={() => handleDelete(expense, meta.label)}
                       disabled={busyId === expense.id}
                       aria-label={`Delete ${meta.label} cost`} title={`Delete ${meta.label} cost`}
