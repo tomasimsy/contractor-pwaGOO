@@ -59,6 +59,12 @@ export async function proxy(request: NextRequest) {
   // query string is the credential; this middleware was never what
   // protected them.
   const isPublicShareRoute = pathname.startsWith("/portal/") || pathname.startsWith("/invoice/");
+  // The marketing/landing page. `/` (app/page.tsx) already redirects a
+  // SIGNED-IN visitor straight to /dashboard itself — this exemption
+  // only stops a SIGNED-OUT visitor from being 302'd to /login before
+  // that page ever gets to render its own public content. No data is
+  // exposed: the landing page reads nothing from the database.
+  const isPublicMarketingRoute = pathname === "/";
   // API routes must never receive an HTML redirect — a fetch() caller
   // expects JSON (or a real error status), not a 302 into /login's
   // page markup (which is exactly what "Unexpected token '<'... is not
@@ -69,7 +75,7 @@ export async function proxy(request: NextRequest) {
   // session cookie themselves via createServerSupabaseClient).
   const isApiRoute = pathname.startsWith("/api/");
 
-  if (!user && !isAuthRoute && !isApiRoute && !isPublicShareRoute) {
+  if (!user && !isAuthRoute && !isApiRoute && !isPublicShareRoute && !isPublicMarketingRoute) {
     const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);
   }
