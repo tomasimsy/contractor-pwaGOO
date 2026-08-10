@@ -56,15 +56,15 @@ export default async function CustomerPortalPage({
 
   if (!estimate) {
     return (
-      <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-6 text-center bg-background">
-        <div className="rounded-2xl border border-border/60 bg-card p-8 shadow-sm">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+      <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-6 text-center bg-gray-50">
+        <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-600">
             <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
           </div>
-          <h1 className="text-lg font-semibold text-foreground">This link isn&apos;t available</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
+          <h1 className="text-lg font-semibold text-gray-900">This link isn&apos;t available</h1>
+          <p className="mt-2 text-sm text-gray-600">
             It may have expired or been removed. Please contact us for an updated link.
           </p>
         </div>
@@ -165,7 +165,7 @@ export default async function CustomerPortalPage({
   const flatScopeItems = lineItemsAreAuthoritative && !hasCategories ? lineItems : [];
 
   return (
-    <div className="min-h-screen bg-muted/20 pb-16">
+    <div className="min-h-screen bg-gray-50 pb-16">
       {/* ACTION BANNER — the one thing the customer must do, stated
           before anything else. Only while unsigned. */}
       {!isSigned && (
@@ -177,26 +177,26 @@ export default async function CustomerPortalPage({
       <main className="mx-auto max-w-xl px-4 py-6 sm:px-6 sm:py-8 space-y-5">
 
         {/* WHO / WHAT — company on the left, customer on the right. */}
-        <header className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+        <header className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
-              <h1 className="text-lg font-bold leading-tight text-foreground">{company.company_name}</h1>
-              <p className="mt-0.5 text-xs text-muted-foreground">
+              <h1 className="text-lg font-bold leading-tight text-gray-900">{company.company_name}</h1>
+              <p className="mt-0.5 text-xs text-gray-600">
                 Issued: {new Date(estimate.created_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
               </p>
             </div>
             {client?.name && (
               <div className="min-w-0 sm:text-right">
-                <p className="text-base font-bold text-foreground">{client.name}</p>
-                <p className="mt-0.5 font-mono text-xs text-muted-foreground">#{estimate.estimate_number ?? estimate.id.slice(0, 8)}</p>
+                <p className="text-base font-bold text-gray-900">{client.name}</p>
+                <p className="mt-0.5 font-mono text-xs text-gray-600">#{estimate.estimate_number ?? estimate.id.slice(0, 8)}</p>
               </div>
             )}
           </div>
         </header>
 
         {/* SCOPE & ESTIMATE — the document itself. */}
-        <section className="overflow-hidden rounded-2xl border-2 border-primary bg-card shadow-sm">
-          <div className="flex flex-wrap items-end justify-between gap-3 bg-primary px-5 py-4 text-primary-foreground">
+        <section className="overflow-hidden rounded-2xl border-2 border-gray-800 bg-white shadow-sm">
+          <div className="flex flex-wrap items-end justify-between gap-3 bg-gray-800 px-5 py-4 text-white">
             <div className="min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-wider opacity-80">Scope &amp; Estimate</p>
               <h2 className="text-lg font-bold leading-tight capitalize">{estimate.title || "Project Overview"}</h2>
@@ -209,26 +209,26 @@ export default async function CustomerPortalPage({
 
           <div className="space-y-5 p-5">
           {estimate.description && (
-            <div className="rounded-r-lg border-l-4 border-amber-500 bg-amber-100/40 p-4 dark:bg-amber-200/20">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-800">
+            <div className="rounded-r-lg border-l-4 border-amber-500 bg-amber-50 p-4">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
                 Project Objective
               </p>
-              <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-amber-950 dark:text-amber-950">
+              <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-amber-950">
                 {estimate.description}
               </p>
             </div>
           )}
 
             <div>
-              <div className="flex items-center justify-between gap-2 border-b border-border pb-2">
-                <h3 className="text-sm font-bold uppercase tracking-wide text-foreground">Scope Summary</h3>
-                <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+              <div className="flex items-center justify-between gap-2 border-b border-gray-200 pb-2">
+                <h3 className="text-sm font-bold uppercase tracking-wide text-gray-900">Scope Summary</h3>
+                <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">
                   {scopeItemCount} {scopeItemCount === 1 ? "item" : "items"}
                 </span>
               </div>
 
               {scopeItemCount === 0 ? (
-                <p className="py-6 text-center text-xs text-muted-foreground">
+                <p className="py-6 text-center text-xs text-gray-600">
                   No itemised scope listed. See the PDF below for full details.
                 </p>
               ) : (
@@ -236,21 +236,21 @@ export default async function CustomerPortalPage({
                   {!lineItemsAreAuthoritative && (
                     <div>
                       <div className="flex items-baseline justify-between gap-2">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-primary">Project Scope</h4>
-                        <span className="text-xs font-semibold text-muted-foreground">{money(storedSubtotal)}</span>
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700">Project Scope</h4>
+                        <span className="text-xs font-semibold text-gray-600">{money(storedSubtotal)}</span>
                       </div>
                       <ul className="mt-1.5 space-y-1.5">
                         <li className="flex items-start justify-between gap-3 text-sm">
-                          <span className="flex min-w-0 gap-2 text-foreground">
-                            <span aria-hidden className="mt-1.5 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                          <span className="flex min-w-0 gap-2 text-gray-900">
+                            <span aria-hidden className="mt-1.5 size-1 shrink-0 rounded-full bg-gray-400" />
                             <span className="min-w-0">
                               Quoted work as specified
-                              <span className="block text-xs text-muted-foreground">
+                              <span className="block text-xs text-gray-600">
                                 Full itemisation is in the estimate PDF below.
                               </span>
                             </span>
                           </span>
-                          <span className="shrink-0 font-semibold text-foreground">{money(storedSubtotal)}</span>
+                          <span className="shrink-0 font-semibold text-gray-900">{money(storedSubtotal)}</span>
                         </li>
                       </ul>
                     </div>
@@ -258,21 +258,21 @@ export default async function CustomerPortalPage({
                   {flatScopeItems.length > 0 && (
                     <div>
                       <div className="flex items-baseline justify-between gap-2">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-primary">Quoted Work</h4>
-                        <span className="text-xs font-semibold text-muted-foreground">{money(storedSubtotal)}</span>
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700">Quoted Work</h4>
+                        <span className="text-xs font-semibold text-gray-600">{money(storedSubtotal)}</span>
                       </div>
                       <ul className="mt-1.5 space-y-1.5">
                         {flatScopeItems.map((item) => (
                           <li key={item.id} className="flex items-start justify-between gap-3 text-sm">
-                            <span className="flex min-w-0 gap-2 text-foreground">
-                              <span aria-hidden className="mt-1.5 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                            <span className="flex min-w-0 gap-2 text-gray-900">
+                              <span aria-hidden className="mt-1.5 size-1 shrink-0 rounded-full bg-gray-400" />
                               <span className="min-w-0">
                                 {item.name}
-                                {(item.quantity ?? 0) > 1 && <span className="text-muted-foreground"> × {item.quantity}</span>}
-                                {item.description && <span className="block text-xs text-muted-foreground">{item.description}</span>}
+                                {(item.quantity ?? 0) > 1 && <span className="text-gray-600"> × {item.quantity}</span>}
+                                {item.description && <span className="block text-xs text-gray-600">{item.description}</span>}
                               </span>
                             </span>
-                            <span className="shrink-0 font-semibold text-foreground">{money(item.total ?? 0)}</span>
+                            <span className="shrink-0 font-semibold text-gray-900">{money(item.total ?? 0)}</span>
                           </li>
                         ))}
                       </ul>
@@ -281,25 +281,25 @@ export default async function CustomerPortalPage({
                   {lineItemsAreAuthoritative && scopeGroups.map((group) => (
                     <div key={group.label}>
                       <div className="flex items-baseline justify-between gap-2">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-primary">{group.label}</h4>
-                        <span className="text-xs font-semibold text-muted-foreground">{money(group.subtotal)}</span>
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700">{group.label}</h4>
+                        <span className="text-xs font-semibold text-gray-600">{money(group.subtotal)}</span>
                       </div>
                       <ul className="mt-1.5 space-y-1.5">
                         {group.items.map((item) => (
                           <li key={item.id} className="flex items-start justify-between gap-3 text-sm">
-                            <span className="flex min-w-0 gap-2 text-foreground">
-                              <span aria-hidden className="mt-1.5 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                            <span className="flex min-w-0 gap-2 text-gray-900">
+                              <span aria-hidden className="mt-1.5 size-1 shrink-0 rounded-full bg-gray-400" />
                               <span className="min-w-0">
                                 {item.name}
                                 {(item.quantity ?? 0) > 1 && (
-                                  <span className="text-muted-foreground"> × {item.quantity}</span>
+                                  <span className="text-gray-600"> × {item.quantity}</span>
                                 )}
                                 {item.description && (
-                                  <span className="block text-xs text-muted-foreground">{item.description}</span>
+                                  <span className="block text-xs text-gray-600">{item.description}</span>
                                 )}
                               </span>
                             </span>
-                            <span className="shrink-0 font-semibold text-foreground">{money(item.total ?? 0)}</span>
+                            <span className="shrink-0 font-semibold text-gray-900">{money(item.total ?? 0)}</span>
                           </li>
                         ))}
                       </ul>
@@ -312,22 +312,22 @@ export default async function CustomerPortalPage({
                   {approvedChangeOrderItems.length > 0 && (
                     <div>
                       <div className="flex items-baseline justify-between gap-2">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-primary">Approved Change Orders</h4>
-                        <span className="text-xs font-semibold text-muted-foreground">{money(approvedChangeOrderRevenue)}</span>
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700">Approved Change Orders</h4>
+                        <span className="text-xs font-semibold text-gray-600">{money(approvedChangeOrderRevenue)}</span>
                       </div>
                       <ul className="mt-1.5 space-y-1.5">
                         {approvedChangeOrderItems.map((item) => (
                           <li key={item.id} className="flex items-start justify-between gap-3 text-sm">
-                            <span className="flex min-w-0 gap-2 text-foreground">
-                              <span aria-hidden className="mt-1.5 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                            <span className="flex min-w-0 gap-2 text-gray-900">
+                              <span aria-hidden className="mt-1.5 size-1 shrink-0 rounded-full bg-gray-400" />
                               <span className="min-w-0">
                                 {item.name}
                                 {item.description && (
-                                  <span className="block text-xs text-muted-foreground">{item.description}</span>
+                                  <span className="block text-xs text-gray-600">{item.description}</span>
                                 )}
                               </span>
                             </span>
-                            <span className="shrink-0 font-semibold text-foreground">{money(item.total)}</span>
+                            <span className="shrink-0 font-semibold text-gray-900">{money(item.total)}</span>
                           </li>
                         ))}
                       </ul>
@@ -342,12 +342,12 @@ export default async function CustomerPortalPage({
 {/* FINANCIAL SUMMARY — deliberately one dark, high-contrast
             block in both themes so the number the customer is agreeing
             to cannot be skimmed past. */}
-        <section className="rounded-2xl bg-zinc-900 p-5 text-white shadow-sm">
-          <h2 className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Financial Summary</h2>
+        <section className="rounded-2xl bg-gray-900 p-5 text-white shadow-sm">
+          <h2 className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Financial Summary</h2>
           <dl className="mt-3 space-y-2 text-sm">
             {hasAdjustments && (
               <div className="flex items-baseline justify-between gap-3">
-                <dt className="text-zinc-300">Scope subtotal</dt>
+                <dt className="text-gray-300">Scope subtotal</dt>
                 <dd className="font-semibold">{money(storedSubtotal)}</dd>
               </div>
             )}
@@ -357,21 +357,21 @@ export default async function CustomerPortalPage({
                 clean. */}
             {hasAdjustments && (
               <div className="flex items-baseline justify-between gap-3">
-                <dt className="text-zinc-300">Adjustments &amp; tax</dt>
+                <dt className="text-gray-300">Adjustments &amp; tax</dt>
                 <dd className="font-semibold">{adjustments < 0 ? `−${money(Math.abs(adjustments))}` : money(adjustments)}</dd>
               </div>
             )}
             <div className="flex items-baseline justify-between gap-3">
-              <dt className="text-zinc-300">Current estimate</dt>
+              <dt className="text-gray-300">Current estimate</dt>
               <dd className="font-semibold">{money(estimateTotal)}</dd>
             </div>
             {approvedChangeOrderRevenue !== 0 && (
               <div className="flex items-baseline justify-between gap-3">
-                <dt className="text-zinc-300">Approved change orders</dt>
+                <dt className="text-gray-300">Approved change orders</dt>
                 <dd className="font-semibold">{money(approvedChangeOrderRevenue)}</dd>
               </div>
             )}
-            <div className="flex items-baseline justify-between gap-3 border-t border-zinc-700 pt-2">
+            <div className="flex items-baseline justify-between gap-3 border-t border-gray-700 pt-2">
               <dt className="font-semibold">Contract total</dt>
               <dd className="text-xl font-bold">{money(contractTotal)}</dd>
             </div>
@@ -384,7 +384,7 @@ export default async function CustomerPortalPage({
               const isPaidInFull = totalBalance === 0;
 
               return (
-                <div className="flex items-baseline justify-between gap-3 border-t border-zinc-700 pt-2 text-zinc-300">
+                <div className="flex items-baseline justify-between gap-3 border-t border-gray-700 pt-2 text-gray-300">
                   <dt className="font-medium">Balance Due</dt>
                   <dd className={`font-bold ${isPaidInFull ? "text-emerald-400" : "text-amber-400"}`}>
                     {money(totalBalance)}
@@ -397,34 +397,34 @@ export default async function CustomerPortalPage({
 
         {/* Terms — collapsed by default so it never buries the action. */}
         {company.terms_conditions && (
-          <details className="group rounded-2xl border border-border/60 bg-card shadow-sm">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-2xl px-5 py-4 text-sm font-semibold text-foreground hover:bg-muted/40">
+          <details className="group rounded-2xl border border-gray-200 bg-white shadow-sm">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-2xl px-5 py-4 text-sm font-semibold text-gray-900 hover:bg-gray-50">
               Terms &amp; Conditions
-              <span aria-hidden className="text-primary transition-transform group-open:rotate-180">▾</span>
+              <span aria-hidden className="text-gray-600 transition-transform group-open:rotate-180">▾</span>
             </summary>
-            <div className="border-t border-border/60 px-5 py-4">
-              <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">{company.terms_conditions}</p>
+            <div className="border-t border-gray-200 px-5 py-4">
+              <p className="whitespace-pre-wrap text-xs leading-relaxed text-gray-600">{company.terms_conditions}</p>
             </div>
           </details>
         )}
 
-        <Link
+        {/* <Link
           href={`/api/estimates/${estimate.id}/pdf?customerToken=${encodeURIComponent(token ?? "")}`}
           target="_blank"
-          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-border/80 bg-card px-4 text-xs font-semibold text-foreground shadow-xs transition-colors hover:bg-muted/50"
+          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 text-xs font-semibold text-gray-900 shadow-xs transition-colors hover:bg-gray-50"
         >
-          <svg className="h-4 w-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="h-4 w-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
           Download estimate PDF
-        </Link>
+        </Link> */}
 
         {/* CHANGE ORDERS */}
         {allChangeOrders.length > 0 && (
-          <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm space-y-3">
+          <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-3">
             <div>
-              <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Change Orders</h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-gray-600">Change Orders</h2>
+              <p className="mt-0.5 text-xs text-gray-600">
                 Additional work proposed after the original estimate. Approved items update the contract total automatically.
               </p>
             </div>
@@ -438,8 +438,8 @@ export default async function CustomerPortalPage({
 
 {/* INVOICES SECTION */}
         {invoices.length > 0 && (
-          <section className="rounded-xl border border-border/60 bg-card p-3.5 shadow-sm space-y-2.5">
-            <h2 className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Invoices</h2>
+          <section className="rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm space-y-2.5">
+            <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-600">Invoices</h2>
             <div className="space-y-2">
               {invoices.map((inv) => {
                 const pays = inv.payments ?? [];
@@ -457,37 +457,37 @@ export default async function CustomerPortalPage({
                 const isPaidInFull = status === "paid";
                 
                 return (
-                  <div key={inv.id} className="rounded-lg border border-border/60 bg-muted/20 p-2.5 space-y-2 text-xs">
+                  <div key={inv.id} className="rounded-lg border border-gray-200 bg-gray-50 p-2.5 space-y-2 text-xs">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 truncate">
-                        <span className="font-mono font-bold text-foreground">
+                        <span className="font-mono font-bold text-gray-900">
                           #{inv.invoice_number ?? inv.id.slice(0, 8)}
                         </span>
-                        <span className="text-[11px] text-muted-foreground truncate">
+                        <span className="text-[11px] text-gray-600 truncate">
                           {inv.issue_date ?? "—"} → {inv.due_date ?? "—"}
                         </span>
                       </div>
                       <span className={`rounded-full px-2 py-0.2 text-[10px] font-bold uppercase tracking-wider shrink-0 ${
                         isPaidInFull 
-                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-800 border border-emerald-500/20" 
-                          : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                          ? "bg-emerald-100 text-emerald-700 border border-emerald-200" 
+                          : "bg-amber-100 text-amber-700 border border-amber-200"
                       }`}>
                         {status.replace(/_/g, " ")}
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2 bg-card px-2.5 py-1.5 rounded border border-border/40 text-[11px]">
-                      <div className="flex justify-between text-muted-foreground">
+                    <div className="grid grid-cols-3 gap-2 bg-white px-2.5 py-1.5 rounded border border-gray-200 text-[11px]">
+                      <div className="flex justify-between text-gray-600">
                         <span>Total:</span>
-                        <span className="font-medium text-foreground">{money(invTotal)}</span>
+                        <span className="font-medium text-gray-900">{money(invTotal)}</span>
                       </div>
-                      <div className="flex justify-between text-muted-foreground">
+                      <div className="flex justify-between text-gray-600">
                         <span>Paid:</span>
-                        <span className="font-medium text-emerald-600 dark:text-emerald-800">-{money(paid)}</span>
+                        <span className="font-medium text-emerald-600">-{money(paid)}</span>
                       </div>
-                      <div className="flex justify-between font-bold text-foreground">
+                      <div className="flex justify-between font-bold text-gray-900">
                         <span>Balance:</span>
-                        <span className="text-primary">{money(balance)}</span>
+                        <span className="text-gray-700">{money(balance)}</span>
                       </div>
                     </div>
 
@@ -495,14 +495,14 @@ export default async function CustomerPortalPage({
                       <div className="flex flex-wrap items-center gap-3 pt-0.5">
                         {/* <Link
                           href={`/invoice/${inv.id}?token=${encodeURIComponent(inv.customer_token)}`}
-                          className="inline-flex items-center text-[11px] font-semibold text-primary hover:underline"
+                          className="inline-flex items-center text-[11px] font-semibold text-gray-700 hover:underline"
                         >
                           View invoice &rarr;
                         </Link>
                         <Link
                           href={`/api/invoices/${inv.id}/pdf?customerToken=${encodeURIComponent(inv.customer_token)}`}
                           target="_blank"
-                          className="inline-flex items-center text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+                          className="inline-flex items-center text-[11px] font-semibold text-gray-600 hover:text-gray-900"
                         >
                           Download PDF
                         </Link> */}
@@ -517,22 +517,22 @@ export default async function CustomerPortalPage({
 
         {/* PAYMENT INSTRUCTIONS */}
         {company.payment_instructions && (
-          <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm space-y-2">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Payment Instructions</h2>
-            <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed bg-muted/40 p-3 rounded-xl border border-border/40">
+          <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-2">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-gray-600">Payment Instructions</h2>
+            <p className="text-xs text-gray-600 whitespace-pre-wrap leading-relaxed bg-gray-50 p-3 rounded-xl border border-gray-200">
               {company.payment_instructions}
             </p>
           </section>
         )}
 
         {/* SIGNATURE / APPROVAL SECTION */}
-        <section className={`rounded-2xl border p-5 shadow-sm transition-colors ${
+        <section className={`rounded-2xl border p-5 shadow-sm ${
           isSigned 
-            ? "border-emerald-500/30 bg-emerald-500/[0.02]" 
-            : "border-border/60 bg-card"
+            ? "border-emerald-300 bg-emerald-50" 
+            : "border-gray-200 bg-white"
         }`}>
           <div className="mb-3">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-gray-600">
               {isSigned ? "Approval Status" : "Authorize Estimate"}
             </h2>
           </div>
@@ -544,8 +544,8 @@ export default async function CustomerPortalPage({
         </section>
 
         {/* FOOTER */}
-        <footer className="pt-4 text-center text-xs text-muted-foreground space-y-1">
-          <p className="font-medium text-foreground">{company.company_name} {company.company_phone ? `· ${company.company_phone}` : ""}</p>
+        <footer className="pt-4 text-center text-xs text-gray-600 space-y-1">
+          <p className="font-medium text-gray-900">{company.company_name} {company.company_phone ? `· ${company.company_phone}` : ""}</p>
           {company.footer_message && <p className="text-[11px]">{company.footer_message}</p>}
         </footer>
 

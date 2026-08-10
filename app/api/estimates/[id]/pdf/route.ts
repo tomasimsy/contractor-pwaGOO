@@ -1332,14 +1332,14 @@ export async function GET(
                 <div>
                   Make checks payable to:
                   <strong style="color: #111827;">
-                    ${company.name || "One Square Roofing, LLC"}
+                    One Square Roofing, LLC 
                   </strong>
                 </div>
 
                 <div style="margin-top: 2px;">
                   Mailing address:
                   <span style="color: #111827;">
-                    ${company.address || "2113 Eagle Valley Ct, Kernersville, NC 27284"}
+                     2113 Eagle Valley Ct, Kernersville, NC 27284 
                   </span>
                 </div>
               </div>
