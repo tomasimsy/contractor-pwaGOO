@@ -65,13 +65,8 @@ export function Footer() {
           </div>
         </div>
 
-        <div className="mt-16 flex flex-col gap-4 border-t border-white/10 pt-8 md:flex-row md:items-center md:justify-between">
-          <p className="text-[11px] text-white/25">
-            © {new Date().getFullYear()} OSR Pros. All rights reserved.
-          </p>
-          <p className="font-[family-name:var(--font-landing-mono)] text-[10px] uppercase tracking-[0.12em] text-white/25">
-            Home Remodeling · Business Renovation · Construction Services
-          </p>
+        <div className="mt-16 border-t border-white/10 pt-8">
+          <p className="text-[11px] text-white/25">© {new Date().getFullYear()} OSR Pros</p>
         </div>
       </div>
     </footer>

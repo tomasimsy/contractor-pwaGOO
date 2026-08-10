@@ -93,14 +93,14 @@ export function Hero({ isSignedIn = false }: { isSignedIn?: boolean }) {
             <span className="italic text-[#CB9A3E]">actually</span> live in.
           </h2>
 
-          <div className="mt-9 max-w-md space-y-4 border-l-2 border-white/15 pl-6">
+          <div className="mt-9 max-w-md space-y-4">
             <p className="text-lg leading-relaxed text-white/80">
-              High-end remodeling, precision craftsmanship, and modern design
-              — for the rooms you use every day, not just a showroom photo.
+              Remodeling done right with quality workmanship, thoughtful design, and a focus on what works for you.
+
             </p>
             <p className="text-sm leading-relaxed text-white/45">
-              Kitchens, baths, full renovations, salons, offices, flooring,
-              decks, and roofing — across Charlotte and the surrounding area.
+              From kitchens and bathrooms to full renovations, salons, offices, flooring, decks, and more — serving Charlotte and the surrounding area.
+
             </p>
           </div>
 
@@ -134,15 +134,15 @@ export function Hero({ isSignedIn = false }: { isSignedIn?: boolean }) {
             />
             <div className="absolute inset-0 bg-gradient-to-t from-[#1C1410]/70 via-transparent to-transparent" />
           </div>
-          {/* Notch tag — breaks the rectangle */}
-          <div className="absolute -bottom-5 -left-5 flex items-center gap-3 bg-[#CB9A3E] px-5 py-3 sm:-bottom-6 sm:-left-6">
-            <span className="font-[family-name:var(--font-landing-display)] text-3xl font-semibold text-[#1C1410]">
-              10+
+          {/* Notch tag — breaks the rectangle. Honest, not a fabricated
+              years-in-business stat: this is a new company, and the
+              claim here is about attention, not tenure. */}
+          <div className="absolute -bottom-5 -left-5 max-w-[220px] bg-[#CB9A3E] px-5 py-4 sm:-bottom-6 sm:-left-6">
+            <span className="font-[family-name:var(--font-landing-display)] text-lg font-semibold leading-snug text-[#1C1410]">
+              Nothing to coast on.
             </span>
-            <span className="font-[family-name:var(--font-landing-mono)] text-[10px] uppercase leading-tight tracking-[0.1em] text-[#1C1410]">
-              Years
-              <br />
-              Building
+            <span className="mt-1.5 block font-[family-name:var(--font-landing-mono)] text-[10px] uppercase leading-tight tracking-[0.1em] text-[#1C1410]/70">
+              Every job earns the next one
             </span>
           </div>
         </div>

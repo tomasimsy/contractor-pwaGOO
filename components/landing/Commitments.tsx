@@ -1,33 +1,51 @@
 "use client";
 
 /**
- * Ported from the previous app's testimonials.tsx — the auto-scroll +
- * click-drag carousel logic (requestAnimationFrame loop, seamless
- * loop-around, mouse drag-to-scroll) is preserved verbatim. Only the
- * visual treatment changed.
+ * Replaces the previous app's testimonials.tsx. That file had fabricated
+ * client names and quotes — this is a genuinely new business with no
+ * customer history to draw real ones from, and inventing them isn't an
+ * option. The auto-scroll + click-drag carousel MECHANISM (the
+ * requestAnimationFrame loop, seamless loop-around, mouse drag-to-scroll)
+ * is preserved verbatim from that file — it's a UI pattern, not a claim
+ * about anyone. What's on the cards changed: honest statements about how
+ * the company works, not invented social proof.
  */
 import { useEffect, useRef, useState } from "react";
 
-const testimonials = [
-  { name: "James R.", text: "OSR Pros completely transformed our kitchen." },
-  { name: "Maria L.", text: "Bathroom remodel exceeded expectations." },
-  { name: "Daniel K.", text: "Full home renovation was flawless." },
-  { name: "Sophia M.", text: "Living room makeover changed everything." },
-  { name: "Anthony B.", text: "Basement finishing was fast and clean." },
-  { name: "Emily W.", text: "Flooring work looks perfect." },
-  { name: "Chris T.", text: "Outdoor deck turned out amazing." },
-  { name: "Laura P.", text: "Very professional and reliable team." },
-  { name: "Kevin S.", text: "Smooth process from start to finish." },
-  { name: "Angela D.", text: "Best contractors we've worked with." },
+const commitments = [
+  {
+    title: "You talk to the person doing the work",
+    text: "No account managers, no call center. The person planning your project is the one on site.",
+  },
+  {
+    title: "Scope and price, in writing, before we start",
+    text: "You'll know what's included, what isn't, and what it costs — before any work begins.",
+  },
+  {
+    title: "New company. Everything to prove.",
+    text: "We don't have a decade of jobs behind us yet — which means your project gets our full attention, not a fraction of it.",
+  },
+  {
+    title: "We show up when we say we will",
+    text: "Clear timelines, and a heads-up the moment anything changes — not silence.",
+  },
+  {
+    title: "Licensed and insured, from day one",
+    text: "New doesn't mean unqualified. The paperwork is real, checked, and current.",
+  },
+  {
+    title: "Small enough to sweat the details",
+    text: "You're not job #400 on a list. Every project is one we're building our name on.",
+  },
 ];
 
-export function Testimonials() {
+export function Commitments() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const dragData = useRef({ startX: 0, scrollLeft: 0 });
 
-  const looped = [...testimonials, ...testimonials];
+  const looped = [...commitments, ...commitments];
 
   useEffect(() => {
     const el = containerRef.current;
@@ -72,12 +90,18 @@ export function Testimonials() {
     <section className="w-full overflow-hidden bg-[#F4F3EF] py-24 md:py-32">
       <div className="mx-auto max-w-4xl px-6 text-center lg:px-16">
         <p className="mb-6 font-[family-name:var(--font-landing-mono)] text-[11px] uppercase tracking-[0.3em] text-[#B23A1C]">
-          Client Stories
+          Why a New Company
         </p>
 
         <h2 className="font-[family-name:var(--font-landing-display)] text-4xl font-semibold tracking-tight text-[#1C1410] md:text-5xl lg:text-6xl">
-          Voices from our <span className="italic">clients</span>.
+          We&apos;re new. <span className="italic">Here&apos;s what that gets you.</span>
         </h2>
+
+        <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-[#1C1410]/55 md:text-lg">
+          We&apos;re not going to pretend we&apos;ve got decades of jobs behind
+          us — we don&apos;t. What you get instead: a company with everything
+          riding on getting your project right.
+        </p>
       </div>
 
       <div className="relative mt-16 md:mt-20">
@@ -97,39 +121,20 @@ export function Testimonials() {
           onMouseMove={handleMouseMove}
           onMouseUp={stopDragging}
         >
-          {looped.map((t, i) => (
+          {looped.map((c, i) => (
             <div
               key={i}
               className="w-[280px] shrink-0 border-2 border-[#1C1410] bg-white p-7 md:w-[320px] md:p-8"
             >
-              <div className="flex items-center gap-3">
-                <div className="flex gap-0.5 text-[#B23A1C]">
-                  {[...Array(5)].map((_, star) => (
-                    <svg key={star} className="h-3 w-3 fill-current" viewBox="0 0 20 20">
-                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                    </svg>
-                  ))}
-                </div>
-                <span className="font-[family-name:var(--font-landing-mono)] text-[10px] uppercase tracking-[0.15em] text-[#1C1410]/35">
-                  5.0
-                </span>
-              </div>
+              <span className="font-[family-name:var(--font-landing-mono)] text-[10px] uppercase tracking-[0.15em] text-[#B23A1C]">
+                {String((i % commitments.length) + 1).padStart(2, "0")}
+              </span>
 
-              <p className="mt-5 font-[family-name:var(--font-landing-display)] text-lg leading-snug text-[#1C1410]">
-                &ldquo;{t.text}&rdquo;
+              <p className="mt-4 font-[family-name:var(--font-landing-display)] text-lg font-medium leading-snug text-[#1C1410]">
+                {c.title}
               </p>
 
-              <div className="mt-6 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center bg-[#1C1410] font-[family-name:var(--font-landing-mono)] text-sm font-bold text-[#CB9A3E]">
-                  {t.name.charAt(0)}
-                </div>
-                <div>
-                  <h4 className="text-sm font-semibold text-[#1C1410]">{t.name}</h4>
-                  <p className="font-[family-name:var(--font-landing-mono)] text-[10px] uppercase tracking-[0.1em] text-[#1C1410]/40">
-                    Verified Client
-                  </p>
-                </div>
-              </div>
+              <p className="mt-3 text-sm leading-relaxed text-[#1C1410]/55">{c.text}</p>
             </div>
           ))}
         </div>
