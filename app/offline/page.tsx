@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Offline — Contractor App",
+  title: "Offline — OSR Pros",
 };
 
 /**

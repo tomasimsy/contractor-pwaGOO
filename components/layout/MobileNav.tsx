@@ -39,7 +39,7 @@ export function MobileNav({ open, onClose }: { open: boolean; onClose: () => voi
       <div className="absolute inset-0 bg-black/40" onClick={onClose} aria-hidden="true" />
       <div role="dialog" aria-modal="true" aria-label="Main navigation" className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-card shadow-xl">
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
-          <span className="text-sm font-semibold text-foreground">Contractor App</span>
+          <span className="text-sm font-semibold text-foreground">OSR Pros</span>
           <button
             type="button"
             onClick={onClose}

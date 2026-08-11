@@ -106,7 +106,7 @@ export function InstallPrompt() {
     <div className="fixed inset-x-2 bottom-2 z-50 rounded-xl border border-primary/30 bg-card p-3 shadow-lg lg:hidden">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-foreground">Install Contractor App</p>
+          <p className="text-sm font-semibold text-foreground">Install OSR Pros</p>
           {isIosSafari && !deferred ? (
             <p className="mt-0.5 text-xs text-muted-foreground">
               Tap <Share className="inline size-3.5 align-text-bottom" /> Share, then{" "}

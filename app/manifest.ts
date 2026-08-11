@@ -23,8 +23,8 @@ import type { MetadataRoute } from "next";
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Contractor App",
-    short_name: "Contractor",
+    name: "OSR Pros",
+    short_name: "OSR Pros",
     description: "Estimates, invoices, expenses and projects for contractors.",
     start_url: "/dashboard",
     scope: "/",

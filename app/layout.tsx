@@ -16,20 +16,20 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Contractor App",
+  title: "OSR Pros",
   description: "Contractor management platform",
   // Next serves app/manifest.ts at this path; naming it explicitly is
   // what puts <link rel="manifest"> in the document, which is the
   // precondition for any browser to consider the app installable.
   manifest: "/manifest.webmanifest",
-  applicationName: "Contractor App",
+  applicationName: "OSR Pros",
   appleWebApp: {
     // iOS has no manifest support: these meta tags are the ONLY way to
     // get a standalone (chrome-less) launch and a home-screen title
     // there. Without them an iOS "Add to Home Screen" opens a plain
     // Safari tab with the URL bar visible.
     capable: true,
-    title: "Contractor",
+    title: "OSR Pros",
     statusBarStyle: "default",
   },
   icons: {
