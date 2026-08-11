@@ -54,6 +54,12 @@ import type {
 import { EXPENSE_TYPES } from "../expenseService";
 import type { SubcontractorService, Subcontractor, SubcontractorAssignment, SubcontractorPayment } from "../subcontractorService";
 import type { AgentCommissionService, Agent, AgentAssignment, AgentPayment } from "../agentCommissionService";
+import type { TeamAssignmentService, TeamAssignment, TeamAssignmentWithName } from "../teamAssignmentService";
+import type { ClientService, Client, CreateClientInput } from "../clientService";
+import type { CompanyService, CompanySettings } from "../companyService";
+import { DEFAULT_COMPANY_SETTINGS, mergeCompanyDefaults } from "../../company";
+import type { BillScheduleService, BillSchedule, BillScheduleCreateInput } from "../billScheduleService";
+import { advanceBillDate } from "../billScheduleService";
 import type { TransactionService, AppendTransactionInput } from "../transactionService";
 import type {
   UUID,
@@ -134,6 +140,19 @@ export interface InMemoryStore {
   payees: Map<UUID, Payee>;
   payRuns: Map<UUID, PayRun>;
   locations: Map<UUID, Location>;
+  /** Prerequisite A (System Integrity Audit) — the four entities that
+   * previously had NO in-memory double, meaning team labour, bills,
+   * clients, and company settings were untestable at the service
+   * level and financialEngine's `deps.teamAssignmentService` was
+   * always undefined in every test built on this file, silently
+   * resolving every team-labour figure to empty. */
+  teamAssignments: Map<UUID, TeamAssignment & { memberName: string }>;
+  clients: Map<UUID, Client>;
+  /** Keyed by companyId, mirroring the real table's one-row-per-company
+   * shape (company_settings.company_id, not unique-constrained but
+   * treated as 0-or-1 by every real caller — see lib/company.ts). */
+  companySettings: Map<UUID, Partial<CompanySettings>>;
+  billSchedules: Map<UUID, BillSchedule>;
 }
 
 export function createInMemoryStore(): InMemoryStore {
@@ -158,6 +177,10 @@ export function createInMemoryStore(): InMemoryStore {
     payees: new Map(),
     payRuns: new Map(),
     locations: new Map(),
+    teamAssignments: new Map(),
+    clients: new Map(),
+    companySettings: new Map(),
+    billSchedules: new Map(),
   };
 }
 
@@ -1867,6 +1890,314 @@ function createAgentCommissionService(store: InMemoryStore, validation: Validati
   };
 }
 
+// ======================================================================
+// PREREQUISITE A (System Integrity Audit) — the four services that
+// previously had no in-memory double: TeamAssignmentService,
+// ClientService, CompanyService, BillScheduleService. Same patterns as
+// the services above (soft delete with a required reason, deleted rows
+// excluded from every list/query, paid-guard mirrored from the real
+// Supabase implementations where one exists).
+// ======================================================================
+
+/** Mirrors SubcontractorService/AgentCommissionService's in-memory
+ * shape. `listForEstimate`/`listAssignments` both exclude soft-deleted
+ * rows — the same load-bearing filter those two services' own comments
+ * document (FinancialEngine sums these directly into committed cost). */
+function createTeamAssignmentService(store: InMemoryStore, validation: ValidationService): TeamAssignmentService {
+  // No roster table for team members — they ARE company users
+  // (profiles), which this in-memory store has no map for either.
+  // "memberName" is therefore just a stable placeholder per userId, the
+  // same way agent/subcontractor names are real but a team member's
+  // display name would come from `list_company_members` in production.
+  const nameFor = (userId: UUID) => `Member ${userId.slice(0, 8)}`;
+
+  async function listForEstimate(estimateId: UUID): Promise<TeamAssignmentWithName[]> {
+    return Array.from(store.teamAssignments.values())
+      .filter((a) => a.estimateId === estimateId && !a.deletedAt)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async function listAssignments(scope: QueryScope): Promise<TeamAssignmentWithName[]> {
+    return Array.from(store.teamAssignments.values()).filter(
+      (a) => a.companyId === scope.companyId && !a.deletedAt && (!scope.projectId || a.projectId === scope.projectId)
+    );
+  }
+
+  async function assign(input: {
+    companyId: UUID; estimateId: UUID; projectId: UUID | null; userId: UUID; amount: number; notes?: string | null;
+  }): Promise<TeamAssignment> {
+    // Same partial-unique-index rule the real migration enforces: one
+    // LIVE assignment per (estimate, user).
+    const clash = Array.from(store.teamAssignments.values()).some(
+      (a) => a.estimateId === input.estimateId && a.userId === input.userId && !a.deletedAt
+    );
+    if (clash) throw new Error("That team member is already assigned to this estimate.");
+
+    const assignment: TeamAssignment & { memberName: string } = {
+      id: id(),
+      companyId: input.companyId,
+      estimateId: input.estimateId,
+      projectId: input.projectId,
+      userId: input.userId,
+      amount: input.amount,
+      notes: input.notes ?? null,
+      createdBy: null,
+      createdAt: now(),
+      updatedBy: null,
+      updatedAt: now(),
+      deletedBy: null,
+      deletedAt: null,
+      deleteReason: null,
+      memberName: nameFor(input.userId),
+    };
+    store.teamAssignments.set(assignment.id, assignment);
+    return assignment;
+  }
+
+  async function update(assignmentId: UUID, changes: Partial<{ amount: number; notes: string | null }>): Promise<TeamAssignment> {
+    const assignment = store.teamAssignments.get(assignmentId);
+    if (!assignment) throw new Error("Assignment not found");
+    if (changes.amount !== undefined && changes.amount < 0) throw new Error("Assigned labor cannot be negative.");
+    const updated = {
+      ...assignment,
+      amount: changes.amount !== undefined ? changes.amount : assignment.amount,
+      notes: changes.notes !== undefined ? changes.notes : assignment.notes,
+      updatedAt: now(),
+    };
+    store.teamAssignments.set(assignmentId, updated);
+    return updated;
+  }
+
+  /** Mirrors the real Supabase implementation's paid-guard exactly
+   * (added this session): refuses to remove an assignment that labour
+   * has already been paid against, matched the SAME estimate-aware way
+   * FinancialEngine matches payments — `expense_type='labor'`,
+   * `payee_type='employee'`, `payee_id=userId`, `is_paid`, same
+   * `estimate_id` (or both null). */
+  async function softDelete(assignmentId: UUID, reason: string): Promise<void> {
+    const check = validation.validateDeleteReason(reason);
+    if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
+    const assignment = store.teamAssignments.get(assignmentId);
+    if (!assignment) throw new Error("Assignment not found");
+
+    const paid = Array.from(store.expenses.values())
+      .filter(
+        (e) =>
+          !e.deletedAt &&
+          e.expenseType === "labor" &&
+          e.payeeType === "employee" &&
+          e.payeeId === assignment.userId &&
+          e.isPaid &&
+          e.estimateId === assignment.estimateId
+      )
+      .reduce((sum, e) => sum + e.amount, 0);
+    if (paid > 0) {
+      throw new Error(
+        `This assignment has already been paid (${paid.toLocaleString("en-US", { style: "currency", currency: "USD" })} in labour). Delete or reverse that payment first if it was recorded in error.`
+      );
+    }
+    store.teamAssignments.set(assignmentId, { ...assignment, deletedAt: now(), deletedBy: null, deleteReason: reason });
+  }
+
+  async function restore(assignmentId: UUID): Promise<void> {
+    const assignment = store.teamAssignments.get(assignmentId);
+    if (!assignment) throw new Error("Assignment not found");
+    store.teamAssignments.set(assignmentId, { ...assignment, deletedAt: null, deletedBy: null, deleteReason: null });
+  }
+
+  return { listForEstimate, listAssignments, assign, update, softDelete, restore };
+}
+
+/** Mirrors ProjectService's shape exactly (same soft-delete/restore/
+ * includeDeleted contract) — ClientService's real Supabase
+ * implementation follows that identical pattern. */
+function createClientService(store: InMemoryStore, validation: ValidationService): ClientService {
+  async function getById(clientId: UUID, includeDeleted = false): Promise<Client | null> {
+    const client = store.clients.get(clientId);
+    if (!client) return null;
+    if (client.deletedAt && !includeDeleted) return null;
+    return client;
+  }
+
+  async function list(scope: QueryScope): Promise<Client[]> {
+    return Array.from(store.clients.values()).filter((c) => c.companyId === scope.companyId && !c.deletedAt);
+  }
+
+  async function create(input: CreateClientInput): Promise<Client> {
+    const client: Client = {
+      id: id(),
+      companyId: input.companyId,
+      name: input.name,
+      email: input.email ?? null,
+      phone: input.phone ?? null,
+      address: input.address ?? null,
+      createdBy: null,
+      createdAt: now(),
+      updatedBy: null,
+      updatedAt: now(),
+      deletedBy: null,
+      deletedAt: null,
+      deleteReason: null,
+    };
+    store.clients.set(client.id, client);
+    return client;
+  }
+
+  async function update(clientId: UUID, changes: Partial<Pick<Client, "name" | "email" | "phone" | "address">>): Promise<Client> {
+    const client = store.clients.get(clientId);
+    if (!client) throw new Error("Client not found");
+    const updated = { ...client, ...changes, updatedAt: now() };
+    store.clients.set(clientId, updated);
+    return updated;
+  }
+
+  async function softDelete(clientId: UUID, reason: string): Promise<void> {
+    const check = validation.validateDeleteReason(reason);
+    if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
+    const client = store.clients.get(clientId);
+    if (!client) throw new Error("Client not found");
+    store.clients.set(clientId, { ...client, deletedAt: now(), deleteReason: reason });
+  }
+
+  async function restore(clientId: UUID): Promise<void> {
+    const client = store.clients.get(clientId);
+    if (!client) throw new Error("Client not found");
+    store.clients.set(clientId, { ...client, deletedAt: null, deleteReason: null });
+  }
+
+  return { getById, list, create, update, softDelete, restore };
+}
+
+/** Mirrors lib/company.ts's own contract exactly — `getByCompanyId`
+ * always returns a fully-merged CompanySettings (DEFAULT_COMPANY_SETTINGS
+ * filling any gap), never null, so a company with no row yet still
+ * gets sane values; `update` upserts. Reuses the REAL
+ * mergeCompanyDefaults/DEFAULT_COMPANY_SETTINGS from lib/company.ts —
+ * not a re-typed copy of the defaults — so this double cannot silently
+ * drift from what the real Settings page and PDF/portal routes see. */
+function createCompanyService(store: InMemoryStore): CompanyService {
+  async function getByCompanyId(companyId: UUID): Promise<CompanySettings> {
+    return mergeCompanyDefaults(store.companySettings.get(companyId) ?? null);
+  }
+
+  async function update(companyId: UUID, changes: Partial<CompanySettings>): Promise<CompanySettings> {
+    const existing = store.companySettings.get(companyId) ?? {};
+    const merged = { ...existing, ...changes };
+    store.companySettings.set(companyId, merged);
+    return mergeCompanyDefaults(merged);
+  }
+
+  return { getByCompanyId, update };
+}
+
+/** Mirrors billScheduleService.ts's own contract, including its
+ * central invariant: `generateDue` writes ORDINARY expense rows
+ * through the real ExpenseService (never touches store.expenses
+ * directly) — "a schedule is not a cost," so this double must produce
+ * the exact same downstream shape a real generated bill would, or a
+ * test built on it would prove nothing about double-counting. Reuses
+ * the REAL `advanceBillDate` from billScheduleService.ts, not a
+ * reimplementation, so date-stepping can't drift between the fake and
+ * the genuine article. */
+function createBillScheduleService(
+  store: InMemoryStore,
+  expenseService: ExpenseService,
+  validation: ValidationService
+): BillScheduleService {
+  async function listForCompany(companyId: UUID): Promise<BillSchedule[]> {
+    return Array.from(store.billSchedules.values()).filter((b) => b.companyId === companyId && !b.deletedAt);
+  }
+
+  async function create(input: BillScheduleCreateInput): Promise<BillSchedule> {
+    const schedule: BillSchedule = {
+      id: id(),
+      companyId: input.companyId,
+      projectId: input.projectId ?? null,
+      vendor: input.vendor ?? null,
+      amount: input.amount,
+      expenseType: input.expenseType ?? "miscellaneous",
+      notes: input.notes ?? null,
+      frequency: input.frequency,
+      intervalCount: input.intervalCount ?? 1,
+      startDate: input.startDate,
+      nextDueDate: input.startDate,
+      endDate: input.endDate ?? null,
+      maxOccurrences: input.maxOccurrences ?? null,
+      occurrencesGenerated: 0,
+      isActive: true,
+      createdBy: null,
+      createdAt: now(),
+      updatedBy: null,
+      updatedAt: now(),
+      deletedBy: null,
+      deletedAt: null,
+      deleteReason: null,
+    };
+    store.billSchedules.set(schedule.id, schedule);
+    return schedule;
+  }
+
+  async function update(
+    scheduleId: UUID,
+    changes: Partial<{ amount: number; vendor: string | null; notes: string | null; isActive: boolean; endDate: string | null }>
+  ): Promise<BillSchedule> {
+    const schedule = store.billSchedules.get(scheduleId);
+    if (!schedule) throw new Error("Bill schedule not found");
+    const updated = { ...schedule, ...changes, updatedAt: now() };
+    store.billSchedules.set(scheduleId, updated);
+    return updated;
+  }
+
+  async function softDelete(scheduleId: UUID, reason: string): Promise<void> {
+    const check = validation.validateDeleteReason(reason);
+    if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
+    const schedule = store.billSchedules.get(scheduleId);
+    if (!schedule) throw new Error("Bill schedule not found");
+    store.billSchedules.set(scheduleId, { ...schedule, deletedAt: now(), deleteReason: reason });
+  }
+
+  async function generateDue(companyId: UUID, asOf?: string): Promise<number> {
+    const cutoff = asOf ?? now().slice(0, 10);
+    const due = Array.from(store.billSchedules.values()).filter(
+      (b) => b.companyId === companyId && !b.deletedAt && b.isActive && b.nextDueDate <= cutoff
+    );
+    let written = 0;
+    for (const schedule of due) {
+      let cursor = schedule;
+      // Materialise every occurrence up to `cutoff`, not just one — the
+      // same "catch up" behaviour the real implementation documents via
+      // idempotent advancement.
+      while (
+        cursor.nextDueDate <= cutoff &&
+        (cursor.maxOccurrences == null || cursor.occurrencesGenerated < cursor.maxOccurrences) &&
+        (cursor.endDate == null || cursor.nextDueDate <= cursor.endDate)
+      ) {
+        // ONE ORDINARY EXPENSE ROW — through ExpenseService, exactly
+        // like the real implementation. This is the line that makes
+        // "a schedule is not a cost, generation is" testable at all.
+        await expenseService.create({
+          companyId: cursor.companyId,
+          projectId: cursor.projectId,
+          expenseType: cursor.expenseType,
+          amount: cursor.amount,
+          expenseDate: cursor.nextDueDate,
+          dueDate: cursor.nextDueDate,
+          vendor: cursor.vendor,
+          notes: cursor.notes,
+          isPaid: false,
+        });
+        written += 1;
+        const nextDate = advanceBillDate(cursor.nextDueDate, cursor.frequency, cursor.intervalCount);
+        cursor = { ...cursor, nextDueDate: nextDate, occurrencesGenerated: cursor.occurrencesGenerated + 1, updatedAt: now() };
+        store.billSchedules.set(cursor.id, cursor);
+      }
+    }
+    return written;
+  }
+
+  return { listForCompany, create, update, softDelete, generateDue };
+}
+
 /**
  * The one thing tests actually import: builds a fully-wired stack —
  * FilteringService (real implementation, with a "projects" executor
@@ -1886,6 +2217,11 @@ export function createInMemoryServices(store: InMemoryStore = createInMemoryStor
   const expenseService = createExpenseService(store, validationService, transactionService);
   const subcontractorService = createSubcontractorService(store, validationService, transactionService);
   const agentCommissionService = createAgentCommissionService(store, validationService, transactionService);
+  // Prerequisite A additions — see each factory's own doc comment.
+  const teamAssignmentService = createTeamAssignmentService(store, validationService);
+  const clientService = createClientService(store, validationService);
+  const companyService = createCompanyService(store);
+  const billScheduleService = createBillScheduleService(store, expenseService, validationService);
 
   // Minimal generic executor: supports direct-column conditions only
   // (no cross-relationship joins) — sufficient for
@@ -1912,6 +2248,13 @@ export function createInMemoryServices(store: InMemoryStore = createInMemoryStor
     transactionService,
     expenseService,
     filteringService,
+    // Previously omitted here — every one of the 27 pre-existing test
+    // files therefore exercised `deps.teamAssignmentService?.` as
+    // permanently undefined, silently resolving every team-labour
+    // committed-cost/payable figure to empty via financialEngine.ts's
+    // own `?? Promise.resolve([])` fallbacks. Adding it is what makes
+    // team labour testable at all — see the System Integrity Audit.
+    teamAssignmentService,
   });
 
   // Default log sink: appends to the store, readable via
@@ -2111,6 +2454,10 @@ export function createInMemoryServices(store: InMemoryStore = createInMemoryStor
     reportingService,
     payrollService,
     locationService,
+    teamAssignmentService,
+    clientService,
+    companyService,
+    billScheduleService,
   };
 }
 
