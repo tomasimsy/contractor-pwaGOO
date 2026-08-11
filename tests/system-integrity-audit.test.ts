@@ -883,6 +883,370 @@ describe("N. Company-level profit", () => {
 });
 
 // ======================================================================
+// O. ASSIGNMENT REMOVAL — the paid-guard must block removing a
+//    committed assignment once real money has been paid against it,
+//    and removing an unpaid one must drop its committed cost to $0.
+//    Team, subcontractor, and agent must behave identically.
+// ======================================================================
+describe("O. Assignment removal — paid-guard and committed-cost drop", () => {
+  test("subcontractor: $1,000 assigned, $400 paid — removal is blocked", async () => {
+    const suite = "O. Subcontractor removal — paid, blocked";
+    const services = createInMemoryServices();
+    const companyId = "company-O1";
+    const { project } = await newProjectAndClient(services, companyId);
+    const subId = crypto.randomUUID();
+    services.store.subcontractors.set(subId, {
+      id: subId, companyId, name: "Sub-O1", trade: null, phone: null, contactPerson: null, isActive: true,
+      createdBy: null, createdAt: new Date().toISOString(), updatedBy: null, updatedAt: new Date().toISOString(),
+      deletedBy: null, deletedAt: null, deleteReason: null,
+    });
+    const assignment = await services.subcontractorService.assignToProject({ companyId, projectId: project.id, subcontractorId: subId, contractedAmount: 1000 });
+    await services.expenseService.create({
+      companyId, projectId: project.id, expenseType: "subcontractor", amount: 400, expenseDate: "2026-01-10",
+      vendor: "Sub-O1", payeeType: "subcontractor", payeeId: subId, isPaid: true,
+    });
+    const ids = { projectId: project.id, subcontractorId: subId, assignmentId: assignment.id };
+
+    let threw = false;
+    try {
+      await services.subcontractorService.removeAssignment(assignment.id, "Testing removal guard");
+    } catch {
+      threw = true;
+    }
+    checkExact(suite, "removeAssignment throws once $400 has been paid against the $1,000 contract", true, threw, ids);
+
+    const fin = await services.financialEngine.getProjectFinancials(project.id);
+    check(suite, "committed cost is unaffected by the blocked removal attempt (still 1000)", 1000, fin.totalExpenses, ids);
+    assertSuitePassed(suite);
+  });
+
+  test("subcontractor: $1,000 assigned, $0 paid — removal succeeds and committed cost drops to $0", async () => {
+    const suite = "O. Subcontractor removal — unpaid, succeeds";
+    const services = createInMemoryServices();
+    const companyId = "company-O2";
+    const { project } = await newProjectAndClient(services, companyId);
+    const subId = crypto.randomUUID();
+    services.store.subcontractors.set(subId, {
+      id: subId, companyId, name: "Sub-O2", trade: null, phone: null, contactPerson: null, isActive: true,
+      createdBy: null, createdAt: new Date().toISOString(), updatedBy: null, updatedAt: new Date().toISOString(),
+      deletedBy: null, deletedAt: null, deleteReason: null,
+    });
+    const assignment = await services.subcontractorService.assignToProject({ companyId, projectId: project.id, subcontractorId: subId, contractedAmount: 1000 });
+    const ids = { projectId: project.id, subcontractorId: subId, assignmentId: assignment.id };
+
+    let fin = await services.financialEngine.getProjectFinancials(project.id);
+    check(suite, "committed cost before removal", 1000, fin.totalExpenses, ids);
+
+    await services.subcontractorService.removeAssignment(assignment.id, "Assigned in error");
+    fin = await services.financialEngine.getProjectFinancials(project.id);
+    check(suite, "committed cost after removing the unpaid assignment (must drop to 0)", 0, fin.totalExpenses, ids);
+    check(suite, "outstandingSubcontractor after removal", 0, fin.outstandingSubcontractor, ids);
+    assertSuitePassed(suite);
+  });
+
+  test("agent: same paid-guard and committed-cost-drop behavior as subcontractor", async () => {
+    const suite = "O. Agent removal — paid-guard and drop, mirrors subcontractor";
+    const services = createInMemoryServices();
+    const companyId = "company-O3";
+    const { project } = await newProjectAndClient(services, companyId);
+    const agentId = crypto.randomUUID();
+    services.store.agents.set(agentId, {
+      id: agentId, companyId, name: "Agent-O3", commissionRate: 5,
+      createdBy: null, createdAt: new Date().toISOString(), updatedBy: null, updatedAt: new Date().toISOString(),
+      deletedBy: null, deletedAt: null, deleteReason: null,
+    });
+    const paidAssignment = await services.agentCommissionService.assignToProject({ companyId, projectId: project.id, agentId, assignedAmount: 1000 });
+    await services.expenseService.create({
+      companyId, projectId: project.id, expenseType: "agent_commission", amount: 400, expenseDate: "2026-01-10",
+      vendor: "Agent-O3", payeeType: "agent", payeeId: agentId, isPaid: true,
+    });
+    let threw = false;
+    try {
+      await services.agentCommissionService.removeAssignment(paidAssignment.id, "Testing removal guard");
+    } catch {
+      threw = true;
+    }
+    checkExact(suite, "removeAssignment throws once $400 has been paid against the $1,000 contract", true, threw, { assignmentId: paidAssignment.id });
+
+    const agent2Id = crypto.randomUUID();
+    services.store.agents.set(agent2Id, {
+      id: agent2Id, companyId, name: "Agent-O3b", commissionRate: 5,
+      createdBy: null, createdAt: new Date().toISOString(), updatedBy: null, updatedAt: new Date().toISOString(),
+      deletedBy: null, deletedAt: null, deleteReason: null,
+    });
+    const unpaidAssignment = await services.agentCommissionService.assignToProject({ companyId, projectId: project.id, agentId: agent2Id, assignedAmount: 500 });
+    let finBefore = await services.financialEngine.getProjectFinancials(project.id);
+    const committedBeforeUnpaidRemoval = finBefore.totalExpenses;
+
+    await services.agentCommissionService.removeAssignment(unpaidAssignment.id, "Assigned in error");
+    const finAfter = await services.financialEngine.getProjectFinancials(project.id);
+    check(
+      suite,
+      "committed cost drops by exactly the removed unpaid $500 assignment",
+      money(committedBeforeUnpaidRemoval - 500),
+      finAfter.totalExpenses,
+      { assignmentId: unpaidAssignment.id }
+    );
+    assertSuitePassed(suite);
+  });
+
+  test("team labor: consistent paid-guard and committed-cost-drop behavior (already-covered baseline, asserted here for cross-role comparison)", async () => {
+    const suite = "O. Team labor removal — consistent with subcontractor/agent";
+    const services = createInMemoryServices();
+    const companyId = "company-O4";
+    const { project, client } = await newProjectAndClient(services, companyId);
+    const estimate = await services.estimateService.create({
+      companyId, projectId: project.id, clientId: client.id,
+      lineItems: [{ category: "labor", name: "Scope", description: null, quantity: 1, unitPrice: 1000, taxable: false }],
+      markup: 0, discount: 0, taxRate: 0,
+    });
+    const userId = crypto.randomUUID();
+    const assignment = await services.teamAssignmentService.assign({ companyId, estimateId: estimate.id, projectId: project.id, userId, amount: 1000 });
+    await services.expenseService.create({
+      companyId, projectId: project.id, estimateId: estimate.id, expenseType: "labor", amount: 400, expenseDate: "2026-01-10",
+      vendor: "Team-O4", payeeType: "employee", payeeId: userId, isPaid: true,
+    });
+    const ids = { estimateId: estimate.id, assignmentId: assignment.id };
+
+    let threw = false;
+    try {
+      await services.teamAssignmentService.softDelete(assignment.id, "Testing removal guard");
+    } catch {
+      threw = true;
+    }
+    checkExact(suite, "softDelete throws once $400 has been paid against the $1,000 commitment (same guard shape as sub/agent)", true, threw, ids);
+
+    const fin = await services.financialEngine.getEstimateFinancials(estimate.id);
+    check(suite, "committed cost is unaffected by the blocked removal attempt (still 1000)", 1000, fin.totalExpenses, ids);
+    assertSuitePassed(suite);
+  });
+});
+
+// ======================================================================
+// P. REJECTED CHANGE ORDER — must contribute $0 to revenue anywhere.
+// ======================================================================
+describe("P. Rejected change order contributes zero revenue", () => {
+  test("a rejected change order does not appear in estimate.revisedTotal or project.revisedTotal", async () => {
+    const suite = "P. Rejected change order";
+    const services = createInMemoryServices();
+    const companyId = "company-P";
+    const { project, client } = await newProjectAndClient(services, companyId);
+    const estimate = await services.estimateService.create({
+      companyId, projectId: project.id, clientId: client.id,
+      lineItems: [{ category: "material", name: "Base scope", description: null, quantity: 1, unitPrice: 4000, taxable: false }],
+      markup: 0, discount: 0, taxRate: 0,
+    });
+    await approveEstimate(services, estimate.id);
+    await services.invoiceService.createFromEstimate(estimate.id, { issueDate: "2026-01-01", dueDate: "2026-02-01" });
+
+    const co = await services.changeOrderService.createChangeOrder({
+      companyId, projectId: project.id, estimateId: estimate.id, changeOrderNumber: "CO-REJ", title: "Declined extra work", totalAmount: 900, tax: 0,
+    });
+    const result = await services.changeOrderService.changeStatus(co.id, "rejected");
+    if (!result.valid) throw new Error(`Could not reject change order: ${result.issues.map((i) => i.message).join("; ")}`);
+    const ids = { estimateId: estimate.id, projectId: project.id, changeOrderId: co.id };
+
+    const estFin = await services.financialEngine.getEstimateFinancials(estimate.id);
+    check(suite, "estimate.revisedTotal ignores the rejected $900 CO (stays at base 4000)", 4000, estFin.revisedTotal, ids);
+    check(suite, "estimate.approvedChangeOrderTotal is 0 (nothing approved)", 0, estFin.approvedChangeOrderTotal, ids);
+
+    const projFin = await services.financialEngine.getProjectFinancials(project.id);
+    check(suite, "project.revisedTotal ignores the rejected $900 CO (stays at the invoiced 4000)", 4000, projFin.revisedTotal, ids);
+    check(suite, "project.approvedChangeOrderTotal is 0", 0, projFin.approvedChangeOrderTotal, ids);
+
+    assertSuitePassed(suite);
+  });
+});
+
+// ======================================================================
+// Q. AGENT CONTRACT + REIMBURSEMENT ON THE SAME PAYEE — the exact seam
+//    the recent committedRemaining fix split apart (agentContractRemaining
+//    vs. outstandingReimbursements) must not double count when both are
+//    active for one agent at once.
+// ======================================================================
+describe("Q. Agent contract remainder plus reimbursement liability, same payee", () => {
+  test("$500 unpaid agent contract + $300 fronted/reimbursable expense = $800 committed cost, not $1,100", async () => {
+    const suite = "Q. Agent contract + reimbursement, no double count";
+    const services = createInMemoryServices();
+    const companyId = "company-Q";
+    const { project } = await newProjectAndClient(services, companyId);
+    const agentId = crypto.randomUUID();
+    services.store.agents.set(agentId, {
+      id: agentId, companyId, name: "Agent-Q", commissionRate: 5,
+      createdBy: null, createdAt: new Date().toISOString(), updatedBy: null, updatedAt: new Date().toISOString(),
+      deletedBy: null, deletedAt: null, deleteReason: null,
+    });
+    const assignment = await services.agentCommissionService.assignToProject({ companyId, projectId: project.id, agentId, assignedAmount: 500 });
+    const frontedExpense = await services.expenseService.create({
+      companyId, projectId: project.id, expenseType: "materials", amount: 300, expenseDate: "2026-01-12",
+      vendor: "Home Depot", paidByType: "agent", paidById: agentId, reimbursable: true,
+    });
+    const ids = { projectId: project.id, agentId, assignmentId: assignment.id, expenseId: frontedExpense.id };
+
+    const fin = await services.financialEngine.getProjectFinancials(project.id);
+    // Independently expected: the $500 contract is committed the
+    // moment it's assigned (unpaid); the $300 fronted purchase is a
+    // real expense row already inside expenseItems. 500 + 300 = 800 —
+    // the $300 reimbursement LIABILITY (owed back to the agent) must
+    // not be added a second time on top.
+    check(suite, "totalExpenses = 500 committed contract + 300 fronted expense (never 1100)", 800, fin.totalExpenses, ids);
+    check(suite, "expenseItems (the real, already-recorded cash-equivalent cost) = 300", 300, fin.expenseItems, ids);
+    check(suite, "outstandingAgent = 500 contract remainder + 300 reimbursement owed = 800", 800, fin.outstandingAgent, ids);
+
+    // Settling the reimbursement moves nothing in totalExpenses — it is
+    // a liability being paid off, not a second cost appearing.
+    await services.expenseService.markReimbursed(frontedExpense.id);
+    const finAfter = await services.financialEngine.getProjectFinancials(project.id);
+    check(suite, "totalExpenses unchanged after the reimbursement is settled (still 800)", 800, finAfter.totalExpenses, ids);
+    check(suite, "outstandingAgent drops to just the 500 contract remainder once reimbursed", 500, finAfter.outstandingAgent, ids);
+
+    assertSuitePassed(suite);
+  });
+});
+
+// ======================================================================
+// R. PAYEE REASSIGNMENT — swap the payee on a commitment, not just
+//    remove one. Old payee's committed cost must clear; new payee's
+//    must appear; the job's aggregate committed cost is unchanged.
+// ======================================================================
+describe("R. Payee reassignment", () => {
+  test("removing one subcontractor's unpaid assignment and assigning a different one preserves the job's total committed cost", async () => {
+    const suite = "R. Subcontractor reassignment";
+    const services = createInMemoryServices();
+    const companyId = "company-R";
+    const { project } = await newProjectAndClient(services, companyId);
+    const oldSubId = crypto.randomUUID();
+    const newSubId = crypto.randomUUID();
+    services.store.subcontractors.set(oldSubId, {
+      id: oldSubId, companyId, name: "Old Sub", trade: null, phone: null, contactPerson: null, isActive: true,
+      createdBy: null, createdAt: new Date().toISOString(), updatedBy: null, updatedAt: new Date().toISOString(),
+      deletedBy: null, deletedAt: null, deleteReason: null,
+    });
+    services.store.subcontractors.set(newSubId, {
+      id: newSubId, companyId, name: "New Sub", trade: null, phone: null, contactPerson: null, isActive: true,
+      createdBy: null, createdAt: new Date().toISOString(), updatedBy: null, updatedAt: new Date().toISOString(),
+      deletedBy: null, deletedAt: null, deleteReason: null,
+    });
+    const oldAssignment = await services.subcontractorService.assignToProject({ companyId, projectId: project.id, subcontractorId: oldSubId, contractedAmount: 700 });
+    const ids = { projectId: project.id, oldSubId, newSubId };
+
+    let fin = await services.financialEngine.getProjectFinancials(project.id);
+    check(suite, "committed cost with only the old (unpaid) subcontractor assigned", 700, fin.totalExpenses, ids);
+
+    await services.subcontractorService.removeAssignment(oldAssignment.id, "Wrong subcontractor selected");
+    const newAssignment = await services.subcontractorService.assignToProject({ companyId, projectId: project.id, subcontractorId: newSubId, contractedAmount: 700 });
+
+    fin = await services.financialEngine.getProjectFinancials(project.id);
+    check(suite, "aggregate committed cost for the job is unchanged after the swap (still 700)", 700, fin.totalExpenses, ids);
+
+    const balances = await services.financialEngine.getPayeeBalances({ companyId, projectId: project.id }, "subcontractor");
+    const oldBalance = balances.find((b) => b.payeeId === oldSubId);
+    const newBalance = balances.find((b) => b.payeeId === newSubId);
+    // Absence from the balances list IS zero — a removed, never-paid
+    // assignment leaves no trace to seed a row from, so "not found" and
+    // "outstanding: 0" are the same fact here, not a missing check.
+    check(suite, "old subcontractor's committed/outstanding balance is 0 (assignment removed)", 0, oldBalance?.outstanding ?? 0, { ...ids, assignmentId: oldAssignment.id });
+    check(suite, "new subcontractor now carries the full 700 outstanding", 700, newBalance?.outstanding ?? -1, { ...ids, assignmentId: newAssignment.id });
+
+    assertSuitePassed(suite);
+  });
+});
+
+// ======================================================================
+// S. NEEDS-PAYMENT REIMBURSEMENT SCOPE — an unpaid reimbursable
+//    expense must surface in the actionable worklist and must NOT
+//    appear in A/P, which only ever covers subcontractor + agent
+//    contracts.
+// ======================================================================
+describe("S. Needs-Payment includes reimbursements; A/P does not", () => {
+  test("an unpaid reimbursable expense appears in getActionablePayables but not in getPayablesSummary", async () => {
+    const suite = "S. Reimbursement in Needs-Payment, absent from A/P";
+    const services = createInMemoryServices();
+    const companyId = "company-S";
+    const { project } = await newProjectAndClient(services, companyId);
+    const agentId = crypto.randomUUID();
+    services.store.agents.set(agentId, {
+      id: agentId, companyId, name: "Agent-S", commissionRate: 0,
+      createdBy: null, createdAt: new Date().toISOString(), updatedBy: null, updatedAt: new Date().toISOString(),
+      deletedBy: null, deletedAt: null, deleteReason: null,
+    });
+    // No assignment at all for this agent — isolates the reimbursement
+    // scope-delta from any contract-remainder contribution.
+    const frontedExpense = await services.expenseService.create({
+      companyId, projectId: project.id, expenseType: "miscellaneous", amount: 180, expenseDate: "2026-01-08",
+      vendor: "Ace Hardware", paidByType: "agent", paidById: agentId, reimbursable: true,
+    });
+    const ids = { projectId: project.id, agentId, expenseId: frontedExpense.id };
+
+    const worklist = await getActionablePayables(services, companyId);
+    check(suite, "Needs-Payment byKind.reimbursements includes the unpaid $180", 180, worklist.byKind.reimbursements, ids);
+    check(suite, "Needs-Payment total includes the $180 reimbursement", 180, worklist.total, ids);
+
+    const ap = await services.financialEngine.getPayablesSummary({ companyId, projectId: project.id });
+    check(suite, "A/P totalOutstanding does NOT include the reimbursement (sub+agent contracts only)", 0, ap.totalOutstanding, ids);
+    check(suite, "A/P has no line for this agent (no contract, only a reimbursement)", 0, ap.lines.length, ids);
+
+    assertSuitePassed(suite);
+  });
+});
+
+// ======================================================================
+// T. MULTI-ESTIMATE PROJECT RECONCILIATION — a project with two
+//    estimates must have its aggregate figures equal the SUM of both
+//    estimates' own figures, with nothing omitted or doubled.
+// ======================================================================
+describe("T. Multi-estimate project reconciliation", () => {
+  test("project-level totals equal the sum of two independent estimates on the same project", async () => {
+    const suite = "T. Multi-estimate reconciliation";
+    const services = createInMemoryServices();
+    const companyId = "company-T";
+    const { project, client } = await newProjectAndClient(services, companyId);
+
+    // Estimate 1: signed, invoiced, partially paid, one expense.
+    const estimate1 = await services.estimateService.create({
+      companyId, projectId: project.id, clientId: client.id,
+      lineItems: [{ category: "material", name: "Kitchen scope", description: null, quantity: 1, unitPrice: 3000, taxable: false }],
+      markup: 0, discount: 0, taxRate: 0,
+    });
+    await approveEstimate(services, estimate1.id);
+    const invoice1 = await services.invoiceService.createFromEstimate(estimate1.id, { issueDate: "2026-01-01", dueDate: "2026-02-01" });
+    await services.paymentService.record({ companyId, invoiceId: invoice1.id, amount: 2000, method: "check", paymentDate: "2026-01-05" });
+    await services.expenseService.create({ companyId, projectId: project.id, estimateId: estimate1.id, expenseType: "materials", amount: 500, expenseDate: "2026-01-06" });
+
+    // Estimate 2: separate scope on the SAME project, signed, invoiced,
+    // fully paid, its own expense.
+    const estimate2 = await services.estimateService.create({
+      companyId, projectId: project.id, clientId: client.id,
+      lineItems: [{ category: "material", name: "Bathroom scope", description: null, quantity: 1, unitPrice: 1500, taxable: false }],
+      markup: 0, discount: 0, taxRate: 0,
+    });
+    await approveEstimate(services, estimate2.id);
+    const invoice2 = await services.invoiceService.createFromEstimate(estimate2.id, { issueDate: "2026-01-10", dueDate: "2026-02-10" });
+    await services.paymentService.record({ companyId, invoiceId: invoice2.id, amount: 1500, method: "check", paymentDate: "2026-01-12" });
+    await services.expenseService.create({ companyId, projectId: project.id, estimateId: estimate2.id, expenseType: "labor", amount: 200, expenseDate: "2026-01-13" });
+
+    const ids = { projectId: project.id, estimate1Id: estimate1.id, estimate2Id: estimate2.id };
+
+    const est1Fin = await services.financialEngine.getEstimateFinancials(estimate1.id);
+    const est2Fin = await services.financialEngine.getEstimateFinancials(estimate2.id);
+    const projFin = await services.financialEngine.getProjectFinancials(project.id);
+
+    // Independently expected sums — not re-derived from the project
+    // call, so this actually proves reconciliation rather than
+    // asserting a tautology.
+    check(suite, "project.invoicesTotal = estimate1.invoicesTotal + estimate2.invoicesTotal (3000 + 1500)", est1Fin.invoicesTotal + est2Fin.invoicesTotal, projFin.invoicesTotal, ids);
+    check(suite, "project.invoicesTotal = 4500 (independently known)", 4500, projFin.invoicesTotal, ids);
+    check(suite, "project.amountPaid = estimate1.amountPaid + estimate2.amountPaid (2000 + 1500)", est1Fin.amountPaid + est2Fin.amountPaid, projFin.amountPaid, ids);
+    check(suite, "project.amountPaid = 3500 (independently known)", 3500, projFin.amountPaid, ids);
+    check(suite, "project.expenseItems = estimate1.expenseItems + estimate2.expenseItems (500 + 200)", est1Fin.expenseItems + est2Fin.expenseItems, projFin.expenseItems, ids);
+    check(suite, "project.expenseItems = 700 (independently known)", 700, projFin.expenseItems, ids);
+    check(suite, "project.totalExpenses = estimate1.totalExpenses + estimate2.totalExpenses (no assignments here, so equals expenseItems)", est1Fin.totalExpenses + est2Fin.totalExpenses, projFin.totalExpenses, ids);
+
+    assertSuitePassed(suite);
+  });
+});
+
+// ======================================================================
 // FINAL REPORT — prints regardless of pass/fail, runs last.
 // ======================================================================
 describe("Z. Summary report", () => {

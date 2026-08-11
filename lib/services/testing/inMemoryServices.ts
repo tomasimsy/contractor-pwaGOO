@@ -1471,6 +1471,40 @@ function createExpenseService(store: InMemoryStore, validation: ValidationServic
   };
 }
 
+/** Money already paid against ONE assignment, read directly from
+ * expense rows — mirrors the real Supabase services'
+ * paidAgainstAssignment (lib/services/supabase/subcontractorService.ts /
+ * agentCommissionService.ts): expense_type + payee_type + payee_id +
+ * is_paid + deleted_at is null, with estimate_id matched EXACTLY
+ * (including the null case), so a payment on an unrelated job can
+ * neither trip nor bypass this guard.
+ *
+ * removeAssignment previously asked transactionService.getAssignmentBalance
+ * for this, which only recognizes payments booked through the legacy
+ * recordPayment path (zero production call sites) — real,
+ * production-authoritative payments recorded through
+ * ExpenseService.create were invisible to it, so the paid-guard never
+ * fired for them. This double now reads the same source the real
+ * service does. */
+function paidAgainstAssignment(
+  store: InMemoryStore,
+  expenseType: "subcontractor" | "agent_commission",
+  payeeType: "subcontractor" | "agent",
+  payeeId: UUID,
+  estimateId: UUID | null
+): number {
+  let total = 0;
+  for (const e of store.expenses.values()) {
+    if (e.deletedAt) continue;
+    if (e.expenseType !== expenseType) continue;
+    if (e.payeeType !== payeeType || e.payeeId !== payeeId) continue;
+    if (!e.isPaid) continue;
+    if ((e.estimateId ?? null) !== estimateId) continue;
+    total += e.amount;
+  }
+  return total;
+}
+
 function createSubcontractorService(store: InMemoryStore, validation: ValidationService, transactionService: TransactionService): SubcontractorService {
   async function getRoster(companyId: UUID, includeInactive = true) {
     return Array.from(store.subcontractors.values()).filter((s) => s.companyId === companyId && (includeInactive || s.isActive) && !s.deletedAt);
@@ -1572,16 +1606,18 @@ function createSubcontractorService(store: InMemoryStore, validation: Validation
     return updated;
   }
   /** Mirrors the real service's removeAssignment: same paid-guard
-   * (via this double's own balance source), same soft-delete shape. */
+   * (via paidAgainstAssignment, reading expense rows directly — see
+   * that function's doc for why transactionService.getAssignmentBalance
+   * was the wrong source), same soft-delete shape. */
   async function removeAssignment(assignmentId: UUID, reason: string) {
     const check = validation.validateDeleteReason(reason);
     if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
     const assignment = store.subAssignments.get(assignmentId);
     if (!assignment) throw new Error("Assignment not found");
-    const balance = await transactionService.getAssignmentBalance(assignmentId);
-    if (balance.paid > 0) {
+    const paid = paidAgainstAssignment(store, "subcontractor", "subcontractor", assignment.subcontractorId, assignment.estimateId ?? null);
+    if (paid > 0) {
       throw new Error(
-        `This assignment has already been paid (${balance.paid.toLocaleString("en-US", { style: "currency", currency: "USD" })}). Reverse that payment first if it was recorded in error.`
+        `This assignment has already been paid (${paid.toLocaleString("en-US", { style: "currency", currency: "USD" })}). Reverse that payment first if it was recorded in error.`
       );
     }
     store.subAssignments.set(assignmentId, { ...assignment, deletedAt: now(), deleteReason: reason });
@@ -1745,16 +1781,18 @@ function createAgentCommissionService(store: InMemoryStore, validation: Validati
     return updated;
   }
   /** Mirrors the real service's removeAssignment: same paid-guard
-   * (via this double's own balance source), same soft-delete shape. */
+   * (via paidAgainstAssignment, reading expense rows directly — see
+   * that function's doc for why transactionService.getAssignmentBalance
+   * was the wrong source), same soft-delete shape. */
   async function removeAssignment(assignmentId: UUID, reason: string) {
     const check = validation.validateDeleteReason(reason);
     if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
     const assignment = store.agentAssignments.get(assignmentId);
     if (!assignment) throw new Error("Assignment not found");
-    const balance = await transactionService.getAssignmentBalance(assignmentId);
-    if (balance.paid > 0) {
+    const paid = paidAgainstAssignment(store, "agent_commission", "agent", assignment.agentId, assignment.estimateId ?? null);
+    if (paid > 0) {
       throw new Error(
-        `This assignment has already been paid (${balance.paid.toLocaleString("en-US", { style: "currency", currency: "USD" })}). Reverse that payment first if it was recorded in error.`
+        `This assignment has already been paid (${paid.toLocaleString("en-US", { style: "currency", currency: "USD" })}). Reverse that payment first if it was recorded in error.`
       );
     }
     store.agentAssignments.set(assignmentId, { ...assignment, deletedAt: now(), deleteReason: reason });
