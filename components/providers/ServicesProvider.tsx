@@ -13,6 +13,7 @@ import { createSupabaseBillScheduleService } from "@/lib/services/supabase/billS
 import { createAccountsReceivableService } from "@/lib/services/accountsReceivableService";
 import { createAccountsPayableService } from "@/lib/services/accountsPayableService";
 import { createSupabaseCompanyDocumentService } from "@/lib/services/supabase/companyDocumentService";
+import { createCpaPackageService } from "@/lib/services/cpaPackageService";
 import { createFinancialEngine } from "@/lib/services";
 import type { ClientService } from "@/lib/services/clientService";
 import type { ProjectService } from "@/lib/services/projectService";
@@ -33,6 +34,7 @@ import type { BillScheduleService } from "@/lib/services/billScheduleService";
 import type { AccountsReceivableService } from "@/lib/services/accountsReceivableService";
 import type { AccountsPayableService } from "@/lib/services/accountsPayableService";
 import type { CompanyDocumentService } from "@/lib/services/companyDocumentService";
+import type { CpaPackageService } from "@/lib/services/cpaPackageService";
 import type { AuditService } from "@/lib/services";
 import type { EstimateWorkflow } from "@/lib/services/estimateWorkflow";
 import type { ChangeOrderWorkflow } from "@/lib/services/changeOrderWorkflow";
@@ -65,6 +67,9 @@ export interface AppServices extends InMemoryServices {
   accountsReceivableService: AccountsReceivableService;
   accountsPayableService: AccountsPayableService;
   companyDocumentService: CompanyDocumentService;
+  /** Cash-basis only — see cpaPackageService.ts's header for why this
+   * is never given financialEngine. */
+  cpaPackageService: CpaPackageService;
   auditService: AuditService;
   /** The single canonical estimate-signing workflow (sign/unsign) — see
    * lib/services/estimateWorkflow.ts. The portal reaches the exact same
@@ -165,6 +170,11 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
     });
     // After financialEngine — AP is a re-shape of getPayablesSummary.
     const accountsPayableService = createAccountsPayableService({ financialEngine });
+    // Deliberately NOT given financialEngine — see cpaPackageService.ts's
+    // header: the CPA package is cash-basis only and must never blend
+    // FinancialEngine's committed-cost model into a report a CPA relies
+    // on for what was actually paid.
+    const cpaPackageService = createCpaPackageService({ expenseService, paymentService, invoiceService, projectService, clientService });
 
     return {
       ...inMemory,
@@ -188,6 +198,7 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
       accountsReceivableService,
       accountsPayableService,
       companyDocumentService,
+      cpaPackageService,
       estimateWorkflow,
       changeOrderWorkflow,
     };

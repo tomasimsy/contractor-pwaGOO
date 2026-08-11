@@ -37,6 +37,7 @@ import { createSupabaseExpenseService } from "./supabase/expenseService";
 import { createInMemoryServices } from "./testing/inMemoryServices";
 import { createEstimateWorkflow, type EstimateWorkflow } from "./estimateWorkflow";
 import { createChangeOrderWorkflow, type ChangeOrderWorkflow } from "./changeOrderWorkflow";
+import { createCpaPackageService, type CpaPackageService } from "./cpaPackageService";
 import type { ClientService } from "./clientService";
 import type { ProjectService } from "./projectService";
 import type { EstimateService } from "./estimateService";
@@ -61,6 +62,7 @@ export interface ServerAppServices {
   expenseService: ExpenseService;
   estimateWorkflow: EstimateWorkflow;
   changeOrderWorkflow: ChangeOrderWorkflow;
+  cpaPackageService: CpaPackageService;
 }
 
 /**
@@ -115,6 +117,9 @@ export function createServerAppServices(
 
   const estimateWorkflow = createEstimateWorkflow({ estimateService, invoiceService, paymentService });
   const changeOrderWorkflow = createChangeOrderWorkflow({ changeOrderService, estimateService, invoiceService });
+  // Cash-basis only — see cpaPackageService.ts's header for why this is
+  // never given financialEngine.
+  const cpaPackageService = createCpaPackageService({ expenseService, paymentService, invoiceService, projectService, clientService });
 
   return {
     clientService,
@@ -129,5 +134,6 @@ export function createServerAppServices(
     expenseService,
     estimateWorkflow,
     changeOrderWorkflow,
+    cpaPackageService,
   };
 }
