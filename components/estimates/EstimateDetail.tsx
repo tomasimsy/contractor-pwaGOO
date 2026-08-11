@@ -18,8 +18,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Pencil, Trash2, FileText, GitPullRequest, Receipt, Wallet,
-  FolderOpen, Camera, History, User, Download, Share2, Home, CheckCircle2,
+  FolderOpen, Camera, History, User, Download, Share2, Home, CheckCircle2, Mail,
 } from "lucide-react";
+import { EmailCustomerModal } from "@/components/estimates/EmailCustomerModal";
+import { EmailHistoryPanel } from "@/components/estimates/EmailHistoryPanel";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SkeletonLines } from "@/components/ui/Skeleton";
@@ -91,6 +93,8 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
   const [activity, setActivity] = useState<AuditLogEntry[]>([]);
   const [financials, setFinancials] = useState<EstimateFinancials | null>(null);
   const [roofingAreas, setRoofingAreas] = useState<RoofingArea[]>([]);
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [emailHistoryRefreshKey, setEmailHistoryRefreshKey] = useState(0);
   /** For resolving this company's own override of the estimate's
    * Terms & Conditions template (lib/estimateTerms.ts). Null until
    * loaded; the Terms section falls back to the built-in default in
@@ -343,6 +347,10 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
           <button type="button" onClick={handleDownloadPdf} className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors" title="PDF">
             <Download className="size-3.5" />
             <span className="hidden sm:inline">PDF</span>
+          </button>
+          <button type="button" onClick={() => setEmailModalOpen(true)} className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors" title="Email Customer">
+            <Mail className="size-3.5" />
+            <span className="hidden sm:inline">Email</span>
           </button>
           <Link href={`${editBasePath}/${estimate.id}/edit`} className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors" title="Edit">
             <Pencil className="size-3.5" />
@@ -986,6 +994,13 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
             )}
           </section>
 
+          <section className="rounded-xl border border-border bg-card p-5 shadow-xs">
+            <h2 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              <Mail className="size-4 text-primary" /> Email History
+            </h2>
+            <EmailHistoryPanel key={emailHistoryRefreshKey} estimateId={estimate.id} />
+          </section>
+
           {/* Client Details & Condensed Signature Option */}
           <section className="rounded-xl border border-border bg-card p-5 shadow-xs">
             <h2 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
@@ -1089,6 +1104,18 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
           </section>
         </div>
       </div>
+
+      <EmailCustomerModal
+        open={emailModalOpen}
+        onClose={() => setEmailModalOpen(false)}
+        onSent={() => setEmailHistoryRefreshKey((k) => k + 1)}
+        estimateId={estimate.id}
+        estimateNumber={estimate.estimateNumber ?? estimate.id.slice(0, 8)}
+        clientName={client?.name ?? ""}
+        clientEmail={client?.email ?? null}
+        companyName={companySettings?.company_name ?? "Your Company"}
+        hasPortalLink={!!estimate.customerToken}
+      />
     </PageContainer>
   );
 }

@@ -262,299 +262,319 @@ function ExpenseV2Content() {
   if (!companyId) return null;
 
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-900 pb-16">
-      <PageContainer>
-        {/* -------------------------------------------------------
-            HEADER
-        ------------------------------------------------------- */}
-        <div className="mb-8 pt-6">
-          <div className="flex flex-col gap-4 rounded-2xl bg-white p-6 shadow-xs ring-1 ring-neutral-200/80 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600 ring-1 ring-red-100">
-                <Receipt className="size-6" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold tracking-tight text-neutral-950">
-                  Expense Center
-                </h1>
-                <p className="text-sm text-neutral-500">
-                  Track job expenditures, process receipts, and audit balances.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 border-t border-neutral-100 pt-4 sm:border-t-0 sm:pt-0">
-              <div className="flex items-center gap-3 rounded-xl bg-neutral-50 px-4 py-2.5 ring-1 ring-neutral-200/60">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-100 text-red-600">
-                  <HandCoins className="size-4" />
-                </div>
-                <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
-                    Pending Owed
-                  </div>
-                  <div
-                    className={`text-sm font-bold tabular-nums ${
-                      owedToMe > 0 ? "text-red-600" : "text-neutral-900"
-                    }`}
-                  >
-                    {money(owedToMe)}
-                  </div>
-                </div>
-              </div>
-
-              <Link
-                href="/dashboard"
-                className="inline-flex items-center gap-2 rounded-xl bg-neutral-900 px-4 py-2.5 text-xs font-semibold text-white shadow-xs transition-all hover:bg-neutral-800 active:scale-[0.98]"
-              >
-                <ArrowLeft className="size-4" />
-                <span>Dashboard</span>
-              </Link>
-            </div>
+<div className="min-h-screen bg-gray-50/80 text-gray-900 pb-16">
+  <PageContainer>
+    {/* -------------------------------------------------------
+        HEADER - COMPACT
+    ------------------------------------------------------- */}
+    <div className="mb-6 pt-4">
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-white p-4 shadow-sm border border-gray-200/60 sm:p-5">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-sm shadow-emerald-200">
+            <Receipt className="size-5" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-base font-bold tracking-tight text-gray-900 sm:text-lg">
+              Expense Center
+            </h1>
+            <p className="text-xs text-gray-500 truncate sm:text-sm">
+              Track job expenditures & receipts
+            </p>
           </div>
         </div>
 
-        {/* -------------------------------------------------------
-            ALERTS
-        ------------------------------------------------------- */}
-        {error && (
-          <div className="mb-6 flex items-center justify-between gap-3 rounded-xl bg-red-50 px-4 py-3.5 text-xs font-semibold text-red-800 ring-1 ring-red-200">
-            <span>{error}</span>
-            <button
-              type="button"
-              onClick={() => load()}
-              className="underline underline-offset-2 hover:text-red-950"
-            >
-              Retry
-            </button>
-          </div>
-        )}
-
-        {savedNote && (
-          <div className="mb-6 rounded-xl bg-emerald-50 px-4 py-3.5 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-200">
-            {savedNote}
-          </div>
-        )}
-
-        {/* -------------------------------------------------------
-            RECENT JOBS LIST
-        ------------------------------------------------------- */}
-        <section className="mb-10">
-          <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2 ml-auto">
+          <div className="flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-1.5 border border-amber-200/50">
+            <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
+              <HandCoins className="size-3.5" />
+            </div>
             <div>
-              <h2 className="text-sm font-bold uppercase tracking-wider text-neutral-500">
-                Active Projects & Estimates
-              </h2>
+              <div className="text-[8px] font-bold uppercase tracking-wider text-amber-600/70">
+                Owed
+              </div>
+              <div
+                className={`text-xs font-bold tabular-nums ${
+                  owedToMe > 0 ? "text-amber-600" : "text-gray-900"
+                }`}
+              >
+                {money(owedToMe)}
+              </div>
             </div>
           </div>
 
-          {loading ? (
-            <div className="space-y-4">
-              {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className="h-24 animate-pulse rounded-2xl bg-neutral-200/60"
-                />
-              ))}
-            </div>
-          ) : recentJobs.length === 0 ? (
-            <EmptyState
-              icon={Home}
-              title="No jobs available"
-              description="Create an active estimate first to begin mapping expenses."
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-gray-800 hover:shadow-md active:scale-[0.98]"
+          >
+            <ArrowLeft className="size-3.5" />
+            <span className="hidden xs:inline">Dashboard</span>
+          </Link>
+        </div>
+      </div>
+    </div>
+
+    {/* -------------------------------------------------------
+        ALERTS
+    ------------------------------------------------------- */}
+    {error && (
+      <div className="mb-4 flex items-center justify-between gap-3 rounded-xl bg-rose-50/90 px-3 py-2.5 text-xs font-semibold text-rose-800 border border-rose-200/50">
+        <span className="flex items-center gap-2">
+          <span className="text-rose-500">⚠</span>
+          {error}
+        </span>
+        <button
+          type="button"
+          onClick={() => load()}
+          className="font-medium text-rose-700 underline-offset-2 hover:underline"
+        >
+          Retry
+        </button>
+      </div>
+    )}
+
+    {savedNote && (
+      <div className="mb-4 rounded-xl bg-emerald-50/90 px-3 py-2.5 text-xs font-semibold text-emerald-800 border border-emerald-200/50">
+        <span className="flex items-center gap-2">
+          <span className="text-emerald-500">✓</span>
+          {savedNote}
+        </span>
+      </div>
+    )}
+
+    {/* -------------------------------------------------------
+        RECENT JOBS LIST
+    ------------------------------------------------------- */}
+    <section className="mb-8">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-gray-400">
+          Active Projects & Estimates
+        </h2>
+      </div>
+
+      {loading ? (
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="h-20 animate-pulse rounded-2xl bg-gray-200/50"
             />
-          ) : (
-            <div className="space-y-3.5">
-              {recentJobs.map((e) => {
-                const project = e.projectId
-                  ? projectsById[e.projectId]
-                  : undefined;
+          ))}
+        </div>
+      ) : recentJobs.length === 0 ? (
+        <EmptyState
+          icon={Home}
+          title="No jobs available"
+          description="Create an active estimate first to begin mapping expenses."
+        />
+      ) : (
+        <div className="space-y-3">
+          {recentJobs.map((e, index) => {
+            const project = e.projectId
+              ? projectsById[e.projectId]
+              : undefined;
 
-                const total = estimateExpenseTotals[e.id] ?? 0;
+            const total = estimateExpenseTotals[e.id] ?? 0;
+            
+            // Cycle through green variations
+            const colors = [
+              { bg: "from-emerald-500 to-emerald-600", light: "bg-emerald-50", border: "border-emerald-200", hover: "hover:border-emerald-300", icon: "text-emerald-600" },
+              { bg: "from-green-500 to-green-600", light: "bg-green-50", border: "border-green-200", hover: "hover:border-green-300", icon: "text-green-600" },
+              { bg: "from-teal-500 to-teal-600", light: "bg-teal-50", border: "border-teal-200", hover: "hover:border-teal-300", icon: "text-teal-600" },
+              { bg: "from-emerald-600 to-emerald-700", light: "bg-emerald-50", border: "border-emerald-200", hover: "hover:border-emerald-300", icon: "text-emerald-600" },
+              { bg: "from-green-600 to-green-700", light: "bg-green-50", border: "border-green-200", hover: "hover:border-green-300", icon: "text-green-600" },
+              { bg: "from-teal-600 to-teal-700", light: "bg-teal-50", border: "border-teal-200", hover: "hover:border-teal-300", icon: "text-teal-600" },
+            ];
+            
+            const color = colors[index % colors.length];
 
-                return (
-                  <div
-                    key={e.id}
-                    className="group relative flex flex-col justify-between gap-4 rounded-2xl bg-white p-5 shadow-xs ring-1 ring-red-200/80 transition-all hover:shadow-md hover:ring-red-300 sm:flex-row sm:items-center"
-                  >
-                    {/* Left Side: Info & Context */}
-                    <div className="flex min-w-0 flex-1 items-start gap-4">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-neutral-100 text-neutral-700 transition-colors group-hover:bg-red-50 group-hover:text-red-600">
-                        <Receipt className="size-5" />
-                      </div>
+            return (
+              <div
+                key={e.id}
+                className={`group relative flex flex-col justify-between gap-3 rounded-2xl bg-gradient-to-br ${color.bg} p-4 shadow-sm border ${color.border} transition-all hover:shadow-md ${color.hover} sm:flex-row sm:items-center`}
+              >
+                {/* Left Side: Info & Context */}
+                <div className="flex min-w-0 flex-1 items-start gap-3">
+                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${color.light} text-white shadow-sm`}>
+                    <Receipt className="size-5 text-gray-700" />
+                  </div>
 
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-neutral-400">
-                          <span className="inline-flex items-center gap-1.5 text-neutral-600 font-semibold">
-                            <span className="h-2 w-2 rounded-full bg-red-500" />
-                            {profile?.fullName || "User"}
-                          </span>
-                          <span>/</span>
-                          <span className="truncate text-neutral-500">
-                            {project?.name ?? "General Project"}
-                          </span>
-                        </div>
-
-                        <div className="mt-1 flex items-center gap-3">
-                          <Link
-                            href={`/estimates/${e.id}`}
-                            className="truncate text-base font-bold text-neutral-900 transition-colors hover:text-red-600"
-                          >
-                            {estimateLabel(e)}
-                          </Link>
-                        </div>
-                      </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs font-medium text-white/80">
+                      <span className="inline-flex items-center gap-1.5 text-white font-semibold">
+                        <span className="h-1.5 w-1.5 rounded-full bg-white/80" />
+                        {profile?.fullName || "User"}
+                      </span>
+                      <span className="text-white/50">/</span>
+                      <span className="truncate text-white/70">
+                        {project?.name ?? "General Project"}
+                      </span>
                     </div>
 
-                    {/* Right Side: Expense Total + Quick Record Actions */}
-                    <div className="flex items-center justify-between sm:justify-end gap-5 border-t border-neutral-100 pt-3 sm:border-t-0 sm:pt-0">
-                      <div className="text-left sm:text-right">
-                        <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
-                          Total Logged
-                        </div>
-                        <div className="text-base font-bold tabular-nums text-neutral-900">
-                          {money(total)}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        {ENTRY_CHOICES.map((c) => {
-                          const isPayByMe = c.id === "i_paid";
-
-                          return (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={() => {
-                                setEstimateId(e.id);
-                                setChoice(c.id);
-                                setSavedNote(null);
-                                setDialogOpen(true);
-                              }}
-                              className={`h-9 px-3.5 text-xs font-bold rounded-xl transition-all shadow-2xs active:scale-95 ${
-                                isPayByMe
-                                  ? "bg-neutral-900 text-white hover:bg-neutral-800"
-                                  : "bg-red-600 text-white hover:bg-red-700 shadow-xs"
-                              }`}
-                            >
-                              {c.shortLabel}
-                            </button>
-                          );
-                        })}
-                      </div>
+                    <div className="mt-0.5 flex items-center gap-3">
+                      <Link
+                        href={`/estimates/${e.id}`}
+                        className="truncate text-sm font-bold text-white transition-opacity hover:opacity-80"
+                      >
+                        {estimateLabel(e)}
+                      </Link>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
+                </div>
 
-        {/* -------------------------------------------------------
-            OUTSTANDING BALANCES SECTION
-        ------------------------------------------------------- */}
-        <section className="rounded-2xl bg-white p-6 shadow-xs ring-1 ring-neutral-200/80">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-bold tracking-tight text-neutral-900">
-                Outstanding Payee Balances
-              </h2>
-              <p className="text-xs text-neutral-500">
-                Pending obligations tracking across external partners.
-              </p>
-            </div>
-          </div>
-
-          {loading ? (
-            <div className="py-8 text-center text-xs text-neutral-400">
-              Crunching numbers...
-            </div>
-          ) : subBalances.length === 0 && agentBalances.length === 0 ? (
-            <div className="py-6 text-center text-xs text-neutral-400 rounded-xl bg-neutral-50">
-              All accounts balanced. No active pending debts.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {[
-                {
-                  rows: subBalances,
-                  label: "Subcontractors",
-                  href: "/subcontractors",
-                  icon: HardHat,
-                },
-                {
-                  rows: agentBalances,
-                  label: "Agents",
-                  href: "/agents",
-                  icon: Users,
-                },
-              ].map(
-                ({ rows, label, href, icon: Icon }) =>
-                  rows.length === 0 ? null : (
-                    <div key={label} className="rounded-xl bg-neutral-50/60 p-4 ring-1 ring-neutral-200/60">
-                      <div className="mb-3 flex items-center justify-between">
-                        <span className="flex items-center gap-2 text-xs font-bold text-neutral-800">
-                          <Icon className="size-4 text-red-600" />
-                          {label}
-                        </span>
-
-                        <Link
-                          href={href}
-                          className="text-xs font-semibold text-red-600 hover:underline"
-                        >
-                          View all
-                        </Link>
-                      </div>
-
-                      <div className="divide-y divide-neutral-200/60 overflow-hidden rounded-lg bg-white ring-1 ring-neutral-200/60">
-                        {rows.map((b) => (
-                          <div
-                            key={b.payeeId}
-                            className="flex items-center justify-between px-4 py-3 text-xs"
-                          >
-                            <span className="font-semibold text-neutral-900 truncate">
-                              {b.payeeName}
-                            </span>
-                            <span className="text-neutral-500 shrink-0 tabular-nums">
-                              {money(b.paid)} / {money(b.contracted)} ·{" "}
-                              <span className="font-bold text-red-600">
-                                {money(b.outstanding)} due
-                              </span>
-                            </span>
-                          </div>
-                        ))}
-                      </div>
+                {/* Right Side: Expense Total + Quick Record Actions */}
+                <div className="flex items-center justify-between sm:justify-end gap-3 border-t border-white/20 pt-3 sm:border-t-0 sm:pt-0">
+                  <div className="text-left sm:text-right">
+                    <div className="text-[8px] font-bold uppercase tracking-wider text-white/60">
+                      Total Logged
                     </div>
-                  )
-              )}
-            </div>
-          )}
-        </section>
+                    <div className="text-sm font-bold tabular-nums text-white">
+                      {money(total)}
+                    </div>
+                  </div>
 
-        {/* -------------------------------------------------------
-            FORM DIALOG
-        ------------------------------------------------------- */}
-        {dialogOpen && selectedChoice && (
-          <ExpenseFormV2
-            companyId={companyId}
-            projectId={projectId || null}
-            estimateId={estimateId || null}
-            initialPaidByType={selectedChoice.paidByType}
-            initialReimbursable={selectedChoice.reimbursable}
-            initialPaidById={
-              selectedChoice.id === "i_paid" ? userId : null
-            }
-            initialPaidByLabel={
-              selectedChoice.id === "i_paid"
-                ? profile?.fullName || "you"
-                : null
-            }
-            onClose={() => setDialogOpen(false)}
-            onSubmit={handleSubmit}
-            onChanged={load}
-          />
-        )}
-      </PageContainer>
-    </div>
+                  <div className="flex items-center gap-1.5">
+                    {ENTRY_CHOICES.map((c) => {
+                      const isPayByMe = c.id === "i_paid";
+
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => {
+                            setEstimateId(e.id);
+                            setChoice(c.id);
+                            setSavedNote(null);
+                            setDialogOpen(true);
+                          }}
+                          className={`h-8 px-3 text-[10px] font-bold rounded-xl transition-all shadow-sm active:scale-95 ${
+                            isPayByMe
+                              ? "bg-white/20 text-white hover:bg-white/30 backdrop-blur-sm border border-white/30"
+                              : "bg-white text-gray-900 hover:bg-white/90 hover:shadow-md border border-white/30"
+                          }`}
+                        >
+                          {c.shortLabel}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+
+    {/* -------------------------------------------------------
+        OUTSTANDING BALANCES SECTION
+    ------------------------------------------------------- */}
+    <section className="rounded-2xl bg-white p-5 shadow-sm border border-gray-200/60">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-bold tracking-tight text-gray-900">
+            Outstanding Payee Balances
+          </h2>
+          <p className="text-xs text-gray-500">
+            Pending obligations across partners
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="py-6 text-center text-xs text-gray-400">
+          Crunching numbers...
+        </div>
+      ) : subBalances.length === 0 && agentBalances.length === 0 ? (
+        <div className="py-5 text-center text-xs text-gray-400 rounded-xl bg-gray-50/50 border border-gray-200/50">
+          All accounts balanced. No active pending debts.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {[
+            {
+              rows: subBalances,
+              label: "Subcontractors",
+              href: "/subcontractors",
+              icon: HardHat,
+              color: "from-emerald-500 to-emerald-600",
+              light: "bg-emerald-50",
+            },
+            {
+              rows: agentBalances,
+              label: "Agents",
+              href: "/agents",
+              icon: Users,
+              color: "from-teal-500 to-teal-600",
+              light: "bg-teal-50",
+            },
+          ].map(
+            ({ rows, label, href, icon: Icon, color, light }) =>
+              rows.length === 0 ? null : (
+                <div key={label} className={`rounded-xl bg-gradient-to-br ${color} p-4 border border-white/20 shadow-sm`}>
+                  <div className="mb-3 flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-xs font-bold text-white">
+                      <Icon className="size-4" />
+                      {label}
+                    </span>
+
+                    <Link
+                      href={href}
+                      className="text-xs font-semibold text-white/80 hover:text-white hover:underline transition-colors"
+                    >
+                      View all →
+                    </Link>
+                  </div>
+
+                  <div className="divide-y divide-white/20 overflow-hidden rounded-lg bg-white/95 backdrop-blur-sm border border-white/30">
+                    {rows.map((b) => (
+                      <div
+                        key={b.payeeId}
+                        className="flex items-center justify-between px-3 py-2.5 text-xs hover:bg-white/50 transition-colors"
+                      >
+                        <span className="font-semibold text-gray-700 truncate">
+                          {b.payeeName}
+                        </span>
+                        <span className="text-gray-500 shrink-0 tabular-nums">
+                          {money(b.paid)} / {money(b.contracted)} ·{" "}
+                          <span className="font-bold text-amber-600">
+                            {money(b.outstanding)} due
+                          </span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+          )}
+        </div>
+      )}
+    </section>
+
+    {/* -------------------------------------------------------
+        FORM DIALOG
+    ------------------------------------------------------- */}
+    {dialogOpen && selectedChoice && (
+      <ExpenseFormV2
+        companyId={companyId}
+        projectId={projectId || null}
+        estimateId={estimateId || null}
+        initialPaidByType={selectedChoice.paidByType}
+        initialReimbursable={selectedChoice.reimbursable}
+        initialPaidById={
+          selectedChoice.id === "i_paid" ? userId : null
+        }
+        initialPaidByLabel={
+          selectedChoice.id === "i_paid"
+            ? profile?.fullName || "you"
+            : null
+        }
+        onClose={() => setDialogOpen(false)}
+        onSubmit={handleSubmit}
+        onChanged={load}
+      />
+    )}
+  </PageContainer>
+</div>
   );
 }
 

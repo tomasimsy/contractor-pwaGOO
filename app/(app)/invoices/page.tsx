@@ -111,14 +111,11 @@ function InvoicesListContent() {
     profile,
   ]);
 
-
   useEffect(() => {
     load();
   }, [load]);
 
-
   const filtered = useMemo(() => {
-
     let rows = invoices;
 
     if (statusFilter !== "all") {
@@ -127,64 +124,32 @@ function InvoicesListContent() {
       );
     }
 
-
     if (search.trim()) {
-
-      const q = search
-        .trim()
-        .toLowerCase();
+      const q = search.trim().toLowerCase();
 
       rows = rows.filter((i) => {
-
-        const project =
-          projectsById[i.projectId];
-
-        const client =
-          i.clientId
-            ? clientsById[i.clientId]
-            : undefined;
-
+        const project = projectsById[i.projectId];
+        const client = i.clientId ? clientsById[i.clientId] : undefined;
         const estId = (i as any).estimateId;
-        const estimate =
-          estId
-            ? estimatesById[estId]
-            : undefined;
-
+        const estimate = estId ? estimatesById[estId] : undefined;
 
         return (
-          i.invoiceNumber
-            .toLowerCase()
-            .includes(q) ||
-          (project?.name ?? "")
-            .toLowerCase()
-            .includes(q) ||
-          (client?.name ?? "")
-            .toLowerCase()
-            .includes(q) ||
-          (estimate?.title ?? "")
-            .toLowerCase()
-            .includes(q)
+          i.invoiceNumber.toLowerCase().includes(q) ||
+          (project?.name ?? "").toLowerCase().includes(q) ||
+          (client?.name ?? "").toLowerCase().includes(q) ||
+          (estimate?.title ?? "").toLowerCase().includes(q)
         );
       });
     }
 
-
-    return [...rows].sort((a,b)=>{
-
-      if(sortKey==="total")
-        return b.total-a.total;
-
-      if(sortKey==="dueDate")
-        return (a.dueDate ?? "")
-          .localeCompare(b.dueDate ?? "");
-
-      return b.createdAt
-        .localeCompare(a.createdAt);
-
+    return [...rows].sort((a,b) => {
+      if(sortKey === "total")
+        return b.total - a.total;
+      if(sortKey === "dueDate")
+        return (a.dueDate ?? "").localeCompare(b.dueDate ?? "");
+      return b.createdAt.localeCompare(a.createdAt);
     });
-
-
-  },[
+  }, [
     invoices,
     statusFilter,
     search,
@@ -202,16 +167,15 @@ function InvoicesListContent() {
     });
   }, [filtered]);
 
-    return (
+  return (
     <PageContainer>
-
       <PageHeader
         title="Invoices"
         description="Bill clients and track what's owed."
         actions={
           <Link
             href="/invoices/new"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-orange-500 to-orange-600 px-3 py-1.5 text-sm font-medium text-white hover:from-orange-600 hover:to-orange-700 shadow-sm shadow-orange-200/50 transition-all hover:shadow-md"
           >
             <Plus className="size-4" />
             New Invoice
@@ -219,94 +183,71 @@ function InvoicesListContent() {
         }
       />
 
-
       {error && (
-        <div className="mb-4 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <div className="mb-4 rounded-lg bg-rose-50/80 backdrop-blur-sm px-3 py-2 text-sm text-rose-700 border border-rose-200/40">
           {error}
         </div>
       )}
 
-
       {/* Filters */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
-
         <div className="relative flex-1 min-w-[180px] max-w-sm">
-
-          <Search
-            className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-          />
-
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-orange-500/60" />
           <input
             type="search"
             value={search}
-            onChange={(e)=>setSearch(e.target.value)}
+            onChange={(e) => setSearch(e.target.value)}
             placeholder="Search invoice #, project, client..."
             className="
               h-9
               w-full
               rounded-lg
               border
-              border-input
-              bg-background
+              border-orange-200/40
+              bg-white/80
+              backdrop-blur-sm
               pl-8
               pr-3
               text-sm
+              text-orange-900
+              placeholder:text-orange-400/60
+              focus:border-orange-400/60
+              focus:ring-2
+              focus:ring-orange-200/40
+              transition-all
             "
           />
-
         </div>
-
 
         <select
           value={statusFilter}
-          onChange={(e)=>setStatusFilter(e.target.value as StatusFilter)}
-          className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
+          onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+          className="h-9 rounded-lg border border-orange-200/40 bg-white/80 backdrop-blur-sm px-2 text-sm text-orange-900 focus:border-orange-400/60 focus:ring-2 focus:ring-orange-200/40 transition-all"
         >
-          <option value="all">
-            All statuses
-          </option>
-
-          {STATUS_OPTIONS.map((s)=>(
+          <option value="all">All statuses</option>
+          {STATUS_OPTIONS.map((s) => (
             <option key={s} value={s}>
-              {s.replace(/_/g," ")}
+              {s.replace(/_/g, " ")}
             </option>
           ))}
-
         </select>
-
 
         <select
           value={sortKey}
-          onChange={(e)=>setSortKey(e.target.value as SortKey)}
-          className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
+          onChange={(e) => setSortKey(e.target.value as SortKey)}
+          className="h-9 rounded-lg border border-orange-200/40 bg-white/80 backdrop-blur-sm px-2 text-sm text-orange-900 focus:border-orange-400/60 focus:ring-2 focus:ring-orange-200/40 transition-all"
         >
-          <option value="createdAt">
-            Newest first
-          </option>
-
-          <option value="dueDate">
-            Due date
-          </option>
-
-          <option value="total">
-            Total (high-low)
-          </option>
-
+          <option value="createdAt">Newest first</option>
+          <option value="dueDate">Due date</option>
+          <option value="total">Total (high-low)</option>
         </select>
-
       </div>
 
-
-
       {loading ? (
-
-        <div className="py-12 text-center text-sm text-muted-foreground">
+        <div className="py-12 text-center text-sm text-orange-600/60">
           Loading...
         </div>
-
-
       ) : sortedFilteredInvoices.length === 0 ? (
-
         <EmptyState
           icon={Receipt}
           title={
@@ -316,22 +257,13 @@ function InvoicesListContent() {
           }
           description="Create an invoice from an approved estimate."
         />
-
-
       ) : (
-
         <>
-
-
           {/* DESKTOP TABLE */}
-          <div className="hidden overflow-x-auto rounded-xl border border-border sm:block">
-
+          <div className="hidden overflow-x-auto rounded-xl border border-orange-200/40 bg-white/80 backdrop-blur-sm sm:block shadow-sm">
             <table className="w-full text-sm">
-
-              <thead className="bg-muted/50">
-
+              <thead className="bg-gradient-to-r from-orange-400/90 to-orange-500/90 text-white backdrop-blur-sm">
                 <tr>
-
                   {[
                     "Invoice #",
                     "Project",
@@ -339,244 +271,186 @@ function InvoicesListContent() {
                     "Status",
                     "Amount",
                     "Due",
-                  ].map((title)=>(
+                  ].map((title) => (
                     <th
                       key={title}
-                      className="
-                        px-4
-                        py-3
-                        text-left
-                        text-xs
-                        font-semibold
-                        uppercase
-                        tracking-wide
-                        text-muted-foreground
-                      "
+                      className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-white/90"
                     >
                       {title}
                     </th>
                   ))}
-
                 </tr>
-
               </thead>
 
-
-
-              <tbody className="divide-y divide-border">
-
-                {sortedFilteredInvoices.map((invoice)=>{
-
-
+              <tbody className="divide-y divide-orange-100/40">
+                {sortedFilteredInvoices.map((invoice, index) => {
                   const border =
-                    invoice.status==="paid"
+                    invoice.status === "paid"
                       ? "border-l-emerald-500"
-                      : invoice.status==="partially_paid"
+                      : invoice.status === "partially_paid"
                       ? "border-l-amber-500"
-                      : invoice.status==="overdue"
+                      : invoice.status === "overdue"
                       ? "border-l-rose-500"
-                      : "border-l-muted-foreground/30";
+                      : "border-l-orange-300/60";
 
                   const estId = (invoice as any).estimateId;
                   const estimateTitle = estId ? estimatesById[estId]?.title : null;
 
+                  const rowColors = [
+                    "hover:bg-orange-50/40",
+                    "hover:bg-amber-50/40",
+                    "hover:bg-orange-50/40",
+                    "hover:bg-amber-50/40",
+                  ];
+                  const rowColor = rowColors[index % rowColors.length];
 
                   return (
-
                     <tr
                       key={invoice.id}
-                      className={`
-                        border-l-4
-                        ${border}
-                        transition
-                        hover:bg-muted/40
-                      `}
+                      className={`border-l-4 ${border} transition-colors ${rowColor}`}
                     >
-
                       <td className="px-4 py-3">
-
                         <Link
                           href={`/invoices/${invoice.id}`}
-                          className="
-                            font-semibold
-                            text-foreground
-                            hover:text-primary
-                          "
+                          className="font-semibold text-orange-900 hover:text-orange-600 transition-colors"
                         >
-                          {invoice.invoiceNumber ||
-                           invoice.id.slice(0,8)}
+                          {invoice.invoiceNumber || invoice.id.slice(0, 8)}
                         </Link>
-
                       </td>
-
 
                       <td className="px-4 py-3">
                         {estId ? (
                           <Link
                             href={`/estimates/${estId}`}
-                            className="text-sm font-semibold text-foreground hover:text-primary hover:underline"
+                            className="text-sm font-semibold text-orange-800 hover:text-orange-600 hover:underline transition-colors"
                           >
                             {estimateTitle ?? "Estimate"}
                           </Link>
                         ) : (
                           estimateTitle && (
-                            <div className="text-sm font-semibold text-foreground">
+                            <div className="text-sm font-semibold text-orange-800">
                               {estimateTitle}
                             </div>
                           )
                         )}
-                        <div className="text-xs text-muted-foreground">
+                        <div className="text-xs text-orange-600/60">
                           {projectsById[invoice.projectId]?.name ?? "—"}
                         </div>
                       </td>
 
-
-                      <td className="px-4 py-3 text-muted-foreground">
-                        {
-                          invoice.clientId
-                            ? clientsById[invoice.clientId]?.name ?? "—"
-                            : "—"
-                        }
+                      <td className="px-4 py-3 text-orange-700/70">
+                        {invoice.clientId
+                          ? clientsById[invoice.clientId]?.name ?? "—"
+                          : "—"}
                       </td>
-
 
                       <td className="px-4 py-3">
-
                         <Badge tone={INVOICE_STATUS_TONE[invoice.status]}>
-                          {invoice.status.replace(/_/g," ")}
+                          {invoice.status.replace(/_/g, " ")}
                         </Badge>
-
                       </td>
 
-
-                      <td className="px-4 py-3 text-right font-bold">
-
+                      <td className="px-4 py-3 text-right font-bold text-orange-700">
                         {formatMoney(invoice.total)}
-
                       </td>
 
-
-                      <td className="px-4 py-3 text-xs text-muted-foreground">
-
+                      <td className="px-4 py-3 text-xs text-orange-600/60">
                         {invoice.dueDate ?? "—"}
-
                       </td>
-
-
                     </tr>
-
                   );
-
                 })}
-
               </tbody>
-
             </table>
-
           </div>
-
-
-
-
 
           {/* MOBILE CARDS */}
           <div className="space-y-3 sm:hidden">
-
-            {sortedFilteredInvoices.map((invoice)=>{
-
-              const cardStyle =
-                invoice.status === "paid"
-                  ? "bg-emerald-500/10 border-emerald-500/30 dark:bg-emerald-500/10 dark:border-emerald-500/20 opacity-75 hover:opacity-100"
-                  : invoice.status === "partially_paid"
-                  ? "bg-amber-500/10 border-amber-500/30 dark:bg-amber-500/10 dark:border-amber-500/20"
-                  : invoice.status === "overdue"
-                  ? "bg-rose-500/10 border-rose-500/30 dark:bg-rose-500/10 dark:border-rose-500/20"
-                  : "bg-card border-border";
-
+            {sortedFilteredInvoices.map((invoice) => {
               const estId = (invoice as any).estimateId;
               const estimateTitle = estId ? estimatesById[estId]?.title : null;
               const projectName = projectsById[invoice.projectId]?.name ?? "—";
 
-              return (
+              let statusBadge = "bg-white/80 text-orange-700";
+              let statusLabel = "Draft";
+              
+              if (invoice.status === "paid") {
+                statusBadge = "bg-emerald-100/80 text-emerald-700";
+                statusLabel = "Paid";
+              } else if (invoice.status === "partially_paid") {
+                statusBadge = "bg-amber-100/80 text-amber-800";
+                statusLabel = "Partial";
+              } else if (invoice.status === "overdue") {
+                statusBadge = "bg-rose-100/80 text-rose-800";
+                statusLabel = "Overdue";
+              } else if (invoice.status === "sent") {
+                statusBadge = "bg-white/80 text-orange-700";
+                statusLabel = "Sent";
+              }
 
+              return (
                 <Link
                   key={invoice.id}
                   href={`/invoices/${invoice.id}`}
-                  className={`
-                    block
-                    rounded-xl
-                    border
-                    ${cardStyle}
-                    p-4
-                    shadow-sm
-                    transition
-                    hover:shadow-md
-                  `}
+                  className="group relative flex flex-col gap-3 rounded-xl bg-gradient-to-br from-orange-400/20 to-orange-500/20 backdrop-blur-sm border border-orange-300/30 px-4 py-3.5 shadow-sm transition-all hover:shadow-md hover:scale-[1.01] hover:from-orange-400/30 hover:to-orange-500/30"
                 >
-
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-foreground">
-                        {invoice.invoiceNumber || invoice.id.slice(0,8)}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {projectName}
-                        {estimateTitle && ` • ${estimateTitle}`}
+                    <div className="min-w-0 flex-1">
+                      <h3 className="truncate text-sm font-bold text-orange-900">
+                        {invoice.invoiceNumber || invoice.id.slice(0, 8)}
+                      </h3>
+                      
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-orange-800/80">
+                          {projectName}
+                        </span>
+                        {estimateTitle && (
+                          <>
+                            <span className="w-1 h-1 rounded-full bg-orange-400/40" />
+                            <span className="text-xs text-orange-700/80">
+                              {estimateTitle}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
 
-                    <div className="text-right">
-                      <div className="text-sm font-bold text-foreground">
+                    <div className="shrink-0 text-right">
+                      <div className="text-base font-bold text-orange-900">
                         {formatMoney(invoice.total)}
                       </div>
-                      <div className="mt-1">
-                        <Badge tone={INVOICE_STATUS_TONE[invoice.status]}>
-                          {invoice.status.replace(/_/g, " ")}
-                        </Badge>
+                      <div className="mt-0.5">
+                        <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${statusBadge}`}>
+                          {statusLabel}
+                        </span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-3 text-xs text-muted-foreground">
-                    <div>
+                  <div className="flex items-center justify-between border-t border-orange-200/30 pt-2.5">
+                    <div className="text-[10px] text-orange-700/70">
                       {invoice.clientId ? clientsById[invoice.clientId]?.name ?? "—" : "—"}
                     </div>
                     {invoice.dueDate && (
-                      <div>
-                        Due: <span className="font-medium text-foreground">{invoice.dueDate}</span>
+                      <div className="text-[10px] text-orange-700/70">
+                        Due: <span className="font-medium text-orange-800">{invoice.dueDate}</span>
                       </div>
                     )}
                   </div>
-
                 </Link>
-
               );
-
             })}
-
           </div>
-
-
         </>
-
       )}
-
     </PageContainer>
   );
 }
 
-
-
-export default function InvoicesPage(){
-
+export default function InvoicesPage() {
   return (
-
     <RequirePermission resource="invoice" action="view">
-
       <InvoicesListContent />
-
     </RequirePermission>
-
   );
-
 }
