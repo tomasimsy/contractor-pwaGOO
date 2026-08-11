@@ -614,16 +614,22 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     //   outstanding = contracted − actually paid (the expense rows).
     // Aggregated per payee rather than per assignment, because a payee
     // with two assignments on one project has one running balance.
-    const outstandingSubcontractor = asCommittedCost(
-      sumOutstandingAgainstContracts(subAssignments.map((a) => ({ payeeId: a.subcontractorId, contracted: a.contractedAmount })), expenses, "subcontractor")
+    const subcontractorContractRemaining = sumOutstandingAgainstContracts(
+      subAssignments.map((a) => ({ payeeId: a.subcontractorId, contracted: a.contractedAmount })), expenses, "subcontractor"
     );
+    const outstandingSubcontractor = asCommittedCost(subcontractorContractRemaining);
     // Agent outstanding also carries unpaid reimbursement liability —
     // money owed to an agent who fronted an expense — which is tracked
     // on the expense row's own reimbursementStatus, not an assignment.
-    const outstandingAgent = asCommittedCost(
-      sumOutstandingAgainstContracts(agentAssignments.map((a) => ({ payeeId: a.agentId, contracted: a.assignedAmount })), expenses, "agent") +
-        outstandingReimbursements
+    // Kept apart from the contract remainder below: it is a LIABILITY
+    // against an expense already inside `expenseItems`, not a
+    // commitment still to be recorded — folding it into
+    // `committedRemaining` would double it (see the reimbursement
+    // double-count this file's header warns about).
+    const agentContractRemaining = sumOutstandingAgainstContracts(
+      agentAssignments.map((a) => ({ payeeId: a.agentId, contracted: a.assignedAmount })), expenses, "agent"
     );
+    const outstandingAgent = asCommittedCost(agentContractRemaining + outstandingReimbursements);
 
     /* Assigned team labour that has NOT been paid yet — the same
      * contracted-minus-paid measure the two above use, for the third
@@ -660,9 +666,14 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
       mileageCosts,
       subcontractorCosts,
       agentCosts,
-      // Same term the estimate adds, project-scoped — so a project and
-      // its estimates cannot disagree about what the job costs.
-      committedRemaining: outstandingTeamLabour,
+      // Same term getEstimateFinancials adds (there: teamLabourRemaining
+      // + sub.remaining + agent.remaining) — so a project and its
+      // estimates cannot disagree about what the job costs. Contract
+      // remainders only, not `outstandingAgent` itself — that also
+      // carries the reimbursement liability, which is already inside
+      // `expenseItems` via the fronted expense row and would double
+      // count here.
+      committedRemaining: subcontractorContractRemaining + agentContractRemaining + outstandingTeamLabour,
     });
 
     const paymentStatus = derivePaymentStatus(invoicesTotal, amountPaid);

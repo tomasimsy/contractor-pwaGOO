@@ -167,21 +167,30 @@ function legacyCashCost(expenseRowTotal: number) {
 }
 
 describe("Legacy payment -> expense backfill", () => {
-  test("before the backfill, historical payments are invisible to cost — this is what it fixes", async () => {
+  test("before the backfill, historical payments are invisible to CASH cost, but the committed contract still counts", async () => {
     const { project } = await seedLegacyData();
 
     const before = await services.financialEngine.getProjectFinancials(project.id);
-    // Only the two real expense rows (900 materials + 300 agent-funded).
-    expect(before.totalExpenses).toBe(1200);
+    // Cash-cost buckets see only the two real expense rows (900
+    // materials + 300 agent-funded) — the legacy payment tables aren't
+    // expense rows, so nothing paid against either contract is visible
+    // here yet. This is exactly the gap the backfill closes.
     expect(before.subcontractorCosts).toBe(0);
     expect(before.agentCosts).toBe(0);
-    // The 3,500 paid and the 1,200 commission are the gap.
+    // But project cost is not cash-basis: a $5,000 subcontractor
+    // contract and a $1,200 agent commission are committed the moment
+    // they're assigned, whether or not a matching expense row exists
+    // yet. totalExpenses = 1200 real rows + 5000 + 1200 committed.
+    expect(before.totalExpenses).toBe(1200 + 5000 + 1200);
+    // The 3,500 paid and the 1,200 commission are the gap the OLD
+    // cash-basis model missed entirely.
     expect(legacyCashCost(1200)).toBe(1200 + 3500 + 1200);
   });
 
-  test("after the backfill, total cost equals what the legacy model charged", async () => {
+  test("after the backfill, committed cost is unchanged and cash-visible cost equals what the legacy model charged", async () => {
     const { project } = await seedLegacyData();
-    const expectedTotal = legacyCashCost(1200);
+    const legacyTotal = legacyCashCost(1200);
+    const before = await services.financialEngine.getProjectFinancials(project.id);
 
     const { inserted, settled } = await runBackfill();
     expect(inserted).toBe(3); // 2 sub payments + 1 commission; the deleted one is skipped
@@ -192,15 +201,23 @@ describe("Legacy payment -> expense backfill", () => {
     expect(settled).toBe(0);
 
     const after = await services.financialEngine.getProjectFinancials(project.id);
-    expect(after.totalExpenses).toBe(expectedTotal);
-    expect(after.expenseItems).toBe(expectedTotal);
+    // The backfill only moves dollars from "committed, unpaid" into
+    // "paid" for the SAME contracts — it neither creates nor destroys
+    // committed cost, so the job's total cost does not move.
+    expect(after.totalExpenses).toBe(before.totalExpenses);
+    expect(after.expenseItems).toBe(legacyTotal);
     expect(after.subcontractorCosts).toBe(3500);
     expect(after.agentCosts).toBe(1200);
-    expect(after.netProfit).toBe(20000 - expectedTotal);
+    // 5,000 contracted - 3,500 paid still outstanding; agent fully paid.
+    expect(after.outstandingSubcontractor).toBe(1500);
+    expect(after.outstandingAgent).toBe(0);
+    expect(after.netProfit).toBe(20000 - after.totalExpenses);
 
-    // Company-level (cash basis) reconciles against the same figure.
+    // Company-level (cash basis) reconciles against the legacy figure —
+    // a DIFFERENT model from the project's committed cost above (see
+    // this file's header), so it matches legacyTotal, not totalExpenses.
     const company = await services.financialEngine.getCompanyFinancials({ companyId: COMPANY_ID, dateRange: RANGE });
-    expect(company.totalExpenses).toBe(expectedTotal);
+    expect(company.totalExpenses).toBe(legacyTotal);
     expect(company.subcontractorPaid).toBe(3500);
     expect(company.agentCommissionPaid).toBe(1200);
   });

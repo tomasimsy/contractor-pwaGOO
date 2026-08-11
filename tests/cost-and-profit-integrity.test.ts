@@ -231,7 +231,11 @@ describe("Subcontractor integrity: assigned -> paid -> remaining owed", () => {
     const financials = await services.financialEngine.getProjectFinancials(project.id);
     expect(financials.subcontractorCosts).toBe(0);
     expect(financials.outstandingSubcontractor).toBe(3000);
-    expect(financials.netProfit).toBe(10000);
+    // The $3,000 contract is still committed even with the payment
+    // gone — it just moved back from paid cost into outstanding
+    // commitment, so it still counts against profit. netProfit =
+    // 10000 revenue - 3000 committedRemaining.
+    expect(financials.netProfit).toBe(7000);
   });
 });
 
@@ -469,12 +473,13 @@ describe("Cross-view reconciliation: every surface reports the same numbers", ()
     expect(financials.outstandingAgent).toBe(700); // nothing paid yet
     expect(payables.totalOutstandingAgent).toBe(700);
 
-    // Profit agrees across both entry points. Cost is the cash that
-    // actually moved: 500 materials + 500 paid to the subcontractor.
-    // The unpaid 1,500 of the contract and the unpaid 700 commission
-    // are OUTSTANDING, not cost.
+    // Profit agrees across both entry points. Cost is cash paid PLUS
+    // what's still committed: 500 materials + 500 paid to the
+    // subcontractor + the unpaid 1,500 of that same contract + the
+    // unpaid 700 commission — the whole contracted amount counts the
+    // moment it's committed, not just the part already paid out.
     expect(profit.netProfit).toBe(financials.netProfit);
-    expect(financials.netProfit).toBe(11000 - (500 + 500));
+    expect(financials.netProfit).toBe(11000 - (500 + 500 + 1500 + 700));
 
     // The subcontractor's payee balance matches the payables line.
     const line = payables.lines.find((l) => l.assignmentId === subAssignment.id)!;
