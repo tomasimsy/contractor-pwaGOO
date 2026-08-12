@@ -1,6 +1,17 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Next.js's build-time file tracing decides what each serverless
+  // function's deployment bundle contains. @sparticuz/chromium ships
+  // its actual Chromium binary as compressed .br files that its own
+  // JS never `require()`s directly (it extracts them at runtime), so
+  // tracing misses them by default — the function deploys, but
+  // chromium.executablePath() then fails at runtime because the
+  // binary genuinely isn't there. This explicitly forces those files
+  // into the one route that needs them.
+  outputFileTracingIncludes: {
+    "/api/estimates/[id]/send-email": ["./node_modules/@sparticuz/chromium/bin/**"],
+  },
   async headers() {
     return [
       {
