@@ -447,12 +447,11 @@ export default async function CustomerPortalPage({
               </summary>
               <div className="space-y-4 border-t border-gray-200 px-5 py-4">
                 <div>
-                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">{terms.label}</p>
+                  {/* <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">{terms.label}</p> */}
                   <TermsBody className="text-xs leading-relaxed text-gray-600" body={terms.body} />
                 </div>
                 {company.terms_conditions && (
                   <div className="border-t border-gray-100 pt-4">
-                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">General Policies</p>
                     <p className="whitespace-pre-wrap text-xs leading-relaxed text-gray-600">{company.terms_conditions}</p>
                   </div>
                 )}

@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 import { EmailCustomerModal } from "@/components/estimates/EmailCustomerModal";
 import { EmailHistoryPanel } from "@/components/estimates/EmailHistoryPanel";
+import { EstimateNotesPanel } from "@/components/estimates/EstimateNotesPanel";
+import { useAuth } from "@/components/providers/AuthProvider";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SkeletonLines } from "@/components/ui/Skeleton";
@@ -76,6 +78,7 @@ const formatMoney = (n: number) => n.toLocaleString("en-US", { style: "currency"
 export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { estimateId: string; editBasePath?: string }) {
   const router = useRouter();
   const { estimateService, projectService, clientService, changeOrderService, auditService, financialEngine, roofingAreaService, estimateAreaLineItemService, invoiceService, paymentService, estimateWorkflow, companyService } = useServices();
+  const { profile, user } = useAuth();
   const canEditExpenses = usePermission("expense", "create");
   const canEditPayments = usePermission("payment", "create");
 
@@ -1075,6 +1078,13 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
               </div>
             )}
           </section>
+
+          <EstimateNotesPanel
+            companyId={estimate.companyId}
+            estimateId={estimate.id}
+            currentUserId={profile?.userId ?? null}
+            currentUserLabel={profile?.fullName || user?.email || null}
+          />
 
           <section className="rounded-xl border border-border bg-card p-5 shadow-xs">
             <h2 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
