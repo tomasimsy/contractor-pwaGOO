@@ -12,9 +12,9 @@ Every scenario runs a realistic sequence of CRUD operations against the in-memor
 
 ## Discrepancies
 
-- ⚠ **[Agent-Assign-Pay-Delete (x1) → Agent covers an expense (creates reimbursement liability)]** ReconciliationService.reconcileLedgerAgainstSources: expected `"clean"`, got `"Expense 122dab79-5134-40fd-bb15-6efffe0888f0 has a $80 agent reimbursement liability with nothing paid yet."`
-- ⚠ **[Agent-Assign-Pay-Delete (x10) → Agent covers an expense (creates reimbursement liability)]** ReconciliationService.reconcileLedgerAgainstSources: expected `"clean"`, got `"Expense ca17dd62-fc05-498b-8839-f2ea2c212ba2 has a $800 agent reimbursement liability with nothing paid yet."`
-- ⚠ **[Agent-Assign-Pay-Delete (x1000) → Agent covers an expense (creates reimbursement liability)]** ReconciliationService.reconcileLedgerAgainstSources: expected `"clean"`, got `"Expense 9d1a1238-4d63-408c-8ea8-643819f6f5ca has a $80000 agent reimbursement liability with nothing paid yet."`
+- ⚠ **[Agent-Assign-Pay-Delete (x1) → Agent covers an expense (creates reimbursement liability)]** ReconciliationService.reconcileLedgerAgainstSources: expected `"clean"`, got `"Expense 6eee4a83-2c6a-4e07-ae09-71a52b531715 has a $80 agent reimbursement liability with nothing paid yet."`
+- ⚠ **[Agent-Assign-Pay-Delete (x10) → Agent covers an expense (creates reimbursement liability)]** ReconciliationService.reconcileLedgerAgainstSources: expected `"clean"`, got `"Expense 1d6b797d-264d-474e-bb57-c596bc60d0a3 has a $800 agent reimbursement liability with nothing paid yet."`
+- ⚠ **[Agent-Assign-Pay-Delete (x1000) → Agent covers an expense (creates reimbursement liability)]** ReconciliationService.reconcileLedgerAgainstSources: expected `"clean"`, got `"Expense 295fd406-2c31-41a3-a7d1-db1bcf4ee876 has a $80000 agent reimbursement liability with nothing paid yet."`
 
 ## Sign-off
 
