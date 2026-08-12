@@ -432,7 +432,7 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
 {/* Project + Client */}
 <div className="mt-1.5 min-w-0">
   {/* Estimate Title — primary */}
-  <div className="text-2xl sm:text-3xl font-extrabold leading-tight text-emerald-950 dark:text-white break-words">
+  <div className="text-2xl sm:text-3xl font-extrabold leading-tight text-emerald-950 dark:text-white break-words capitalize">
     {estimate.title || "Untitled Estimate"}
   </div>
 
