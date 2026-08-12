@@ -9,11 +9,11 @@
  *
  * Reply tracking is intentionally not shown here — Resend doesn't
  * track replies without inbound-email webhook configuration, a
- * separate, heavier feature. This panel only ever shows sent/
- * delivered/opened/bounced.
+ * separate, heavier feature. This panel shows sent/delivered/opened/
+ * clicked/bounced only.
  */
 import { useEffect, useState } from "react";
-import { Mail, CheckCircle2, MailOpen, AlertTriangle, Loader2 } from "lucide-react";
+import { Mail, CheckCircle2, MailOpen, MousePointerClick, AlertTriangle, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 import { listEmailsForEstimate, type EstimateEmailRecord, type EstimateEmailStatus } from "@/lib/email/emailTracking";
 
@@ -21,6 +21,7 @@ const STATUS_LABEL: Record<EstimateEmailStatus, string> = {
   sent: "Sent",
   delivered: "Delivered",
   opened: "Opened",
+  clicked: "Clicked",
   bounced: "Bounced",
   complained: "Marked as spam",
   failed: "Failed",
@@ -31,11 +32,16 @@ function StatusBadge({ status }: { status: EstimateEmailStatus }) {
     sent: "bg-muted text-muted-foreground",
     delivered: "bg-blue-100 text-blue-700",
     opened: "bg-green-100 text-green-700",
+    clicked: "bg-emerald-100 text-emerald-700",
     bounced: "bg-destructive/10 text-destructive",
     complained: "bg-destructive/10 text-destructive",
     failed: "bg-destructive/10 text-destructive",
   };
-  const Icon = status === "opened" ? MailOpen : status === "bounced" || status === "complained" || status === "failed" ? AlertTriangle : status === "delivered" ? CheckCircle2 : Mail;
+  const Icon =
+    status === "clicked" ? MousePointerClick :
+    status === "opened" ? MailOpen :
+    status === "bounced" || status === "complained" || status === "failed" ? AlertTriangle :
+    status === "delivered" ? CheckCircle2 : Mail;
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${styles[status]}`}>
       <Icon className="size-2.5" />
@@ -82,7 +88,13 @@ export function EmailHistoryPanel({ estimateId }: { estimateId: string }) {
             <div className="truncate text-xs font-medium text-foreground">{e.subject}</div>
             <div className="mt-0.5 text-[11px] text-muted-foreground">
               To {e.toAddress} · Sent {formatWhen(e.sentAt)}
-              {e.openedAt ? ` · Opened ${formatWhen(e.openedAt)}` : e.deliveredAt ? ` · Delivered ${formatWhen(e.deliveredAt)}` : ""}
+              {e.clickedAt
+                ? ` · Clicked ${formatWhen(e.clickedAt)}`
+                : e.openedAt
+                  ? ` · Opened ${formatWhen(e.openedAt)}`
+                  : e.deliveredAt
+                    ? ` · Delivered ${formatWhen(e.deliveredAt)}`
+                    : ""}
             </div>
           </div>
           <StatusBadge status={e.status} />

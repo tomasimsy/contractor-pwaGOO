@@ -9,7 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * if a fourth caller shows up.
  */
 
-export type EstimateEmailStatus = "sent" | "delivered" | "opened" | "bounced" | "complained" | "failed";
+export type EstimateEmailStatus = "sent" | "delivered" | "opened" | "clicked" | "bounced" | "complained" | "failed";
 
 export interface EstimateEmailRecord {
   id: string;
@@ -21,6 +21,7 @@ export interface EstimateEmailRecord {
   sentAt: string;
   deliveredAt: string | null;
   openedAt: string | null;
+  clickedAt: string | null;
   bouncedAt: string | null;
   complainedAt: string | null;
 }
@@ -36,6 +37,7 @@ function rowToRecord(row: any): EstimateEmailRecord {
     sentAt: row.sent_at,
     deliveredAt: row.delivered_at,
     openedAt: row.opened_at,
+    clickedAt: row.clicked_at,
     bouncedAt: row.bounced_at,
     complainedAt: row.complained_at,
   };
@@ -82,15 +84,18 @@ export async function listEmailsForEstimate(supabase: SupabaseClient, estimateId
 /** Status precedence — a webhook event only moves status FORWARD.
  * Guards against a late-arriving 'delivered' event overwriting an
  * already-recorded 'opened' (Resend does not guarantee event
- * ordering). 'bounced'/'complained'/'failed' are terminal and always
- * win once reached. */
+ * ordering). 'clicked' ranks above 'opened' — clicking the proposal
+ * link is a strictly more engaged signal than just opening the email.
+ * 'bounced'/'complained'/'failed' are terminal and always win once
+ * reached. */
 const STATUS_RANK: Record<EstimateEmailStatus, number> = {
   sent: 0,
   delivered: 1,
   opened: 2,
-  bounced: 3,
-  complained: 3,
-  failed: 3,
+  clicked: 3,
+  bounced: 4,
+  complained: 4,
+  failed: 4,
 };
 
 /** Called from the webhook route with a SERVICE-ROLE client (no user
@@ -125,6 +130,7 @@ export async function applyResendEvent(
   const timestampColumn: Partial<Record<EstimateEmailStatus, string>> = {
     delivered: "delivered_at",
     opened: "opened_at",
+    clicked: "clicked_at",
     bounced: "bounced_at",
     complained: "complained_at",
   };

@@ -6,7 +6,7 @@ import { applyResendEvent, type EstimateEmailStatus } from "@/lib/email/emailTra
 
 /**
  * Resend delivery webhook — updates estimate_emails rows
- * (delivered/opened/bounced/complained) as events arrive. This is the
+ * (delivered/opened/clicked/bounced/complained) as events arrive. This is the
  * SECOND route in this app permitted to construct a service-role
  * Supabase client (the first is app/api/portal/sign/route.ts — read
  * that file's header for the shared security model this follows).
@@ -35,6 +35,7 @@ import { applyResendEvent, type EstimateEmailStatus } from "@/lib/email/emailTra
 const EVENT_TO_STATUS: Record<string, EstimateEmailStatus> = {
   "email.delivered": "delivered",
   "email.opened": "opened",
+  "email.clicked": "clicked",
   "email.bounced": "bounced",
   "email.complained": "complained",
   "email.failed": "failed",
