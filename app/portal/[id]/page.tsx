@@ -426,11 +426,17 @@ export default async function CustomerPortalPage({
           </dl>
         </section>
 
-        {/* This estimate's own selected Terms & Conditions — the SAME
-            source (lib/estimateTerms.ts) EstimateDetail and the PDF
-            read, keyed by the template chosen when the estimate was
-            created. Separate from, and shown alongside, the company's
-            own general terms below (an existing, unrelated field). */}
+        {/* ONE "Terms & Conditions" accordion, not two — a customer
+            previously saw this heading twice in a row (this estimate's
+            own legal template from lib/estimateTerms.ts, immediately
+            followed by an identically-titled second accordion for the
+            company's general policy list, company.terms_conditions).
+            Both are real, independently-editable fields with genuinely
+            different content (legal/warranty language vs. a practical
+            policy list — deposit %, cancellation rights, weather
+            delays), so neither is dropped here; they're just shown as
+            two clearly-labeled subsections of one section instead of
+            two separate accordions with the same name. */}
         {(() => {
           const terms = getEstimateTermsTemplate(termsPayload?.key ?? null, termsPayload?.override ?? null);
           return (
@@ -439,26 +445,21 @@ export default async function CustomerPortalPage({
                 Terms &amp; Conditions
                 <span aria-hidden className="text-gray-600 transition-transform group-open:rotate-180">▾</span>
               </summary>
-              <div className="border-t border-gray-200 px-5 py-4">
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">{terms.label}</p>
-                <TermsBody className="text-xs leading-relaxed text-gray-600" body={terms.body} />
+              <div className="space-y-4 border-t border-gray-200 px-5 py-4">
+                <div>
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">{terms.label}</p>
+                  <TermsBody className="text-xs leading-relaxed text-gray-600" body={terms.body} />
+                </div>
+                {company.terms_conditions && (
+                  <div className="border-t border-gray-100 pt-4">
+                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">General Policies</p>
+                    <p className="whitespace-pre-wrap text-xs leading-relaxed text-gray-600">{company.terms_conditions}</p>
+                  </div>
+                )}
               </div>
             </details>
           );
         })()}
-
-        {/* Terms — collapsed by default so it never buries the action. */}
-        {company.terms_conditions && (
-          <details className="group rounded-2xl border border-gray-200 bg-white shadow-sm">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-2xl px-5 py-4 text-sm font-semibold text-gray-900 hover:bg-gray-50">
-              Terms &amp; Conditions
-              <span aria-hidden className="text-gray-600 transition-transform group-open:rotate-180">▾</span>
-            </summary>
-            <div className="border-t border-gray-200 px-5 py-4">
-              <p className="whitespace-pre-wrap text-xs leading-relaxed text-gray-600">{company.terms_conditions}</p>
-            </div>
-          </details>
-        )}
 
         {/* <Link
           href={`/api/estimates/${estimate.id}/pdf?customerToken=${encodeURIComponent(token ?? "")}`}
