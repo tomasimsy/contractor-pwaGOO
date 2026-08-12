@@ -17,7 +17,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Pencil, Trash2, FileText, GitPullRequest, Receipt, Wallet,
+  Pencil, Trash2, GitPullRequest, Receipt, Wallet,
   FolderOpen, Camera, History, User, Download, Share2, Home, CheckCircle2, Mail,
 } from "lucide-react";
 import { EmailCustomerModal } from "@/components/estimates/EmailCustomerModal";
@@ -39,10 +39,7 @@ import { InvoicePaymentsPanel, type InvoicePaymentsPanelRef } from "@/components
 import { EstimateProfitSummaryCard } from "@/components/shared/EstimateProfitSummaryCard";
 import { RoofAreaSummaryCard } from "@/components/estimates/RoofAreaSummaryCard";
 import { SubAgentTabsPanel, type SubAgentTabsPanelRef } from "@/components/estimates/SubAgentTabsPanel";
-import { TeamMembersPanel, type TeamMembersPanelRef } from "@/components/estimates/TeamMembersPanel";
 import { usePermission } from "@/lib/hooks/usePermission";
-import { getEstimateTermsTemplate, overrideForTemplateKey } from "@/lib/estimateTerms";
-import { TermsBody } from "@/components/shared/TermsBody";
 import type { CompanySettings } from "@/lib/services/companyService";
 import { sumApprovedChangeOrderRevenue, calculateRevisedEstimateTotal, calculateChangeOrderRevenue, calculateSubtotal, calculateLineItemTotal } from "@/lib/services/financialCalculations";
 import type { Estimate, EstimateLineItem } from "@/lib/services/estimateService";
@@ -88,7 +85,6 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
   const expensesPanelRef = useRef<ProjectExpensesPanelRef>(null);
   const paymentsPanelRef = useRef<InvoicePaymentsPanelRef>(null);
   const subAgentTabsRef = useRef<SubAgentTabsPanelRef>(null);
-  const teamMembersRef = useRef<TeamMembersPanelRef>(null);
   const [estimate, setEstimate] = useState<(Estimate & { lineItems: EstimateLineItem[] }) | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [client, setClient] = useState<Client | null>(null);
@@ -320,14 +316,18 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
 
   return (
     <PageContainer>
-      {/* Top Toolbar / Header */}
-<div className="flex items-center justify-between gap-3 pb-3 mb-4 border-b border-border/60">
+      {/* Top Toolbar / Header — wraps to a second row on narrow screens
+          instead of squeezing six icon buttons into one, which is what
+          "quick-access buttons aligned cleanly" actually requires on a
+          phone; `justify-between` alone only worked down to tablet
+          width. */}
+<div className="flex flex-wrap items-center justify-between gap-3 pb-3 mb-4 border-b border-border/60">
         <div className="min-w-0 flex items-center gap-2">
           <h1 className="text-base sm:text-lg font-bold tracking-tight text-foreground capitalize truncate">{estimate.title || "Untitled Estimate"}</h1>
           <Badge tone={STATUS_TONE[estimate.status]} className="shrink-0">{estimate.status.replace(/_/g, " ")}</Badge>
           <span className="hidden md:inline text-xs text-muted-foreground truncate">· {project?.name} {estimate.estimateNumber ?? estimate.id.slice(0, 8)}</span>
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
             onClick={() => expensesPanelRef.current?.openNewExpense()}
@@ -417,13 +417,24 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
         </div>
       </div>
 
-      {/* Main Grid Content */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        {/* Left Column (Consolidated Project, Line Items & Change Orders) */}
-        <div className="space-y-6 lg:col-span-8 lg:space-y-8">
-          
+      {/* Main Grid Content — flattened (no left/right wrapper divs) so
+          every top-level section can carry its own `order` + explicit
+          `lg:col-start`. On mobile (no lg: prefix) `order` alone
+          controls stacking, since grid-cols-1 has one column anyway.
+          On lg:+ each section's `lg:col-start`/`lg:col-span` pins it to
+          the left (1-8) or right (9-12) column regardless of order, and
+          `lg:order` restores each column's original top-to-bottom
+          sequence — the standard "explicit column, ordered row"
+          CSS Grid technique. Only the Job Costing card has a mobile
+          order different from its desktop one (pushed to the very end
+          on mobile, since it's reference detail rather than a daily
+          action) — the Estimate/Project Details card stays FIRST at
+          every width; it's the main point of this page and must never
+          require scrolling past Invoices/Expenses to reach. Everything
+          else keeps the same relative order at every width. */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:gap-x-6 lg:gap-y-8">
           {/* Consolidated Section Card: Project Info, Line Items, and Change Orders */}
-<section className="rounded-2xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950 p-4 sm:p-6 shadow-md space-y-6 text-emerald-950 dark:text-emerald-50">
+<section className="order-first lg:order-1 lg:col-start-1 lg:col-span-8 rounded-2xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950 p-4 sm:p-6 shadow-md space-y-6 text-emerald-950 dark:text-emerald-50">
             
             {/* Quick Info Bar / Project Details — Compact mobile layout with clear hierarchy */}
             <div className="-mx-4 -mt-4 sm:-mx-6 sm:-mt-6 rounded-t-2xl border-b border-emerald-200 dark:border-emerald-800 bg-emerald-100/70 dark:bg-emerald-900/90 px-4 py-3 sm:px-6 sm:py-4 sm:pl-[calc(1.5rem-6px)]">
@@ -797,7 +808,7 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
 
 
           {/* Side-by-Side Compact Cards for Invoices/Payments and Expenses — secondary, compact */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="order-1 lg:order-2 lg:col-start-1 lg:col-span-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
             
             {/* Invoice & Payments Feed Card */}
             <section className="rounded-lg border border-border/60 bg-card p-3.5 flex flex-col justify-between">
@@ -876,7 +887,7 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
 
 
           {/* Attachments (Docs & Photos) — secondary, compact */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="order-2 lg:order-3 lg:col-start-1 lg:col-span-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <section className="rounded-lg border border-border/60 bg-card p-3.5">
               <h3 className="mb-1.5 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 <FolderOpen className="size-3.5 text-primary" /> Documents
@@ -896,43 +907,11 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
               below (visual hierarchy: Roof Areas -> Financial Summary
               -> Expenses/Invoices/Payments). Same EstimateFinancials
               object the top summary strip reads from. */}
-          <EstimateProfitSummaryCard financials={financials} />
+          <div className="order-8 lg:order-4 lg:col-start-1 lg:col-span-8">
+            <EstimateProfitSummaryCard financials={financials} />
+          </div>
 
-          {/* Read-only — WHICH template is picked once, on Create/Edit
-              (EstimateForm) and frozen onto the estimate. The template's
-              TEXT is not frozen: it's resolved live from this company's
-              own override (Settings → Company → Terms & Conditions),
-              falling back to the built-in default in
-              lib/estimateTerms.ts. Same resolution, same source, on the
-              customer portal and in the generated PDF — editing a
-              template in Settings changes what this section (and
-              every other estimate on that key) shows immediately. */}
-          <section className="rounded-xl border border-border bg-card p-5 shadow-xs">
-            <h2 className="mb-3 flex items-center justify-between gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              <span className="flex items-center gap-2">
-                <FileText className="size-4 text-primary" /> Terms &amp; Conditions
-              </span>
-              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold normal-case text-foreground">
-                {getEstimateTermsTemplate(
-                  estimate.termsTemplate,
-                  companySettings ? overrideForTemplateKey(companySettings, estimate.termsTemplate) : null
-                ).label}
-              </span>
-            </h2>
-            <TermsBody
-              className="text-xs leading-relaxed text-muted-foreground"
-              body={
-                getEstimateTermsTemplate(
-                  estimate.termsTemplate,
-                  companySettings ? overrideForTemplateKey(companySettings, estimate.termsTemplate) : null
-                ).body
-              }
-            />
-          </section>
-        </div>
-
-        {/* Right Sidebar (Sub/Agent, Portal, Client & Signature, Activity Timeline) */}
-        <div className="space-y-6 lg:col-span-4">
+          {/* Right Sidebar (Sub/Agent, Portal, Client & Signature, Activity Timeline) */}
           {/* Kept at the top of the sidebar (not the bottom of the left
               column) so assigning/paying a subcontractor or agent never
               requires scrolling past Roof Areas/Line Items/Financial
@@ -943,176 +922,185 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
               FinancialEngine.getEstimateCostEntries) — so refresh that
               list too, not just the profit figures, whenever one is
               recorded. */}
-          {estimate.projectId && (
-            <SubAgentTabsPanel
-              ref={subAgentTabsRef}
-              companyId={estimate.companyId}
-              projectId={estimate.projectId}
-              // So a payment recorded here is tagged with THIS job and
-              // shows up in its expenses, like every other cost on it.
-              estimateId={estimate.id}
-              onChanged={async () => {
-                await loadFinancials();
-                await expensesPanelRef.current?.refresh();
-              }}
-            />
-          )}
-
-          {/* ADDITIVE — renders BELOW the existing Sub/Agent panel,
-              which is untouched. Assignments live in their own table
-              that no financial calculation reads, so nothing above this
-              point changes. */}
-          <TeamMembersPanel
-            ref={teamMembersRef}
-            companyId={estimate.companyId}
-            estimateId={estimate.id}
-            projectId={estimate.projectId ?? null}
-            onChanged={async () => {
-              await expensesPanelRef.current?.refresh();
-            }}
-          />
-
-          <section className="rounded-xl border border-border bg-card p-5 shadow-xs">
-            <h2 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              <Share2 className="size-4 text-primary" /> Customer Portal
-            </h2>
-            {estimate.customerToken ? (
-              <SharePortalPanel
-                // The token itself IS the path — no ?token= query
-                // string, so the credential never shows up in browser
-                // history, referrer headers, or server access logs.
-                // app/portal/[id]/page.tsx accepts this directly (and
-                // still honours the old ?token= form for any link
-                // already sent to a customer before this change).
-                portalUrl={`${origin}/portal/${estimate.customerToken}`}
-                clientName={client?.name ?? null}
-                clientPhone={client?.phone ?? null}
-                clientEmail={client?.email ?? null}
-                documentLabel="estimate"
+          <div className="order-3 lg:order-1 lg:col-start-9 lg:col-span-4">
+            {estimate.projectId && (
+              <SubAgentTabsPanel
+                ref={subAgentTabsRef}
+                companyId={estimate.companyId}
+                projectId={estimate.projectId}
+                // So a payment recorded here is tagged with THIS job and
+                // shows up in its expenses, like every other cost on it.
+                estimateId={estimate.id}
+                onChanged={async () => {
+                  await loadFinancials();
+                  await expensesPanelRef.current?.refresh();
+                }}
               />
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                No portal link yet — re-save or migrate tokens to enable client view.
-              </p>
             )}
+          </div>
+
+          {/* Combined card — Customer Portal + Email History + Client
+              Details & Signature. Same three components/data as
+              before, just grouped under one card instead of three, per
+              request. Email History gets its own scroll container
+              (max-h + overflow-y-auto, same technique Activity
+              Timeline already used) instead of an accordion, so recent
+              sends are visible immediately without a click, but a long
+              history doesn't push Client Details/Signature down the
+              page. */}
+          <section className="order-4 lg:order-2 lg:col-start-9 lg:col-span-4 space-y-5 rounded-xl border border-border bg-card p-5 shadow-xs">
+            <div>
+              <h2 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                <Share2 className="size-4 text-primary" /> Customer Portal
+              </h2>
+              {estimate.customerToken ? (
+                <SharePortalPanel
+                  // The token itself IS the path — no ?token= query
+                  // string, so the credential never shows up in browser
+                  // history, referrer headers, or server access logs.
+                  // app/portal/[id]/page.tsx accepts this directly (and
+                  // still honours the old ?token= form for any link
+                  // already sent to a customer before this change).
+                  portalUrl={`${origin}/portal/${estimate.customerToken}`}
+                  clientName={client?.name ?? null}
+                  clientPhone={client?.phone ?? null}
+                  clientEmail={client?.email ?? null}
+                  documentLabel="estimate"
+                />
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No portal link yet — re-save or migrate tokens to enable client view.
+                </p>
+              )}
+            </div>
+
+            <div className="border-t border-border/60 pt-4">
+              <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                <Mail className="size-4 text-primary" /> Email History
+              </h3>
+              <div className="max-h-64 overflow-y-auto pr-1">
+                <EmailHistoryPanel key={emailHistoryRefreshKey} estimateId={estimate.id} />
+              </div>
+            </div>
+
+            <div className="border-t border-border/60 pt-4">
+              <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                <User className="size-4 text-primary" /> Client Details &amp; Signature
+              </h3>
+              {client ? (
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <div className="font-semibold text-foreground text-sm">{client.name}</div>
+                    {client.email && <div className="text-muted-foreground mt-0.5">{client.email}</div>}
+                    {client.phone && <div className="text-muted-foreground">{client.phone}</div>}
+                  </div>
+
+                  <div className="flex items-center justify-between border-t border-border/60 pt-3">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className={`size-4 ${estimate.signature ? "text-success" : "text-muted-foreground"}`} />
+                      <span className="font-medium text-foreground">
+                        {estimate.signature ? "Signed by customer" : "Awaiting signature"}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setSignatureNotice(null); setShowSignatureModal(!showSignatureModal); }}
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      {showSignatureModal ? "Close" : "Manage"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3 text-xs">
+                  <p className="text-muted-foreground italic">No client attached to this project.</p>
+                  <div className="flex items-center justify-between border-t border-border/60 pt-3">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className={`size-4 ${estimate.signature ? "text-success" : "text-muted-foreground"}`} />
+                      <span className="font-medium text-foreground">
+                        {estimate.signature ? "Signed by customer" : "Awaiting signature"}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setSignatureNotice(null); setShowSignatureModal(!showSignatureModal); }}
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      {showSignatureModal ? "Close" : "Manage"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {showSignatureModal && (
+                <div className="mt-4 border-t border-border/60 pt-4">
+                  {signatureNotice && (
+                    <div
+                      role="status"
+                      className={`mb-3 rounded-lg px-3 py-2 text-xs ${
+                        signatureNotice.tone === "error"
+                          ? "bg-danger/10 text-danger"
+                          : "bg-success/15 text-success"
+                      }`}
+                    >
+                      {signatureNotice.message}
+                    </div>
+                  )}
+                  <div className={signatureBusy ? "pointer-events-none opacity-60" : ""}>
+                    <SignaturePad
+                      existingSignature={estimate.signature}
+                      onSave={handleSignature}
+                      onRemove={handleRemoveSignature}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
           </section>
 
-          <section className="rounded-xl border border-border bg-card p-5 shadow-xs">
-            <h2 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              <Mail className="size-4 text-primary" /> Email History
-            </h2>
-            <EmailHistoryPanel key={emailHistoryRefreshKey} estimateId={estimate.id} />
-          </section>
+          <div className="order-5 lg:order-3 lg:col-start-9 lg:col-span-4">
+            <EstimateNotesPanel
+              companyId={estimate.companyId}
+              estimateId={estimate.id}
+              currentUserId={profile?.userId ?? null}
+              currentUserLabel={profile?.fullName || user?.email || null}
+            />
+          </div>
 
-          {/* Client Details & Condensed Signature Option */}
-          <section className="rounded-xl border border-border bg-card p-5 shadow-xs">
-            <h2 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              <User className="size-4 text-primary" /> Client Details & Signature
-            </h2>
-            {client ? (
-              <div className="space-y-3 text-xs">
-                <div>
-                  <div className="font-semibold text-foreground text-sm">{client.name}</div>
-                  {client.email && <div className="text-muted-foreground mt-0.5">{client.email}</div>}
-                  {client.phone && <div className="text-muted-foreground">{client.phone}</div>}
-                </div>
-
-                <div className="pt-3 border-t border-border/60 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className={`size-4 ${estimate.signature ? "text-success" : "text-muted-foreground"}`} />
-                    <span className="font-medium text-foreground">
-                      {estimate.signature ? "Signed by customer" : "Awaiting signature"}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => { setSignatureNotice(null); setShowSignatureModal(!showSignatureModal); }}
-                    className="text-xs font-medium text-primary hover:underline"
-                  >
-                    {showSignatureModal ? "Close" : "Manage"}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3 text-xs">
-                <p className="text-muted-foreground italic">No client attached to this project.</p>
-                <div className="pt-3 border-t border-border/60 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className={`size-4 ${estimate.signature ? "text-success" : "text-muted-foreground"}`} />
-                    <span className="font-medium text-foreground">
-                      {estimate.signature ? "Signed by customer" : "Awaiting signature"}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => { setSignatureNotice(null); setShowSignatureModal(!showSignatureModal); }}
-                    className="text-xs font-medium text-primary hover:underline"
-                  >
-                    {showSignatureModal ? "Close" : "Manage"}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {showSignatureModal && (
-              <div className="mt-4 pt-4 border-t border-border/60">
-                {signatureNotice && (
-                  <div
-                    role="status"
-                    className={`mb-3 rounded-lg px-3 py-2 text-xs ${
-                      signatureNotice.tone === "error"
-                        ? "bg-danger/10 text-danger"
-                        : "bg-success/15 text-success"
-                    }`}
-                  >
-                    {signatureNotice.message}
-                  </div>
+          <details className="order-6 lg:order-4 lg:col-start-9 lg:col-span-4 group rounded-xl border border-border bg-card p-5 shadow-xs">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              <span className="flex items-center gap-2">
+                <History className="size-4 text-primary" /> Activity Timeline
+                {activity.length > 0 && (
+                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold normal-case text-foreground">{activity.length}</span>
                 )}
-                <div className={signatureBusy ? "pointer-events-none opacity-60" : ""}>
-                  <SignaturePad
-                    existingSignature={estimate.signature}
-                    onSave={handleSignature}
-                    onRemove={handleRemoveSignature}
-                  />
+              </span>
+              <span aria-hidden className="text-muted-foreground transition-transform group-open:rotate-180">▾</span>
+            </summary>
+            <div className="mt-3">
+              {panelsLoading && activity.length === 0 ? (
+                <SkeletonLines rows={3} />
+              ) : activity.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">No recent activity.</p>
+              ) : (
+                <div className="max-h-80 overflow-y-auto pr-1">
+                  <ol className="space-y-3 border-l-2 border-border/80 pl-3.5">
+                    {activity.map((entry) => (
+                      <li key={entry.id} className="relative">
+                        <span className="absolute -left-[19px] top-1 size-2.5 rounded-full bg-primary ring-4 ring-card" />
+                        <div className="text-xs font-semibold capitalize text-foreground">
+                          {entry.action.replace(/_/g, " ")}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {new Date(entry.occurredAt).toLocaleString()}
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
                 </div>
-              </div>
-            )}
-          </section>
-
-          <EstimateNotesPanel
-            companyId={estimate.companyId}
-            estimateId={estimate.id}
-            currentUserId={profile?.userId ?? null}
-            currentUserLabel={profile?.fullName || user?.email || null}
-          />
-
-          <section className="rounded-xl border border-border bg-card p-5 shadow-xs">
-            <h2 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              <History className="size-4 text-primary" /> Activity Timeline
-            </h2>
-            {panelsLoading && activity.length === 0 ? (
-              <SkeletonLines rows={3} />
-            ) : activity.length === 0 ? (
-              <p className="text-xs text-muted-foreground italic">No recent activity.</p>
-            ) : (
-              <div className="max-h-80 overflow-y-auto pr-1">
-                <ol className="space-y-3 border-l-2 border-border/80 pl-3.5">
-                  {activity.map((entry) => (
-                    <li key={entry.id} className="relative">
-                      <span className="absolute -left-[19px] top-1 size-2.5 rounded-full bg-primary ring-4 ring-card" />
-                      <div className="text-xs font-semibold capitalize text-foreground">
-                        {entry.action.replace(/_/g, " ")}
-                      </div>
-                      <div className="text-[11px] text-muted-foreground">
-                        {new Date(entry.occurredAt).toLocaleString()}
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            )}
-          </section>
-        </div>
+              )}
+            </div>
+          </details>
       </div>
 
       <EmailCustomerModal

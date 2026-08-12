@@ -80,8 +80,13 @@ export const TeamMembersPanel = forwardRef<
     /** Same onChanged contract the Sub/Agent panels use. Nothing here
      * changes a total today, but a future labor payment will. */
     onChanged?: () => Promise<void> | void;
+    /** Drops the outer border/heading — used when a parent (e.g.
+     * SubAgentTabsPanel) already provides both, so they aren't
+     * doubled. Same convention as SubcontractorAssignmentPanel/
+     * AgentAssignmentPanel's own `compact` prop. */
+    compact?: boolean;
   }
->(function TeamMembersPanel({ companyId, estimateId, projectId, onChanged }, ref) {
+>(function TeamMembersPanel({ companyId, estimateId, projectId, onChanged, compact = false }, ref) {
   const { teamAssignmentService, expenseService } = useServices();
 
   const [cards, setCards] = useState<MemberCard[]>([]);
@@ -214,11 +219,14 @@ export const TeamMembersPanel = forwardRef<
   }
 
   return (
-    <section className="rounded-xl border border-border bg-card p-3 shadow-xs sm:p-4">
+    <div className={compact ? "" : "rounded-xl border border-border bg-card p-3 shadow-xs sm:p-4"}>
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-          <UsersRound className="size-4 text-primary" /> Team Members
-        </h2>
+        {!compact && (
+          <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            <UsersRound className="size-4 text-primary" /> Team Members
+          </h2>
+        )}
+        {compact && <span />}
         {!adding && (
           <button
             type="button"
@@ -368,6 +376,6 @@ export const TeamMembersPanel = forwardRef<
           ))}
         </div>
       )}
-    </section>
+    </div>
   );
 });

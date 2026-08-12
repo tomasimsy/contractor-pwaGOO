@@ -43,22 +43,6 @@ export default async function CustomerPortalPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ token?: string }>;
 }) {
-  /* TOKEN, NOT ESTIMATE ID.
-   *
-   * The [id] path segment was never actually used to look up the
-   * estimate — every RPC call below has only ever been keyed on
-   * `token` from the query string. That made it free to repurpose: a
-   * NEW share link puts the customer_token itself in the path
-   * (/portal/<token>, no query string at all — see
-   * EstimateDetail.tsx's portalUrl), so the one real credential this
-   * page needs never appears as a `?token=` param, in browser history,
-   * or in a referrer header.
-   *
-   * `?token=` is still honoured as a fallback, so a link already sent
-   * to a customer before this change (/portal/<estimateId>?token=<t>)
-   * keeps working: for that shape, `id` is an estimate id (not a valid
-   * token, so it simply matches no row) and `queryToken` carries the
-   * real credential. */
   const { id } = await params;
   const { token: queryToken } = await searchParams;
   const token = queryToken || id;
@@ -73,13 +57,6 @@ export default async function CustomerPortalPage({
     : { data: null };
   const allChangeOrders = (allChangeOrdersData as PortalChangeOrder[] | null) ?? [];
 
-  // Second, narrowly-scoped read (see the migration's own comment on
-  // why this is a separate function rather than editing
-  // get_customer_portal in place). Returns {key, override} — `override`
-  // is this company's own edited text for that key (Settings → Company
-  // → Terms & Conditions), if they've customized it; getEstimateTermsTemplate
-  // falls back to the built-in default the same way it does everywhere
-  // else. Failure is non-fatal — a null here still renders the default.
   const { data: termsData } = token && estimate
     ? await supabase.rpc("get_estimate_terms_template", { p_token: token })
     : { data: null };
@@ -125,362 +102,166 @@ export default async function CustomerPortalPage({
 
   const isSigned = !!estimate.signature?.value;
 
-  // ---------------------------------------------------------------
-  // SCOPE SUMMARY — the estimate's OWN line items, grouped by their
-  // existing `category` column (material | labor | other), plus one
-  // group for approved change orders.
-  //
-  // Deliberately NOT project costs. This page is public and needs no
-  // login, so what the company PAYS its vendors must never appear
-  // here — only what the customer was quoted. No new table or column
-  // is involved: `category` already exists on every line item.
-  // ---------------------------------------------------------------
   const CATEGORY_LABELS: { key: string; label: string }[] = [
     { key: "material", label: "Materials" },
     { key: "labor", label: "Labor" },
     { key: "other", label: "Other" },
   ];
 
-  // Does the payload actually carry categories? `get_customer_portal`
-  // (a live DB function, not in this repo's migrations) currently
-  // returns id/name/description/quantity/unit_price/total and NOT
-  // `category`, even though the column exists on estimate_items.
-  //
-  // Without it every item would fall into the "other" bucket and the
-  // page would confidently mislabel a material as "Other" — worse than
-  // not grouping at all. So grouping switches itself on only when the
-  // data supports it, and this page starts grouping automatically the
-  // moment that function is updated to select `category`. No client
-  // change needed then, and none of this needs a new table or column.
   const hasCategories = lineItems.some((i) => !!i.category);
 
   const scopeGroups = !hasCategories ? [] : CATEGORY_LABELS.map(({ key, label }) => {
     const items = lineItems.filter((i) => (i.category ?? "other") === key);
     return { label, items, subtotal: calculateSubtotal(items.map((i) => ({ total: i.total ?? 0 }))) };
-  })
-    // An estimate with nothing in a category shouldn't show an empty
-    // heading — but any UNKNOWN/legacy category still has to appear
-    // somewhere, which is why "other" is the fallback bucket above.
-    .filter((g) => g.items.length > 0);
+  }).filter((g) => g.items.length > 0);
 
   const approvedChangeOrderItems = changeOrders.map((co, i) => ({
     id: `${co.change_order_number ?? "co"}-${i}`,
     name: co.change_order_number ? `${co.change_order_number} — ${co.title ?? "Change order"}` : (co.title ?? "Change order"),
     description: co.description ?? null,
-    // The ONE change-order revenue formula, same as everywhere else.
     total: (co.total_amount ?? 0) + (co.tax ?? 0),
   }));
 
-  // Are the line items actually what this estimate's total is built
-  // from? For a ROOFING estimate they are not: its subtotal comes from
-  // its roof AREAS (which the public payload doesn't return), and any
-  // `line_items` rows are vestigial leftovers that were never counted.
-  // Listing them as the scope shows the customer a breakdown that
-  // doesn't add up to what they're signing — observed live: $10 of
-  // items against a $224 total.
   const lineItemsTotal = calculateSubtotal(lineItems.map((i) => ({ total: i.total ?? 0 })));
   const lineItemsAreAuthoritative =
     lineItems.length > 0 && Math.abs(lineItemsTotal - storedSubtotal) <= 0.005;
 
-  // The scope list describes work at SUBTOTAL level. Markup, discount
-  // and tax are not scope — they belong in the financial summary, or
-  // the groups would appear to under-sum by exactly those amounts.
   const adjustments = estimateTotal - storedSubtotal;
   const hasAdjustments = Math.abs(adjustments) > 0.005;
 
   const scopeItemCount =
     (lineItemsAreAuthoritative ? lineItems.length : 1) + approvedChangeOrderItems.length;
 
-  // Ungrouped fallback: real items, correct amounts, no invented
-  // category labels.
   const flatScopeItems = lineItemsAreAuthoritative && !hasCategories ? lineItems : [];
 
   return (
     <div className="min-h-screen bg-gray-50 pb-16">
-      {/* ACTION BANNER — the one thing the customer must do, stated
-          before anything else. Only while unsigned. */}
       {!isSigned && (
         <div className="bg-amber-500 px-4 py-3 text-center text-xs font-bold uppercase tracking-wider text-amber-950">
           Review required — signature needed below
         </div>
       )}
 
-      <main className="mx-auto max-w-xl px-4 py-6 sm:px-6 sm:py-8 space-y-5">
+      <main className="mx-auto max-w-xl px-4 py-6 sm:px-6 sm:py-8 space-y-4">
 
-        {/* WHO / WHAT — company on the left, customer on the right. */}
-        <header className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0">
-              <h1 className="text-lg font-bold leading-tight text-gray-900">{company.company_name}</h1>
-              <p className="mt-0.5 text-xs text-gray-600">
-                Issued: {new Date(estimate.created_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
-              </p>
-            </div>
-            {client?.name && (
-              <div className="min-w-0 sm:text-right">
-                <p className="text-base font-bold text-gray-900">{client.name}</p>
-                <p className="mt-0.5 font-mono text-xs text-gray-600">#{estimate.estimate_number ?? estimate.id.slice(0, 8)}</p>
-              </div>
-            )}
+        {/* HEADER / IDENTITY */}
+        <header className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="text-sm font-bold leading-tight text-gray-900">{company.company_name}</h1>
+            <p className="text-[11px] text-gray-500">
+              {new Date(estimate.created_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
+            </p>
           </div>
-        </header>
-
-        {/* SCOPE & ESTIMATE — the document itself. */}
-        <section className="overflow-hidden rounded-2xl border-2 border-gray-800 bg-white shadow-sm">
-          <div className="flex flex-wrap items-end justify-between gap-3 bg-gray-800 px-5 py-4 text-white">
-            <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-wider opacity-80">Scope &amp; Estimate</p>
-              <h2 className="text-lg font-bold leading-tight capitalize">{estimate.title || "Project Overview"}</h2>
-            </div>
-            <div className="text-right">
-              <p className="text-[10px] font-bold uppercase tracking-wider opacity-80">Total</p>
-              <p className="text-2xl font-bold leading-none">{money(contractTotal)}</p>
-            </div>
-          </div>
-
-          <div className="space-y-5 p-5">
-          {estimate.description && (
-            <div className="rounded-r-lg border-l-4 border-amber-500 bg-amber-50 p-4">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
-                Project Objective
-              </p>
-              <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-amber-950">
-                {estimate.description}
-              </p>
+          {client?.name && (
+            <div className="min-w-0 text-right">
+              <p className="text-sm font-bold text-gray-900">{client.name}</p>
+              <p className="font-mono text-[11px] text-gray-500">#{estimate.estimate_number ?? estimate.id.slice(0, 8)}</p>
             </div>
           )}
+        </header>
 
-            <div>
-              <div className="flex items-center justify-between gap-2 border-b border-gray-200 pb-2">
-                <h3 className="text-sm font-bold uppercase tracking-wide text-gray-900">Scope Summary</h3>
-                <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">
-                  {scopeItemCount} {scopeItemCount === 1 ? "item" : "items"}
-                </span>
+        {/* STREAMLINED COMBINED FINANCIAL & SCOPE CARD */}
+        <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          {/* Header Bar with Total Contract Price */}
+          <div className="flex items-center justify-between bg-gray-900 px-4 py-3.5 text-white">
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Project Overview</p>
+              <h2 className="text-base font-bold leading-tight capitalize truncate">{estimate.title || "Project Estimate"}</h2>
+            </div>
+            <div className="text-right shrink-0">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Contract Total</p>
+              <p className="text-xl font-bold leading-none">{money(contractTotal)}</p>
+            </div>
+          </div>
+
+          <div className="p-4 space-y-4 text-xs">
+            {estimate.description && (
+              <div className="rounded-lg border-l-2 border-amber-500 bg-amber-50 p-3 text-amber-950">
+                <p className="font-bold uppercase tracking-wider text-[10px] text-amber-700 mb-1">Objective</p>
+                <p className="whitespace-pre-wrap leading-relaxed">{estimate.description}</p>
               </div>
+            )}
 
-              {scopeItemCount === 0 ? (
-                <p className="py-6 text-center text-xs text-gray-600">
-                  No itemised scope listed. See the PDF below for full details.
-                </p>
-              ) : (
-                <div className="mt-4 space-y-5">
+            {/* Scope Items List (Compact) */}
+            {scopeItemCount > 0 && (
+              <div className="space-y-2 border-b border-gray-100 pb-3">
+                <div className="flex items-center justify-between text-gray-500 font-semibold uppercase tracking-wider text-[10px]">
+                  <span>Scope Items ({scopeItemCount})</span>
+                </div>
+                <div className="space-y-1.5">
                   {!lineItemsAreAuthoritative && (
-                    <div>
-                      <div className="flex items-baseline justify-between gap-2">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700">Project Scope</h4>
-                        <span className="text-xs font-semibold text-gray-600">{money(storedSubtotal)}</span>
-                      </div>
-                      <ul className="mt-1.5 space-y-1.5">
-                        <li className="flex items-start justify-between gap-3 text-sm">
-                          <span className="flex min-w-0 gap-2 text-gray-900">
-                            <span aria-hidden className="mt-1.5 size-1 shrink-0 rounded-full bg-gray-400" />
-                            <span className="min-w-0">
-                              Quoted work as specified
-                              <span className="block text-xs text-gray-600">
-                                Full itemisation is in the estimate PDF below.
-                              </span>
-                            </span>
-                          </span>
-                          <span className="shrink-0 font-semibold text-gray-900">{money(storedSubtotal)}</span>
-                        </li>
-                      </ul>
+                    <div className="flex justify-between items-center text-gray-800">
+                      <span>Quoted work as specified</span>
+                      <span className="font-medium">{money(storedSubtotal)}</span>
                     </div>
                   )}
-                  {flatScopeItems.length > 0 && (
-                    <div>
-                      <div className="flex items-baseline justify-between gap-2">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700">Quoted Work</h4>
-                        <span className="text-xs font-semibold text-gray-600">{money(storedSubtotal)}</span>
-                      </div>
-                      <ul className="mt-1.5 space-y-1.5">
-                        {flatScopeItems.map((item) => (
-                          <li key={item.id} className="flex items-start justify-between gap-3 text-sm">
-                            <span className="flex min-w-0 gap-2 text-gray-900">
-                              <span aria-hidden className="mt-1.5 size-1 shrink-0 rounded-full bg-gray-400" />
-                              <span className="min-w-0">
-                                {item.name}
-                                {(item.quantity ?? 0) > 1 && <span className="text-gray-600"> × {item.quantity}</span>}
-                                {item.description && <span className="block text-xs text-gray-600">{item.description}</span>}
-                              </span>
-                            </span>
-                            <span className="shrink-0 font-semibold text-gray-900">{money(item.total ?? 0)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {lineItemsAreAuthoritative && scopeGroups.map((group) => (
-                    <div key={group.label}>
-                      <div className="flex items-baseline justify-between gap-2">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700">{group.label}</h4>
-                        <span className="text-xs font-semibold text-gray-600">{money(group.subtotal)}</span>
-                      </div>
-                      <ul className="mt-1.5 space-y-1.5">
-                        {group.items.map((item) => (
-                          <li key={item.id} className="flex items-start justify-between gap-3 text-sm">
-                            <span className="flex min-w-0 gap-2 text-gray-900">
-                              <span aria-hidden className="mt-1.5 size-1 shrink-0 rounded-full bg-gray-400" />
-                              <span className="min-w-0">
-                                {item.name}
-                                {(item.quantity ?? 0) > 1 && (
-                                  <span className="text-gray-600"> × {item.quantity}</span>
-                                )}
-                                {item.description && (
-                                  <span className="block text-xs text-gray-600">{item.description}</span>
-                                )}
-                              </span>
-                            </span>
-                            <span className="shrink-0 font-semibold text-gray-900">{money(item.total ?? 0)}</span>
-                          </li>
-                        ))}
-                      </ul>
+                  {flatScopeItems.map((item) => (
+                    <div key={item.id} className="flex justify-between items-start gap-2 text-gray-800">
+                      <span className="truncate">
+                        {item.name} {(item.quantity ?? 0) > 1 && <span className="text-gray-500">× {item.quantity}</span>}
+                      </span>
+                      <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
                     </div>
                   ))}
-
-                  {/* Approved change orders are part of the agreed scope,
-                      so they belong in this list — not hidden in a
-                      footnote the customer has to reconcile themselves. */}
-                  {approvedChangeOrderItems.length > 0 && (
-                    <div>
-                      <div className="flex items-baseline justify-between gap-2">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700">Approved Change Orders</h4>
-                        <span className="text-xs font-semibold text-gray-600">{money(approvedChangeOrderRevenue)}</span>
-                      </div>
-                      <ul className="mt-1.5 space-y-1.5">
-                        {approvedChangeOrderItems.map((item) => (
-                          <li key={item.id} className="flex items-start justify-between gap-3 text-sm">
-                            <span className="flex min-w-0 gap-2 text-gray-900">
-                              <span aria-hidden className="mt-1.5 size-1 shrink-0 rounded-full bg-gray-400" />
-                              <span className="min-w-0">
-                                {item.name}
-                                {item.description && (
-                                  <span className="block text-xs text-gray-600">{item.description}</span>
-                                )}
-                              </span>
-                            </span>
-                            <span className="shrink-0 font-semibold text-gray-900">{money(item.total)}</span>
-                          </li>
-                        ))}
-                      </ul>
+                  {lineItemsAreAuthoritative && scopeGroups.flatMap(g => g.items).map((item) => (
+                    <div key={item.id} className="flex justify-between items-start gap-2 text-gray-800">
+                      <span className="truncate">
+                        {item.name} {(item.quantity ?? 0) > 1 && <span className="text-gray-500">× {item.quantity}</span>}
+                      </span>
+                      <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
                     </div>
-                  )}
+                  ))}
+                  {approvedChangeOrderItems.map((item) => (
+                    <div key={item.id} className="flex justify-between items-start gap-2 text-gray-800">
+                      <span className="truncate">{item.name} <span className="text-amber-600 font-semibold">(Change Order)</span></span>
+                      <span className="font-medium shrink-0">{money(item.total)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Financial Rollup Details */}
+            <div className="space-y-1.5 text-gray-600 pt-1">
+              {hasAdjustments && (
+                <div className="flex justify-between">
+                  <span>Subtotal</span>
+                  <span className="font-medium text-gray-900">{money(storedSubtotal)}</span>
                 </div>
               )}
+              {hasAdjustments && (
+                <div className="flex justify-between">
+                  <span>Adjustments &amp; tax</span>
+                  <span className="font-medium text-gray-900">{adjustments < 0 ? `−${money(Math.abs(adjustments))}` : money(adjustments)}</span>
+                </div>
+              )}
+              
+              {(() => {
+                const totalPaid = invoices.reduce((sum, inv) => {
+                  const pays = inv.payments ?? [];
+                  return sum + pays.reduce((s, p) => s + (p.amount ?? 0), 0);
+                }, 0);
+                const totalBalance = Math.max(0, contractTotal - totalPaid);
+                const isPaidInFull = totalBalance === 0;
+
+                return (
+                  <div className="flex justify-between items-center pt-2 border-t border-gray-100 font-semibold text-gray-900">
+                    <span>Balance Due</span>
+                    <span className={`text-sm font-bold ${isPaidInFull ? "text-emerald-600" : "text-amber-600"}`}>
+                      {money(totalBalance)}
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </section>
 
-{/* FINANCIAL SUMMARY — deliberately one dark, high-contrast
-            block in both themes so the number the customer is agreeing
-            to cannot be skimmed past. */}
-        <section className="rounded-2xl bg-gray-900 p-5 text-white shadow-sm">
-          <h2 className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Financial Summary</h2>
-          <dl className="mt-3 space-y-2 text-sm">
-            {hasAdjustments && (
-              <div className="flex items-baseline justify-between gap-3">
-                <dt className="text-gray-300">Scope subtotal</dt>
-                <dd className="font-semibold">{money(storedSubtotal)}</dd>
-              </div>
-            )}
-            {/* Markup/discount/tax, shown as ONE net adjustment rather
-                than three rows the customer has to reassemble. Present
-                only when it is non-zero, so a clean estimate stays
-                clean. */}
-            {hasAdjustments && (
-              <div className="flex items-baseline justify-between gap-3">
-                <dt className="text-gray-300">Adjustments &amp; tax</dt>
-                <dd className="font-semibold">{adjustments < 0 ? `−${money(Math.abs(adjustments))}` : money(adjustments)}</dd>
-              </div>
-            )}
-            <div className="flex items-baseline justify-between gap-3">
-              <dt className="text-gray-300">Current estimate</dt>
-              <dd className="font-semibold">{money(estimateTotal)}</dd>
-            </div>
-            {approvedChangeOrderRevenue !== 0 && (
-              <div className="flex items-baseline justify-between gap-3">
-                <dt className="text-gray-300">Approved change orders</dt>
-                <dd className="font-semibold">{money(approvedChangeOrderRevenue)}</dd>
-              </div>
-            )}
-            <div className="flex items-baseline justify-between gap-3 border-t border-gray-700 pt-2">
-              <dt className="font-semibold">Contract total</dt>
-              <dd className="text-xl font-bold">{money(contractTotal)}</dd>
-            </div>
-            {(() => {
-              const totalPaid = invoices.reduce((sum, inv) => {
-                const pays = inv.payments ?? [];
-                return sum + pays.reduce((s, p) => s + (p.amount ?? 0), 0);
-              }, 0);
-              const totalBalance = Math.max(0, contractTotal - totalPaid);
-              const isPaidInFull = totalBalance === 0;
-
-              return (
-                <div className="flex items-baseline justify-between gap-3 border-t border-gray-700 pt-2 text-gray-300">
-                  <dt className="font-medium">Balance Due</dt>
-                  <dd className={`font-bold ${isPaidInFull ? "text-emerald-400" : "text-amber-400"}`}>
-                    {money(totalBalance)}
-                  </dd>
-                </div>
-              );
-            })()}
-          </dl>
-        </section>
-
-        {/* ONE "Terms & Conditions" accordion, not two — a customer
-            previously saw this heading twice in a row (this estimate's
-            own legal template from lib/estimateTerms.ts, immediately
-            followed by an identically-titled second accordion for the
-            company's general policy list, company.terms_conditions).
-            Both are real, independently-editable fields with genuinely
-            different content (legal/warranty language vs. a practical
-            policy list — deposit %, cancellation rights, weather
-            delays), so neither is dropped here; they're just shown as
-            two clearly-labeled subsections of one section instead of
-            two separate accordions with the same name. */}
-        {(() => {
-          const terms = getEstimateTermsTemplate(termsPayload?.key ?? null, termsPayload?.override ?? null);
-          return (
-            <details className="group rounded-2xl border border-gray-200 bg-white shadow-sm">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-2xl px-5 py-4 text-sm font-semibold text-gray-900 hover:bg-gray-50">
-                Terms &amp; Conditions
-                <span aria-hidden className="text-gray-600 transition-transform group-open:rotate-180">▾</span>
-              </summary>
-              <div className="space-y-4 border-t border-gray-200 px-5 py-4">
-                <div>
-                  {/* <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">{terms.label}</p> */}
-                  <TermsBody className="text-xs leading-relaxed text-gray-600" body={terms.body} />
-                </div>
-                {company.terms_conditions && (
-                  <div className="border-t border-gray-100 pt-4">
-                    <p className="whitespace-pre-wrap text-xs leading-relaxed text-gray-600">{company.terms_conditions}</p>
-                  </div>
-                )}
-              </div>
-            </details>
-          );
-        })()}
-
-        {/* <Link
-          href={`/api/estimates/${estimate.id}/pdf?customerToken=${encodeURIComponent(token ?? "")}`}
-          target="_blank"
-          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 text-xs font-semibold text-gray-900 shadow-xs transition-colors hover:bg-gray-50"
-        >
-          <svg className="h-4 w-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          Download estimate PDF
-        </Link> */}
-
-        {/* CHANGE ORDERS */}
+        {/* CHANGE ORDERS SECTION */}
         {allChangeOrders.length > 0 && (
-          <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-3">
-            <div>
-              <h2 className="text-xs font-bold uppercase tracking-wider text-gray-600">Change Orders</h2>
-              <p className="mt-0.5 text-xs text-gray-600">
-                Additional work proposed after the original estimate. Approved items update the contract total automatically.
-              </p>
-            </div>
-            <div className="space-y-3 pt-1">
+          <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm space-y-2.5">
+            <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Change Orders</h2>
+            <div className="space-y-2">
               {allChangeOrders.map((co) => (
                 <ChangeOrderApprovalCard key={co.id} token={token ?? ""} changeOrder={co} />
               ))}
@@ -488,10 +269,10 @@ export default async function CustomerPortalPage({
           </section>
         )}
 
-{/* INVOICES SECTION */}
+        {/* INVOICES SECTION */}
         {invoices.length > 0 && (
-          <section className="rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm space-y-2.5">
-            <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-600">Invoices</h2>
+          <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm space-y-2.5">
+            <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Invoices</h2>
             <div className="space-y-2">
               {invoices.map((inv) => {
                 const pays = inv.payments ?? [];
@@ -505,35 +286,34 @@ export default async function CustomerPortalPage({
                   dueDate: inv.due_date,
                   today,
                 });
-                
                 const isPaidInFull = status === "paid";
                 
                 return (
-                  <div key={inv.id} className="rounded-lg border border-gray-200 bg-gray-50 p-2.5 space-y-2 text-xs">
+                  <div key={inv.id} className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2 text-xs">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 truncate">
                         <span className="font-mono font-bold text-gray-900">
                           #{inv.invoice_number ?? inv.id.slice(0, 8)}
                         </span>
-                        <span className="text-[11px] text-gray-600 truncate">
-                          {inv.issue_date ?? "—"} → {inv.due_date ?? "—"}
+                        <span className="text-[11px] text-gray-500 truncate">
+                          Due: {inv.due_date ?? "—"}
                         </span>
                       </div>
-                      <span className={`rounded-full px-2 py-0.2 text-[10px] font-bold uppercase tracking-wider shrink-0 ${
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0 ${
                         isPaidInFull 
-                          ? "bg-emerald-100 text-emerald-700 border border-emerald-200" 
-                          : "bg-amber-100 text-amber-700 border border-amber-200"
+                          ? "bg-emerald-100 text-emerald-700" 
+                          : "bg-amber-100 text-amber-700"
                       }`}>
                         {status.replace(/_/g, " ")}
                       </span>
                     </div>
 
                     <div className="grid grid-cols-3 gap-2 bg-white px-2.5 py-1.5 rounded border border-gray-200 text-[11px]">
-                      <div className="flex justify-between text-gray-600">
+                      <div className="flex justify-between text-gray-500">
                         <span>Total:</span>
                         <span className="font-medium text-gray-900">{money(invTotal)}</span>
                       </div>
-                      <div className="flex justify-between text-gray-600">
+                      <div className="flex justify-between text-gray-500">
                         <span>Paid:</span>
                         <span className="font-medium text-emerald-600">-{money(paid)}</span>
                       </div>
@@ -542,24 +322,6 @@ export default async function CustomerPortalPage({
                         <span className="text-gray-700">{money(balance)}</span>
                       </div>
                     </div>
-
-                    {inv.customer_token && (
-                      <div className="flex flex-wrap items-center gap-3 pt-0.5">
-                        {/* <Link
-                          href={`/invoice/${inv.id}?token=${encodeURIComponent(inv.customer_token)}`}
-                          className="inline-flex items-center text-[11px] font-semibold text-gray-700 hover:underline"
-                        >
-                          View invoice &rarr;
-                        </Link>
-                        <Link
-                          href={`/api/invoices/${inv.id}/pdf?customerToken=${encodeURIComponent(inv.customer_token)}`}
-                          target="_blank"
-                          className="inline-flex items-center text-[11px] font-semibold text-gray-600 hover:text-gray-900"
-                        >
-                          Download PDF
-                        </Link> */}
-                      </div>
-                    )}
                   </div>
                 );
               })}
@@ -569,22 +331,43 @@ export default async function CustomerPortalPage({
 
         {/* PAYMENT INSTRUCTIONS */}
         {company.payment_instructions && (
-          <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-2">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-gray-600">Payment Instructions</h2>
-            <p className="text-xs text-gray-600 whitespace-pre-wrap leading-relaxed bg-gray-50 p-3 rounded-xl border border-gray-200">
+          <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm space-y-1.5">
+            <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Payment Instructions</h2>
+            <p className="text-xs text-gray-600 whitespace-pre-wrap leading-relaxed bg-gray-50 p-3 rounded-lg border border-gray-200">
               {company.payment_instructions}
             </p>
           </section>
         )}
 
+        {/* TERMS & CONDITIONS ACCORDION */}
+        {(() => {
+          const terms = getEstimateTermsTemplate(termsPayload?.key ?? null, termsPayload?.override ?? null);
+          return (
+            <details className="group rounded-xl border border-gray-200 bg-white shadow-sm">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 hover:bg-gray-50 rounded-xl">
+                <span>Terms &amp; Conditions</span>
+                <span aria-hidden className="text-gray-400 transition-transform group-open:rotate-180">▾</span>
+              </summary>
+              <div className="space-y-3 border-t border-gray-100 px-4 py-3 text-xs">
+                <TermsBody className="leading-relaxed text-gray-600" body={terms.body} />
+                {company.terms_conditions && (
+                  <div className="border-t border-gray-100 pt-3">
+                    <p className="whitespace-pre-wrap leading-relaxed text-gray-600">{company.terms_conditions}</p>
+                  </div>
+                )}
+              </div>
+            </details>
+          );
+        })()}
+
         {/* SIGNATURE / APPROVAL SECTION */}
-        <section className={`rounded-2xl border p-5 shadow-sm ${
+        <section className={`rounded-xl border p-4 shadow-sm ${
           isSigned 
             ? "border-emerald-300 bg-emerald-50" 
             : "border-gray-200 bg-white"
         }`}>
-          <div className="mb-3">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-gray-600">
+          <div className="mb-2">
+            <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-500">
               {isSigned ? "Approval Status" : "Authorize Estimate"}
             </h2>
           </div>
@@ -596,8 +379,8 @@ export default async function CustomerPortalPage({
         </section>
 
         {/* FOOTER */}
-        <footer className="pt-4 text-center text-xs text-gray-600 space-y-1">
-          <p className="font-medium text-gray-900">{company.company_name} {company.company_phone ? `· ${company.company_phone}` : ""}</p>
+        <footer className="pt-2 text-center text-xs text-gray-500 space-y-0.5">
+          <p className="font-medium text-gray-800">{company.company_name} {company.company_phone ? `· ${company.company_phone}` : ""}</p>
           {company.footer_message && <p className="text-[11px]">{company.footer_message}</p>}
         </footer>
 

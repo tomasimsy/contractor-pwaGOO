@@ -2,31 +2,35 @@
 
 /**
  * Compact tabbed wrapper around SubcontractorAssignmentPanel /
- * AgentAssignmentPanel — reuses both wholesale (no duplicated
- * assign/payment logic), just switches which one is visible so the
- * right sidebar doesn't need to stack two full panels back to back.
- * Lives in the sidebar precisely so assigning/paying a sub or agent
- * doesn't require scrolling past Roof Areas/Line Items/Financial
- * Summary first.
+ * AgentAssignmentPanel / TeamMembersPanel — reuses all three wholesale
+ * (no duplicated assign/payment logic), just switches which one is
+ * visible so the right sidebar doesn't need to stack three full panels
+ * back to back. Lives in the sidebar precisely so assigning/paying a
+ * sub, agent, or team member doesn't require scrolling past Roof
+ * Areas/Line Items/Financial Summary first.
  *
- * Both panels are always mounted (toggled with a CSS `hidden` class,
- * not conditional rendering) so a parent's `refreshAgents()` call
- * always reaches a live AgentAssignmentPanel instance, even while the
- * Subcontractors tab is the one currently visible — needed so
- * recording an expense elsewhere on the page (Estimate Detail's
- * ProjectExpensesPanel) can immediately refresh the agent reimbursement
- * balance without the user having to switch tabs first.
+ * All three panels are always mounted (toggled with a CSS `hidden`
+ * class, not conditional rendering) so a parent's `refreshAgents()`
+ * call always reaches a live AgentAssignmentPanel instance, even while
+ * a different tab is the one currently visible — needed so recording
+ * an expense elsewhere on the page (Estimate Detail's
+ * ProjectExpensesPanel) can immediately refresh the agent
+ * reimbursement balance without the user having to switch tabs first.
  */
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
-import { HardHat, Briefcase } from "lucide-react";
+import { HardHat, Briefcase, UsersRound } from "lucide-react";
 import { SubcontractorAssignmentPanel } from "@/components/subcontractors/SubcontractorAssignmentPanel";
 import { AgentAssignmentPanel, type AgentAssignmentPanelRef } from "@/components/agents/AgentAssignmentPanel";
+import { TeamMembersPanel, type TeamMembersPanelRef } from "@/components/estimates/TeamMembersPanel";
 
 export interface SubAgentTabsPanelRef {
   /** Refreshes the Agent panel's roster/assignments/balances/pending
    * reimbursements — called after an expense is recorded/edited/
    * deleted/marked reimbursed elsewhere on the page. */
   refreshAgents: () => Promise<void>;
+  /** Same, for the Team tab — called after an expense affecting a team
+   * member's personally-paid/reimbursed figures changes elsewhere. */
+  refreshTeam: () => Promise<void>;
 }
 
 export const SubAgentTabsPanel = forwardRef<SubAgentTabsPanelRef, {
@@ -39,12 +43,16 @@ export const SubAgentTabsPanel = forwardRef<SubAgentTabsPanelRef, {
   estimateId?: string | null;
   onChanged?: () => void;
 }>(function SubAgentTabsPanel({ companyId, projectId, estimateId, onChanged }, ref) {
-  const [tab, setTab] = useState<"subcontractors" | "agents">("subcontractors");
+  const [tab, setTab] = useState<"subcontractors" | "agents" | "team">("subcontractors");
   const agentPanelRef = useRef<AgentAssignmentPanelRef>(null);
+  const teamPanelRef = useRef<TeamMembersPanelRef>(null);
 
   useImperativeHandle(ref, () => ({
     refreshAgents: async () => {
       await agentPanelRef.current?.refresh();
+    },
+    refreshTeam: async () => {
+      await teamPanelRef.current?.refresh();
     },
   }), []);
 
@@ -58,7 +66,7 @@ export const SubAgentTabsPanel = forwardRef<SubAgentTabsPanelRef, {
             tab === "subcontractors" ? "border-b-2 border-primary text-primary" : "text-muted-foreground hover:text-foreground"
           }`}
         >
-          <HardHat className="size-3.5" /> Subcontractors
+          <HardHat className="size-3.5" /> Subs
         </button>
         <button
           type="button"
@@ -68,6 +76,15 @@ export const SubAgentTabsPanel = forwardRef<SubAgentTabsPanelRef, {
           }`}
         >
           <Briefcase className="size-3.5" /> Agents
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("team")}
+          className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold ${
+            tab === "team" ? "border-b-2 border-primary text-primary" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <UsersRound className="size-3.5" /> Team
         </button>
       </div>
 
@@ -79,6 +96,14 @@ export const SubAgentTabsPanel = forwardRef<SubAgentTabsPanelRef, {
         <div className={tab === "agents" ? "" : "hidden"}>
           <AgentAssignmentPanel ref={agentPanelRef} companyId={companyId} projectId={projectId}
           estimateId={estimateId} onChanged={onChanged} compact />
+        </div>
+        <div className={tab === "team" ? "" : "hidden"}>
+          {estimateId ? (
+            <TeamMembersPanel ref={teamPanelRef} companyId={companyId} estimateId={estimateId}
+            projectId={projectId} onChanged={onChanged} compact />
+          ) : (
+            <p className="text-xs text-muted-foreground">Team assignments require an estimate.</p>
+          )}
         </div>
       </div>
     </div>
