@@ -417,7 +417,7 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
       {/* Main Grid Content */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Left Column (Consolidated Project, Line Items & Change Orders) */}
-        <div className="space-y-6 lg:col-span-8">
+        <div className="space-y-6 lg:col-span-8 lg:space-y-8">
           
           {/* Consolidated Section Card: Project Info, Line Items, and Change Orders */}
 <section className="rounded-2xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950 p-4 sm:p-6 shadow-md space-y-6 text-emerald-950 dark:text-emerald-50">
