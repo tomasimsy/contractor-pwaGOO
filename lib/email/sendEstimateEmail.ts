@@ -43,8 +43,22 @@ function escapeHtml(text: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/** Display formatting only (e.g. "(704) 303-4112") — never used for
+ * anything dialable, unlike SharePortalPanel's E.164 normalizePhone.
+ * Falls back to the raw value for anything that isn't a plain 10 or
+ * 11-digit US number, so an international/unusual number still shows
+ * rather than getting mangled. */
+function formatPhoneDisplay(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  const tenDigit = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+  if (tenDigit.length !== 10) return raw;
+  return `(${tenDigit.slice(0, 3)}) ${tenDigit.slice(3, 6)}-${tenDigit.slice(6)}`;
+}
+
 function buildEmailHtml(opts: {
   companyName: string;
+  companyDba: string | null;
+  companyPhone: string | null;
   clientName: string;
   message: string;
   portalUrl: string;
@@ -52,6 +66,10 @@ function buildEmailHtml(opts: {
   footerMessage: string;
 }): string {
   const messageHtml = escapeHtml(opts.message).replace(/\n/g, "<br>");
+  const displayName = opts.companyDba
+    ? `${opts.companyName} (dba ${opts.companyDba})`
+    : opts.companyName;
+  const phoneLine = opts.companyPhone ? `<div>${formatPhoneDisplay(opts.companyPhone)}</div>` : "";
   return `
     <!DOCTYPE html>
     <html>
@@ -60,7 +78,7 @@ function buildEmailHtml(opts: {
       <div style="max-width: 560px; margin: 0 auto; padding: 32px 24px;">
         <div style="background:#ffffff; border:1px solid #e5e7eb; border-radius: 10px; padding: 32px;">
           <div style="font-size: 13px; font-weight: 700; color: #111827; letter-spacing: 0.02em; margin-bottom: 24px;">
-            ${opts.companyName}
+            ${displayName}
           </div>
           <div style="font-size: 14px; line-height: 1.6; color: #1f2429; white-space: normal;">
             ${messageHtml}
@@ -72,6 +90,10 @@ function buildEmailHtml(opts: {
           </div>
           <div style="font-size: 12px; color: #6b7280; line-height: 1.6;">
             The full proposal (#${opts.estimateNumber}) is also attached to this email as a PDF.
+          </div>
+          <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280; line-height: 1.6;">
+            <div style="font-weight: 600; color: #374151;">${displayName}</div>
+            ${phoneLine}
           </div>
         </div>
         <div style="text-align:center; margin-top: 20px; font-size: 11px; color: #9ca3af;">
@@ -129,8 +151,17 @@ export async function sendEstimateEmail(input: SendEstimateEmailInput): Promise<
   }
 
   const estimateNumber = data.estimate.estimate_number || data.estimate.id.slice(0, 8);
+  // "Add your phone number" is DEFAULT_COMPANY_SETTINGS' unconfigured
+  // placeholder (lib/company.ts) — showing it verbatim in a customer
+  // email would look broken, so it's treated the same as "not set".
+  const companyPhone =
+    data.company.company_phone && !data.company.company_phone.startsWith("Add your")
+      ? data.company.company_phone
+      : null;
   const emailHtml = buildEmailHtml({
     companyName: data.company.company_name,
+    companyDba: data.company.dba,
+    companyPhone,
     clientName: data.client?.name || "",
     message: input.message,
     portalUrl,

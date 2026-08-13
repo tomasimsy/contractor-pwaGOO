@@ -39,6 +39,10 @@ export const InvoicePaymentsPanel = forwardRef<InvoicePaymentsPanelRef, {
   /** Parent reloads everything — invoice status, balances, activity —
    * so no figure on the page can be left stale by a payment change. */
   onChanged: () => Promise<void> | void;
+  /** Drops the outer border/heading — used when a parent (e.g.
+   * EstimateDetail's Invoice & Payments card) already provides both,
+   * so they aren't doubled. Same convention as SubcontractorAssignmentPanel's `compact` prop. */
+  compact?: boolean;
 }>(function InvoicePaymentsPanel({
   invoiceId,
   companyId,
@@ -47,6 +51,7 @@ export const InvoicePaymentsPanel = forwardRef<InvoicePaymentsPanelRef, {
   payments,
   canEdit,
   onChanged,
+  compact = false,
 }, ref) {
   const { paymentService } = useServices();
   const [dialogFor, setDialogFor] = useState<CustomerPayment | "new" | null>(null);
@@ -112,46 +117,49 @@ export const InvoicePaymentsPanel = forwardRef<InvoicePaymentsPanelRef, {
   }
 
   return (
-    <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          <Wallet className="size-4 text-muted-foreground" /> Payments
-        </h2>
+    <div className={compact ? "" : "rounded-lg border border-border/60 bg-card p-3.5"}>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        {!compact && (
+          <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            <Wallet className="size-3.5 text-primary" /> Payments
+          </h3>
+        )}
+        {compact && <span />}
         {canEdit && (
           <button
             type="button"
             onClick={() => setDialogFor("new")}
-            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+            className="inline-flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/90"
           >
-            <Plus className="size-3.5" /> Record payment
+            <Plus className="size-3" /> Record
           </button>
         )}
       </div>
 
-      {error && <div className="mb-2 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</div>}
+      {error && <div className="mb-2 rounded-lg bg-danger/10 px-2.5 py-1.5 text-xs text-danger">{error}</div>}
 
       {payments.length === 0 ? (
         <EmptyState title="No payments recorded" description="Payments received against this invoice will appear here." />
       ) : (
-        <ul className="divide-y divide-border">
+        <ul className="max-h-48 divide-y divide-border overflow-y-auto pr-1">
           {payments.map((p) => (
-            <li key={p.id} className="flex items-start justify-between gap-2 py-2.5 text-sm">
+            <li key={p.id} className="flex items-start justify-between gap-2 py-1.5 text-xs">
               <div className="min-w-0">
                 <div className="font-medium text-foreground">{money(p.amount)}</div>
-                <div className="text-xs text-muted-foreground">
+                <div className="text-[11px] text-muted-foreground">
                   {p.paymentDate} · {formatPaymentMethod(p.method)}
                   {p.referenceNumber ? ` · ${p.referenceNumber}` : ""}
                 </div>
-                {p.notes && <div className="mt-0.5 text-xs text-muted-foreground">{p.notes}</div>}
+                {p.notes && <div className="mt-0.5 text-[11px] text-muted-foreground">{p.notes}</div>}
               </div>
               {canEdit && (
-                <div className="flex shrink-0 gap-1">
+                <div className="flex shrink-0 gap-0.5">
                   <button type="button" onClick={() => setDialogFor(p)} aria-label="Edit payment"
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground">
+                    className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
                     <Pencil className="size-3.5" />
                   </button>
                   <button type="button" onClick={() => handleDelete(p)} aria-label="Delete payment"
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-danger/10 hover:text-danger">
+                    className="rounded-md p-1 text-muted-foreground hover:bg-danger/10 hover:text-danger">
                     <Trash2 className="size-3.5" />
                   </button>
                 </div>
@@ -170,6 +178,6 @@ export const InvoicePaymentsPanel = forwardRef<InvoicePaymentsPanelRef, {
           onSubmit={handleSubmit}
         />
       )}
-    </section>
+    </div>
   );
 });

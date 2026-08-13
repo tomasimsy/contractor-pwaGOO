@@ -81,12 +81,12 @@ export function EmailHistoryPanel({ estimateId }: { estimateId: string }) {
   }
 
   return (
-    <ul className="space-y-2">
+    <ul className="space-y-1.5">
       {emails.map((e) => (
-        <li key={e.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2">
+        <li key={e.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-card px-2 py-1.5">
           <div className="min-w-0">
-            <div className="truncate text-xs font-medium text-foreground">{e.subject}</div>
-            <div className="mt-0.5 text-[11px] text-muted-foreground">
+            <div className="truncate text-[11px] font-medium text-foreground">{e.subject}</div>
+            <div className="mt-0.5 truncate text-[10px] text-muted-foreground">
               To {e.toAddress} · Sent {formatWhen(e.sentAt)}
               {e.clickedAt
                 ? ` · Clicked ${formatWhen(e.clickedAt)}`

@@ -11,7 +11,7 @@
  * freeform notes (add/edit/delete).
  */
 import { useCallback, useEffect, useState } from "react";
-import { StickyNote, Loader2, Trash2, Pencil, Check, X } from "lucide-react";
+import { StickyNote, Loader2, Trash2, Pencil, Plus } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 import { listEstimateNotes, addEstimateNote, updateEstimateNote, deleteEstimateNote, type EstimateNote } from "@/lib/notes/estimateNotes";
 
@@ -23,11 +23,6 @@ export function EstimateNotesPanel({
   companyId,
   estimateId,
   currentUserId,
-  /** The current session's own display name/email — used ONLY as a
-   * fallback when `profiles.full_name` is empty for this account
-   * (common on accounts that never filled in Settings), so a user
-   * never sees their own note attributed to "Team Member" just
-   * because that one field was left blank. */
   currentUserLabel,
 }: {
   companyId: string;
@@ -103,111 +98,135 @@ export function EstimateNotesPanel({
   }
 
   return (
-    <section className="rounded-xl border border-border bg-card p-5 shadow-xs">
-      <h2 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-        <StickyNote className="size-4 text-primary" /> Notes
-      </h2>
-
-      <div className="mb-4 space-y-2">
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="Add a note about this estimate — e.g. a call with the customer, a site condition, a follow-up reminder…"
-          rows={3}
-          className="w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-xs text-foreground"
-        />
-        <div className="flex items-center justify-between gap-2">
-          {error && <p className="text-[11px] text-destructive">{error}</p>}
-          <button
-            type="button"
-            onClick={handleAdd}
-            disabled={!draft.trim() || saving}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
-            {saving && <Loader2 className="size-3.5 animate-spin" />}
-            Add Note
-          </button>
-        </div>
+    <section className="rounded-xl border border-[#d4a000]/40 bg-[#ffc600] shadow-lg">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-[#d4a000]/30 px-4 py-2.5">
+        <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#4a3500]">
+          <StickyNote className="size-3.5 text-[#6b4f00]" /> Notes
+        </h2>
+        <span className="text-[10px] font-medium text-[#4a3500]/60">
+          {notes?.length || 0}
+        </span>
       </div>
 
-      {notes === null ? (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="size-3.5 animate-spin" />
-          Loading notes…
+      {/* Content */}
+      <div className="p-3.5">
+        {/* Add Note */}
+        <div className="mb-3 space-y-1.5">
+          <div className="relative">
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Write a note…"
+              rows={2}
+              className="w-full resize-none rounded-lg border border-[#d4a000]/40 bg-[#ffe066]/60 px-3 py-2 pr-20 text-sm text-[#2d1f00] placeholder:text-[#6b4f00]/50 focus:border-[#b8960f] focus:bg-[#ffe066]/80 focus:outline-none focus:ring-2 focus:ring-[#d4a000]/30 transition-all"
+            />
+            <button
+              type="button"
+              onClick={handleAdd}
+              disabled={!draft.trim() || saving}
+              className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-lg bg-[#6b4f00] px-3 py-1 text-[11px] font-medium text-white hover:bg-[#4a3500] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+            >
+              {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+              Add
+            </button>
+          </div>
+          {error && <p className="text-[10px] text-[#8B0000] font-medium">{error}</p>}
         </div>
-      ) : notes.length === 0 ? (
-        <p className="text-xs italic text-muted-foreground">No notes yet.</p>
-      ) : (
-        <div className="max-h-80 overflow-y-auto pr-1">
-          <ul className="space-y-3">
+
+        {/* Notes List */}
+        {notes === null ? (
+          <div className="flex items-center justify-center py-6">
+            <Loader2 className="size-5 animate-spin text-[#6b4f00]/40" />
+          </div>
+        ) : notes.length === 0 ? (
+          <div className="py-8 text-center">
+            <StickyNote className="mx-auto size-8 text-[#d4a000]/30" strokeWidth={1.5} />
+            <p className="mt-2 text-sm font-medium text-[#4a3500]/50">No notes yet</p>
+            <p className="text-xs text-[#4a3500]/40">Add your first note above</p>
+          </div>
+        ) : (
+          <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
             {notes.map((note) => {
               const isEditing = editingId === note.id;
               return (
-                <li key={note.id} className="group rounded-lg border border-border/80 bg-background/50 px-3 py-2">
+                <div
+                  key={note.id}
+                  className="group rounded-lg border border-[#d4a000]/30 bg-[#ffe066]/40 p-3 transition-all hover:border-[#b8960f]/50 hover:bg-[#ffe066]/60 hover:shadow-md"
+                >
                   {isEditing ? (
                     <div className="space-y-2">
                       <textarea
                         value={editDraft}
                         onChange={(e) => setEditDraft(e.target.value)}
-                        rows={3}
+                        rows={2}
                         autoFocus
-                        className="w-full resize-none rounded-lg border border-input bg-background px-2 py-1.5 text-xs text-foreground"
+                        className="w-full resize-none rounded-lg border border-[#d4a000]/40 bg-[#ffe066]/60 px-3 py-2 text-sm text-[#2d1f00] focus:border-[#b8960f] focus:bg-[#ffe066]/80 focus:outline-none focus:ring-2 focus:ring-[#d4a000]/30 transition-all"
                       />
-                      <div className="flex items-center justify-end gap-1.5">
+                      <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
                           onClick={cancelEdit}
-                          className="inline-flex items-center gap-1 rounded p-1 text-[11px] font-medium text-muted-foreground hover:bg-muted"
+                          className="rounded-lg px-3 py-1 text-[11px] font-medium text-[#4a3500] hover:bg-[#d4a000]/30 transition-all"
                         >
-                          <X className="size-3" /> Cancel
+                          Cancel
                         </button>
                         <button
                           type="button"
                           onClick={() => saveEdit(note.id)}
                           disabled={!editDraft.trim() || editSaving}
-                          className="inline-flex items-center gap-1 rounded bg-primary px-2 py-1 text-[11px] font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                          className="rounded-lg bg-[#6b4f00] px-3 py-1 text-[11px] font-medium text-white hover:bg-[#4a3500] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
                         >
-                          {editSaving ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
-                          Save
+                          {editSaving ? <Loader2 className="size-3.5 animate-spin" /> : "Save"}
                         </button>
                       </div>
                     </div>
                   ) : (
                     <>
-                      <p className="whitespace-pre-wrap text-xs text-foreground">{note.body}</p>
-                      <div className="mt-1.5 flex items-center justify-between gap-2">
-                        <div className="text-[11px] text-muted-foreground">
-                          {note.authorName ?? "Team Member"} · {formatWhen(note.createdAt)}
-                          {note.updatedAt && " (edited)"}
+                      <p className="text-sm font-medium text-[#2d1f00] leading-relaxed">{note.body}</p>
+                      <div className="mt-2 flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-[10px] text-[#4a3500]/70">
+                          <span className="font-semibold text-[#3d2a00]">
+                            {note.authorName ?? "Team Member"}
+                          </span>
+                          <span className="text-[#4a3500]/30">·</span>
+                          <span>{formatWhen(note.createdAt)}</span>
+                          {note.updatedAt && (
+                            <span className="text-[#4a3500]/30">(edited)</span>
+                          )}
                         </div>
-                        <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             type="button"
                             onClick={() => startEdit(note)}
                             aria-label="Edit note"
-                            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                            className="rounded p-1 text-[#6b4f00]/50 hover:bg-[#d4a000]/30 hover:text-[#3d2a00] transition-all"
                           >
-                            <Pencil className="size-3" />
+                            <Pencil className="size-3.5" />
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDelete(note.id)}
                             disabled={deletingId === note.id}
                             aria-label="Delete note"
-                            className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                            className="rounded p-1 text-[#6b4f00]/50 hover:bg-[#cc0000]/20 hover:text-[#8B0000] transition-all disabled:opacity-50"
                           >
-                            {deletingId === note.id ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}
+                            {deletingId === note.id ? (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="size-3.5" />
+                            )}
                           </button>
                         </div>
                       </div>
                     </>
                   )}
-                </li>
+                </div>
               );
             })}
-          </ul>
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

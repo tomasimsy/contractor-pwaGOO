@@ -175,7 +175,7 @@ export const AgentAssignmentPanel = forwardRef<AgentAssignmentPanelRef, {
       {assignments.length === 0 ? (
         <EmptyState title="No agents assigned" description="Assign an agent to this project to start tracking commissions." />
       ) : (
-        <ul className="divide-y divide-border">
+        <ul className="max-h-64 divide-y divide-border overflow-y-auto pr-1">
           {assignments.map((a) => {
             // Keyed by AGENT, not assignment — one payee, one balance.
             const balance = balances[a.agentId];

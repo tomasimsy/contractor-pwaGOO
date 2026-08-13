@@ -22,6 +22,14 @@ import {
 } from "lucide-react";
 import { EmailCustomerModal } from "@/components/estimates/EmailCustomerModal";
 import { EmailHistoryPanel } from "@/components/estimates/EmailHistoryPanel";
+import {
+  listEmailsForEstimate,
+  getBestEmailStatus,
+  EMAIL_STATUS_DOT_COLOR,
+  EMAIL_STATUS_DOT_LABEL,
+  type EstimateEmailStatus,
+} from "@/lib/email/emailTracking";
+import { supabase } from "@/lib/supabase/client";
 import { EstimateNotesPanel } from "@/components/estimates/EstimateNotesPanel";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -81,6 +89,7 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
 
   const [isLineItemsOpen, setIsLineItemsOpen] = useState(true);
 const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
+const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
 
   const expensesPanelRef = useRef<ProjectExpensesPanelRef>(null);
   const paymentsPanelRef = useRef<InvoicePaymentsPanelRef>(null);
@@ -94,6 +103,10 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
   const [roofingAreas, setRoofingAreas] = useState<RoofingArea[]>([]);
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [emailHistoryRefreshKey, setEmailHistoryRefreshKey] = useState(0);
+  /** Furthest-along status across every email sent for this estimate —
+   * drives the color-coded dot on the header's Email button. Null
+   * means nothing sent yet (no dot). See getBestEmailStatus. */
+  const [emailStatus, setEmailStatus] = useState<EstimateEmailStatus | null>(null);
   /** For resolving this company's own override of the estimate's
    * Terms & Conditions template (lib/estimateTerms.ts). Null until
    * loaded; the Terms section falls back to the built-in default in
@@ -143,6 +156,16 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
   useEffect(() => {
     loadFinancials();
   }, [loadFinancials]);
+
+  useEffect(() => {
+    let cancelled = false;
+    listEmailsForEstimate(supabase, estimateId).then((rows) => {
+      if (!cancelled) setEmailStatus(getBestEmailStatus(rows));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [estimateId, emailHistoryRefreshKey]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -351,8 +374,25 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
             <Download className="size-3.5" />
             <span className="hidden sm:inline">PDF</span>
           </button>
-          <button type="button" onClick={() => setEmailModalOpen(true)} className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors" title="Email Customer">
-            <Mail className="size-3.5" />
+          <button
+            type="button"
+            onClick={() => setEmailModalOpen(true)}
+            className="relative inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors"
+            title={
+              emailStatus
+                ? `Email Customer — last send ${EMAIL_STATUS_DOT_LABEL[emailStatus]}`
+                : "Email Customer"
+            }
+          >
+            <span className="relative">
+              <Mail className="size-3.5" />
+              {emailStatus && (
+                <span
+                  className={`absolute -right-0.5 -top-0.5 size-1.5 rounded-full ring-1 ring-card ${EMAIL_STATUS_DOT_COLOR[emailStatus]}`}
+                  aria-hidden="true"
+                />
+              )}
+            </span>
             <span className="hidden sm:inline">Email</span>
           </button>
           <Link href={`${editBasePath}/${estimate.id}/edit`} className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors" title="Edit">
@@ -845,6 +885,7 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
                         totalPaid={paidTotalByInvoice[inv.id] ?? 0}
                         payments={paymentsByInvoice[inv.id] ?? []}
                         canEdit={canEditPayments}
+                        compact
                         onChanged={async () => {
                           await load();
                           await loadFinancials();
@@ -869,6 +910,7 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
                     projectId={estimate.projectId}
                     estimateId={estimate.id}
                     canEdit={canEditExpenses}
+                    compact
                     onChanged={async () => {
                       // An expense recorded/edited/deleted/marked
                       // reimbursed here can change an agent's
@@ -902,11 +944,7 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
             </section>
           </div>
 
-                    {/* Financial Summary — a primary section, kept prominent and
-              placed ahead of the secondary Invoices/Expenses cards
-              below (visual hierarchy: Roof Areas -> Financial Summary
-              -> Expenses/Invoices/Payments). Same EstimateFinancials
-              object the top summary strip reads from. */}
+             
           <div className="order-8 lg:order-4 lg:col-start-1 lg:col-span-8">
             <EstimateProfitSummaryCard financials={financials} />
           </div>
@@ -939,124 +977,143 @@ const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
             )}
           </div>
 
-          {/* Combined card — Customer Portal + Email History + Client
-              Details & Signature. Same three components/data as
-              before, just grouped under one card instead of three, per
-              request. Email History gets its own scroll container
-              (max-h + overflow-y-auto, same technique Activity
-              Timeline already used) instead of an accordion, so recent
-              sends are visible immediately without a click, but a long
-              history doesn't push Client Details/Signature down the
-              page. */}
-          <section className="order-4 lg:order-2 lg:col-start-9 lg:col-span-4 space-y-5 rounded-xl border border-border bg-card p-5 shadow-xs">
-            <div>
-              <h2 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                <Share2 className="size-4 text-primary" /> Customer Portal
-              </h2>
-              {estimate.customerToken ? (
-                <SharePortalPanel
-                  // The token itself IS the path — no ?token= query
-                  // string, so the credential never shows up in browser
-                  // history, referrer headers, or server access logs.
-                  // app/portal/[id]/page.tsx accepts this directly (and
-                  // still honours the old ?token= form for any link
-                  // already sent to a customer before this change).
-                  portalUrl={`${origin}/portal/${estimate.customerToken}`}
-                  clientName={client?.name ?? null}
-                  clientPhone={client?.phone ?? null}
-                  clientEmail={client?.email ?? null}
-                  documentLabel="estimate"
-                />
+          {/* Combined card — Customer Portal + Client Details &
+              Signature merged into one flat block (no sub-headers/tabs)
+              per request: the previous tabbed version still spent a
+              full header + divider on each of two closely related
+              things. Email History moved to a collapsed <details> at
+              the bottom — present, but not taking space by default. */}
+
+<section className="order-4 lg:order-2 lg:col-start-9 lg:col-span-4 rounded-lg border border-emerald-200/60 bg-white p-3 shadow-sm">
+    {/* Tab Navigation */}
+    <div className="flex gap-1 border-b border-emerald-200/50 pb-1.5">
+      <button
+        type="button"
+        onClick={() => setActiveTab('customer')}
+        className={`flex-1 rounded-t-md px-2 py-1 text-[11px] font-medium transition-all ${
+          activeTab === 'customer'
+            ? 'bg-emerald-600 text-white shadow-sm'
+            : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+        }`}
+      >
+        <span className="flex items-center justify-center gap-1">
+          <Share2 className="size-3" /> Customer
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={() => setActiveTab('email')}
+        className={`flex-1 rounded-t-md px-2 py-1 text-[11px] font-medium transition-all ${
+          activeTab === 'email'
+            ? 'bg-emerald-600 text-white shadow-sm'
+            : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+        }`}
+      >
+        <span className="flex items-center justify-center gap-1">
+          <Mail className="size-3" /> Email History
+        </span>
+      </button>
+    </div>
+
+    {/* Tab Content */}
+    <div className="pt-2">
+      {/* Tab 1: Customer Portal + Signature */}
+      {activeTab === 'customer' && (
+        <div className="space-y-2">
+          {/* Header with Send Email button */}
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="flex items-center gap-1 text-[11px] font-semibold text-emerald-800">
+              <Share2 className="size-3 text-emerald-600" /> Share Portal
+            </h2>
+            <button
+              type="button"
+              onClick={() => setEmailModalOpen(true)}
+              className="inline-flex h-6 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[11px] font-medium text-white hover:bg-emerald-700"
+            >
+              <Mail className="size-3" /> Send Email
+            </button>
+          </div>
+
+          {estimate.customerToken ? (
+            <SharePortalPanel
+              portalUrl={`${origin}/portal/${estimate.customerToken}`}
+              clientName={client?.name ?? null}
+              clientPhone={client?.phone ?? null}
+              clientEmail={client?.email ?? null}
+              documentLabel="estimate"
+            />
+          ) : (
+            <p className="text-[11px] text-emerald-700/70 italic">
+              No portal link yet — re-save or migrate tokens to enable client view.
+            </p>
+          )}
+
+          {/* Client + signature — full name always visible */}
+          <div className="flex items-center justify-between gap-2 rounded bg-emerald-50/50 px-2 py-1.5">
+            <div className="min-w-0 flex-1">
+              {client ? (
+                <div className="text-[11px] font-medium text-emerald-900 whitespace-nowrap">
+                  {client.name}
+                </div>
               ) : (
-                <p className="text-xs text-muted-foreground">
-                  No portal link yet — re-save or migrate tokens to enable client view.
-                </p>
+                <div className="text-[11px] text-emerald-700/60 italic">No client attached</div>
               )}
             </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <CheckCircle2 className={`size-3.5 ${estimate.signature ? "text-emerald-600" : "text-emerald-300"}`} />
+              <span className={`text-[11px] font-medium ${estimate.signature ? "text-emerald-700" : "text-emerald-500"}`}>
+                {estimate.signature ? "Signed" : "Unsigned"}
+              </span>
+              <button
+                type="button"
+                onClick={() => { setSignatureNotice(null); setShowSignatureModal(!showSignatureModal); }}
+                className="rounded px-1.5 py-0.5 text-[11px] font-medium text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700"
+              >
+                {showSignatureModal ? "Close" : "Manage"}
+              </button>
+            </div>
+          </div>
 
-            <div className="border-t border-border/60 pt-4">
-              <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                <Mail className="size-4 text-primary" /> Email History
-              </h3>
-              <div className="max-h-64 overflow-y-auto pr-1">
-                <EmailHistoryPanel key={emailHistoryRefreshKey} estimateId={estimate.id} />
+          {/* Signature modal */}
+          {showSignatureModal && (
+            <div className="border-t border-emerald-200/50 pt-2">
+              {signatureNotice && (
+                <div
+                  role="status"
+                  className={`mb-1.5 rounded px-2 py-1 text-[11px] ${
+                    signatureNotice.tone === "error"
+                      ? "bg-rose-50 text-rose-700 border border-rose-200"
+                      : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                  }`}
+                >
+                  {signatureNotice.message}
+                </div>
+              )}
+              <div className={signatureBusy ? "pointer-events-none opacity-60" : ""}>
+                <SignaturePad
+                  existingSignature={estimate.signature}
+                  onSave={handleSignature}
+                  onRemove={handleRemoveSignature}
+                />
               </div>
             </div>
+          )}
+        </div>
+      )}
 
-            <div className="border-t border-border/60 pt-4">
-              <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                <User className="size-4 text-primary" /> Client Details &amp; Signature
-              </h3>
-              {client ? (
-                <div className="space-y-3 text-xs">
-                  <div>
-                    <div className="font-semibold text-foreground text-sm">{client.name}</div>
-                    {client.email && <div className="text-muted-foreground mt-0.5">{client.email}</div>}
-                    {client.phone && <div className="text-muted-foreground">{client.phone}</div>}
-                  </div>
-
-                  <div className="flex items-center justify-between border-t border-border/60 pt-3">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className={`size-4 ${estimate.signature ? "text-success" : "text-muted-foreground"}`} />
-                      <span className="font-medium text-foreground">
-                        {estimate.signature ? "Signed by customer" : "Awaiting signature"}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => { setSignatureNotice(null); setShowSignatureModal(!showSignatureModal); }}
-                      className="text-xs font-medium text-primary hover:underline"
-                    >
-                      {showSignatureModal ? "Close" : "Manage"}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3 text-xs">
-                  <p className="text-muted-foreground italic">No client attached to this project.</p>
-                  <div className="flex items-center justify-between border-t border-border/60 pt-3">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className={`size-4 ${estimate.signature ? "text-success" : "text-muted-foreground"}`} />
-                      <span className="font-medium text-foreground">
-                        {estimate.signature ? "Signed by customer" : "Awaiting signature"}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => { setSignatureNotice(null); setShowSignatureModal(!showSignatureModal); }}
-                      className="text-xs font-medium text-primary hover:underline"
-                    >
-                      {showSignatureModal ? "Close" : "Manage"}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {showSignatureModal && (
-                <div className="mt-4 border-t border-border/60 pt-4">
-                  {signatureNotice && (
-                    <div
-                      role="status"
-                      className={`mb-3 rounded-lg px-3 py-2 text-xs ${
-                        signatureNotice.tone === "error"
-                          ? "bg-danger/10 text-danger"
-                          : "bg-success/15 text-success"
-                      }`}
-                    >
-                      {signatureNotice.message}
-                    </div>
-                  )}
-                  <div className={signatureBusy ? "pointer-events-none opacity-60" : ""}>
-                    <SignaturePad
-                      existingSignature={estimate.signature}
-                      onSave={handleSignature}
-                      onRemove={handleRemoveSignature}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>
+      {/* Tab 2: Email History */}
+      {activeTab === 'email' && (
+        <div>
+          <h3 className="flex items-center gap-1 text-[11px] font-semibold text-emerald-800 mb-2">
+            <Mail className="size-3 text-emerald-600" /> Email History
+          </h3>
+          <div className="max-h-56 overflow-y-auto pr-1">
+            <EmailHistoryPanel key={emailHistoryRefreshKey} estimateId={estimate.id} />
+          </div>
+        </div>
+      )}
+    </div>
+  </section>
 
           <div className="order-5 lg:order-3 lg:col-start-9 lg:col-span-4">
             <EstimateNotesPanel

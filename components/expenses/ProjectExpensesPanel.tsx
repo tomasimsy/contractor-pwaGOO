@@ -64,12 +64,17 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
   estimateId?: string | null;
   canEdit: boolean;
   onChanged?: () => Promise<void> | void;
+  /** Drops the outer border/heading — used when a parent (e.g.
+   * EstimateDetail's Expenses card) already provides both, so they
+   * aren't doubled. Same convention as SubcontractorAssignmentPanel's `compact` prop. */
+  compact?: boolean;
 }>(function ProjectExpensesPanel({
   companyId,
   projectId,
   estimateId,
   canEdit,
   onChanged,
+  compact = false,
 }, ref) {{
   const { expenses, totals, loading, error, create, update, remove, markReimbursed, refresh } = useExpenses(companyId, projectId, estimateId);
   const { financialEngine } = useServices();
@@ -173,44 +178,47 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
   }
 
   return (
-    <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          <Receipt className="size-4 text-muted-foreground" /> Costs
-        </h2>
+    <div className={compact ? "" : "rounded-lg border border-border/60 bg-card p-3.5"}>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        {!compact && (
+          <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            <Receipt className="size-3.5 text-primary" /> Costs
+          </h3>
+        )}
+        {compact && <span />}
         {canEdit && (
           <button
             type="button"
             onClick={() => setDialogFor("new")}
-            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+            className="inline-flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/90"
           >
-            <Plus className="size-3.5" /> Record expense
+            <Plus className="size-3" /> Record
           </button>
         )}
       </div>
 
       {(error || actionError) && (
-        <div className="mb-2 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error || actionError}</div>
+        <div className="mb-2 rounded-lg bg-danger/10 px-2.5 py-1.5 text-xs text-danger">{error || actionError}</div>
       )}
 
       {/* Totals first — this is what the page is actually for. */}
-      <dl className="mb-3 grid grid-cols-2 gap-2 rounded-lg bg-muted/50 p-3 text-sm sm:grid-cols-4">
+      <dl className="mb-2 grid grid-cols-2 gap-1.5 rounded-md bg-muted/50 p-2 text-xs sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-muted-foreground">Total expenses</dt>
+          <dt className="text-[10px] text-muted-foreground">Total</dt>
           <dd className="font-semibold text-foreground">{money(totals.total)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-muted-foreground">Company paid</dt>
+          <dt className="text-[10px] text-muted-foreground">Company paid</dt>
           <dd className="text-foreground">{money(totals.companyPaid)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-muted-foreground">Owed back</dt>
+          <dt className="text-[10px] text-muted-foreground">Owed back</dt>
           <dd className={totals.outstandingReimbursements > 0 ? "font-medium text-warning-foreground" : "text-foreground"}>
             {money(totals.outstandingReimbursements)}
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-muted-foreground">Unpaid bills</dt>
+          <dt className="text-[10px] text-muted-foreground">Unpaid</dt>
           <dd className={totals.unpaid > 0 ? "font-medium text-warning-foreground" : "text-foreground"}>
             {money(totals.unpaid)}
           </dd>
@@ -218,11 +226,11 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
       </dl>
 
       {loading || entriesLoading ? (
-        <p className="py-4 text-sm text-muted-foreground">Loading costs…</p>
+        <p className="py-4 text-xs text-muted-foreground">Loading costs…</p>
       ) : entries.length === 0 ? (
         <EmptyState title="No costs recorded" description="Expenses, subcontractor payments and agent payments for this job will appear here." />
       ) : (
-        <ul className="divide-y divide-border">
+        <ul className="max-h-56 divide-y divide-border overflow-y-auto pr-1">
           {entries.map((entry) => {
             const meta = SOURCE_META[entry.source];
             const SourceIcon = meta.icon;
@@ -236,38 +244,38 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
             return (
               <li
                 key={`${entry.source}-${entry.id}`}
-                className={`flex items-start justify-between gap-2 py-2.5 text-sm ${busyId === entry.id ? "opacity-50" : ""}`}
+                className={`flex items-start justify-between gap-2 py-1.5 text-xs ${busyId === entry.id ? "opacity-50" : ""}`}
               >
                 <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1">
                     <span className="font-medium text-foreground">{money(entry.amount)}</span>
-                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${meta.className}`}>
-                      <SourceIcon className="size-3" /> {meta.label}
+                    <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] ${meta.className}`}>
+                      <SourceIcon className="size-2.5" /> {meta.label}
                     </span>
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{entry.category}</span>
+                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{entry.category}</span>
                     {expense?.reimbursable && expense.reimbursementStatus === "pending" && (
-                      <span className="rounded-full bg-warning/15 px-2 py-0.5 text-xs text-warning-foreground">
+                      <span className="rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] text-warning-foreground">
                         Owed to {PAID_BY_LABEL[expense.paidByType].toLowerCase()}
                       </span>
                     )}
                     {expense?.reimbursementStatus === "reimbursed" && (
-                      <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">Reimbursed</span>
+                      <span className="rounded-full bg-success/15 px-1.5 py-0.5 text-[10px] text-success">Reimbursed</span>
                     )}
                     {expense && !expense.isPaid && (
-                      <span className="rounded-full bg-danger/10 px-2 py-0.5 text-xs text-danger">Unpaid</span>
+                      <span className="rounded-full bg-danger/10 px-1.5 py-0.5 text-[10px] text-danger">Unpaid</span>
                     )}
                   </div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">
+                  <div className="mt-0.5 text-[11px] text-muted-foreground">
                     {entry.date}
                     {entry.label ? ` · ${entry.label}` : ""}
                     {expense?.paymentMethod ? ` · ${formatPaymentMethod(expense.paymentMethod)}` : ""}
                     {expense && expense.paidByType !== "company" ? ` · paid by ${PAID_BY_LABEL[expense.paidByType].toLowerCase()}` : ""}
                   </div>
-                  {entry.description && <div className="mt-0.5 text-xs text-muted-foreground">{entry.description}</div>}
+                  {entry.description && <div className="mt-0.5 text-[11px] text-muted-foreground">{entry.description}</div>}
                 </div>
 
                 {canEdit && expense && (
-                  <div className="flex shrink-0 gap-1">
+                  <div className="flex shrink-0 gap-0.5">
                     {expense.reimbursable && expense.reimbursementStatus === "pending" && (
                       <button
                         type="button"
@@ -275,7 +283,7 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
                         disabled={busyId === expense.id}
                         aria-label="Mark reimbursed"
                         title="Mark reimbursed"
-                        className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+                        className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
                       >
                         <RotateCcw className="size-3.5" />
                       </button>
@@ -283,7 +291,7 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
                     <button type="button" onClick={() => setDialogFor(expense)}
                       disabled={busyId === expense.id}
                       aria-label={`Edit ${meta.label} cost`} title={`Edit ${meta.label} cost`}
-                      className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50">
+                      className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50">
                       <Pencil className="size-3.5" />
                     </button>
                     {/* ADDITIVE — attaching a vendor invoice UPDATES this
@@ -299,7 +307,7 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
       : `Attach invoice to ${meta.label} cost`
   }
   title={expense.dueDate ? "Bill attached — edit" : "Attach vendor invoice"}
-  className={`rounded-lg p-1.5 disabled:opacity-50 ${
+  className={`rounded-md p-1 disabled:opacity-50 ${
     expense.dueDate
       ? "text-primary hover:bg-primary/10"
       : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -310,7 +318,7 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
                     <button type="button" onClick={() => handleDelete(expense, meta.label)}
                       disabled={busyId === expense.id}
                       aria-label={`Delete ${meta.label} cost`} title={`Delete ${meta.label} cost`}
-                      className="rounded-lg p-1.5 text-muted-foreground hover:bg-danger/10 hover:text-danger disabled:opacity-50">
+                      className="rounded-md p-1 text-muted-foreground hover:bg-danger/10 hover:text-danger disabled:opacity-50">
                       <Trash2 className="size-3.5" />
                     </button>
                   </div>
@@ -350,7 +358,7 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
           }
         />
       )}
-    </section>
+    </div>
   );
 }
 });

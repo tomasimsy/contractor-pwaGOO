@@ -32,7 +32,11 @@ export interface EmailCustomerModalProps {
 }
 
 function buildDefaultMessage(clientName: string, companyName: string): string {
-  return `Hi ${clientName || "there"},\n\nThank you for the opportunity to work with you. Please find your proposal attached, and you can also view it online using the button in this email.\n\nIf you have any questions or would like to move forward, just reply to this email.\n\nBest regards,\n${companyName}`;
+  return `Hi ${clientName || "there"},\n\nThank you for the opportunity to work with you. Please find
+   your proposal attached, and you can also view it online using the button in this email.
+   \n\nIf you have any questions or would like to move forward, just sign the proposal by clicking the link.
+   \n\nBest regards,\n${companyName}`;
+   
 }
 
 type SendState = { status: "idle" } | { status: "sending" } | { status: "success" } | { status: "error"; message: string };

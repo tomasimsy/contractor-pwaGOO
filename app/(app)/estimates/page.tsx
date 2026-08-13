@@ -14,6 +14,18 @@ import type { Estimate } from "@/lib/services/estimateService";
 import type { Project } from "@/lib/services/projectService";
 import type { Client } from "@/lib/services/clientService";
 import type { EstimateStatus } from "@/lib/services";
+import { supabase } from "@/lib/supabase/client";
+import {
+  getEmailStatusesForCompany,
+  EMAIL_STATUS_DOT_COLOR,
+  EMAIL_STATUS_DOT_LABEL,
+  type EstimateEmailStatus,
+} from "@/lib/email/emailTracking";
+
+/** List page shows the newest 20 (matching sort/filter) with the first
+ * ~10 visible before scrolling — a full unfiltered list of every
+ * estimate a company has ever made isn't useful as a single page. */
+const VISIBLE_LIMIT = 20;
 
 type SortKey = "createdAt" | "updatedAt" | "total" | "estimateNumber";
 
@@ -44,6 +56,7 @@ function EstimatesListContent() {
   const [estimates, setEstimates] = useState<Estimate[]>([]);
   const [projectsById, setProjectsById] = useState<Record<string, Project>>({});
   const [clientsById, setClientsById] = useState<Record<string, Client>>({});
+  const [emailStatusById, setEmailStatusById] = useState<Record<string, EstimateEmailStatus>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,6 +78,9 @@ function EstimatesListContent() {
       setEstimates(estimateList);
       setProjectsById(Object.fromEntries(projectList.map((p) => [p.id, p])));
       setClientsById(Object.fromEntries(clientList.map((c) => [c.id, c])));
+      // Best-effort — a failed status lookup shouldn't block the list
+      // itself from rendering, it just leaves the dot off.
+      getEmailStatusesForCompany(supabase, profile.companyId).then(setEmailStatusById);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load estimates.");
     } finally {
@@ -100,6 +116,8 @@ function EstimatesListContent() {
       return b.createdAt.localeCompare(a.createdAt);
     });
   }, [estimates, statusFilter, typeFilter, search, sortKey, projectsById, clientsById]);
+
+  const visible = filtered.slice(0, VISIBLE_LIMIT);
 
   return (
 <PageContainer>
@@ -179,10 +197,17 @@ function EstimatesListContent() {
     />
   ) : (
     <>
-      {/* Desktop & Tablet Table with Green Header */}
-      <div className="hidden overflow-x-auto rounded-xl border border-emerald-200/60 bg-white sm:block shadow-sm">
+      {filtered.length > VISIBLE_LIMIT && (
+        <p className="mb-2 text-[11px] text-emerald-700/70">
+          Showing {VISIBLE_LIMIT} of {filtered.length} — refine search/filters to narrow this down.
+        </p>
+      )}
+
+      {/* Desktop & Tablet Table with Green Header — ~10 rows visible,
+          scrolls for the rest (see VISIBLE_LIMIT above the component). */}
+      <div className="hidden max-h-[26rem] overflow-y-auto overflow-x-auto rounded-xl border border-emerald-200/60 bg-white sm:block shadow-sm">
         <table className="w-full text-xs sm:text-sm">
-          <thead className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white">
+          <thead className="sticky top-0 z-10 bg-gradient-to-r from-emerald-600 to-emerald-700 text-white">
             <tr>
               <th className="px-3 py-2.5 text-left font-semibold uppercase tracking-wider text-[11px]">Estimate #</th>
               <th className="px-3 py-2.5 text-left font-semibold uppercase tracking-wider text-[11px]">Project</th>
@@ -195,13 +220,21 @@ function EstimatesListContent() {
             </tr>
           </thead>
           <tbody className="divide-y divide-emerald-100/60 capitalize">
-            {filtered.map((estimate) => (
+            {visible.map((estimate) => {
+              const emailStatus = emailStatusById[estimate.id];
+              return (
               <tr key={estimate.id} className={`transition-colors ${STATUS_ROW_BG[estimate.status] || "hover:bg-emerald-50/80"}`}>
                 <td className="px-3 py-2.5 capitalize">
                   <Link
                     href={`/estimates/${estimate.id}`}
-                    className="font-semibold text-emerald-900 hover:text-emerald-700 transition-colors capitalize "
+                    className="inline-flex items-center gap-1.5 font-semibold text-emerald-900 hover:text-emerald-700 transition-colors capitalize "
                   >
+                    {emailStatus && (
+                      <span
+                        className={`size-1.5 shrink-0 rounded-full ${EMAIL_STATUS_DOT_COLOR[emailStatus]}`}
+                        title={`Email ${EMAIL_STATUS_DOT_LABEL[emailStatus]}`}
+                      />
+                    )}
                     {estimate.title?.trim() || "No Title"}
                   </Link>
                   {(estimate.estimateNumber || estimate.id) && (
@@ -232,14 +265,17 @@ function EstimatesListContent() {
                   {new Date(estimate.updatedAt).toLocaleDateString()}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
 
-      {/* Mobile Cards with Consistent Color */}
-      <div className="space-y-3 sm:hidden">
-        {filtered.map((estimate) => {
+      {/* Mobile Cards with Consistent Color — same 10-visible/scroll
+          treatment as the table above. */}
+      <div className="max-h-[38rem] space-y-3 overflow-y-auto pr-0.5 sm:hidden">
+        {visible.map((estimate) => {
+          const emailStatus = emailStatusById[estimate.id];
           const status =
             estimate.status === "converted_to_invoice"
               ? {
@@ -284,10 +320,16 @@ function EstimatesListContent() {
               {/* Top Row: Title and Amount */}
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <h3 className="truncate text-sm font-bold text-white capitalize">
+                  <h3 className="flex items-center gap-1.5 truncate text-sm font-bold text-white capitalize">
+                    {emailStatus && (
+                      <span
+                        className={`size-1.5 shrink-0 rounded-full ring-1 ring-white/40 ${EMAIL_STATUS_DOT_COLOR[emailStatus]}`}
+                        title={`Email ${EMAIL_STATUS_DOT_LABEL[emailStatus]}`}
+                      />
+                    )}
                     {estimate.title?.trim() || "Untitled"}
                   </h3>
-                  
+
                   <div className="mt-1.5 flex flex-wrap items-center gap-2">
                     <span className="text-xs text-white/80">
                       {projectsById[estimate.projectId]?.name ?? "No project"}

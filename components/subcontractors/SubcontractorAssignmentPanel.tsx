@@ -165,7 +165,7 @@ export function SubcontractorAssignmentPanel({
       {assignments.length === 0 ? (
         <EmptyState title="No subcontractors assigned" description="Assign a subcontractor to this project to start tracking cost." />
       ) : (
-        <ul className="divide-y divide-border">
+        <ul className="max-h-64 divide-y divide-border overflow-y-auto pr-1">
           {assignments.map((a) => {
             const balance = balances[a.subcontractorId];
             return (

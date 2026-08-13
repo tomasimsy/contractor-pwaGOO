@@ -81,6 +81,34 @@ export async function listEmailsForEstimate(supabase: SupabaseClient, estimateId
   return (data || []).map(rowToRecord);
 }
 
+/** Bulk read for a list page — one query for every estimate's emails
+ * in the company, grouped down to each estimate's single best status
+ * (see getBestEmailStatus). Selects only the two columns the list
+ * indicator needs, not full rows, since this can cover every estimate
+ * on the page at once. */
+export async function getEmailStatusesForCompany(
+  supabase: SupabaseClient,
+  companyId: string
+): Promise<Record<string, EstimateEmailStatus>> {
+  const { data, error } = await supabase
+    .from("estimate_emails")
+    .select("estimate_id, status")
+    .eq("company_id", companyId);
+  if (error) {
+    console.error("Failed to load estimate_emails statuses:", error);
+    return {};
+  }
+  const byEstimate: Record<string, EstimateEmailStatus[]> = {};
+  for (const row of data || []) {
+    (byEstimate[row.estimate_id] ??= []).push(row.status as EstimateEmailStatus);
+  }
+  const result: Record<string, EstimateEmailStatus> = {};
+  for (const [estimateId, statuses] of Object.entries(byEstimate)) {
+    result[estimateId] = statuses.reduce((best, s) => (STATUS_RANK[s] > STATUS_RANK[best] ? s : best), statuses[0]);
+  }
+  return result;
+}
+
 /** Status precedence — a webhook event only moves status FORWARD.
  * Guards against a late-arriving 'delivered' event overwriting an
  * already-recorded 'opened' (Resend does not guarantee event
@@ -88,7 +116,7 @@ export async function listEmailsForEstimate(supabase: SupabaseClient, estimateId
  * link is a strictly more engaged signal than just opening the email.
  * 'bounced'/'complained'/'failed' are terminal and always win once
  * reached. */
-const STATUS_RANK: Record<EstimateEmailStatus, number> = {
+export const STATUS_RANK: Record<EstimateEmailStatus, number> = {
   sent: 0,
   delivered: 1,
   opened: 2,
@@ -97,6 +125,44 @@ const STATUS_RANK: Record<EstimateEmailStatus, number> = {
   complained: 4,
   failed: 4,
 };
+
+/** Shared color/label for the small dot indicators (estimate detail
+ * header, estimates list cards) — one place so both surfaces agree on
+ * what each status means. Tailwind background classes, not tokens,
+ * since these are tiny presence dots rather than themed UI chrome. */
+export const EMAIL_STATUS_DOT_COLOR: Record<EstimateEmailStatus, string> = {
+  sent: "bg-slate-400",
+  delivered: "bg-blue-500",
+  opened: "bg-amber-500",
+  clicked: "bg-emerald-500",
+  bounced: "bg-red-500",
+  complained: "bg-red-500",
+  failed: "bg-red-500",
+};
+
+export const EMAIL_STATUS_DOT_LABEL: Record<EstimateEmailStatus, string> = {
+  sent: "Sent",
+  delivered: "Delivered",
+  opened: "Opened",
+  clicked: "Clicked",
+  bounced: "Bounced",
+  complained: "Marked as spam",
+  failed: "Failed",
+};
+
+/** The single most-telling status across every email sent for an
+ * estimate — "furthest along" per STATUS_RANK, not just the most
+ * recently sent one, so one early bounce doesn't hide a later
+ * successful open. Null when nothing has been sent yet. Used by the
+ * small color-coded indicators on the estimate detail header and the
+ * estimates list, which have room for one signal, not a full history. */
+export function getBestEmailStatus(emails: EstimateEmailRecord[]): EstimateEmailStatus | null {
+  if (emails.length === 0) return null;
+  return emails.reduce<EstimateEmailStatus>(
+    (best, e) => (STATUS_RANK[e.status] > STATUS_RANK[best] ? e.status : best),
+    emails[0].status
+  );
+}
 
 /** Called from the webhook route with a SERVICE-ROLE client (no user
  * session exists for an inbound webhook) — this bypasses RLS by

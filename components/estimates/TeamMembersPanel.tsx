@@ -320,7 +320,7 @@ export const TeamMembersPanel = forwardRef<
           description="Assign someone to track their labor and any costs they front."
         />
       ) : (
-        <div className="space-y-2">
+        <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
           {cards.map((c) => (
             <div key={c.id} className="rounded-lg border border-border/70 bg-background p-2.5">
               <div className="mb-2 flex items-start justify-between gap-2">
