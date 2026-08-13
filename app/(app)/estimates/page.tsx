@@ -65,14 +65,14 @@ const STATUS_ROW_BG: Record<EstimateStatus, string> = {
 
 const formatMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
-/** Desktop ~8-12 rows, mobile ~5-7 — matched to viewport, not a fixed
- * constant, since a phone screen genuinely can't show 10 rows without
- * turning into the giant scrolling list this page is replacing. */
+/** Desktop 20 rows, mobile 15 — matched to viewport, not a fixed
+ * constant, since a phone screen still shouldn't try to match desktop
+ * exactly even at a larger page size. */
 function usePageSize(): number {
-  const [size, setSize] = useState(10);
+  const [size, setSize] = useState(20);
   useEffect(() => {
     const mql = window.matchMedia("(min-width: 640px)");
-    const apply = () => setSize(mql.matches ? 10 : 6);
+    const apply = () => setSize(mql.matches ? 20 : 15);
     apply();
     mql.addEventListener("change", apply);
     return () => mql.removeEventListener("change", apply);
