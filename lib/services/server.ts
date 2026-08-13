@@ -115,7 +115,7 @@ export function createServerAppServices(
   const subcontractorService = createSupabaseSubcontractorService(supabase, validationService, currentUserId, transactionService);
   const agentCommissionService = createSupabaseAgentCommissionService(supabase, validationService, currentUserId, transactionService, expenseService);
 
-  const estimateWorkflow = createEstimateWorkflow({ estimateService, invoiceService, paymentService });
+  const estimateWorkflow = createEstimateWorkflow({ estimateService, invoiceService, paymentService, projectService });
   const changeOrderWorkflow = createChangeOrderWorkflow({ changeOrderService, estimateService, invoiceService });
   // Cash-basis only — see cpaPackageService.ts's header for why this is
   // never given financialEngine.

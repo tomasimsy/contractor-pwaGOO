@@ -36,6 +36,7 @@ import { PageContainer } from "@/components/ui/PageContainer";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SkeletonLines } from "@/components/ui/Skeleton";
 import { Badge } from "@/components/ui/Badge";
+import { Modal } from "@/components/ui/Modal";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { SignaturePad } from "@/components/estimates/SignaturePad";
 import { SharePortalPanel } from "@/components/portal/SharePortalPanel";
@@ -136,6 +137,14 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
+  /** "Mark Project Complete" — confirm-then-call-changeStatus, same
+   * shape as the Archive action on the Project detail page. Never
+   * fires automatically from a signature or invoice event; the whole
+   * point is that completion is a separate, deliberate, human call
+   * about the JOB, not a side effect of estimate paperwork. */
+  const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
+  const [completeBusy, setCompleteBusy] = useState(false);
+  const [completeError, setCompleteError] = useState<string | null>(null);
   /** Signature-specific feedback, rendered INSIDE the signature card.
    * The page-level `error` banner sits at the very top of a long page:
    * refusing to remove a signature put its explanation ~2,600px above
@@ -315,6 +324,25 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
     }
   }
 
+  async function handleMarkProjectComplete() {
+    if (!project) return;
+    setCompleteBusy(true);
+    setCompleteError(null);
+    try {
+      const result = await projectService.changeStatus(project.id, "completed");
+      if (!result.valid) {
+        setCompleteError(result.issues.map((i) => i.message).join("; "));
+        return;
+      }
+      if (result.project) setProject(result.project);
+      setShowCompleteConfirm(false);
+    } catch (err) {
+      setCompleteError(err instanceof Error ? err.message : "Could not mark this project complete.");
+    } finally {
+      setCompleteBusy(false);
+    }
+  }
+
   // Synchronous, no `await` before window.open. The route now
   // authenticates from the browser's own session cookie (see
   // app/api/estimates/[id]/pdf/route.ts) — no bearer token, so nothing
@@ -348,6 +376,17 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
         <div className="min-w-0 flex items-center gap-2">
           <h1 className="text-base sm:text-lg font-bold tracking-tight text-foreground capitalize truncate">{estimate.title || "Untitled Estimate"}</h1>
           <Badge tone={STATUS_TONE[estimate.status]} className="shrink-0">{estimate.status.replace(/_/g, " ")}</Badge>
+          {/* Project lifecycle status — a separate fact from the
+              estimate status badge above (see EstimateService.listPage's
+              doc comment: signed/invoiced describe the DOCUMENT,
+              completed/archived describe the JOB). Only shown once the
+              project has actually reached one of those two, so it
+              doesn't duplicate/clutter the common draft/active states. */}
+          {project && (project.status === "completed" || project.status === "archived") && (
+            <span className="shrink-0 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+              {project.status}
+            </span>
+          )}
           <span className="hidden md:inline text-xs text-muted-foreground truncate">· {project?.name} {estimate.estimateNumber ?? estimate.id.slice(0, 8)}</span>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -395,10 +434,29 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
             </span>
             <span className="hidden sm:inline">Email</span>
           </button>
-          <Link href={`${editBasePath}/${estimate.id}/edit`} className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors" title="Edit">
+                    <Link href={`${editBasePath}/${estimate.id}/edit`} className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors" title="Edit">
             <Pencil className="size-3.5" />
             <span className="hidden sm:inline">Edit</span>
           </Link>
+          {/* Only the ONE legal direct transition (see
+              ValidationService's PROJECT_TRANSITIONS: in_progress ->
+              completed) shows this button — a project in draft/active/
+              on_hold has to move through in_progress first (normally
+              automatic now — see signEstimate's advanceProjectTowardInProgress).
+              Sits with Edit/Delete since it's a page-level action on the
+              job, not something scoped to one card. */}
+          {project?.status === "in_progress" && (
+            <button
+              type="button"
+              onClick={() => { setCompleteError(null); setShowCompleteConfirm(true); }}
+              className="inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 transition-colors"
+              title="Mark Project Complete"
+            >
+              <CheckCircle2 className="size-3.5" />
+              <span className="hidden sm:inline">Mark Complete</span>
+            </button>
+          )}
+
           <button type="button" onClick={handleDelete} className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-danger hover:bg-danger/10 transition-colors" title="Delete">
             <Trash2 className="size-3.5" />
             <span className="hidden sm:inline">Delete</span>
@@ -1171,6 +1229,37 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
         companyName={companySettings?.company_name ?? "Your Company"}
         hasPortalLink={!!estimate.customerToken}
       />
+
+      <Modal open={showCompleteConfirm} onClose={() => { if (!completeBusy) setShowCompleteConfirm(false); }} title="Mark Project Complete?">
+        <div className="space-y-3 text-sm">
+          <p className="text-foreground">
+            This marks <span className="font-semibold">{project?.name}</span> as completed and moves it out of the
+            active workflow (Drafts/Sent/Signed/Invoiced). This does not delete anything, and the project can still
+            be reviewed later.
+          </p>
+          {completeError && (
+            <div role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-xs text-danger">{completeError}</div>
+          )}
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => setShowCompleteConfirm(false)}
+              disabled={completeBusy}
+              className="rounded-lg border border-input px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleMarkProjectComplete}
+              disabled={completeBusy}
+              className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
+            >
+              {completeBusy ? "Marking Complete…" : "Mark Complete"}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </PageContainer>
   );
 }

@@ -63,7 +63,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Estimate, EstimateLineItem, EstimateService, ScopeLine } from "../estimateService";
-import type { UUID, EstimateStatus, ValidationResult, QueryScope } from "../types";
+import type { UUID, EstimateStatus, ProjectStatus, ValidationResult, QueryScope } from "../types";
 import type { ValidationService } from "../validationService";
 import type { AuditService } from "../auditService";
 import type { ProjectService } from "../projectService";
@@ -769,5 +769,105 @@ export function createSupabaseEstimateService(
     if (error) throw new Error(`Failed to restore estimate: ${error.message}`);
   }
 
-  return { getById, listForProject, list, create, getScopeLines, updateLineItems, update, recalculateTotal, changeStatus, recordSignature, softDelete, restore };
+  const LIST_PAGE_SORT_COLUMN: Record<string, string> = {
+    createdAt: "created_at",
+    updatedAt: "updated_at",
+    total: "total",
+    estimateNumber: "estimate_number",
+  };
+
+  async function listPage(params: {
+    companyId: UUID;
+    lifecycle: "draft" | "sent" | "signed" | "invoiced" | "completed" | "archived" | "all";
+    estimateType?: "all" | "standard" | "roofing";
+    search?: string;
+    sortKey?: "createdAt" | "updatedAt" | "total" | "estimateNumber";
+    sortDir?: "asc" | "desc";
+    page: number;
+    pageSize: number;
+  }) {
+    const { companyId, lifecycle, estimateType = "all", search, sortKey = "createdAt", sortDir = "desc", page, pageSize } = params;
+
+    // "completed"/"archived" filter BY project.status, and the other
+    // active lifecycles EXCLUDE those same two — both need the
+    // embedded `projects` row to be a real join (!inner), not a left
+    // join, or PostgREST can't filter on its columns. "all" uses a
+    // left join instead so an estimate with no project (project_id
+    // null — legal at the DB level even though every estimate created
+    // through this app's own UI always sets one) still shows up there.
+    // `!estimates_project_id_fkey` disambiguates the join — `projects`
+    // also has its own FK back to `estimates` (legacy_estimate_id, from
+    // the backfill migration), so PostgREST can't infer a direction on
+    // its own and returns "more than one relationship was found"
+    // without an explicit constraint hint.
+    const needsProjectJoin = lifecycle !== "all";
+    const projectEmbed = needsProjectJoin
+      ? "project:projects!estimates_project_id_fkey!inner(id, name, status)"
+      : "project:projects!estimates_project_id_fkey(id, name, status)";
+
+    let query = supabase
+      .from("estimates")
+      .select(`*, ${projectEmbed}, client:clients(id, name)`, { count: "exact" })
+      .eq("company_id", companyId)
+      .is("deleted_at", null);
+
+    if (estimateType !== "all") query = query.eq("estimate_type", estimateType);
+
+    switch (lifecycle) {
+      case "draft":
+        query = query.eq("status", "draft").not("project.status", "in", "(completed,archived)");
+        break;
+      case "sent":
+        query = query.in("status", ["sent", "viewed"]).not("project.status", "in", "(completed,archived)");
+        break;
+      case "signed":
+        query = query.eq("status", "approved").not("project.status", "in", "(completed,archived)");
+        break;
+      case "invoiced":
+        query = query.eq("status", "converted_to_invoice").not("project.status", "in", "(completed,archived)");
+        break;
+      case "completed":
+        query = query.eq("project.status", "completed");
+        break;
+      case "archived":
+        query = query.eq("project.status", "archived");
+        break;
+      case "all":
+      default:
+        break;
+    }
+
+    if (search && search.trim()) {
+      // Escape the two characters that are syntactically meaningful to
+      // PostgREST's .or() filter string (comma separates conditions,
+      // parens delimit them) — an unescaped one in the search box
+      // would otherwise let a user's input redefine the filter itself.
+      const q = search.trim().replace(/[(),]/g, "");
+      query = query.or(`estimate_number.ilike.%${q}%,title.ilike.%${q}%`);
+    }
+
+    query = query.order(LIST_PAGE_SORT_COLUMN[sortKey] ?? "created_at", { ascending: sortDir === "asc" });
+
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    query = query.range(from, to);
+
+    const { data, error, count } = await query;
+    if (error) throw new Error(`Failed to list estimates: ${error.message}`);
+
+    type JoinedRow = EstimateRow & {
+      project: { id: string; name: string; status: string } | null;
+      client: { id: string; name: string } | null;
+    };
+    const rows = ((data ?? []) as JoinedRow[]).map((row) => ({
+      ...rowToEstimate(row),
+      projectName: row.project?.name ?? null,
+      projectStatus: (row.project?.status as ProjectStatus | null) ?? null,
+      clientName: row.client?.name ?? null,
+    }));
+
+    return { rows, total: count ?? 0 };
+  }
+
+  return { getById, listForProject, list, create, getScopeLines, updateLineItems, update, recalculateTotal, changeStatus, recordSignature, softDelete, restore, listPage };
 }

@@ -52,7 +52,7 @@ async function seedSignedEstimate(quoted = 10_000) {
   // The real signing workflow — the same one staff and the portal use,
   // and the thing that auto-creates the invoice this feature syncs.
   const signed = await signEstimate(
-    { estimateService: services.estimateService, invoiceService: services.invoiceService, paymentService: services.paymentService },
+    { estimateService: services.estimateService, invoiceService: services.invoiceService, paymentService: services.paymentService, projectService: services.projectService },
     estimate.id,
     SIGNATURE
   );

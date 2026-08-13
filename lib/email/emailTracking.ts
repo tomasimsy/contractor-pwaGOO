@@ -90,10 +90,32 @@ export async function getEmailStatusesForCompany(
   supabase: SupabaseClient,
   companyId: string
 ): Promise<Record<string, EstimateEmailStatus>> {
-  const { data, error } = await supabase
-    .from("estimate_emails")
-    .select("estimate_id, status")
-    .eq("company_id", companyId);
+  return bestStatusByEstimate(
+    supabase.from("estimate_emails").select("estimate_id, status").eq("company_id", companyId)
+  );
+}
+
+/** Same as getEmailStatusesForCompany, but scoped to a specific set of
+ * estimate ids — used by the estimates list page, which now only ever
+ * has ONE PAGE of rows in memory at a time (server-side pagination),
+ * so there is no reason to pull the company's entire email history
+ * just to paint a handful of dots. Empty input short-circuits without
+ * a request, since `.in("estimate_id", [])` would otherwise still be
+ * a round trip for a query PostgREST answers with zero rows anyway. */
+export async function getEmailStatusesForEstimates(
+  supabase: SupabaseClient,
+  estimateIds: string[]
+): Promise<Record<string, EstimateEmailStatus>> {
+  if (estimateIds.length === 0) return {};
+  return bestStatusByEstimate(
+    supabase.from("estimate_emails").select("estimate_id, status").in("estimate_id", estimateIds)
+  );
+}
+
+async function bestStatusByEstimate(
+  query: PromiseLike<{ data: { estimate_id: string; status: string }[] | null; error: unknown }>
+): Promise<Record<string, EstimateEmailStatus>> {
+  const { data, error } = await query;
   if (error) {
     console.error("Failed to load estimate_emails statuses:", error);
     return {};

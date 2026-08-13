@@ -13,7 +13,7 @@
  * during the service-layer completion pass — see that file's header
  * for why. This service now owns only the proposal document itself.
  */
-import type { UUID, AuditedEntity, EstimateStatus, ValidationResult, QueryScope } from "./types";
+import type { UUID, AuditedEntity, EstimateStatus, ProjectStatus, ValidationResult, QueryScope } from "./types";
 import type { EstimateTermsTemplateKey } from "../estimateTerms";
 
 export type EstimateLineItemUnit = "EA" | "SF" | "SQFT" | "SQ" | "LF" | "FT" | "HR" | "DAY" | "LS";
@@ -233,4 +233,56 @@ export interface EstimateService {
    * through the UI. Same contract as ProjectService.restore: clears
    * deleted_at/deleted_by/delete_reason, nothing else. */
   restore(estimateId: UUID): Promise<void>;
+
+  /**
+   * Server-side-filtered/sorted/paginated read for the Estimates list
+   * page — the ONLY estimate read in this codebase that pushes status
+   * filtering, search, sorting and pagination down to the query itself
+   * rather than fetching a company's full estimate set into memory.
+   * `list()` above is unchanged and still used by every other caller
+   * that genuinely needs the whole set (dashboard aggregation,
+   * payables worklist, etc) — this is additive, not a replacement.
+   *
+   * `lifecycle` groups estimates the way staff actually think about
+   * them, reusing existing fields rather than inventing a new status:
+   *   draft     — estimate.status === "draft"
+   *   sent      — estimate.status in ("sent", "viewed")
+   *   signed    — estimate.status === "approved" (the customer signed;
+   *               "signed" and "invoiced" are deliberately different
+   *               buckets — see invoiced below)
+   *   invoiced  — estimate.status === "converted_to_invoice"
+   *   completed — the estimate's PROJECT is done: project.status ===
+   *               "completed". This is a job-level fact, not a
+   *               document-level one — completing a project never
+   *               rewrites the estimate's own status, so an invoiced
+   *               estimate can (and should) still say "converted_to_
+   *               invoice" forever. See ProjectService.changeStatus.
+   *   archived  — project.status === "archived"
+   *   all       — no status filter at all
+   *
+   * draft/sent/signed/invoiced additionally EXCLUDE estimates whose
+   * project has already reached completed/archived, so a finished job
+   * moves out of the active tabs the moment it's marked complete,
+   * without needing a second "is this active" flag anywhere.
+   */
+  listPage(params: {
+    companyId: UUID;
+    lifecycle: "draft" | "sent" | "signed" | "invoiced" | "completed" | "archived" | "all";
+    estimateType?: "all" | "standard" | "roofing";
+    /** Matched against estimate_number/title only — the columns that
+     * live on `estimates` itself. Client/project name search would
+     * need either a database view or an RPC to push down cleanly
+     * (PostgREST's `.or()` can't filter across an embedded relation),
+     * which is out of scope here; this is a deliberate, documented
+     * trade-off versus the old fully-client-side search. */
+    search?: string;
+    sortKey?: "createdAt" | "updatedAt" | "total" | "estimateNumber";
+    sortDir?: "asc" | "desc";
+    /** 1-based. */
+    page: number;
+    pageSize: number;
+  }): Promise<{
+    rows: (Estimate & { projectName: string | null; projectStatus: ProjectStatus | null; clientName: string | null })[];
+    total: number;
+  }>;
 }

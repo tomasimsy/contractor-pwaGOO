@@ -1,8 +1,19 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+/**
+ * Estimates list — organized by LIFECYCLE (Drafts/Sent/Signed/Invoiced/
+ * Completed/Archived/All), each tab its own server-side query via
+ * EstimateService.listPage. Nothing here fetches a company's full
+ * estimate set and filters/paginates in React: status filtering, type
+ * filtering, search, sorting and pagination are all pushed to
+ * listPage's Supabase query (see that method's doc comment in
+ * lib/services/estimateService.ts for exactly what each lifecycle
+ * means and why "completed"/"archived" read the estimate's PROJECT
+ * status rather than a duplicated flag on the estimate itself).
+ */
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
-import { FileText, Plus, Search, Trash2 } from "lucide-react";
+import { FileText, Plus, Search, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -10,24 +21,29 @@ import { Badge } from "@/components/ui/Badge";
 import { RequirePermission } from "@/components/layout/RequirePermission";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
-import type { Estimate } from "@/lib/services/estimateService";
-import type { Project } from "@/lib/services/projectService";
-import type { Client } from "@/lib/services/clientService";
 import type { EstimateStatus } from "@/lib/services";
 import { supabase } from "@/lib/supabase/client";
 import {
-  getEmailStatusesForCompany,
+  getEmailStatusesForEstimates,
   EMAIL_STATUS_DOT_COLOR,
   EMAIL_STATUS_DOT_LABEL,
   type EstimateEmailStatus,
 } from "@/lib/email/emailTracking";
 
-/** List page shows the newest 20 (matching sort/filter) with the first
- * ~10 visible before scrolling — a full unfiltered list of every
- * estimate a company has ever made isn't useful as a single page. */
-const VISIBLE_LIMIT = 20;
-
 type SortKey = "createdAt" | "updatedAt" | "total" | "estimateNumber";
+type Lifecycle = "draft" | "sent" | "signed" | "invoiced" | "completed" | "archived" | "all";
+
+type Row = Awaited<ReturnType<ReturnType<typeof useServices>["estimateService"]["listPage"]>>["rows"][number];
+
+const LIFECYCLE_TABS: { key: Lifecycle; label: string }[] = [
+  { key: "draft", label: "Drafts" },
+  { key: "sent", label: "Sent" },
+  { key: "signed", label: "Signed" },
+  { key: "invoiced", label: "Invoiced" },
+  { key: "completed", label: "Completed" },
+  { key: "archived", label: "Archived" },
+  { key: "all", label: "All" },
+];
 
 const STATUS_TONE: Record<EstimateStatus, "neutral" | "success" | "warning" | "danger"> = {
   draft: "neutral",
@@ -49,75 +65,102 @@ const STATUS_ROW_BG: Record<EstimateStatus, string> = {
 
 const formatMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
+/** Desktop ~8-12 rows, mobile ~5-7 — matched to viewport, not a fixed
+ * constant, since a phone screen genuinely can't show 10 rows without
+ * turning into the giant scrolling list this page is replacing. */
+function usePageSize(): number {
+  const [size, setSize] = useState(10);
+  useEffect(() => {
+    const mql = window.matchMedia("(min-width: 640px)");
+    const apply = () => setSize(mql.matches ? 10 : 6);
+    apply();
+    mql.addEventListener("change", apply);
+    return () => mql.removeEventListener("change", apply);
+  }, []);
+  return size;
+}
+
 function EstimatesListContent() {
-  const { estimateService, projectService, clientService } = useServices();
+  const { estimateService } = useServices();
   const { profile } = useAuth();
 
-  const [estimates, setEstimates] = useState<Estimate[]>([]);
-  const [projectsById, setProjectsById] = useState<Record<string, Project>>({});
-  const [clientsById, setClientsById] = useState<Record<string, Client>>({});
+  const [lifecycle, setLifecycle] = useState<Lifecycle>("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "standard" | "roofing">("all");
+  const [sortKey, setSortKey] = useState<SortKey>("createdAt");
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState(""); // debounced
+  const [page, setPage] = useState(1);
+  const pageSize = usePageSize();
+
+  const [rows, setRows] = useState<Row[]>([]);
+  const [total, setTotal] = useState(0);
   const [emailStatusById, setEmailStatusById] = useState<Record<string, EstimateEmailStatus>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<EstimateStatus | "all">("all");
-  const [typeFilter, setTypeFilter] = useState<"all" | "standard" | "roofing">("all");
-  const [sortKey, setSortKey] = useState<SortKey>("createdAt");
+  // Debounce the search box — every other filter/sort/page control
+  // fires its own query immediately (they're discrete clicks), but
+  // typing shouldn't issue a query per keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  // Any filter/sort/search/page-size change invalidates the current
+  // page number — jumping back to 1 avoids landing on a now-nonexistent
+  // page (e.g. "page 4" after switching to a tab with only 1 page).
+  const filtersKey = `${lifecycle}|${typeFilter}|${sortKey}|${search}|${pageSize}`;
+  const prevFiltersKey = useRef(filtersKey);
+  if (prevFiltersKey.current !== filtersKey) {
+    prevFiltersKey.current = filtersKey;
+    if (page !== 1) setPage(1);
+  }
 
   const load = useCallback(async () => {
     if (!profile?.companyId) return;
     setLoading(true);
     setError(null);
     try {
-      const [estimateList, projectList, clientList] = await Promise.all([
-        estimateService.list({ companyId: profile.companyId }),
-        projectService.list({ companyId: profile.companyId }),
-        clientService.list({ companyId: profile.companyId }),
-      ]);
-      setEstimates(estimateList);
-      setProjectsById(Object.fromEntries(projectList.map((p) => [p.id, p])));
-      setClientsById(Object.fromEntries(clientList.map((c) => [c.id, c])));
-      // Best-effort — a failed status lookup shouldn't block the list
-      // itself from rendering, it just leaves the dot off.
-      getEmailStatusesForCompany(supabase, profile.companyId).then(setEmailStatusById);
+      const result = await estimateService.listPage({
+        companyId: profile.companyId,
+        lifecycle,
+        estimateType: typeFilter,
+        search: search || undefined,
+        sortKey,
+        sortDir: "desc",
+        page,
+        pageSize,
+      });
+      setRows(result.rows);
+      setTotal(result.total);
+      // Scoped to just this page's estimate ids — not the company's
+      // whole email history (see getEmailStatusesForEstimates's doc
+      // comment).
+      getEmailStatusesForEstimates(supabase, result.rows.map((r) => r.id)).then(setEmailStatusById);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load estimates.");
     } finally {
       setLoading(false);
     }
-  }, [estimateService, projectService, clientService, profile]);
+  }, [estimateService, profile, lifecycle, typeFilter, sortKey, search, page, pageSize]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const filtered = useMemo(() => {
-    let rows = estimates;
-    if (statusFilter !== "all") rows = rows.filter((e) => e.status === statusFilter);
-    if (typeFilter !== "all") rows = rows.filter((e) => e.estimateType === typeFilter);
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      rows = rows.filter((e) => {
-        const project = projectsById[e.projectId];
-        const client = e.clientId ? clientsById[e.clientId] : undefined;
-        return (
-          (e.estimateNumber ?? "").toLowerCase().includes(q) ||
-          (e.title ?? "").toLowerCase().includes(q) ||
-          (project?.name ?? "").toLowerCase().includes(q) ||
-          (client?.name ?? "").toLowerCase().includes(q)
-        );
-      });
-    }
-    return [...rows].sort((a, b) => {
-      if (sortKey === "total") return b.total - a.total;
-      if (sortKey === "estimateNumber") return (b.estimateNumber ?? "").localeCompare(a.estimateNumber ?? "");
-      if (sortKey === "updatedAt") return b.updatedAt.localeCompare(a.updatedAt);
-      return b.createdAt.localeCompare(a.createdAt);
-    });
-  }, [estimates, statusFilter, typeFilter, search, sortKey, projectsById, clientsById]);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
 
-  const visible = filtered.slice(0, VISIBLE_LIMIT);
+  // Windowed page numbers (max 5) around the current page, so a company
+  // with hundreds of estimates doesn't render hundreds of page buttons.
+  const pageNumbers = (() => {
+    const span = 5;
+    let start = Math.max(1, page - Math.floor(span / 2));
+    const end = Math.min(totalPages, start + span - 1);
+    start = Math.max(1, end - span + 1);
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  })();
 
   return (
 <PageContainer>
@@ -138,15 +181,35 @@ function EstimatesListContent() {
 
   {error && <div className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-xs sm:text-sm text-rose-700 border border-rose-200">{error}</div>}
 
+  {/* Lifecycle tabs — each one is its own server-side query (see
+      listPage's `lifecycle` param), not a client-side re-filter of
+      one big fetched set. */}
+  <div className="mb-3 flex gap-1 overflow-x-auto rounded-lg border border-emerald-200/60 bg-white p-1">
+    {LIFECYCLE_TABS.map((tab) => (
+      <button
+        key={tab.key}
+        type="button"
+        onClick={() => setLifecycle(tab.key)}
+        className={`shrink-0 rounded-md px-2.5 py-1.5 text-[11px] sm:text-xs font-semibold transition-colors ${
+          lifecycle === tab.key
+            ? "bg-emerald-600 text-white shadow-sm"
+            : "text-emerald-700 hover:bg-emerald-50"
+        }`}
+      >
+        {tab.label}
+      </button>
+    ))}
+  </div>
+
   <div className="mb-3 flex flex-nowrap items-center gap-1 sm:gap-2">
     {/* Search – takes flexible width, shrinks to fit */}
     <div className="relative flex-1 min-w-0">
       <Search className="pointer-events-none absolute left-2 top-1/2 size-3 -translate-y-1/2 text-emerald-600" />
       <input
         type="search"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search…"
+        value={searchInput}
+        onChange={(e) => setSearchInput(e.target.value)}
+        placeholder="Search # or title…"
         className="h-7 w-full rounded-lg border border-emerald-200 bg-white pl-6 pr-1.5 text-[10px] sm:text-xs outline-none focus-visible:border-emerald-400 focus-visible:ring-2 focus-visible:ring-emerald-200/50 transition-all"
       />
     </div>
@@ -160,18 +223,6 @@ function EstimatesListContent() {
       <option value="all">All Types</option>
       <option value="standard">Standard</option>
       <option value="roofing">Roofing</option>
-    </select>
-
-    {/* Status filter */}
-    <select
-      value={statusFilter}
-      onChange={(e) => setStatusFilter(e.target.value as EstimateStatus | "all")}
-      className="h-7 flex-1 min-w-0 rounded-lg border border-emerald-200 bg-white px-1 text-[10px] sm:text-xs outline-none focus-visible:border-emerald-400 focus-visible:ring-2 focus-visible:ring-emerald-200/50 transition-all text-emerald-900"
-    >
-      <option value="all">All Status</option>
-      {(["draft", "sent", "viewed", "approved", "rejected", "converted_to_invoice"] as EstimateStatus[]).map((s) => (
-        <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
-      ))}
     </select>
 
     {/* Sort filter */}
@@ -189,25 +240,19 @@ function EstimatesListContent() {
 
   {loading ? (
     <div className="py-12 text-center text-xs sm:text-sm text-emerald-600/60">Loading…</div>
-  ) : filtered.length === 0 ? (
+  ) : rows.length === 0 ? (
     <EmptyState
       icon={FileText}
-      title={estimates.length === 0 ? "No estimates yet" : "No estimates match your filters"}
-      description={estimates.length === 0 ? "Create your first estimate from a project." : "Try a different search or status filter."}
+      title={total === 0 && !search && lifecycle === "all" ? "No estimates yet" : "No estimates match this view"}
+      description={total === 0 && !search && lifecycle === "all" ? "Create your first estimate from a project." : "Try a different tab, search, or type filter."}
     />
   ) : (
     <>
-      {filtered.length > VISIBLE_LIMIT && (
-        <p className="mb-2 text-[11px] text-emerald-700/70">
-          Showing {VISIBLE_LIMIT} of {filtered.length} — refine search/filters to narrow this down.
-        </p>
-      )}
-
-      {/* Desktop & Tablet Table with Green Header — ~10 rows visible,
-          scrolls for the rest (see VISIBLE_LIMIT above the component). */}
-      <div className="hidden max-h-[26rem] overflow-y-auto overflow-x-auto rounded-xl border border-emerald-200/60 bg-white sm:block shadow-sm">
+      {/* Desktop & Tablet Table — one page of ~10 rows, no giant
+          vertically scrolling list (see usePageSize/pagination below). */}
+      <div className="hidden overflow-x-auto rounded-xl border border-emerald-200/60 bg-white sm:block shadow-sm">
         <table className="w-full text-xs sm:text-sm">
-          <thead className="sticky top-0 z-10 bg-gradient-to-r from-emerald-600 to-emerald-700 text-white">
+          <thead className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white">
             <tr>
               <th className="px-3 py-2.5 text-left font-semibold uppercase tracking-wider text-[11px]">Estimate #</th>
               <th className="px-3 py-2.5 text-left font-semibold uppercase tracking-wider text-[11px]">Project</th>
@@ -220,7 +265,7 @@ function EstimatesListContent() {
             </tr>
           </thead>
           <tbody className="divide-y divide-emerald-100/60 capitalize">
-            {visible.map((estimate) => {
+            {rows.map((estimate) => {
               const emailStatus = emailStatusById[estimate.id];
               return (
               <tr key={estimate.id} className={`transition-colors ${STATUS_ROW_BG[estimate.status] || "hover:bg-emerald-50/80"}`}>
@@ -244,10 +289,10 @@ function EstimatesListContent() {
                   )}
                 </td>
                 <td className="px-3 py-2.5 text-emerald-800 font-medium">
-                  {projectsById[estimate.projectId]?.name ?? "—"}
+                  {estimate.projectName ?? "—"}
                 </td>
                 <td className="px-3 py-2.5 text-emerald-600/80">
-                  {estimate.clientId ? clientsById[estimate.clientId]?.name ?? "—" : "—"}
+                  {estimate.clientName ?? "—"}
                 </td>
                 <td className="px-3 py-2.5 text-emerald-600/80 capitalize">
                   {estimate.estimateType === "roofing" ? "Roofing" : "Standard"}
@@ -271,36 +316,20 @@ function EstimatesListContent() {
         </table>
       </div>
 
-      {/* Mobile Cards with Consistent Color — same 10-visible/scroll
-          treatment as the table above. */}
-      <div className="max-h-[38rem] space-y-3 overflow-y-auto pr-0.5 sm:hidden">
-        {visible.map((estimate) => {
+      {/* Mobile Cards — one page of ~6 cards. */}
+      <div className="space-y-3 sm:hidden">
+        {rows.map((estimate) => {
           const emailStatus = emailStatusById[estimate.id];
           const status =
             estimate.status === "converted_to_invoice"
-              ? {
-                  badge: "bg-white/90 text-emerald-700",
-                  label: "Invoiced",
-                }
+              ? { badge: "bg-white/90 text-emerald-700", label: "Invoiced" }
               : estimate.status === "approved"
-              ? {
-                  badge: "bg-emerald-100 text-emerald-800",
-                  label: "Approved",
-                }
+              ? { badge: "bg-emerald-100 text-emerald-800", label: "Approved" }
               : estimate.status === "sent" || estimate.status === "viewed"
-              ? {
-                  badge: "bg-amber-100 text-amber-800",
-                  label: estimate.status === "viewed" ? "Viewed" : "Sent",
-                }
+              ? { badge: "bg-amber-100 text-amber-800", label: estimate.status === "viewed" ? "Viewed" : "Sent" }
               : estimate.status === "rejected"
-              ? {
-                  badge: "bg-rose-100 text-rose-800",
-                  label: "Rejected",
-                }
-              : {
-                  badge: "bg-white/90 text-emerald-700",
-                  label: "Draft",
-                };
+              ? { badge: "bg-rose-100 text-rose-800", label: "Rejected" }
+              : { badge: "bg-white/90 text-emerald-700", label: "Draft" };
 
           return (
             <Link
@@ -332,7 +361,7 @@ function EstimatesListContent() {
 
                   <div className="mt-1.5 flex flex-wrap items-center gap-2">
                     <span className="text-xs text-white/80">
-                      {projectsById[estimate.projectId]?.name ?? "No project"}
+                      {estimate.projectName ?? "No project"}
                     </span>
                     <span className="w-1 h-1 rounded-full bg-white/40" />
                     <span className="text-[10px] uppercase font-semibold text-white/70">
@@ -380,6 +409,44 @@ function EstimatesListContent() {
             </Link>
           );
         })}
+      </div>
+
+      {/* Previous / page numbers / Next — real pagination against the
+          server-reported total, not a client-side slice. */}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-emerald-700/70">
+        <span>
+          Showing {from}–{to} of {total}
+        </span>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-emerald-200 bg-white px-2 font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-40 disabled:hover:bg-white"
+          >
+            <ChevronLeft className="size-3.5" /> Prev
+          </button>
+          {pageNumbers.map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setPage(n)}
+              className={`inline-flex h-7 min-w-7 items-center justify-center rounded-md px-1.5 font-semibold ${
+                n === page ? "bg-emerald-600 text-white" : "border border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50"
+              }`}
+            >
+              {n}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-emerald-200 bg-white px-2 font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-40 disabled:hover:bg-white"
+          >
+            Next <ChevronRight className="size-3.5" />
+          </button>
+        </div>
       </div>
     </>
   )}

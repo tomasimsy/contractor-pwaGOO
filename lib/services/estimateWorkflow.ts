@@ -59,6 +59,7 @@
 import type { EstimateService, Estimate } from "./estimateService";
 import type { InvoiceService, Invoice } from "./invoiceService";
 import type { PaymentService } from "./paymentService";
+import type { ProjectService } from "./projectService";
 
 export interface EstimateWorkflowResult {
   ok: boolean;
@@ -70,6 +71,42 @@ export interface EstimateWorkflowDeps {
   estimateService: EstimateService;
   invoiceService: InvoiceService;
   paymentService: PaymentService;
+  projectService: ProjectService;
+}
+
+/**
+ * Best-effort nudge toward "in_progress" when an estimate gets signed —
+ * a signed job is presumably about to start work, and requiring staff
+ * to separately click through the Project page's own status controls
+ * before "Mark Project Complete" ever becomes available was extra
+ * friction for the common case. Reuses ProjectService.changeStatus/
+ * ValidationService.validateProjectStatusTransition exactly as the
+ * Project page's own status buttons do — no new transition rule, no
+ * bypass of the existing draft->active->in_progress chain (PROJECT_
+ * TRANSITIONS in validationService.ts), just walking it automatically
+ * instead of requiring a click per hop.
+ *
+ * Deliberately does nothing (and never throws) once the project is
+ * already at/past in_progress — on_hold is left alone too, since
+ * putting a job on hold is itself a deliberate decision signing an
+ * estimate must not silently override — and does nothing to a
+ * completed/cancelled/archived project. This must never be able to
+ * block or fail the signing action itself.
+ */
+async function advanceProjectTowardInProgress(projectService: ProjectService, projectId: string): Promise<void> {
+  try {
+    const project = await projectService.getById(projectId);
+    if (!project) return;
+    if (project.status === "draft") {
+      const toActive = await projectService.changeStatus(projectId, "active");
+      if (!toActive.valid) return;
+    } else if (project.status !== "active") {
+      return; // on_hold/in_progress/completed/cancelled/archived — leave as-is
+    }
+    await projectService.changeStatus(projectId, "in_progress");
+  } catch {
+    // Signing must succeed regardless of whether this side-effect did.
+  }
 }
 
 /** Days from issue to due date for an auto-generated invoice — matches
@@ -108,7 +145,7 @@ export async function signEstimate(
   estimateId: string,
   signature: NonNullable<Estimate["signature"]>
 ): Promise<EstimateWorkflowResult> {
-  const { estimateService, invoiceService } = deps;
+  const { estimateService, invoiceService, projectService } = deps;
 
   const before = await estimateService.getById(estimateId);
   if (!before) return { ok: false, message: "Estimate not found." };
@@ -122,6 +159,8 @@ export async function signEstimate(
     }
     estimate = result.estimate;
   }
+
+  await advanceProjectTowardInProgress(projectService, estimate.projectId);
 
   const activeInvoices = await findActiveInvoicesForEstimate(deps, estimate);
   if (activeInvoices.length === 0) {

@@ -705,7 +705,62 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
     return lines;
   }
 
-  return { getById, listForProject, list, create, getScopeLines, updateLineItems, update, recalculateTotal, changeStatus, recordSignature, softDelete, restore };
+  async function listPage(params: {
+    companyId: UUID;
+    lifecycle: "draft" | "sent" | "signed" | "invoiced" | "completed" | "archived" | "all";
+    estimateType?: "all" | "standard" | "roofing";
+    search?: string;
+    sortKey?: "createdAt" | "updatedAt" | "total" | "estimateNumber";
+    sortDir?: "asc" | "desc";
+    page: number;
+    pageSize: number;
+  }) {
+    const { companyId, lifecycle, estimateType = "all", search, sortKey = "createdAt", sortDir = "desc", page, pageSize } = params;
+
+    let rows = Array.from(store.estimates.values()).filter((e) => e.companyId === companyId && !e.deletedAt);
+    if (estimateType !== "all") rows = rows.filter((e) => e.estimateType === estimateType);
+
+    const projectFor = (e: Estimate) => store.projects.get(e.projectId) ?? null;
+    const activeExcluded = (e: Estimate) => {
+      const p = projectFor(e);
+      return p?.status !== "completed" && p?.status !== "archived";
+    };
+
+    switch (lifecycle) {
+      case "draft": rows = rows.filter((e) => e.status === "draft" && activeExcluded(e)); break;
+      case "sent": rows = rows.filter((e) => (e.status === "sent" || e.status === "viewed") && activeExcluded(e)); break;
+      case "signed": rows = rows.filter((e) => e.status === "approved" && activeExcluded(e)); break;
+      case "invoiced": rows = rows.filter((e) => e.status === "converted_to_invoice" && activeExcluded(e)); break;
+      case "completed": rows = rows.filter((e) => projectFor(e)?.status === "completed"); break;
+      case "archived": rows = rows.filter((e) => projectFor(e)?.status === "archived"); break;
+      case "all": default: break;
+    }
+
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase();
+      rows = rows.filter((e) => (e.estimateNumber ?? "").toLowerCase().includes(q) || (e.title ?? "").toLowerCase().includes(q));
+    }
+
+    const dir = sortDir === "asc" ? 1 : -1;
+    rows = [...rows].sort((a, b) => {
+      if (sortKey === "total") return (a.total - b.total) * dir;
+      if (sortKey === "estimateNumber") return (a.estimateNumber ?? "").localeCompare(b.estimateNumber ?? "") * dir;
+      if (sortKey === "updatedAt") return a.updatedAt.localeCompare(b.updatedAt) * dir;
+      return a.createdAt.localeCompare(b.createdAt) * dir;
+    });
+
+    const total = rows.length;
+    const from = (page - 1) * pageSize;
+    const pageRows = rows.slice(from, from + pageSize).map((e) => {
+      const project = projectFor(e);
+      const client = e.clientId ? store.clients.get(e.clientId) ?? null : null;
+      return { ...e, projectName: project?.name ?? null, projectStatus: project?.status ?? null, clientName: client?.name ?? null };
+    });
+
+    return { rows: pageRows, total };
+  }
+
+  return { getById, listForProject, list, create, getScopeLines, updateLineItems, update, recalculateTotal, changeStatus, recordSignature, softDelete, restore, listPage };
 }
 
 /** Extracted from EstimateService during the service-layer completion
