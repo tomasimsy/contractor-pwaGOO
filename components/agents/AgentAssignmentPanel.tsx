@@ -25,7 +25,6 @@
 import { forwardRef, useImperativeHandle, useState } from "react";
 import { Briefcase, Plus, Receipt, Trash2, Lock } from "lucide-react";
 import { useAgentAssignments } from "@/lib/hooks/useAgentAssignments";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { calculateAgentOutstandingBalance } from "@/lib/services/financialCalculations";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -37,21 +36,12 @@ export interface AgentAssignmentPanelRef {
 export const AgentAssignmentPanel = forwardRef<AgentAssignmentPanelRef, {
   companyId: string;
   projectId: string;
-  /** The estimate being viewed. A commission recorded here is tagged
-   * with it, so the cost appears in that estimate's expenses like any
-   * other. The assignment's OWN estimate wins when it has one; this is
-   * the fallback for assignments made at project level. Omitted on
-   * project pages, where no single estimate is implied. */
   estimateId?: string | null;
-  /** Called after any cost-affecting mutation — same onChanged pattern
-   * SubcontractorAssignmentPanel uses. */
   onChanged?: () => void;
-  /** Drops the outer border/heading — used when a parent (e.g.
-   * SubAgentTabsPanel) already provides both, so they aren't doubled. */
   compact?: boolean;
 }>(function AgentAssignmentPanel({ companyId, projectId, estimateId, onChanged, compact = false }, ref) {
   const {
-    roster, assignments, balances, paidByAssignment, pendingReimbursements, reimbursementsOwedByAgent, compensationByAgent,
+    roster, assignments, balances, paidByAssignment, pendingReimbursements, reimbursementsOwedByAgent,
     loading, error, assign, recordCommissionPayment, recordReimbursementPayment, removeAssignment, createAgent, refresh,
   } = useAgentAssignments(companyId, projectId, estimateId);
   const [agentId, setAgentId] = useState("");
@@ -85,40 +75,48 @@ export const AgentAssignmentPanel = forwardRef<AgentAssignmentPanelRef, {
   const Wrapper = compact ? "div" : "section";
 
   return (
-    <Wrapper className={compact ? "" : "rounded-xl border border-border bg-card p-3 sm:p-4"}>
+    <Wrapper className={compact ? "" : "rounded-lg border border-gray-200 bg-white p-3 shadow-sm"}>
       {!compact && (
-        <h2 className="mb-2.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          <Briefcase className="size-3.5" /> Agents
-        </h2>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gray-600">
+            <Briefcase className="size-3.5 text-emerald-500" /> Agents
+          </h2>
+          <span className="text-[10px] text-gray-400">{assignments.length}</span>
+        </div>
       )}
 
       {error && (
-        <div className="mb-2.5 flex items-center justify-between gap-2 rounded-lg bg-danger/10 px-2.5 py-1.5 text-xs text-danger">
+        <div className="mb-2 flex items-center justify-between gap-2 rounded bg-red-50 px-2 py-1 text-xs text-red-600">
           <span>{error}</span>
           <button type="button" onClick={() => refresh()} className="font-medium underline">Retry</button>
         </div>
       )}
 
-      <div className="mb-3 space-y-2 rounded-lg border border-border p-2.5 bg-muted/20">
-        <div className="flex flex-wrap items-center gap-1.5">
+      {/* Assign Section - Compact */}
+      <div className="mb-2 space-y-1.5">
+        <div className="flex flex-wrap items-center gap-1">
           <select
             value={agentId}
             onChange={(e) => setAgentId(e.target.value)}
-            className="h-7 min-w-[120px] flex-1 rounded-md border border-input bg-background px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+            className="h-7 min-w-[100px] flex-1 rounded border border-gray-200 bg-gray-50 px-2 text-xs text-gray-700 focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400/30"
           >
             <option value="">Select agent…</option>
             {roster.map((a) => (
-              <option key={a.id} value={a.id}>{a.name}{a.commissionRate ? ` (${a.commissionRate}%)` : ""}</option>
+              <option key={a.id} value={a.id}>{a.name}</option>
             ))}
           </select>
-          <button type="button" onClick={() => setShowNewAgent((v) => !v)} className="inline-flex h-7 items-center gap-1 rounded-md border border-input px-2 text-xs font-medium text-foreground hover:bg-muted">
+          <button
+            type="button"
+            onClick={() => setShowNewAgent((v) => !v)}
+            className="inline-flex h-7 items-center gap-0.5 rounded border border-gray-200 px-2 text-[10px] font-medium text-gray-600 hover:bg-gray-50"
+          >
             <Plus className="size-3" /> New
           </button>
           <input
-            type="number" min="0" step="any" placeholder="Amount"
+            type="number" min="0" step="any" placeholder="$"
             value={assignedAmount || ""}
             onChange={(e) => setAssignedAmount(parseFloat(e.target.value) || 0)}
-            className="h-7 w-28 rounded-md border border-input bg-background px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+            className="h-7 w-20 rounded border border-gray-200 bg-gray-50 px-1.5 text-xs text-gray-700 focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400/30"
           />
           <button
             type="button"
@@ -131,28 +129,26 @@ export const AgentAssignmentPanel = forwardRef<AgentAssignmentPanelRef, {
                 setAgentId("");
                 setAssignedAmount(0);
               } catch (err) {
-                setAssignError(err instanceof Error ? err.message : "Could not assign this agent.");
+                setAssignError(err instanceof Error ? err.message : "Could not assign.");
               }
             }}
-            className="inline-flex h-7 items-center rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            className="inline-flex h-7 items-center rounded bg-emerald-600 px-2.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Assign
           </button>
         </div>
-        {assignError && (
-          <p role="alert" className="text-[11px] font-medium text-danger">{assignError}</p>
-        )}
+        {assignError && <p className="text-[10px] text-red-500">{assignError}</p>}
 
         {showNewAgent && (
-          <div className="flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-2">
+          <div className="flex flex-wrap items-center gap-1 border-t border-gray-100 pt-1.5">
             <input
-              placeholder="Agent name" value={newAgentName} onChange={(e) => setNewAgentName(e.target.value)}
-              className="h-7 flex-1 rounded-md border border-input bg-background px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+              placeholder="Name" value={newAgentName} onChange={(e) => setNewAgentName(e.target.value)}
+              className="h-7 flex-1 rounded border border-gray-200 bg-gray-50 px-2 text-xs text-gray-700 focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400/30"
             />
             <input
               type="number" min="0" step="any" placeholder="Rate %"
               value={newAgentRate} onChange={(e) => setNewAgentRate(e.target.value)}
-              className="h-7 w-20 rounded-md border border-input bg-background px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+              className="h-7 w-16 rounded border border-gray-200 bg-gray-50 px-1.5 text-xs text-gray-700 focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400/30"
             />
             <button
               type="button"
@@ -164,7 +160,7 @@ export const AgentAssignmentPanel = forwardRef<AgentAssignmentPanelRef, {
                 setNewAgentRate("");
                 setShowNewAgent(false);
               }}
-              className="inline-flex h-7 items-center rounded-md border border-input px-2.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+              className="inline-flex h-7 items-center rounded bg-emerald-600 px-2.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
             >
               Add
             </button>
@@ -172,69 +168,90 @@ export const AgentAssignmentPanel = forwardRef<AgentAssignmentPanelRef, {
         )}
       </div>
 
+      {/* Assignments List - Compact */}
       {assignments.length === 0 ? (
-        <EmptyState title="No agents assigned" description="Assign an agent to this project to start tracking commissions." />
+        <div className="py-4 text-center">
+          <p className="text-xs text-gray-400">No agents assigned</p>
+        </div>
       ) : (
-        <ul className="max-h-64 divide-y divide-border overflow-y-auto pr-1">
+        <ul className="max-h-64 divide-y divide-gray-100 overflow-y-auto pr-0.5">
           {assignments.map((a) => {
-            // Keyed by AGENT, not assignment — one payee, one balance.
+            const agent = roster.find(r => r.id === a.agentId);
             const balance = balances[a.agentId];
-            const owedExpenses = pendingReimbursements[a.agentId] ?? [];
-            const reimbursementsOwed = reimbursementsOwedByAgent[a.agentId] ?? 0;
-            // Commission earned = what was CONTRACTED via assignment;
-            // payments made = the expense rows actually written. Both from
-            // FinancialEngine.getPayeeBalances — no agent_payments table
-            // is consulted, because a commission payment IS an expense now.
+            const owedExpenses = pendingReimbursements?.[a.agentId] ?? [];
+            const reimbursementsOwed = reimbursementsOwedByAgent?.[a.agentId] ?? 0;
             const commissionEarned = balance?.contracted ?? 0;
             const paymentsMade = balance?.paid ?? 0;
             const totalOutstanding = calculateAgentOutstandingBalance(commissionEarned, reimbursementsOwed, paymentsMade);
+            const hasPayments = (paidByAssignment?.[a.id] ?? 0) > 0;
 
             return (
-              <li key={a.id} className="space-y-2 py-2.5 text-xs">
+              <li key={a.id} className="py-2 text-xs">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="font-medium text-foreground">{a.agentName}</div>
-                  {/* Money already paid against THIS assignment locks
-                      it: the assignment is the only record of what
-                      that payment was for. See removeAssignment. */}
-                  {(paidByAssignment[a.id] ?? 0) > 0 ? (
-                    <span
-                      title={`Paid ${money(paidByAssignment[a.id] ?? 0)} on this job — reverse that payment before unassigning.`}
-                      className="flex shrink-0 items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground"
-                    >
-                      <Lock className="size-3" aria-hidden="true" /> Paid
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleRemove(a)}
-                      disabled={busyId === a.id}
-                      aria-label={`Remove ${a.agentName}`}
-                      className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-40"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  )}
-                </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1">
+                      <span className="font-medium text-gray-800">{a.agentName}</span>
+                      {agent?.commissionRate && (
+                        <span className="text-[9px] text-gray-400">· {agent.commissionRate}%</span>
+                      )}
+                    </div>
+                  </div>
 
-                {/* Balance breakdown — every figure is read from
-                    AgentCommissionService/ExpenseService, never
-                    recomputed independently. */}
-                <div className="grid grid-cols-2 gap-x-3 gap-y-1 rounded-md bg-muted/30 p-2 text-[11px]">
-                  <div className="flex justify-between"><span className="text-muted-foreground">Commission Earned</span><span className="font-medium text-foreground">{money(commissionEarned)}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">Reimbursements Owed</span><span className="font-medium text-foreground">{money(reimbursementsOwed)}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">Payments Made</span><span className="font-medium text-foreground">{money(paymentsMade)}</span></div>
-                  <div className="flex justify-between border-t border-border/60 pt-1 col-span-2">
-                    <span className="font-semibold text-foreground">Total Outstanding</span>
-                    <span className={`font-semibold ${totalOutstanding > 0 ? "text-warning-foreground" : "text-foreground"}`}>{money(totalOutstanding)}</span>
+                  <div className="shrink-0 text-right">
+                    <div className={`text-[10px] font-semibold ${totalOutstanding > 0 ? "text-emerald-600" : "text-gray-800"}`}>
+                      {money(totalOutstanding)}
+                    </div>
+                    <div className="text-[9px] text-gray-400">owed</div>
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    {hasPayments ? (
+                      <span className="flex items-center gap-0.5 rounded border border-gray-200 px-1.5 py-0.5 text-[9px] font-medium text-gray-500 bg-gray-100">
+                        <Lock className="size-2.5" /> Paid
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleRemove(a)}
+                        disabled={busyId === a.id}
+                        className="rounded p-0.5 text-gray-300 hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
+                      >
+                        <Trash2 className="size-3" />
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-1.5">
+                {/* Balance breakdown - compact */}
+                <div className="mt-1.5 grid grid-cols-4 gap-1 text-[10px]">
+                  <div className="flex justify-between px-1.5 py-0.5 rounded bg-gray-100/50">
+                    <span className="text-gray-500">Earned</span>
+                    <span className="font-medium text-gray-700">{money(commissionEarned)}</span>
+                  </div>
+                  <div className="flex justify-between px-1.5 py-0.5 rounded bg-gray-100/50">
+                    <span className="text-gray-500">Reimb.</span>
+                    <span className="font-medium text-gray-700">{money(reimbursementsOwed)}</span>
+                  </div>
+                  <div className="flex justify-between px-1.5 py-0.5 rounded bg-gray-100/50">
+                    <span className="text-gray-500">Paid</span>
+                    <span className="font-medium text-gray-700">{money(paymentsMade)}</span>
+                  </div>
+                  <div className="flex justify-between px-1.5 py-0.5 rounded bg-emerald-100/50">
+                    <span className="text-emerald-700">Owed</span>
+                    <span className={`font-semibold ${totalOutstanding > 0 ? "text-emerald-600" : "text-gray-700"}`}>
+                      {money(totalOutstanding)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Commission Payment */}
+                <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                  <span className="text-[9px] text-gray-400">Commission:</span>
                   <input
-                    type="number" min="0" step="any" placeholder="Commission payment"
+                    type="number" min="0" step="any" placeholder="$"
                     value={commissionAmounts[a.id] || ""}
                     onChange={(e) => setCommissionAmounts({ ...commissionAmounts, [a.id]: parseFloat(e.target.value) || 0 })}
-                    className="h-7 flex-1 min-w-[120px] rounded-md border border-input bg-background px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+                    className="h-6 w-20 rounded border border-gray-200 bg-white px-1.5 text-xs text-gray-700 focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400/30"
                   />
                   <button
                     type="button"
@@ -249,45 +266,34 @@ export const AgentAssignmentPanel = forwardRef<AgentAssignmentPanelRef, {
                       onChanged?.();
                       setCommissionAmounts({ ...commissionAmounts, [a.id]: 0 });
                     }}
-                    className="inline-flex h-7 items-center rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                    className="inline-flex h-6 items-center rounded bg-emerald-600 px-2 text-[10px] font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
                   >
-                    Pay Comm.
+                    Pay
                   </button>
                 </div>
 
+                {/* Reimbursement Payments - compact */}
                 {owedExpenses.length > 0 && (
-                  <div className="space-y-1.5 rounded-md bg-muted/40 p-2">
-                    {/* Clearly labeled reimbursement entries, each with
-                        the expense's own date/category so it's obvious
-                        WHY money is owed — not just an amount. */}
-                    <ul className="space-y-1">
-                      {owedExpenses.map((exp) => (
-                        <li key={exp.id} className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <Receipt className="size-3" />
-                            <span className="font-medium text-foreground">Expense Reimbursement</span>
-                            — {exp.category} · {exp.expenseDate}
-                          </span>
-                          <span className="font-medium text-foreground">{money(exp.amount)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                    <div className="flex flex-wrap items-center gap-1.5">
+                  <div className="mt-1.5 space-y-1">
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span className="text-[9px] text-gray-400">Reimburse:</span>
                       <select
                         value={reimbursementExpense[a.agentId] ?? ""}
                         onChange={(e) => setReimbursementExpense({ ...reimbursementExpense, [a.agentId]: e.target.value })}
-                        className="h-7 min-w-[120px] flex-1 rounded-md border border-input bg-background px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+                        className="h-6 min-w-[100px] flex-1 rounded border border-gray-200 bg-white px-1.5 text-[10px] text-gray-700 focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400/30"
                       >
                         <option value="">Select expense…</option>
                         {owedExpenses.map((exp) => (
-                          <option key={exp.id} value={exp.id}>{exp.category} · {exp.expenseDate} — {money(exp.amount)}</option>
+                          <option key={exp.id} value={exp.id}>
+                            {exp.category} · {exp.expenseDate} — {money(exp.amount)}
+                          </option>
                         ))}
                       </select>
                       <input
-                        type="number" min="0" step="any" placeholder="Amount"
+                        type="number" min="0" step="any" placeholder="$"
                         value={reimbursementAmount[a.agentId] || ""}
                         onChange={(e) => setReimbursementAmount({ ...reimbursementAmount, [a.agentId]: parseFloat(e.target.value) || 0 })}
-                        className="h-7 w-24 rounded-md border border-input bg-background px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+                        className="h-6 w-16 rounded border border-gray-200 bg-white px-1.5 text-xs text-gray-700 focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400/30"
                       />
                       <button
                         type="button"
@@ -298,10 +304,19 @@ export const AgentAssignmentPanel = forwardRef<AgentAssignmentPanelRef, {
                           setReimbursementAmount({ ...reimbursementAmount, [a.agentId]: 0 });
                           setReimbursementExpense({ ...reimbursementExpense, [a.agentId]: "" });
                         }}
-                        className="inline-flex h-7 items-center rounded-md border border-input px-2.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                        className="inline-flex h-6 items-center rounded border border-gray-200 px-2 text-[10px] font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-50"
                       >
                         Reimburse
                       </button>
+                    </div>
+                    {/* Pending reimbursements list - compact */}
+                    <div className="flex flex-wrap gap-1">
+                      {owedExpenses.map((exp) => (
+                        <span key={exp.id} className="inline-flex items-center gap-0.5 rounded bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-500">
+                          <Receipt className="size-2" />
+                          {money(exp.amount)}
+                        </span>
+                      ))}
                     </div>
                   </div>
                 )}

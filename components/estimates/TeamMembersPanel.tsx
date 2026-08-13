@@ -66,8 +66,6 @@ type MemberCard = TeamAssignmentWithName & {
   personallyPaid: number;
   reimbursed: number;
   pending: number;
-  /** Assigned labour that has actually been PAID to them on this
-   * estimate. Non-zero locks the assignment: see handleRemove. */
   labourPaid: number;
 };
 
@@ -77,13 +75,7 @@ export const TeamMembersPanel = forwardRef<
     companyId: string;
     estimateId: string;
     projectId: string | null;
-    /** Same onChanged contract the Sub/Agent panels use. Nothing here
-     * changes a total today, but a future labor payment will. */
     onChanged?: () => Promise<void> | void;
-    /** Drops the outer border/heading — used when a parent (e.g.
-     * SubAgentTabsPanel) already provides both, so they aren't
-     * doubled. Same convention as SubcontractorAssignmentPanel/
-     * AgentAssignmentPanel's own `compact` prop. */
     compact?: boolean;
   }
 >(function TeamMembersPanel({ companyId, estimateId, projectId, onChanged, compact = false }, ref) {
@@ -112,7 +104,6 @@ export const TeamMembersPanel = forwardRef<
         expenseService.listForEstimate(estimateId),
       ]);
 
-      // Group this estimate's employee-paid costs by who fronted them.
       const byUser = new Map<string, Expense[]>();
       for (const e of expenses) {
         if (e.paidByType !== "employee" || !e.paidById) continue;
@@ -121,10 +112,6 @@ export const TeamMembersPanel = forwardRef<
         byUser.set(e.paidById, list);
       }
 
-      /* Labour PAID OUT to a member — the company paying them for
-       * assigned work, which is the opposite direction to the
-       * personally-paid rows above and so a separate grouping. Same
-       * expense rows a labour payout writes, read back. */
       const labourByUser = new Map<string, number>();
       for (const e of expenses) {
         if (e.expenseType !== "labor" || e.payeeType !== "employee" || !e.payeeId || !e.isPaid) continue;
@@ -140,7 +127,6 @@ export const TeamMembersPanel = forwardRef<
             reimbursed: theirs
               .filter((e) => e.reimbursementStatus === "reimbursed")
               .reduce((sum, e) => sum + e.amount, 0),
-            // The shared rule, not a local re-filter.
             pending: calculateExpenseTotals(theirs).outstandingReimbursements,
             labourPaid: labourByUser.get(a.userId) ?? 0,
           };
@@ -190,9 +176,6 @@ export const TeamMembersPanel = forwardRef<
   }
 
   async function handleRemove(card: MemberCard) {
-    /* Mirrors the guard in TeamAssignmentService.softDelete, which is
-       the authoritative one. Repeated here only so the user gets a
-       plain sentence instead of a thrown error after a confirm. */
     if (card.labourPaid > 0) {
       setError(
         `${card.memberName} has already been paid ${money(card.labourPaid)} for this assignment. ` +
@@ -204,10 +187,6 @@ export const TeamMembersPanel = forwardRef<
     setBusyId(card.id);
     setError(null);
     try {
-      // Soft delete with a reason — same discipline as every other
-      // record. Their EXPENSES are untouched: those are separate rows
-      // owned by ExpenseService, and unassigning somebody must never
-      // erase money they actually spent.
       await teamAssignmentService.softDelete(card.id, "User removed assignment via UI");
       await load();
       await onChanged?.();
@@ -219,83 +198,77 @@ export const TeamMembersPanel = forwardRef<
   }
 
   return (
-    <div className={compact ? "" : "rounded-xl border border-border bg-card p-3 shadow-xs sm:p-4"}>
-      <div className="mb-3 flex items-center justify-between gap-2">
-        {!compact && (
-          <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            <UsersRound className="size-4 text-primary" /> Team Members
+    <div className={compact ? "" : "rounded-lg border border-gray-200 bg-white p-3 shadow-sm"}>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2">
+        {!compact ? (
+          <h2 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gray-600">
+            <UsersRound className="size-3.5 text-emerald-500" /> Team Members
           </h2>
+        ) : (
+          <span />
         )}
-        {compact && <span />}
-        {!adding && (
-          <button
-            type="button"
-            onClick={() => {
-              setAdding(true);
-              setError(null);
-            }}
-            className="inline-flex items-center gap-1 rounded-lg border border-input px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted"
-          >
-            <Plus className="size-3.5" /> Assign
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-gray-400">{cards.length}</span>
+          {!adding && (
+            <button
+              type="button"
+              onClick={() => {
+                setAdding(true);
+                setError(null);
+              }}
+              className="inline-flex h-6 items-center gap-0.5 rounded border border-gray-200 px-2 text-[10px] font-medium text-gray-600 hover:bg-gray-50"
+            >
+              <Plus className="size-3" /> Assign
+            </button>
+          )}
+        </div>
       </div>
 
       {error && (
-        <div role="alert" className="mb-2 rounded-lg bg-danger/10 px-2.5 py-2 text-xs text-danger">
+        <div role="alert" className="mb-2 rounded bg-red-50 px-2 py-1 text-xs text-red-600">
           {error}
         </div>
       )}
 
+      {/* Assign Form - Compact */}
       {adding && (
-        <div className="mb-3 space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-2.5">
-          <div>
-            <span className="mb-1 block text-xs font-semibold text-foreground">Team member</span>
-            <CreateOrSelect
-              adapter={memberDir}
-              value={memberId}
-              valueLabel={memberLabel}
-              onChange={(opt: DirectoryOption | null) => {
-                setMemberId(opt?.id ?? null);
-                setMemberLabel(opt?.label ?? null);
-              }}
-              placeholder="Select a team member"
+        <div className="mb-2 space-y-1.5 rounded border border-emerald-200/50 bg-emerald-50/30 p-2">
+          <CreateOrSelect
+            adapter={memberDir}
+            value={memberId}
+            valueLabel={memberLabel}
+            onChange={(opt: DirectoryOption | null) => {
+              setMemberId(opt?.id ?? null);
+              setMemberLabel(opt?.label ?? null);
+            }}
+            placeholder="Select team member"
+          />
+
+          <div className="flex flex-wrap items-center gap-1">
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="$"
+              className="h-7 w-20 rounded border border-gray-200 bg-gray-50 px-1.5 text-xs text-gray-700 focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400/30"
             />
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold text-foreground">Assigned labor</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                inputMode="decimal"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.00"
-                className="h-9 w-full rounded-lg border border-input bg-background px-2.5 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold text-foreground">Notes</span>
-              <input
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Optional"
-                className="h-9 w-full rounded-lg border border-input bg-background px-2.5 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
-              />
-            </label>
-          </div>
-
-          <div className="flex justify-end gap-2">
+            <input
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Notes"
+              className="h-7 flex-1 min-w-[80px] rounded border border-gray-200 bg-gray-50 px-1.5 text-xs text-gray-700 focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400/30"
+            />
             <button
               type="button"
               onClick={() => {
                 setAdding(false);
                 setError(null);
               }}
-              className="rounded-lg border border-input px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+              className="inline-flex h-6 items-center rounded border border-gray-200 px-2 text-[10px] font-medium text-gray-600 hover:bg-gray-50"
             >
               Cancel
             </button>
@@ -303,74 +276,79 @@ export const TeamMembersPanel = forwardRef<
               type="button"
               onClick={handleAssign}
               disabled={saving}
-              className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+              className="inline-flex h-6 items-center rounded bg-emerald-600 px-2.5 text-[10px] font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
             >
-              {saving ? "Assigning…" : "Assign"}
+              {saving ? "…" : "Assign"}
             </button>
           </div>
         </div>
       )}
 
+      {/* Cards List - Compact */}
       {loading ? (
-        <p className="py-4 text-center text-xs text-muted-foreground">Loading…</p>
+        <p className="py-3 text-center text-xs text-gray-400">Loading…</p>
       ) : cards.length === 0 ? (
-        <EmptyState
-          icon={UsersRound}
-          title="No team members assigned"
-          description="Assign someone to track their labor and any costs they front."
-        />
+        <div className="py-4 text-center">
+          <UsersRound className="mx-auto size-6 text-gray-300" />
+          <p className="mt-1 text-xs text-gray-400">No team members assigned</p>
+        </div>
       ) : (
-        <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+        <div className="space-y-1.5 max-h-64 overflow-y-auto pr-0.5">
           {cards.map((c) => (
-            <div key={c.id} className="rounded-lg border border-border/70 bg-background p-2.5">
-              <div className="mb-2 flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold text-foreground">{c.memberName}</div>
-                  {c.notes && (
-                    <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{c.notes}</div>
-                  )}
+            <div key={c.id} className="rounded border border-gray-200 bg-gray-50/50 p-2">
+              {/* Header Row */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate text-xs font-medium text-gray-800">{c.memberName}</span>
+                    {c.notes && <span className="text-[9px] text-gray-400">· {c.notes}</span>}
+                  </div>
                 </div>
-                {/* Paid work is locked: the assignment is the only record
-                    of what the labour payment was for, so it outlives the
-                    ability to unassign. */}
+
                 {c.labourPaid > 0 ? (
-                  <span
-                    title={`Paid ${money(c.labourPaid)} — reverse that payment before unassigning.`}
-                    className="flex shrink-0 items-center gap-1 rounded border border-border px-1.5 py-1 text-[10px] font-semibold text-muted-foreground"
-                  >
-                    <Lock className="size-3" aria-hidden="true" /> Paid
+                  <span className="flex shrink-0 items-center gap-0.5 rounded border border-gray-200 px-1.5 py-0.5 text-[9px] font-medium text-gray-500 bg-gray-100">
+                    <Lock className="size-2.5" /> Paid
                   </span>
                 ) : (
                   <button
                     type="button"
                     onClick={() => handleRemove(c)}
                     disabled={busyId === c.id}
-                    aria-label={`Remove ${c.memberName}`}
-                    className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-40"
+                    className="rounded p-0.5 text-gray-300 hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
                   >
-                    <Trash2 className="size-3.5" />
+                    <Trash2 className="size-3" />
                   </button>
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-                {[
-                  { label: "Assigned Labor", value: money(c.amount), tone: "text-foreground" },
-                  { label: "Personally Paid", value: money(c.personallyPaid), tone: "text-foreground" },
-                  { label: "Reimbursed", value: money(c.reimbursed), tone: "text-success" },
-                  {
-                    label: "Pending Reimbursement",
-                    value: money(c.pending),
-                    tone: c.pending > 0 ? "text-warning" : "text-muted-foreground",
-                  },
-                ].map((f) => (
-                  <div key={f.label}>
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      {f.label}
-                    </div>
-                    <div className={`text-sm font-semibold tabular-nums ${f.tone}`}>{f.value}</div>
+              {/* Stats - Label above value, 2-column grid */}
+              <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1">
+                <div>
+                  <div className="text-[9px] font-medium uppercase tracking-wider text-gray-400">
+                    Assigned Labor
                   </div>
-                ))}
+                  <div className="text-xs font-semibold text-gray-800">{money(c.amount)}</div>
+                </div>
+                <div>
+                  <div className="text-[9px] font-medium uppercase tracking-wider text-gray-400">
+                    Personally Paid
+                  </div>
+                  <div className="text-xs font-semibold text-gray-800">{money(c.personallyPaid)}</div>
+                </div>
+                <div>
+                  <div className="text-[9px] font-medium uppercase tracking-wider text-gray-400">
+                    Reimbursed
+                  </div>
+                  <div className="text-xs font-semibold text-emerald-600">{money(c.reimbursed)}</div>
+                </div>
+                <div>
+                  <div className="text-[9px] font-medium uppercase tracking-wider text-gray-400">
+                    Pending Reimbursement
+                  </div>
+                  <div className={`text-xs font-semibold ${c.pending > 0 ? "text-amber-600" : "text-gray-400"}`}>
+                    {money(c.pending)}
+                  </div>
+                </div>
               </div>
             </div>
           ))}
