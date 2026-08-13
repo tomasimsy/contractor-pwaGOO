@@ -37,8 +37,8 @@ type Row = Awaited<ReturnType<ReturnType<typeof useServices>["estimateService"][
 
 const LIFECYCLE_TABS: { key: Lifecycle; label: string }[] = [
   { key: "draft", label: "Drafts" },
-  { key: "sent", label: "Sent" },
-  { key: "signed", label: "Signed" },
+  // { key: "sent", label: "Sent" },
+  // { key: "signed", label: "Signed" },
   { key: "invoiced", label: "Invoiced" },
   { key: "completed", label: "Completed" },
   { key: "archived", label: "Archived" },

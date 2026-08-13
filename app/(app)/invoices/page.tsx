@@ -168,7 +168,6 @@ function InvoicesListContent() {
   }, [filtered]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-500 via-teal-600 to-cyan-700">
       <PageContainer>
         <PageHeader
           title="Invoices"
@@ -185,13 +184,13 @@ function InvoicesListContent() {
         />
 
         {error && (
-          <div className="mb-4 rounded-lg bg-gradient-to-r from-rose-50 to-rose-100 border border-rose-200 px-4 py-3 text-sm text-rose-700 shadow-lg shadow-rose-500/10">
+          <div className="mb-4 rounded-lg bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-700">
             {error}
           </div>
         )}
 
-        {/* Filters - Gradient Card */}
-        <div className="mb-6 flex flex-wrap items-center gap-3 p-4 rounded-lg bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 border border-white/30 shadow-xl shadow-black/20">
+        {/* Filters */}
+        <div className="mb-6 flex flex-wrap items-center gap-3 p-4 rounded-lg bg-white border border-emerald-200/60 shadow-sm">
           <div className="relative flex-1 min-w-[180px] max-w-sm">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-emerald-500" />
             <input
@@ -245,11 +244,11 @@ function InvoicesListContent() {
         </div>
 
         {loading ? (
-          <div className="py-12 text-center text-sm text-white/80">
+          <div className="py-12 text-center text-sm text-emerald-600/60">
             Loading...
           </div>
         ) : sortedFilteredInvoices.length === 0 ? (
-          <div className="rounded-lg bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 border border-white/30 p-8 shadow-xl shadow-black/20">
+          <div className="rounded-lg bg-white border border-emerald-200/60 p-8 shadow-sm">
             <EmptyState
               icon={Receipt}
               title={
@@ -262,10 +261,10 @@ function InvoicesListContent() {
           </div>
         ) : (
           <>
-            {/* DESKTOP TABLE - Gradient Card */}
-            <div className="hidden overflow-x-auto rounded-lg bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 border border-white/30 shadow-xl shadow-black/20 sm:block">
+            {/* Desktop table */}
+            <div className="hidden overflow-x-auto rounded-lg bg-white border border-emerald-200/60 shadow-sm sm:block">
               <table className="w-full text-sm">
-                <thead className="bg-gradient-to-r from-emerald-200/40 via-teal-200/40 to-cyan-200/40 border-b border-white/30">
+                <thead className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white">
                   <tr>
                     {[
                       "Invoice #",
@@ -277,7 +276,7 @@ function InvoicesListContent() {
                     ].map((title) => (
                       <th
                         key={title}
-                        className="px-4 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-emerald-800"
+                        className="px-4 py-3.5 text-left text-xs font-bold uppercase tracking-wider"
                       >
                         {title}
                       </th>
@@ -285,7 +284,7 @@ function InvoicesListContent() {
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-white/30">
+                <tbody className="divide-y divide-emerald-100/60">
                   {sortedFilteredInvoices.map((invoice) => {
                     const border =
                       invoice.status === "paid"
@@ -302,7 +301,7 @@ function InvoicesListContent() {
                     return (
                       <tr
                         key={invoice.id}
-                        className={`${border} transition-colors hover:bg-white/40`}
+                        className={`${border} transition-colors hover:bg-emerald-50/80`}
                       >
                         <td className="px-4 py-3.5">
                           <Link
@@ -359,59 +358,54 @@ function InvoicesListContent() {
               </table>
             </div>
 
-            {/* MOBILE CARDS - Gradient Cards */}
+            {/* Mobile cards — solid dark emerald, same treatment the
+                Estimates list mobile cards use, so the two lists read as
+                one design language instead of two different apps. No
+                per-render randomness: color is driven by invoice
+                STATUS (a real fact), never Math.random(). */}
             <div className="space-y-3 sm:hidden">
               {sortedFilteredInvoices.map((invoice) => {
                 const estId = (invoice as any).estimateId;
                 const estimateTitle = estId ? estimatesById[estId]?.title : null;
                 const projectName = projectsById[invoice.projectId]?.name ?? "—";
 
-                let statusBadge = "bg-gray-100 text-gray-600";
+                let statusBadge = "bg-white/90 text-slate-700";
                 let statusLabel = "Draft";
-                
+
                 if (invoice.status === "paid") {
-                  statusBadge = "bg-emerald-100 text-emerald-700";
+                  statusBadge = "bg-emerald-100 text-emerald-800";
                   statusLabel = "Paid";
                 } else if (invoice.status === "partially_paid") {
-                  statusBadge = "bg-amber-100 text-amber-700";
+                  statusBadge = "bg-amber-100 text-amber-800";
                   statusLabel = "Partial";
                 } else if (invoice.status === "overdue") {
-                  statusBadge = "bg-rose-100 text-rose-700";
+                  statusBadge = "bg-rose-100 text-rose-800";
                   statusLabel = "Overdue";
                 } else if (invoice.status === "sent") {
-                  statusBadge = "bg-blue-100 text-blue-700";
+                  statusBadge = "bg-blue-100 text-blue-800";
                   statusLabel = "Sent";
                 }
-
-                // Random gradient for each card
-                const gradients = [
-                  "from-emerald-50 via-teal-50 to-cyan-50",
-                  "from-emerald-100 via-teal-50 to-cyan-50",
-                  "from-emerald-50 via-teal-100 to-cyan-50",
-                  "from-emerald-50 via-teal-50 to-cyan-100",
-                ];
-                const gradient = gradients[Math.floor(Math.random() * gradients.length)];
 
                 return (
                   <Link
                     key={invoice.id}
                     href={`/invoices/${invoice.id}`}
-                    className={`group block rounded-lg bg-gradient-to-br ${gradient} border border-white/30 p-4 shadow-xl shadow-black/20 transition-all hover:shadow-2xl hover:shadow-black/30 hover:scale-[1.02]`}
+                    className="group relative flex flex-col gap-3 rounded-xl bg-gradient-to-br from-emerald-700 to-emerald-900 border border-emerald-600 px-4 py-3.5 shadow-sm transition-all hover:shadow-md hover:scale-[1.01] hover:from-emerald-800 hover:to-emerald-950"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <h3 className="truncate text-sm font-bold text-emerald-900">
+                        <h3 className="truncate text-sm font-bold text-white">
                           {invoice.invoiceNumber || invoice.id.slice(0, 8)}
                         </h3>
-                        
-                        <div className="mt-1 flex flex-wrap items-center gap-2">
-                          <span className="text-xs text-emerald-700/80">
+
+                        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                          <span className="text-xs text-white/80">
                             {projectName}
                           </span>
                           {estimateTitle && (
                             <>
-                              <span className="w-1 h-1 rounded-full bg-emerald-300" />
-                              <span className="text-xs text-emerald-600/70">
+                              <span className="w-1 h-1 rounded-full bg-white/40" />
+                              <span className="text-xs text-white/70">
                                 {estimateTitle}
                               </span>
                             </>
@@ -420,24 +414,24 @@ function InvoicesListContent() {
                       </div>
 
                       <div className="shrink-0 text-right">
-                        <div className="text-base font-bold text-emerald-900">
+                        <div className="text-base font-bold text-white">
                           {formatMoney(invoice.total)}
                         </div>
                         <div className="mt-0.5">
-                          <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase ${statusBadge}`}>
+                          <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${statusBadge}`}>
                             {statusLabel}
                           </span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="mt-2.5 flex items-center justify-between border-t border-white/30 pt-2.5">
-                      <div className="text-xs text-emerald-600/70">
+                    <div className="flex items-center justify-between border-t border-white/20 pt-2.5">
+                      <div className="text-[10px] text-white/70">
                         {invoice.clientId ? clientsById[invoice.clientId]?.name ?? "—" : "—"}
                       </div>
                       {invoice.dueDate && (
-                        <div className="text-xs text-emerald-600/70">
-                          Due: <span className="font-medium text-emerald-700">{invoice.dueDate}</span>
+                        <div className="text-[10px] text-white/70">
+                          Due: <span className="font-medium text-white">{invoice.dueDate}</span>
                         </div>
                       )}
                     </div>
@@ -448,7 +442,6 @@ function InvoicesListContent() {
           </>
         )}
       </PageContainer>
-    </div>
   );
 }
 
