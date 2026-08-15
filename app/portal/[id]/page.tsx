@@ -158,6 +158,9 @@ export default async function CustomerPortalPage({
           {client?.name && (
             <div className="min-w-0 text-right">
               <p className="text-sm font-bold text-gray-900">{client.name}</p>
+              {client.phone && <p className="text-[11px] text-gray-500">{client.phone}</p>}
+              {client.email && <p className="truncate text-[11px] text-gray-500">{client.email}</p>}
+              {client.address && <p className="text-[11px] text-gray-500">{client.address}</p>}
               <p className="font-mono text-[11px] text-gray-500">#{estimate.estimate_number ?? estimate.id.slice(0, 8)}</p>
             </div>
           )}
