@@ -354,6 +354,21 @@ function CompanySettingsContent() {
         </section>
 
         <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
+          <h2 className="mb-1 text-sm font-semibold text-foreground">Payment Instructions</h2>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Shown to the customer on the estimate PDF and the customer portal — e.g. how to pay
+            (check payable to, bank transfer details, accepted cards, a deposit policy).
+          </p>
+          <textarea
+            value={form.payment_instructions ?? ""}
+            onChange={(e) => setField("payment_instructions", e.target.value)}
+            rows={4}
+            placeholder="e.g. Make checks payable to Acme Roofing LLC. A 50% deposit is due at signing, with the balance due on completion."
+            className="w-full rounded-lg border border-input bg-background px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+          />
+        </section>
+
+        <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
           <h2 className="mb-3 text-sm font-semibold text-foreground">Notes</h2>
           <textarea
             value={form.notes ?? ""}
