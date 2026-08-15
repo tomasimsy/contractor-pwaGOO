@@ -59,6 +59,8 @@ function buildEmailHtml(opts: {
   companyName: string;
   companyDba: string | null;
   companyPhone: string | null;
+  companyEmail: string | null;
+  companyWebsite: string | null;
   clientName: string;
   message: string;
   portalUrl: string;
@@ -69,7 +71,18 @@ function buildEmailHtml(opts: {
   const displayName = opts.companyDba
     ? `${opts.companyName} (dba ${opts.companyDba})`
     : opts.companyName;
-  const phoneLine = opts.companyPhone ? `<div>${formatPhoneDisplay(opts.companyPhone)}</div>` : "";
+  // Signature block — company name, then dba/phone/email/website each
+  // on their own line, same "one field, one line, only if set"
+  // convention the portal header and PDF header already use.
+  const signatureLines = [
+    opts.companyDba ? `dba ${opts.companyDba}` : null,
+    opts.companyPhone ? formatPhoneDisplay(opts.companyPhone) : null,
+    opts.companyEmail || null,
+    opts.companyWebsite || null,
+  ]
+    .filter((line): line is string => !!line)
+    .map((line) => `<div>${line}</div>`)
+    .join("");
   return `
     <!DOCTYPE html>
     <html>
@@ -92,8 +105,8 @@ function buildEmailHtml(opts: {
             The full proposal (#${opts.estimateNumber}) is also attached to this email as a PDF.
           </div>
           <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280; line-height: 1.6;">
-            <div style="font-weight: 600; color: #374151;">${displayName}</div>
-            ${phoneLine}
+            <div style="font-weight: 600; color: #374151;">${opts.companyName}</div>
+            ${signatureLines}
           </div>
         </div>
         <div style="text-align:center; margin-top: 20px; font-size: 11px; color: #9ca3af;">
@@ -151,17 +164,20 @@ export async function sendEstimateEmail(input: SendEstimateEmailInput): Promise<
   }
 
   const estimateNumber = data.estimate.estimate_number || data.estimate.id.slice(0, 8);
-  // "Add your phone number" is DEFAULT_COMPANY_SETTINGS' unconfigured
-  // placeholder (lib/company.ts) — showing it verbatim in a customer
-  // email would look broken, so it's treated the same as "not set".
-  const companyPhone =
-    data.company.company_phone && !data.company.company_phone.startsWith("Add your")
-      ? data.company.company_phone
-      : null;
+  // DEFAULT_COMPANY_SETTINGS' unconfigured placeholders (lib/company.ts,
+  // all start with "Add your …") — showing one verbatim in a customer
+  // email would look broken, so each is treated the same as "not set".
+  const unlessPlaceholder = (value: string | null | undefined) =>
+    value && !value.startsWith("Add your") ? value : null;
+  const companyPhone = unlessPlaceholder(data.company.company_phone);
+  const companyEmail = unlessPlaceholder(data.company.company_email);
+  const companyWebsite = unlessPlaceholder(data.company.company_website);
   const emailHtml = buildEmailHtml({
     companyName: data.company.company_name,
     companyDba: data.company.dba,
     companyPhone,
+    companyEmail,
+    companyWebsite,
     clientName: data.client?.name || "",
     message: input.message,
     portalUrl,
