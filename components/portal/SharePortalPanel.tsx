@@ -3,7 +3,10 @@
 import { useState } from "react";
 import { Copy, Check, MessageSquare, ExternalLink } from "lucide-react";
 
-function normalizePhone(raw: string | null | undefined): string | null {
+// Exported so other "text the customer a link" spots (e.g. EstimateDetail's
+// header toolbar SMS button) build the exact same sms: URI instead of a
+// second, possibly-drifting implementation.
+export function normalizePhone(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const digits = raw.replace(/[^\d+]/g, "");
   if (digits.startsWith("+")) return digits.length > 4 ? digits : null;
@@ -12,7 +15,7 @@ function normalizePhone(raw: string | null | undefined): string | null {
   return digits.length >= 7 ? digits : null;
 }
 
-function buildSmsHref(phone: string, body: string): string {
+export function buildSmsHref(phone: string, body: string): string {
   const isAppleDevice = typeof navigator !== "undefined" && /iP(hone|ad|od)|Macintosh/.test(navigator.userAgent);
   return `sms:${phone}${isAppleDevice ? "&" : "?"}body=${encodeURIComponent(body)}`;
 }

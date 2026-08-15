@@ -18,7 +18,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Pencil, Trash2, GitPullRequest, Receipt, Wallet,
-  FolderOpen, Camera, History, User, Download, Share2, Home, CheckCircle2, Mail,
+  FolderOpen, Camera, History, User, Download, Share2, Home, CheckCircle2, Mail, MessageSquare,
 } from "lucide-react";
 import { EmailCustomerModal } from "@/components/estimates/EmailCustomerModal";
 import { EmailHistoryPanel } from "@/components/estimates/EmailHistoryPanel";
@@ -39,7 +39,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { SignaturePad } from "@/components/estimates/SignaturePad";
-import { SharePortalPanel } from "@/components/portal/SharePortalPanel";
+import { SharePortalPanel, normalizePhone, buildSmsHref } from "@/components/portal/SharePortalPanel";
 import {
   ProjectExpensesPanel,
   type ProjectExpensesPanelRef,
@@ -434,6 +434,40 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
             </span>
             <span className="hidden sm:inline">Email</span>
           </button>
+          {/* Same sms: URI approach as SharePortalPanel (see its header
+              comment for why: no SMS provider/credentials needed, opens
+              the staff member's own messaging app with the customer's
+              number and the portal link pre-filled, they hit send). Not
+              a duplicate implementation — normalizePhone/buildSmsHref
+              are imported from that same component. */}
+          {(() => {
+            const smsPhone = normalizePhone(client?.phone ?? null);
+            if (!estimate.customerToken || !smsPhone) {
+              return (
+                <span
+                  className="inline-flex cursor-not-allowed items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground opacity-50"
+                  title={!estimate.customerToken ? "No portal link yet — re-save this estimate to generate one." : "This client has no phone number on file."}
+                >
+                  <MessageSquare className="size-3.5" />
+                  <span className="hidden sm:inline">SMS</span>
+                </span>
+              );
+            }
+            const portalUrl = `${origin}/portal/${estimate.customerToken}`;
+            const greeting = client?.name ? `Hi ${client.name.split(" ")[0]}, ` : "Hi, ";
+            const from = companySettings?.company_name ? ` from ${companySettings.company_name}` : "";
+            const smsBody = `${greeting}here's your estimate${from}. You can review, approve, and download it here: ${portalUrl}`;
+            return (
+              <a
+                href={buildSmsHref(smsPhone, smsBody)}
+                className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors"
+                title="Text the estimate link to the customer"
+              >
+                <MessageSquare className="size-3.5" />
+                <span className="hidden sm:inline">SMS</span>
+              </a>
+            );
+          })()}
                     <Link href={`${editBasePath}/${estimate.id}/edit`} className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors" title="Edit">
             <Pencil className="size-3.5" />
             <span className="hidden sm:inline">Edit</span>

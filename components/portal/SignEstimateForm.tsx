@@ -33,7 +33,7 @@ export function SignEstimateForm({ token, signedValue, signedDate }: { token: st
         )}
         {signedDate && <p className="mt-2 text-xs text-muted-foreground">Signed {new Date(signedDate).toLocaleDateString()}</p>}
         <p className="mt-3 text-xs text-muted-foreground">
-          Thank you. This estimate is approved — no further action is needed. Contact us if anything looks wrong.
+          {/* Thank you. This estimate is approved — no further action is needed. Contact us if anything looks wrong. */}
         </p>
       </div>
     );
