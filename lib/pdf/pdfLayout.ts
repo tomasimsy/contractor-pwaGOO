@@ -170,7 +170,8 @@ export function pdfDocument(opts: {
 // so estimate/invoice PDFs (and anything else) show the same company info.
 export function renderCompanyHeaderBlock(company: CompanySettings) {
   return `
-    <div class="company-name">${company.company_name}${company.dba ? ` <span style="font-weight:400;">DBA ${company.dba}</span>` : ""}</div>
+    <div class="company-name">${company.company_name}</div>
+    ${company.dba ? `<div class="company-dba" style="font-size:12px;font-weight:400;color:#4b5563;">DBA ${company.dba}</div>` : ""}
     <div class="company-details">
       ${company.company_address}<br>
       ${company.company_phone} &middot; ${company.company_email}
@@ -195,7 +196,8 @@ export function renderCompanySignatureLine(company: CompanySettings) {
 export function renderCompanyFooterBlock(company: CompanySettings) {
   return `
     <div class="footer">
-      <p>${company.company_name}${company.dba ? ` DBA ${company.dba}` : ""} &middot; ${company.company_phone}</p>
+      <p>${company.company_name} &middot; ${company.company_phone}</p>
+      ${company.dba ? `<p>DBA ${company.dba}</p>` : ""}
       <p>${company.footer_message}</p>
     </div>
   `;

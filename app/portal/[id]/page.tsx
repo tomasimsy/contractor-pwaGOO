@@ -148,6 +148,9 @@ export default async function CustomerPortalPage({
         <header className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm flex items-center justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-sm font-bold leading-tight text-gray-900">{company.company_name}</h1>
+            {company.dba && (
+              <p className="text-[11px] leading-tight text-gray-500">dba {company.dba}</p>
+            )}
             <p className="text-[11px] text-gray-500">
               {new Date(estimate.created_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
             </p>
