@@ -202,3 +202,60 @@ export function renderCompanyFooterBlock(company: CompanySettings) {
     </div>
   `;
 }
+
+/**
+ * The three small building blocks below exist because the estimate
+ * proposal template used to repeat the same hand-written inline-style
+ * div for every "uppercase label + value" field (5x in the roofing
+ * area card alone), every cost tile (4x per area), and every photo
+ * grid (3x — before/after/completed) — each copy free to drift from
+ * its siblings. One implementation each, reused everywhere, so a
+ * spacing/color tweak happens once instead of N times and all
+ * instances of a kind stay visually identical by construction.
+ */
+
+// A single "LABEL \n value" field — the roofing-area detail rows
+// (Quantity, Defect, Location, Corrective Action, Materials, etc).
+export function labelValueBlock(label: string, value: string, opts?: { compact?: boolean }) {
+  return `
+    <div style="margin-bottom:${opts?.compact ? "4px" : "8px"};">
+      <span style="font-weight:700; color:#111827; text-transform:uppercase; font-size:10px; letter-spacing:0.05em; display:block; margin-bottom:2px;">${label}</span>
+      <div style="color:#4b5563;">${value}</div>
+    </div>
+  `;
+}
+
+// A small boxed number tile — Material/Labor/Tax/Estimated Repair per
+// roofing area. `dark` is the one visually distinct tile (the total).
+export function statTile(label: string, value: string, dark = false) {
+  return dark
+    ? `
+      <div style="flex:1; background:#111827; border:1px solid #111827; border-radius:6px; padding:8px 10px; text-align:center;">
+        <div style="font-size:9px; font-weight:700; text-transform:uppercase; color:#9ca3af; letter-spacing:0.05em; margin-bottom:2px;">${label}</div>
+        <div style="font-size:11.5px; font-weight:800; color:#ffffff;">${value}</div>
+      </div>
+    `
+    : `
+      <div style="flex:1; background:#ffffff; border:1px solid #e5e7eb; border-radius:6px; padding:8px 10px; text-align:center;">
+        <div style="font-size:9px; font-weight:700; text-transform:uppercase; color:#6b7280; letter-spacing:0.05em; margin-bottom:2px;">${label}</div>
+        <div style="font-size:11px; font-weight:700; color:#111827;">${value}</div>
+      </div>
+    `;
+}
+
+// A flex-wrap grid of photos — before/after/completed all use this
+// exact same 140x100 tile, so they now share one implementation
+// instead of three copies of the same img/style string.
+export function photoGrid(photos: Array<Record<string, any>>, photoUrl: (path: string) => string, altLabel: string, tileWidth = 140, tileHeight = 100) {
+  if (photos.length === 0) return "";
+  return `
+    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:6px;">
+      ${photos
+        .map(
+          (photo) =>
+            `<img src="${photoUrl(photo.storage_path)}" style="width:${tileWidth}px; height:${tileHeight}px; object-fit:cover; border-radius:4px; border:1px solid #e5e7eb;" alt="${altLabel}" />`
+        )
+        .join("")}
+    </div>
+  `;
+}

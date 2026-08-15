@@ -1,5 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { formatCurrency, formatDate, renderSignature, renderCompanyHeaderBlock, renderCompanyFooterBlock, renderCompanySignatureLine } from "@/lib/pdf/pdfLayout";
+import {
+  formatCurrency, formatDate, renderSignature, renderCompanyHeaderBlock, renderCompanyFooterBlock, renderCompanySignatureLine,
+  labelValueBlock, statTile, photoGrid,
+} from "@/lib/pdf/pdfLayout";
 import { getCompanySettingsByCompanyId } from "@/lib/company";
 import { sumApprovedChangeOrderRevenue } from "@/lib/services/financialCalculations";
 
@@ -217,13 +220,7 @@ export function renderEstimateProposalHtml(data: EstimateProposalData): { docTit
         ? `
           <div class="section">
             <div class="section-title">Initial Site Photos</div>
-            <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px;">
-              ${estimatePhotosByType.before
-                .map(
-                  (photo) => `<img src="${photoUrl(photo.storage_path)}" style="width: 140px; height: 100px; object-fit: cover; border-radius: 4px; border: 1px solid #e5e7eb;" alt="Before photo" />`
-                )
-                .join("")}
-            </div>
+            ${photoGrid(estimatePhotosByType.before, photoUrl, "Before photo")}
           </div>
         `
         : ""
@@ -261,9 +258,7 @@ export function renderEstimateProposalHtml(data: EstimateProposalData): { docTit
                             ? `
                               <div style="margin-bottom:${afterPhotos.length > 0 ? "12px" : "0"};">
                                 <div style="font-size:9.5px; font-weight:700; text-transform:uppercase; color:#6b7280; letter-spacing:0.05em; margin-bottom:4px;">Before Photos</div>
-                                <div style="display:flex; flex-wrap:wrap; gap:8px;">
-                                  ${beforePhotos.map((photo) => `<img src="${photoUrl(photo.storage_path)}" style="width:132px; height:96px; object-fit:cover; border-radius:4px; border:1px solid #e5e7eb;" alt="Before Photo" />`).join("")}
-                                </div>
+                                ${photoGrid(beforePhotos, photoUrl, "Before Photo", 132, 96)}
                               </div>
                             `
                             : ""
@@ -273,9 +268,7 @@ export function renderEstimateProposalHtml(data: EstimateProposalData): { docTit
                             ? `
                               <div>
                                 <div style="font-size:9.5px; font-weight:700; text-transform:uppercase; color:#6b7280; letter-spacing:0.05em; margin-bottom:4px;">After Photos</div>
-                                <div style="display:flex; flex-wrap:wrap; gap:8px;">
-                                  ${afterPhotos.map((photo) => `<img src="${photoUrl(photo.storage_path)}" style="width:132px; height:96px; object-fit:cover; border-radius:4px; border:1px solid #e5e7eb;" alt="After Photo" />`).join("")}
-                                </div>
+                                ${photoGrid(afterPhotos, photoUrl, "After Photo", 132, 96)}
                               </div>
                             `
                             : ""
@@ -287,79 +280,19 @@ export function renderEstimateProposalHtml(data: EstimateProposalData): { docTit
                         }
                       </div>
                       <div style="width:54%; flex-grow:1; font-size:11.5px; color:#374151; line-height:1.5;">
-                        <div style="margin-bottom:8px;">
-                          <span style="font-weight:700; color:#111827; text-transform:uppercase; font-size:10px; letter-spacing:0.05em; display:block; margin-bottom:2px;">Title / Area Name</span>
-                          <div style="font-weight:600; color:#1f2937; font-size:12px;">${area.area_name || "-"}</div>
-                        </div>
-                        ${
-                          area.quantity
-                            ? `
-                              <div style="margin-bottom:8px;">
-                                <span style="font-weight:700; color:#111827; text-transform:uppercase; font-size:10px; letter-spacing:0.05em; display:block; margin-bottom:2px;">Quantity</span>
-                                <div style="color:#4b5563;">${area.quantity}${area.quantity_unit ? ` ${area.quantity_unit}` : ""}</div>
-                              </div>
-                            `
-                            : ""
-                        }
-                        ${
-                          area.defect
-                            ? `
-                              <div style="margin-bottom:8px;">
-                                <span style="font-weight:700; color:#111827; text-transform:uppercase; font-size:10px; letter-spacing:0.05em; display:block; margin-bottom:2px;">Defect Identified</span>
-                                <div style="color:#4b5563;">${area.defect}</div>
-                              </div>
-                            `
-                            : ""
-                        }
-                        ${
-                          area.location
-                            ? `
-                              <div style="margin-bottom:8px;">
-                                <span style="font-weight:700; color:#111827; text-transform:uppercase; font-size:10px; letter-spacing:0.05em; display:block; margin-bottom:2px;">Exact Location</span>
-                                <div style="color:#4b5563;">${area.location}</div>
-                              </div>
-                            `
-                            : ""
-                        }
-                        ${
-                          area.corrective_action
-                            ? `
-                              <div style="margin-bottom:8px;">
-                                <span style="font-weight:700; color:#111827; text-transform:uppercase; font-size:10px; letter-spacing:0.05em; display:block; margin-bottom:2px;">Corrective Action</span>
-                                <div style="color:#4b5563;">${area.corrective_action}</div>
-                              </div>
-                            `
-                            : ""
-                        }
-                        ${
-                          area.materials_included
-                            ? `
-                              <div style="margin-bottom:4px;">
-                                <span style="font-weight:700; color:#111827; text-transform:uppercase; font-size:10px; letter-spacing:0.05em; display:block; margin-bottom:2px;">Materials Included</span>
-                                <div style="color:#4b5563;">${area.materials_included}</div>
-                              </div>
-                            `
-                            : ""
-                        }
+                        ${labelValueBlock("Title / Area Name", `<span style="font-weight:600; color:#1f2937; font-size:12px;">${area.area_name || "-"}</span>`)}
+                        ${area.quantity ? labelValueBlock("Quantity", `${area.quantity}${area.quantity_unit ? ` ${area.quantity_unit}` : ""}`) : ""}
+                        ${area.defect ? labelValueBlock("Defect Identified", area.defect) : ""}
+                        ${area.location ? labelValueBlock("Exact Location", area.location) : ""}
+                        ${area.corrective_action ? labelValueBlock("Corrective Action", area.corrective_action) : ""}
+                        ${area.materials_included ? labelValueBlock("Materials Included", area.materials_included, { compact: true }) : ""}
                       </div>
                     </div>
                     <div style="display:flex; gap:10px; border-top:1px solid #e5e7eb; padding-top:12px; margin-top:4px;">
-                      <div style="flex:1; background:#ffffff; border:1px solid #e5e7eb; border-radius:6px; padding:8px 10px; text-align:center;">
-                        <div style="font-size:9px; font-weight:700; text-transform:uppercase; color:#6b7280; letter-spacing:0.05em; margin-bottom:2px;">Material</div>
-                        <div style="font-size:11px; font-weight:700; color:#111827;">${formatCurrency(area.material_cost || 0)}</div>
-                      </div>
-                      <div style="flex:1; background:#ffffff; border:1px solid #e5e7eb; border-radius:6px; padding:8px 10px; text-align:center;">
-                        <div style="font-size:9px; font-weight:700; text-transform:uppercase; color:#6b7280; letter-spacing:0.05em; margin-bottom:2px;">Labor</div>
-                        <div style="font-size:11px; font-weight:700; color:#111827;">${formatCurrency(area.labor_cost || 0)}</div>
-                      </div>
-                      <div style="flex:1; background:#ffffff; border:1px solid #e5e7eb; border-radius:6px; padding:8px 10px; text-align:center;">
-                        <div style="font-size:9px; font-weight:700; text-transform:uppercase; color:#6b7280; letter-spacing:0.05em; margin-bottom:2px;">Tax</div>
-                        <div style="font-size:11px; font-weight:700; color:#111827;">${formatCurrency(area.tax || 0)}</div>
-                      </div>
-                      <div style="flex:1; background:#111827; border:1px solid #111827; border-radius:6px; padding:8px 10px; text-align:center;">
-                        <div style="font-size:9px; font-weight:700; text-transform:uppercase; color:#9ca3af; letter-spacing:0.05em; margin-bottom:2px;">Estimated Repair</div>
-                        <div style="font-size:11.5px; font-weight:800; color:#ffffff;">${formatCurrency(area.estimated_repair_cost || 0)}</div>
-                      </div>
+                      ${statTile("Material", formatCurrency(area.material_cost || 0))}
+                      ${statTile("Labor", formatCurrency(area.labor_cost || 0))}
+                      ${statTile("Tax", formatCurrency(area.tax || 0))}
+                      ${statTile("Estimated Repair", formatCurrency(area.estimated_repair_cost || 0), true)}
                     </div>
                   </div>
                 `;
@@ -422,32 +355,29 @@ export function renderEstimateProposalHtml(data: EstimateProposalData): { docTit
       </div>
     </div>
 
-    <!-- Payment Options -->
+    <!-- Payment — company.payment_instructions is the ONE editable
+         source for this (Settings -> Company -> Payment Instructions).
+         Previously this was two sections: a hardcoded "Payment
+         Options" block with one specific company's real Zelle email
+         baked into the shared template (so every company's PDF showed
+         SOMEONE ELSE's payment email), plus a separate "Payment
+         Instructions" box reading the real per-company field. Merged
+         into one section; the check-payable-to line below uses this
+         company's own name/address, which was already correct data,
+         not the hardcoded part. -->
     <div class="section">
-      <div class="section-title">Payment Options</div>
+      <div class="section-title">Payment</div>
       <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 16px; font-size: 11px; line-height: 1.6; color: #374151;">
-        <div style="margin-bottom: 14px;">
-          <div style="font-weight: 700; color: #111827; margin-bottom: 4px; font-size: 12px;">📧 Zelle</div>
-          <div style="display: flex; align-items: center; gap: 8px; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 4px; padding: 8px 12px;">
-            <span style="font-weight: 600; color: #6b7280; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;">Send to:</span>
-            <span style="font-weight: 700; color: #059669; font-size: 13px; letter-spacing: 0.02em;">onesquareroof@gmail.com</span>
-          </div>
-          <div style="margin-top: 4px; font-size: 10px; color: #6b7280; font-style: italic;">Please include your estimate number or project address in the memo.</div>
-        </div>
-        <div style="border-top: 1px solid #e5e7eb; padding-top: 14px;">
-          <div style="font-weight: 700; color: #111827; margin-bottom: 4px; font-size: 12px;">💵 Cash or Check</div>
-          <div style="color: #6b7280; font-size: 10px; line-height: 1.4;">
-            <div>Make checks payable to: <strong style="color: #111827;">${company.company_name}</strong></div>
-            <div style="margin-top: 2px;">Mailing address: <span style="color: #111827;">${company.company_address}</span></div>
-          </div>
+        ${
+          company.payment_instructions
+            ? `<div style="white-space:pre-wrap;">${company.payment_instructions}</div>`
+            : `<div style="color:#6b7280; font-style:italic;">No payment instructions configured — add them in Settings &rarr; Company.</div>`
+        }
+        <div style="border-top: 1px solid #e5e7eb; margin-top: 12px; padding-top: 12px; font-size: 10px; color: #6b7280;">
+          Make checks payable to: <strong style="color: #111827;">${company.company_name}</strong><br>
+          Mailing address: <span style="color: #111827;">${company.company_address}</span>
         </div>
       </div>
-    </div>
-
-    <!-- Payment Instructions -->
-    <div class="section">
-      <div class="section-title">Payment Instructions</div>
-      <div style="font-size:11px; line-height:1.6; color:#4b5563; white-space:pre-wrap;">${company.payment_instructions}</div>
     </div>
 
     <!-- Material Price Notice -->
@@ -475,7 +405,7 @@ export function renderEstimateProposalHtml(data: EstimateProposalData): { docTit
           <li style="margin-bottom:3px;">Damage caused by foot traffic, other contractors, or homeowner modifications.</li>
           <li style="margin-bottom:3px;">Structural movement, settling, pre-existing building defects, clogged gutters, lack of maintenance, improper ventilation, or manufacturer defects.</li>
         </ul>
-        ${company.warranty_text ? `<div style="border-top:1px solid #e5e7eb; padding-top:9px; margin-top:9px; white-space:pre-wrap;"></div>` : ""}
+        ${company.warranty_text ? `<div style="border-top:1px solid #e5e7eb; padding-top:9px; margin-top:9px; white-space:pre-wrap;">${company.warranty_text}</div>` : ""}
       </div>
     </div>
 
@@ -485,9 +415,7 @@ export function renderEstimateProposalHtml(data: EstimateProposalData): { docTit
         ? `
           <div class="section">
             <div class="section-title">Completed Photos</div>
-            <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:6px;">
-              ${estimatePhotosByType.after.map((photo) => `<img src="${photoUrl(photo.storage_path)}" style="width:140px; height:100px; object-fit:cover; border-radius:4px; border:1px solid #e5e7eb;" alt="After photo" />`).join("")}
-            </div>
+            ${photoGrid(estimatePhotosByType.after, photoUrl, "After photo")}
           </div>
         `
         : ""
