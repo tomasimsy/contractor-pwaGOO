@@ -31,6 +31,27 @@ export function Footer() {
               and commercial renovations — kitchens, bathrooms, flooring,
               salons, offices, decks, roofing, and full rebuilds.
             </p>
+
+            {/* Domain links */}
+            <div className="mt-6 flex flex-wrap gap-4 text-xs text-white/30">
+              <a 
+                href="https://www.OneSquareRoof.com" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="hover:text-white/60 transition-colors"
+              >
+                OneSquareRoof.com
+              </a>
+              <span className="text-white/20">|</span>
+              <a 
+                href="https://www.OSRPros.com" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="hover:text-white/60 transition-colors"
+              >
+                OSRPros.com
+              </a>
+            </div>
           </div>
 
           {/* Services */}
@@ -65,8 +86,27 @@ export function Footer() {
           </div>
         </div>
 
-        <div className="mt-16 border-t border-white/10 pt-8">
+        <div className="mt-16 border-t border-white/10 pt-8 flex flex-wrap items-center justify-between gap-4">
           <p className="text-[11px] text-white/25">© {new Date().getFullYear()} OSR Pros</p>
+          <div className="flex gap-4 text-[11px] text-white/25">
+            <a 
+              href="https://www.OneSquareRoof.com" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="hover:text-white/60 transition-colors"
+            >
+              OneSquareRoof.com
+            </a>
+            <span className="text-white/15">|</span>
+            <a 
+              href="https://www.OSRPros.com" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="hover:text-white/60 transition-colors"
+            >
+              OSRPros.com
+            </a>
+          </div>
         </div>
       </div>
     </footer>
