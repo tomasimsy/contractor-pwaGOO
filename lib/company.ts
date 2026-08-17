@@ -15,6 +15,11 @@ export type CompanySettings = {
   company_phone: string;
   company_email: string;
   company_website: string;
+  /** A second public-facing site — e.g. a dba's own domain alongside
+   * the legal entity's (supabase/migrations/
+   * 20260817120000_company_secondary_website.sql). Optional; every
+   * consumer treats it the same "only if set" way as company_website. */
+  company_website_2: string | null;
   logo_url: string | null;
   tax_id: string;
   license_number: string;
@@ -52,6 +57,7 @@ export const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
   company_phone: "Add your phone number",
   company_email: "Add your email",
   company_website: "",
+  company_website_2: null,
   logo_url: null,
   tax_id: "",
   license_number: "",
@@ -96,6 +102,7 @@ export function mergeCompanyDefaults(row: Partial<CompanySettings> | null | unde
     company_phone: row?.company_phone || DEFAULT_COMPANY_SETTINGS.company_phone,
     company_email: row?.company_email || DEFAULT_COMPANY_SETTINGS.company_email,
     company_website: row?.company_website || "",
+    company_website_2: row?.company_website_2 || null,
     logo_url: row?.logo_url || null,
     tax_id: row?.tax_id || "",
     license_number: row?.license_number || "",

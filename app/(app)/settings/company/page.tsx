@@ -52,6 +52,7 @@ const FIELD_LABEL: Record<string, string> = {
   company_phone: "Phone",
   company_email: "Email",
   company_website: "Website",
+  company_website_2: "Second Website",
   company_address: "Address",
   city: "City",
   state: "State",
@@ -256,7 +257,8 @@ function CompanySettingsContent() {
               <Field name="company_email" value={form.company_email} onChange={setField} type="email" placeholder="you@company.com" />
               {fieldErrors.company_email && <p className="mt-1 text-xs text-danger">{fieldErrors.company_email}</p>}
             </div>
-            <Field name="company_website" value={form.company_website} onChange={setField} placeholder="https://…" className="sm:col-span-2" />
+            <Field name="company_website" value={form.company_website} onChange={setField} placeholder="https://…" />
+            <Field name="company_website_2" value={form.company_website_2 ?? ""} onChange={setField} placeholder="https://… (optional second site)" />
           </div>
         </section>
 

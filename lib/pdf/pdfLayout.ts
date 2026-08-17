@@ -175,7 +175,7 @@ export function renderCompanyHeaderBlock(company: CompanySettings) {
     <div class="company-details">
       ${company.company_address}<br>
       ${company.company_phone} &middot; ${company.company_email}
-      ${company.company_website ? `<br>${company.company_website}` : ""}
+      ${[company.company_website, company.company_website_2].filter(Boolean).join(" &middot; ") ? `<br>${[company.company_website, company.company_website_2].filter(Boolean).join(" &middot; ")}` : ""}
       ${company.license_number ? `<br>License #${company.license_number}` : ""}
     </div>
   `;

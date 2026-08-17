@@ -61,6 +61,7 @@ function buildEmailHtml(opts: {
   companyPhone: string | null;
   companyEmail: string | null;
   companyWebsite: string | null;
+  companyWebsite2: string | null;
   clientName: string;
   message: string;
   portalUrl: string;
@@ -71,14 +72,17 @@ function buildEmailHtml(opts: {
   const displayName = opts.companyDba
     ? `${opts.companyName} (dba ${opts.companyDba})`
     : opts.companyName;
-  // Signature block — company name, then dba/phone/email/website each
-  // on their own line, same "one field, one line, only if set"
-  // convention the portal header and PDF header already use.
+  // Signature block — company name, then dba/phone/email/website(s)
+  // each on their own line, same "one field, one line, only if set"
+  // convention the portal header and PDF header already use. Both
+  // websites share one line (site A · site B) rather than two, since
+  // they're the same kind of fact rather than two different ones.
+  const websiteLine = [opts.companyWebsite, opts.companyWebsite2].filter(Boolean).join(" · ") || null;
   const signatureLines = [
     opts.companyDba ? `dba ${opts.companyDba}` : null,
     opts.companyPhone ? formatPhoneDisplay(opts.companyPhone) : null,
     opts.companyEmail || null,
-    opts.companyWebsite || null,
+    websiteLine,
   ]
     .filter((line): line is string => !!line)
     .map((line) => `<div>${line}</div>`)
@@ -172,12 +176,14 @@ export async function sendEstimateEmail(input: SendEstimateEmailInput): Promise<
   const companyPhone = unlessPlaceholder(data.company.company_phone);
   const companyEmail = unlessPlaceholder(data.company.company_email);
   const companyWebsite = unlessPlaceholder(data.company.company_website);
+  const companyWebsite2 = unlessPlaceholder(data.company.company_website_2);
   const emailHtml = buildEmailHtml({
     companyName: data.company.company_name,
     companyDba: data.company.dba,
     companyPhone,
     companyEmail,
     companyWebsite,
+    companyWebsite2,
     clientName: data.client?.name || "",
     message: input.message,
     portalUrl,
