@@ -103,6 +103,8 @@ function buildEmailHtml(opts: {
           <div style="margin: 28px 0;">
             <a href="${opts.portalUrl}" style="display: inline-block; background:#111827; color:#ffffff; text-decoration:none; font-weight:600; font-size:13px; padding: 12px 22px; border-radius: 8px;">
               View Proposal Online
+
+              
             </a>
           </div>
           <div style="font-size: 12px; color: #6b7280; line-height: 1.6;">
