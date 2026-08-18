@@ -290,8 +290,19 @@ function ExpenseV2Content() {
           formData.append("file", receiptFile);
           formData.append("expenseId", expense.id);
           const res = await fetch("/api/expense-receipts/upload", { method: "POST", body: formData });
-          const body = await res.json();
-          if (!res.ok) throw new Error(body.error || "Upload failed");
+          // A rejection before the route handler even runs (e.g. a
+          // request-body-size limit) comes back as plain text/HTML, not
+          // JSON — blindly calling res.json() on that produced a
+          // cryptic "Unexpected token 'R'..." (the body literally
+          // starting with "Request Entity Too Large"). Check the
+          // content-type first so that case gets a readable message
+          // instead of a JSON.parse crash.
+          const isJson = res.headers.get("content-type")?.includes("application/json");
+          const body = isJson ? await res.json() : null;
+          if (!res.ok) {
+            throw new Error(body?.error || `Upload rejected (HTTP ${res.status} ${res.statusText || ""}).`.trim());
+          }
+          if (!body) throw new Error("Upload succeeded but the server response wasn't understood.");
 
           await expenseReceiptService.create({
             expenseId: expense.id,

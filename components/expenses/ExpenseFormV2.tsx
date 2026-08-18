@@ -55,6 +55,7 @@ import { CreateOrSelect, type DirectoryOption } from "@/components/shared/Create
 import { createVendorDirectory } from "./directories";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { scanReceipt } from "@/lib/receiptOcr";
+import { compressImageForUpload } from "@/lib/imageResize";
 import {
   EXPENSE_TYPES,
   EXPENSE_TYPE_LABEL,
@@ -153,15 +154,25 @@ export function ExpenseFormV2({
   // have a slow, stale OCR result land on top of it a few seconds later.
   const scanTokenRef = useRef(0);
 
-  async function handleReceiptPicked(file: File) {
+  async function handleReceiptPicked(rawFile: File) {
     const token = ++scanTokenRef.current;
+    setScanning(true);
+    setScanProgress({ phase: "preparing", progress: 0 });
+
+    // Compress BEFORE it becomes `receiptFile` — this is the file that
+    // actually gets uploaded/stored (see handleSubmit below), and a raw
+    // phone photo (often 8-12MB) was going out over the wire untouched,
+    // large enough to trip a request-size limit and come back as a
+    // non-JSON error. The OCR pass below reuses this same compressed
+    // copy rather than re-decoding the original a second time.
+    const file = await compressImageForUpload(rawFile);
+    if (scanTokenRef.current !== token) return; // receipt was cleared/replaced while compressing
+
     setReceiptFile(file);
     setReceiptPreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return URL.createObjectURL(file);
     });
-    setScanning(true);
-    setScanProgress({ phase: "preparing", progress: 0 });
     try {
       const result = await scanReceipt(file, (info) => {
         if (scanTokenRef.current === token) setScanProgress(info);
