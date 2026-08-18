@@ -44,7 +44,7 @@ const EMPTY_RESULT: ReceiptScanResult = {
   guessedVendor: null,
 };
 
-const MAX_DIMENSION = 1600;
+const MAX_DIMENSION = 1400;
 
 /** Downscale (if needed) + grayscale + contrast-stretch, entirely on a
  * canvas. Returns a JPEG Blob ready for Tesseract. Falls back to the
@@ -91,24 +91,48 @@ async function preprocessImage(file: File): Promise<Blob> {
 /** Every `$X.XX`-shaped number in the text, largest first — a receipt's
  * TOTAL is virtually always its largest dollar amount (subtotal, tax,
  * and line items are all smaller than or equal to it). */
-function extractAmount(text: string): number | null {
+// Exported for unit testing (see tests/receipt-ocr-extraction.test.ts)
+// — these are pure text-parsing functions with no Tesseract/canvas
+// dependency, so they're testable in plain Node without a browser env.
+export function extractAmount(text: string): number | null {
   const lines = text.split("\n");
-
-  // Prefer a line that looks like a total line — much more reliable
-  // than "largest number on the page" alone (a $50 line item next to a
-  // $12 discount can otherwise out-rank a genuinely smaller total).
-  const totalLineRegex = /(total|amount due|balance due|grand total)/i;
   const moneyRegex = /\$?\s?(\d{1,6}(?:,\d{3})*\.\d{2})/;
+  const moneyOnLine = (line: string): number | null => {
+    const match = line.match(moneyRegex);
+    if (!match) return null;
+    const value = parseFloat(match[1].replace(/,/g, ""));
+    return !Number.isNaN(value) && value > 0 ? value : null;
+  };
 
+  // Highest confidence: an unambiguous "this is the final amount" label.
+  // Checked BEFORE the generic "total" pass below because "grand total"/
+  // "total due" would also match a bare /total/ regex — no need to fall
+  // through to the ambiguous case when the receipt already said exactly
+  // what this number is.
+  const definiteTotalRegex = /(grand total|total due|amount due|balance due)/i;
   for (const line of lines) {
-    if (totalLineRegex.test(line)) {
-      const match = line.match(moneyRegex);
-      if (match) {
-        const value = parseFloat(match[1].replace(/,/g, ""));
-        if (!Number.isNaN(value) && value > 0) return value;
-      }
+    if (definiteTotalRegex.test(line)) {
+      const value = moneyOnLine(line);
+      if (value !== null) return value;
     }
   }
+
+  // Generic "total" — but a receipt lists Subtotal (pre-tax), Tax, then
+  // Total (final, what we actually want) in that order, and "subtotal"
+  // contains the substring "total". Explicitly excluding it here was
+  // the bug: matching /total/i against "Subtotal: $45.00" returned the
+  // PRE-TAX amount. Also take the LAST match, not the first — Total is
+  // the final line of that group, appearing after Subtotal/Tax.
+  const bareTotalRegex = /\btotal\b/i;
+  const subtotalRegex = /sub[\s-]?total/i;
+  let lastTotalValue: number | null = null;
+  for (const line of lines) {
+    if (bareTotalRegex.test(line) && !subtotalRegex.test(line)) {
+      const value = moneyOnLine(line);
+      if (value !== null) lastTotalValue = value;
+    }
+  }
+  if (lastTotalValue !== null) return lastTotalValue;
 
   // Fall back to the largest dollar-shaped number anywhere in the text.
   const allMatches = [...text.matchAll(new RegExp(moneyRegex, "g"))];
@@ -120,7 +144,7 @@ function extractAmount(text: string): number | null {
 }
 
 /** Common receipt date shapes: MM/DD/YYYY, MM-DD-YYYY, and "Mon DD, YYYY". */
-function extractDate(text: string): string | null {
+export function extractDate(text: string): string | null {
   const numeric = text.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b/);
   if (numeric) {
     let [, month, day, year] = numeric;
@@ -143,7 +167,7 @@ function extractDate(text: string): string | null {
  * first non-empty printed line (store name/logo text), but OCR noise
  * (garbled header text, a stray barcode line) means this is genuinely
  * just a starting point, not a confident read. */
-function extractVendor(text: string): string | null {
+export function extractVendor(text: string): string | null {
   const line = text
     .split("\n")
     .map((l) => l.trim())
@@ -152,6 +176,7 @@ function extractVendor(text: string): string | null {
 }
 
 export async function scanReceipt(file: File, onProgress?: ReceiptScanProgress): Promise<ReceiptScanResult> {
+  let worker: Awaited<ReturnType<typeof import("tesseract.js").createWorker>> | null = null;
   try {
     onProgress?.({ phase: "preparing", progress: 0 });
     const prepared = await preprocessImage(file);
@@ -159,14 +184,20 @@ export async function scanReceipt(file: File, onProgress?: ReceiptScanProgress):
 
     // Dynamic import — Tesseract.js is Web Worker/WASM-based and must
     // never be pulled into a server bundle or run during SSR.
-    const { default: Tesseract } = await import("tesseract.js");
-    const { data } = await Tesseract.recognize(prepared, "eng", {
+    const { createWorker, PSM } = await import("tesseract.js");
+    worker = await createWorker("eng", 1, {
       logger: (m) => {
         if (m.status === "recognizing text") {
           onProgress?.({ phase: "recognizing", progress: m.progress });
         }
       },
     });
+    // SINGLE_BLOCK skips Tesseract's default full-page layout analysis
+    // (column/orientation/table detection) — real overhead a receipt's
+    // one column of text doesn't need, and the main speed win here
+    // beyond the image downscale above.
+    await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK });
+    const { data } = await worker.recognize(prepared);
     const rawText = data.text || "";
     if (!rawText.trim()) return EMPTY_RESULT;
 
@@ -179,5 +210,7 @@ export async function scanReceipt(file: File, onProgress?: ReceiptScanProgress):
   } catch (error) {
     console.error("Receipt scan failed (non-fatal — falling back to manual entry):", error);
     return EMPTY_RESULT;
+  } finally {
+    await worker?.terminate();
   }
 }
