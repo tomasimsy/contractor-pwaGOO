@@ -38,19 +38,23 @@
  * "Who fronted this" arrives already answered — /expense-v2 asks it
  * before opening the form — but stays editable here.
  *
- * RECEIPTS ARE NOT COLLECTED. `receiptUrl` exists on ExpenseCreateInput
- * and three receipt columns exist on the table, but nothing in the app
- * writes any of them and there is no storage bucket or upload route for
- * expense receipts (0 of 109 live rows populated). Adding capture here
- * would be new functionality, not reuse, so the field is deliberately
- * omitted rather than shown as an input that silently discards its
- * value. See EXPENSE_FORM.md §8.
+ * RECEIPT CAPTURE — added on top of the gap described above. A photo
+ * is picked/scanned here (Tesseract.js, client-side, free — see
+ * lib/receiptOcr.ts for why not a paid vision API), and the guessed
+ * amount/vendor prefill the two fields below them, but ONLY if the
+ * user hasn't already typed something — a human always reviews before
+ * saving, an OCR guess never silently overwrites a real value. The
+ * actual upload + `expense_receipts` row write happen AFTER the
+ * expense itself is created (see app/(app)/expense-v2/page.tsx's
+ * handleSubmit) — this component only collects the picked File and the
+ * confirmed vendor/amount/date, passed up through `onSubmit`.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { X, HandCoins, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { X, HandCoins, Trash2, Camera, Loader2 } from "lucide-react";
 import { CreateOrSelect, type DirectoryOption } from "@/components/shared/CreateOrSelect";
 import { createVendorDirectory } from "./directories";
 import { useServices } from "@/components/providers/ServicesProvider";
+import { scanReceipt } from "@/lib/receiptOcr";
 import {
   EXPENSE_TYPES,
   EXPENSE_TYPE_LABEL,
@@ -60,6 +64,18 @@ import {
   type ExpenseType,
   type PaidByType,
 } from "@/lib/services";
+
+/** What ExpenseFormV2 actually hands to `onSubmit` — the real
+ * ExpenseCreateInput fields plus three client-only receipt fields that
+ * are never part of the expense row itself (they land in a separate
+ * `expense_receipts` row, written after the expense exists — see this
+ * file's header). */
+export type ExpenseFormSubmitInput = Omit<ExpenseCreateInput, "companyId" | "projectId"> & {
+  receiptFile?: File | null;
+  receiptVendor?: string | null;
+  receiptAmount?: number | null;
+  receiptDate?: string | null;
+};
 
 /** Same exclusion ExpenseDialog applies: these two types have their own
  * dedicated flows (assignment panels + commission split) and must not be
@@ -101,7 +117,7 @@ export function ExpenseFormV2({
    * instead of rendering a bare uuid. */
   initialPaidByLabel?: string | null;
   onClose: () => void;
-  onSubmit: (input: Omit<ExpenseCreateInput, "companyId" | "projectId">) => Promise<boolean>;
+  onSubmit: (input: ExpenseFormSubmitInput) => Promise<boolean>;
   /** Called after a delete so the page can refresh its own figures. */
   onChanged?: () => Promise<void> | void;
 }) {
@@ -116,6 +132,64 @@ export function ExpenseFormV2({
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // ---- Receipt scan (see file header) ----
+  const receiptInputRef = useRef<HTMLInputElement>(null);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptPreviewUrl, setReceiptPreviewUrl] = useState<string | null>(null);
+  const [receiptGuessedDate, setReceiptGuessedDate] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+  // Which fields the SCAN filled in (as opposed to the user typing them)
+  // — tracked so removing the receipt can clear exactly what it added,
+  // and so a later manual edit stops that field from being clearable
+  // this way (it's the user's value now, not the scan's).
+  const [amountFromScan, setAmountFromScan] = useState(false);
+  const [vendorFromScan, setVendorFromScan] = useState(false);
+
+  async function handleReceiptPicked(file: File) {
+    setReceiptFile(file);
+    setReceiptPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+    setScanning(true);
+    try {
+      const result = await scanReceipt(file);
+      // Prefill only what's still empty — never overwrite something the
+      // user already typed, even if the scan disagrees with it.
+      if (result.guessedAmount && !amount) {
+        setAmount(result.guessedAmount.toFixed(2));
+        setAmountFromScan(true);
+      }
+      if (result.guessedVendor && !vendor.trim()) {
+        setVendor(result.guessedVendor);
+        setVendorFromScan(true);
+      }
+      setReceiptGuessedDate(result.guessedDate);
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  function clearReceipt() {
+    if (receiptPreviewUrl) URL.revokeObjectURL(receiptPreviewUrl);
+    setReceiptFile(null);
+    setReceiptPreviewUrl(null);
+    setReceiptGuessedDate(null);
+    if (receiptInputRef.current) receiptInputRef.current.value = "";
+    // Undo exactly what the scan filled in — a value the user typed
+    // themselves (amountFromScan/vendorFromScan already false by then)
+    // is left alone.
+    if (amountFromScan) {
+      setAmount("");
+      setAmountFromScan(false);
+    }
+    if (vendorFromScan) {
+      setVendor("");
+      setPayeeId(null);
+      setVendorFromScan(false);
+    }
+  }
 
   /** What has ALREADY been recorded against this job — so you can see at
    * the moment of entry whether you've logged this cost before, or spot
@@ -235,8 +309,13 @@ export function ExpenseFormV2({
         paymentMethod: null,
         isPaid: true,
         reimbursable,
+        receiptFile,
+        receiptVendor: vendor.trim() || null,
+        receiptAmount: parsedAmount,
+        receiptDate: receiptGuessedDate,
       });
       if (!ok) setError("Could not save this expense.");
+      else clearReceipt();
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred.");
     } finally {
@@ -300,13 +379,62 @@ export function ExpenseFormV2({
               step="0.01"
               inputMode="decimal"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => {
+                setAmount(e.target.value);
+                setAmountFromScan(false);
+              }}
               placeholder="0.00"
               className="h-11 w-full rounded-lg bg-neutral-50 px-3 text-base font-semibold text-neutral-900 outline-none transition-colors focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-red-500/20"
               required
               autoFocus
             />
           </label>
+
+          {/* ---- RECEIPT SCAN ---- */}
+          <div>
+            <span className={LABEL}>Receipt</span>
+            <input
+              ref={receiptInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleReceiptPicked(file);
+              }}
+            />
+            {receiptPreviewUrl ? (
+              <div className="flex items-center gap-2.5 rounded-lg bg-neutral-50 p-2">
+                <img src={receiptPreviewUrl} alt="Receipt preview" className="h-14 w-14 shrink-0 rounded-md object-cover" />
+                <div className="min-w-0 flex-1 text-xs text-neutral-600">
+                  {scanning ? (
+                    <span className="flex items-center gap-1.5">
+                      <Loader2 className="size-3.5 animate-spin" /> Scanning receipt…
+                    </span>
+                  ) : (
+                    <span>Amount/vendor prefilled where possible — review before saving.</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={clearReceipt}
+                  aria-label="Remove receipt photo"
+                  className="shrink-0 rounded-md p-1.5 text-neutral-400 hover:bg-neutral-200/60 hover:text-neutral-900"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => receiptInputRef.current?.click()}
+                className="flex h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-neutral-300 text-xs font-medium text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"
+              >
+                <Camera className="size-4" /> Scan or attach a receipt
+              </button>
+            )}
+          </div>
 
           <div>
             <span className={LABEL}>Type</span>
@@ -343,6 +471,7 @@ export function ExpenseFormV2({
               onChange={(opt: DirectoryOption | null) => {
                 setPayeeId(opt?.id ?? null);
                 setVendor(opt?.label ?? "");
+                setVendorFromScan(false);
               }}
               placeholder="Search or add a vendor"
             />

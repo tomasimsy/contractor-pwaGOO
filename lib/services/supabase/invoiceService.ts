@@ -399,7 +399,17 @@ export function createSupabaseInvoiceService(
     projectId: UUID;
     estimateId: UUID | null;
     clientId: UUID | null;
-    lineItems: Omit<InvoiceLineItem, "id" | "total">[];
+    lineItems: Array<Omit<InvoiceLineItem, "id" | "total"> & {
+      /** Set ONLY by createFromEstimate's own "Markup"/"Discount"
+       * adjustment line (see its comment) — a synthetic, already-
+       * computed carry-over of the estimate's markup/discount, not a
+       * user-entered line item. validateLineItem's non-negative
+       * unitPrice rule exists to catch a STAFF typo on a real line
+       * item; it must not also block a legitimate negative "Discount"
+       * amount, which is exactly what made signing an estimate with a
+       * net discount silently fail to ever generate its invoice. */
+      allowNegativeUnitPrice?: boolean;
+    }>;
     tax: number;
     issueDate: string;
     dueDate: string;
@@ -407,7 +417,12 @@ export function createSupabaseInvoiceService(
   }): Promise<Invoice> {
     for (const li of input.lineItems) {
       const check = validationService.validateLineItem({ name: li.name, quantity: li.quantity, unitPrice: li.unitPrice });
-      if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
+      if (!check.valid) {
+        const issues = li.allowNegativeUnitPrice
+          ? check.issues.filter((i) => i.code !== "must_be_non_negative")
+          : check.issues;
+        if (issues.length > 0) throw new Error(issues.map((i) => i.message).join("; "));
+      }
     }
 
     const itemsWithTotals = input.lineItems.map((li) => ({ ...li, total: calculateLineItemTotal(li) }));
@@ -538,7 +553,10 @@ export function createSupabaseInvoiceService(
     }
 
     const marginAdjustment = taxedBase - estimate.subtotal;
-    const lineItems = [...estimateLines, ...changeOrderLines];
+    const lineItems: Array<Omit<InvoiceLineItem, "id" | "total"> & { allowNegativeUnitPrice?: boolean }> = [
+      ...estimateLines,
+      ...changeOrderLines,
+    ];
     // Markup/discount don't survive as line items (an invoice has no
     // such concept), so when they net to a non-zero amount they're
     // carried as one explicit adjustment line — visible to the
@@ -549,6 +567,9 @@ export function createSupabaseInvoiceService(
         description: "Carried from the approved estimate",
         quantity: 1,
         unitPrice: marginAdjustment,
+        // A net discount makes this legitimately negative — see
+        // insertInvoice's allowNegativeUnitPrice doc comment.
+        allowNegativeUnitPrice: true,
       });
     }
 

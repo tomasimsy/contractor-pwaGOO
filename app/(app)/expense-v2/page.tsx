@@ -21,7 +21,7 @@ import {
 import { PageContainer } from "@/components/ui/PageContainer";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RequirePermission } from "@/components/layout/RequirePermission";
-import { ExpenseFormV2 } from "@/components/expenses/ExpenseFormV2";
+import { ExpenseFormV2, type ExpenseFormSubmitInput } from "@/components/expenses/ExpenseFormV2";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { calculateExpenseTotals } from "@/lib/services/financialCalculations";
@@ -60,6 +60,7 @@ type ChoiceId = (typeof ENTRY_CHOICES)[number]["id"];
 function ExpenseV2Content() {
   const {
     expenseService,
+    expenseReceiptService,
     projectService,
     estimateService,
     financialEngine,
@@ -207,14 +208,37 @@ function ExpenseV2Content() {
     []
   );
 
+  // "Active" vs "Completed" here checks the job's PROJECT status, not
+  // the estimate's own status — completion is a fact about the
+  // project, not the paperwork (see EstimateService.listPage's doc
+  // comment for the same rule applied on the Estimates list's
+  // lifecycle tabs).
+  const [jobFilter, setJobFilter] = useState<"active" | "completed" | "all">("active");
+  const isJobComplete = useCallback(
+    (e: Estimate) => {
+      const project = projectsById[e.projectId];
+      return project?.status === "completed" || project?.status === "archived";
+    },
+    [projectsById]
+  );
+
   const recentJobs = useMemo(
     () =>
-      [...estimates]
-        .sort((a, b) =>
-          b.updatedAt.localeCompare(a.updatedAt)
-        )
+      estimates
+        // This page tracks expenses/receipts against a real bill — an
+        // estimate that hasn't been signed into an invoice yet has
+        // nothing to reconcile expenses against.
+        .filter((e) => e.status === "converted_to_invoice")
+        .filter((e) => {
+          if (jobFilter === "active") return !isJobComplete(e);
+          if (jobFilter === "completed") return isJobComplete(e);
+          return true;
+        })
+        // Newest ESTIMATE first — createdAt, not the last-edited
+        // updatedAt this used before.
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .slice(0, 10),
-    [estimates]
+    [estimates, jobFilter, isJobComplete]
   );
 
   const selectedChoice =
@@ -223,27 +247,63 @@ function ExpenseV2Content() {
     ) ?? null;
 
   async function handleSubmit(
-    input: Omit<
-      ExpenseCreateInput,
-      "companyId" | "projectId"
-    >
+    input: ExpenseFormSubmitInput
   ): Promise<boolean> {
     if (!companyId) return false;
 
+    // Client-only receipt fields — never part of ExpenseCreateInput/the
+    // expense row itself. Stripped here so `expense` below is a real,
+    // known ExpenseCreateInput passed to expenseService.create.
+    const { receiptFile, receiptVendor, receiptAmount, receiptDate, ...expenseInput } = input;
+
     try {
-      await expenseService.create({
-        ...input,
+      const expense = await expenseService.create({
+        ...expenseInput,
         companyId,
         projectId: projectId || null,
         estimateId:
           estimateId ||
-          input.estimateId ||
+          expenseInput.estimateId ||
           null,
       });
 
       setSavedNote("Expense recorded successfully.");
       setDialogOpen(false);
       setChoice(null);
+
+      // Receipt photo is attached AFTER the expense exists (needs its
+      // real id for the storage path + the expense_receipts FK) — see
+      // app/api/expense-receipts/upload/route.ts and
+      // ExpenseReceiptService. A failure here must never make the
+      // whole submission look like it failed: the expense itself is
+      // already saved by this point, same partial-success discipline
+      // signEstimate's invoice-creation catch block uses.
+      if (receiptFile) {
+        try {
+          const formData = new FormData();
+          formData.append("file", receiptFile);
+          formData.append("expenseId", expense.id);
+          const res = await fetch("/api/expense-receipts/upload", { method: "POST", body: formData });
+          const body = await res.json();
+          if (!res.ok) throw new Error(body.error || "Upload failed");
+
+          await expenseReceiptService.create({
+            expenseId: expense.id,
+            companyId,
+            receiptFileUrl: body.url,
+            receiptDate: receiptDate ?? null,
+            receiptAmount: receiptAmount ?? null,
+            receiptVendor: receiptVendor ?? null,
+            uploadedBy: profile?.userId ?? null,
+          });
+        } catch (receiptErr) {
+          setSavedNote(
+            `Expense recorded, but the receipt photo failed to attach: ${
+              receiptErr instanceof Error ? receiptErr.message : "unknown error"
+            }`
+          );
+        }
+      }
 
       await load();
 
@@ -345,10 +405,24 @@ function ExpenseV2Content() {
         RECENT JOBS LIST
     ------------------------------------------------------- */}
     <section className="mb-8">
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-xs font-bold uppercase tracking-wider text-gray-400">
-          Active Projects & Estimates
+          Projects & Estimates
         </h2>
+        <div className="flex gap-1 rounded-full border border-gray-200 bg-gray-50 p-0.5">
+          {(["active", "completed", "all"] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setJobFilter(f)}
+              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize transition-colors ${
+                jobFilter === f ? "bg-emerald-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
       </div>
 
       {loading ? (
@@ -363,8 +437,12 @@ function ExpenseV2Content() {
       ) : recentJobs.length === 0 ? (
         <EmptyState
           icon={Home}
-          title="No jobs available"
-          description="Create an active estimate first to begin mapping expenses."
+          title={jobFilter === "completed" ? "No completed jobs yet" : "No invoiced jobs available"}
+          description={
+            jobFilter === "completed"
+              ? "Jobs show up here once their project is marked complete or archived."
+              : "Only jobs that have been signed into an invoice show up here — sign an estimate first to begin mapping expenses."
+          }
         />
       ) : (
         <div className="space-y-3">

@@ -31,7 +31,7 @@
  
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from "react";
 // import { Plus, Pencil, Trash2, Receipt, RotateCcw, HardHat, Briefcase, FileText } from "lucide-react";
-import { Plus, Pencil, Trash2, Receipt, RotateCcw, HardHat, Briefcase, FileText } from "lucide-react";
+import { Plus, Pencil, Trash2, Receipt, RotateCcw, HardHat, Briefcase, FileText, Image as ImageIcon } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ExpenseDialog } from "./ExpenseDialog";
 import { AttachBillDialog } from "./AttachBillDialog";
@@ -39,6 +39,7 @@ import { useExpenses } from "@/lib/hooks/useExpenses";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { formatPaymentMethod } from "@/components/payments/paymentMethods";
 import { PAID_BY_LABEL, type Expense, type CostEntry, type CostEntrySource } from "@/lib/services";
+import type { ExpenseReceipt } from "@/lib/services/expenseReceiptService";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
@@ -77,10 +78,14 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
   compact = false,
 }, ref) {{
   const { expenses, totals, loading, error, create, update, remove, markReimbursed, refresh } = useExpenses(companyId, projectId, estimateId);
-  const { financialEngine } = useServices();
+  const { financialEngine, expenseReceiptService } = useServices();
   const [dialogFor, setDialogFor] = useState<Expense | "new" | null>(null);
   const [entries, setEntries] = useState<CostEntry[]>([]);
   const [entriesLoading, setEntriesLoading] = useState(true);
+  /** expenseId -> its receipts, for the small "view receipt" link on
+   * each row — see components/expenses/ExpenseFormV2.tsx for where
+   * these get created. */
+  const [receiptsByExpense, setReceiptsByExpense] = useState<Record<string, ExpenseReceipt[]>>({});
 
   /** The unified list — expenses + subcontractor payments + agent
    * payments, assembled by FinancialEngine so this panel and the profit
@@ -107,6 +112,21 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
     loadEntries();
   }, [loadEntries]);
 
+  const loadReceipts = useCallback(async () => {
+    try {
+      setReceiptsByExpense(await expenseReceiptService.listForExpenses(expenses.map((e) => e.id)));
+    } catch {
+      // Best-effort, same discipline as loadEntries — a failed lookup
+      // just means no receipt links show, never blocks the list.
+      setReceiptsByExpense({});
+    }
+  }, [expenseReceiptService, expenses]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadReceipts();
+  }, [loadReceipts]);
+
   useImperativeHandle(ref, () => ({
     openNewExpense() {
       setDialogFor("new");
@@ -114,6 +134,7 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
     async refresh() {
       await refresh();
       await loadEntries();
+      await loadReceipts();
     },
   }));
 
@@ -272,6 +293,16 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
                     {expense && expense.paidByType !== "company" ? ` · paid by ${PAID_BY_LABEL[expense.paidByType].toLowerCase()}` : ""}
                   </div>
                   {entry.description && <div className="mt-0.5 text-[11px] text-muted-foreground">{entry.description}</div>}
+                  {expense && (receiptsByExpense[expense.id]?.length ?? 0) > 0 && (
+                    <a
+                      href={receiptsByExpense[expense.id][0].receiptFileUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 inline-flex items-center gap-1 rounded-md text-[11px] font-medium text-primary hover:underline"
+                    >
+                      <ImageIcon className="size-3" /> View receipt
+                    </a>
+                  )}
                 </div>
 
                 {canEdit && expense && (

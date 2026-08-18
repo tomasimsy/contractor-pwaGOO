@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ReceiptText, Search, Trash2 } from "lucide-react";
+import { ReceiptText, Search, Trash2, Image as ImageIcon } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -23,16 +23,20 @@ import { formatPaymentMethod } from "@/components/payments/paymentMethods";
 import { calculateExpenseTotals } from "@/lib/services/financialCalculations";
 import { EXPENSE_TYPES, EXPENSE_TYPE_LABEL, PAID_BY_LABEL, type Expense, type ExpenseType } from "@/lib/services";
 import type { Estimate } from "@/lib/services/estimateService";
+import type { ExpenseReceipt } from "@/lib/services/expenseReceiptService";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 function ExpensesContent() {
-  const { expenseService, estimateService } = useServices();
+  const { expenseService, estimateService, expenseReceiptService } = useServices();
   const { profile } = useAuth();
   const canDelete = usePermission("expense", "delete");
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [estimatesById, setEstimatesById] = useState<Record<string, Estimate>>({});
+  /** expenseId -> its receipts — same bulk read ProjectExpensesPanel
+   * uses, so "does this have a photo" shows up here too. */
+  const [receiptsByExpense, setReceiptsByExpense] = useState<Record<string, ExpenseReceipt[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -51,12 +55,18 @@ function ExpensesContent() {
       ]);
       setExpenses(expenseList);
       setEstimatesById(Object.fromEntries(estimateList.map((e) => [e.id, e])));
+      // Best-effort — a failed lookup just means no photo indicator
+      // shows, never blocks the register from loading.
+      expenseReceiptService
+        .listForExpenses(expenseList.map((e) => e.id))
+        .then(setReceiptsByExpense)
+        .catch(() => setReceiptsByExpense({}));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load expenses.");
     } finally {
       setLoading(false);
     }
-  }, [expenseService, estimateService, companyId]);
+  }, [expenseService, estimateService, expenseReceiptService, companyId]);
 
   async function handleDelete(expense: Expense) {
     const reason = window.prompt("Why are you deleting this expense?");
@@ -172,6 +182,20 @@ function ExpensesContent() {
                   <div className="mt-0.5 text-xs text-muted-foreground">
                     Estimate: {estimatesById[e.estimateId].estimateNumber ?? "—"}
                     {estimatesById[e.estimateId].title ? ` · ${estimatesById[e.estimateId].title}` : ""}
+                  </div>
+                )}
+                {(receiptsByExpense[e.id]?.length ?? 0) > 0 ? (
+                  <a
+                    href={receiptsByExpense[e.id][0].receiptFileUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                  >
+                    <ImageIcon className="size-3.5" /> View receipt
+                  </a>
+                ) : (
+                  <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground/60">
+                    <ImageIcon className="size-3.5" /> No receipt
                   </div>
                 )}
               </div>
