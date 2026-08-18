@@ -267,7 +267,6 @@ function ExpenseV2Content() {
           null,
       });
 
-      setSavedNote("Expense recorded successfully.");
       setDialogOpen(false);
       setChoice(null);
 
@@ -278,6 +277,13 @@ function ExpenseV2Content() {
       // whole submission look like it failed: the expense itself is
       // already saved by this point, same partial-success discipline
       // signEstimate's invoice-creation catch block uses.
+      //
+      // The success message is set AFTER this block (not before it, as
+      // it used to be) and names the receipt specifically — previously
+      // it said "Expense recorded successfully" the instant the modal
+      // closed, before the upload had even started, with no later
+      // confirmation either way. That silence read as "did the photo
+      // actually save?" even on a fully successful upload.
       if (receiptFile) {
         try {
           const formData = new FormData();
@@ -296,6 +302,7 @@ function ExpenseV2Content() {
             receiptVendor: receiptVendor ?? null,
             uploadedBy: profile?.userId ?? null,
           });
+          setSavedNote("Expense and receipt photo saved successfully.");
         } catch (receiptErr) {
           setSavedNote(
             `Expense recorded, but the receipt photo failed to attach: ${
@@ -303,6 +310,8 @@ function ExpenseV2Content() {
             }`
           );
         }
+      } else {
+        setSavedNote("Expense recorded successfully.");
       }
 
       await load();
