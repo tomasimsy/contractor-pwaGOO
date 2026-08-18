@@ -91,24 +91,30 @@ function ExpenseV2Content() {
   const [error, setError] = useState<string | null>(null);
   const [savedNote, setSavedNote] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  /** `silent`: skip the `loading` flip. Used for the refresh that runs
+   * right after recording an expense — the initial page mount SHOULD
+   * show the loading skeleton, but re-running the same full reload
+   * after every submit must not blank the whole list back to
+   * placeholders (that's what read as a "freeze": the toast says
+   * saved, then everything you were just looking at disappears for a
+   * few seconds while unrelated company-wide data re-fetches). */
+  const load = useCallback(async (silent = false) => {
     if (!companyId) return;
 
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError(null);
 
     try {
       const scope = { companyId };
 
-      const [
-        projectList,
-        estimateList,
-        mine,
-        subs,
-        agents,
-      ] = await Promise.all([
+      // ONE company-wide expense fetch — was previously N (one
+      // `listForEstimate` call per estimate, run in parallel but still
+      // N round trips) every single time this ran, including after
+      // every submit. Same call `/expenses` already uses.
+      const [projectList, estimateList, allExpenses, mine, subs, agents] = await Promise.all([
         projectService.list(scope),
         estimateService.list(scope),
+        expenseService.listForCompany(companyId),
 
         userId
           ? expenseService.listPendingReimbursements(companyId, userId)
@@ -125,31 +131,15 @@ function ExpenseV2Content() {
         ),
       ]);
 
-      const expenseResults = await Promise.all(
-        estimateList.map(async (estimate) => {
-          try {
-            const expenses = await expenseService.listForEstimate(
-              estimate.id
-            );
-
-            const total = expenses.reduce(
-              (sum, expense) => sum + expense.amount,
-              0
-            );
-
-            return [estimate.id, total] as const;
-          } catch {
-            return [estimate.id, 0] as const;
-          }
-        })
-      );
+      const totalsByEstimate: Record<string, number> = {};
+      for (const expense of allExpenses) {
+        if (!expense.estimateId) continue;
+        totalsByEstimate[expense.estimateId] = (totalsByEstimate[expense.estimateId] ?? 0) + expense.amount;
+      }
 
       setProjects(projectList);
       setEstimates(estimateList);
-
-      setEstimateExpenseTotals(
-        Object.fromEntries(expenseResults)
-      );
+      setEstimateExpenseTotals(totalsByEstimate);
 
       setOwedToMe(
         calculateExpenseTotals(mine).outstandingReimbursements
@@ -169,7 +159,7 @@ function ExpenseV2Content() {
           : "Failed to load expense data."
       );
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [
     companyId,
@@ -289,7 +279,23 @@ function ExpenseV2Content() {
           const formData = new FormData();
           formData.append("file", receiptFile);
           formData.append("expenseId", expense.id);
-          const res = await fetch("/api/expense-receipts/upload", { method: "POST", body: formData });
+          // A dropped mobile connection otherwise hangs this fetch
+          // indefinitely — the expense itself is already saved by this
+          // point, but the "saved" toast (and the receipt) would never
+          // resolve either way. Bound it so a bad connection surfaces
+          // as a clear failure instead of an indefinite wait.
+          const uploadController = new AbortController();
+          const uploadTimeout = setTimeout(() => uploadController.abort(), 30_000);
+          let res: Response;
+          try {
+            res = await fetch("/api/expense-receipts/upload", {
+              method: "POST",
+              body: formData,
+              signal: uploadController.signal,
+            });
+          } finally {
+            clearTimeout(uploadTimeout);
+          }
           // A rejection before the route handler even runs (e.g. a
           // request-body-size limit) comes back as plain text/HTML, not
           // JSON — blindly calling res.json() on that produced a
@@ -315,17 +321,22 @@ function ExpenseV2Content() {
           });
           setSavedNote("Expense and receipt photo saved successfully.");
         } catch (receiptErr) {
-          setSavedNote(
-            `Expense recorded, but the receipt photo failed to attach: ${
-              receiptErr instanceof Error ? receiptErr.message : "unknown error"
-            }`
-          );
+          const message =
+            receiptErr instanceof Error
+              ? receiptErr.name === "AbortError"
+                ? "upload timed out — check your connection and try attaching it again"
+                : receiptErr.message
+              : "unknown error";
+          setSavedNote(`Expense recorded, but the receipt photo failed to attach: ${message}`);
         }
       } else {
         setSavedNote("Expense recorded successfully.");
       }
 
-      await load();
+      // Silent — the modal already closed and the toast already shows;
+      // the list should just quietly update with fresh numbers, not
+      // blank back to loading skeletons for a full company-wide reload.
+      await load(true);
 
       return true;
     } catch (err) {
