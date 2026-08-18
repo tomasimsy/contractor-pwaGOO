@@ -139,6 +139,7 @@ export function ExpenseFormV2({
   const [receiptPreviewUrl, setReceiptPreviewUrl] = useState<string | null>(null);
   const [receiptGuessedDate, setReceiptGuessedDate] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState<{ phase: "preparing" | "recognizing"; progress: number } | null>(null);
   // Which fields the SCAN filled in (as opposed to the user typing them)
   // — tracked so removing the receipt can clear exactly what it added,
   // and so a later manual edit stops that field from being clearable
@@ -146,15 +147,26 @@ export function ExpenseFormV2({
   const [amountFromScan, setAmountFromScan] = useState(false);
   const [vendorFromScan, setVendorFromScan] = useState(false);
 
+  // Bumped every time a receipt is picked or cleared — a scan started
+  // for an earlier photo checks its own token before applying results,
+  // so removing the receipt (or picking a different one) mid-scan can't
+  // have a slow, stale OCR result land on top of it a few seconds later.
+  const scanTokenRef = useRef(0);
+
   async function handleReceiptPicked(file: File) {
+    const token = ++scanTokenRef.current;
     setReceiptFile(file);
     setReceiptPreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return URL.createObjectURL(file);
     });
     setScanning(true);
+    setScanProgress({ phase: "preparing", progress: 0 });
     try {
-      const result = await scanReceipt(file);
+      const result = await scanReceipt(file, (info) => {
+        if (scanTokenRef.current === token) setScanProgress(info);
+      });
+      if (scanTokenRef.current !== token) return; // superseded — ignore
       // Prefill only what's still empty — never overwrite something the
       // user already typed, even if the scan disagrees with it.
       if (result.guessedAmount && !amount) {
@@ -167,15 +179,21 @@ export function ExpenseFormV2({
       }
       setReceiptGuessedDate(result.guessedDate);
     } finally {
-      setScanning(false);
+      if (scanTokenRef.current === token) {
+        setScanning(false);
+        setScanProgress(null);
+      }
     }
   }
 
   function clearReceipt() {
+    scanTokenRef.current++; // invalidate any scan still in flight
     if (receiptPreviewUrl) URL.revokeObjectURL(receiptPreviewUrl);
     setReceiptFile(null);
     setReceiptPreviewUrl(null);
     setReceiptGuessedDate(null);
+    setScanning(false);
+    setScanProgress(null);
     if (receiptInputRef.current) receiptInputRef.current.value = "";
     // Undo exactly what the scan filled in — a value the user typed
     // themselves (amountFromScan/vendorFromScan already false by then)
@@ -410,7 +428,10 @@ export function ExpenseFormV2({
                 <div className="min-w-0 flex-1 text-xs text-neutral-600">
                   {scanning ? (
                     <span className="flex items-center gap-1.5">
-                      <Loader2 className="size-3.5 animate-spin" /> Scanning receipt…
+                      <Loader2 className="size-3.5 animate-spin shrink-0" />
+                      {scanProgress?.phase === "recognizing"
+                        ? `Reading text… ${Math.round(scanProgress.progress * 100)}%`
+                        : "Preparing image…"}
                     </span>
                   ) : (
                     <span>Amount/vendor prefilled where possible — review before saving.</span>
