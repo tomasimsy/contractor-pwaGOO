@@ -33,6 +33,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } fro
 // import { Plus, Pencil, Trash2, Receipt, RotateCcw, HardHat, Briefcase, FileText } from "lucide-react";
 import { Plus, Pencil, Trash2, Receipt, RotateCcw, HardHat, Briefcase, FileText, Image as ImageIcon } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Modal } from "@/components/ui/Modal";
 import { ExpenseDialog } from "./ExpenseDialog";
 import { AttachBillDialog } from "./AttachBillDialog";
 import { useExpenses } from "@/lib/hooks/useExpenses";
@@ -145,6 +146,10 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
    * click can't fire two deletes, and shows the row as busy. Same
    * pattern as the payments panel. */
   const [busyId, setBusyId] = useState<string | null>(null);
+  /** Delete confirmation — replaces window.confirm, which some browsers
+   * (embedded/PWA webviews in particular) refuse to render at all
+   * ("prompt() is not supported"), silently breaking the button. */
+  const [deleteTarget, setDeleteTarget] = useState<{ expense: Expense; sourceLabel: string } | null>(null);
 
   /** Expense rows keep their edit/delete/reimburse actions, so the
    * projection is joined back to the real Expense objects by id. */
@@ -159,11 +164,17 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
     return ok;
   }
 
-  async function handleDelete(expense: Expense, sourceLabel: string) {
+  function requestDelete(expense: Expense, sourceLabel: string) {
     // Names what is actually being removed — "Delete this $2,000
     // Subcontractor cost?" rather than a generic "expense", since a
     // subcontractor payment and a bag of nails now look alike here.
-    if (!window.confirm(`Delete this ${money(expense.amount)} ${sourceLabel.toLowerCase()} cost? This can be restored later.`)) return;
+    setActionError(null);
+    setDeleteTarget({ expense, sourceLabel });
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    const { expense } = deleteTarget;
     setActionError(null);
     setBusyId(expense.id);
     try {
@@ -177,6 +188,7 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
       // …and the parent's own financials (project + dashboard
       // summaries), so profit moves in the same interaction.
       await onChanged?.();
+      setDeleteTarget(null);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Could not delete this cost.");
     } finally {
@@ -346,7 +358,7 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
 >
   <FileText className="size-3.5" />
 </button>
-                    <button type="button" onClick={() => handleDelete(expense, meta.label)}
+                    <button type="button" onClick={() => requestDelete(expense, meta.label)}
                       disabled={busyId === expense.id}
                       aria-label={`Delete ${meta.label} cost`} title={`Delete ${meta.label} cost`}
                       className="rounded-md p-1 text-muted-foreground hover:bg-danger/10 hover:text-danger disabled:opacity-50">
@@ -389,6 +401,38 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
           }
         />
       )}
+
+      <Modal open={!!deleteTarget} onClose={() => { if (busyId === null) setDeleteTarget(null); }} title="Delete this cost?">
+        {deleteTarget && (
+          <div className="space-y-3 text-sm">
+            <p className="text-foreground">
+              Delete this {money(deleteTarget.expense.amount)} {deleteTarget.sourceLabel.toLowerCase()} cost? This can be
+              restored later.
+            </p>
+            {actionError && (
+              <div role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-xs text-danger">{actionError}</div>
+            )}
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                disabled={busyId !== null}
+                className="rounded-lg border border-input px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={busyId !== null}
+                className="rounded-lg bg-danger px-3 py-1.5 text-xs font-semibold text-danger-foreground hover:bg-danger/90 disabled:opacity-50"
+              >
+                {busyId !== null ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

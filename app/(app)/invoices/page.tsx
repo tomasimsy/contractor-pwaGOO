@@ -190,57 +190,95 @@ function InvoicesListContent() {
         )}
 
         {/* Filters */}
-        <div className="mb-6 flex flex-wrap items-center gap-3 p-4 rounded-lg bg-white border border-emerald-200/60 shadow-sm">
-          <div className="relative flex-1 min-w-[180px] max-w-sm">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-emerald-500" />
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search invoice #, project, client..."
-              className="
-                h-10
-                w-full
-                rounded-lg
-                bg-white/80
-                border
-                border-emerald-200
-                pl-9
-                pr-3
-                text-sm
-                text-emerald-900
-                placeholder:text-emerald-400
-                focus:border-emerald-400
-                focus:ring-2
-                focus:ring-emerald-400/30
-                focus:bg-white
-                transition-all
-              "
-            />
+        <div className="mb-6 space-y-3 p-3 sm:p-4 rounded-lg bg-white border border-emerald-200/60 shadow-sm">
+          <div className="flex flex-nowrap items-center gap-1.5 sm:flex-wrap sm:gap-3">
+            <div className="relative min-w-0 flex-1 sm:max-w-sm">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-emerald-500 sm:left-3 sm:size-4" />
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search…"
+                className="
+                  h-9
+                  sm:h-10
+                  w-full
+                  rounded-lg
+                  bg-white/80
+                  border
+                  border-emerald-200
+                  pl-8
+                  sm:pl-9
+                  pr-2
+                  sm:pr-3
+                  text-xs
+                  sm:text-sm
+                  text-emerald-900
+                  placeholder:text-emerald-400
+                  focus:border-emerald-400
+                  focus:ring-2
+                  focus:ring-emerald-400/30
+                  focus:bg-white
+                  transition-all
+                "
+              />
+            </div>
+
+            {/* Status — a compact select on mobile so it doesn't eat a
+                whole row of pills; the full pill row below takes over
+                at sm+ where there's room for it. */}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+              className="h-9 shrink-0 rounded-lg bg-white/80 border border-emerald-200 px-1.5 text-[11px] text-emerald-900 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30 focus:bg-white transition-all sm:hidden"
+            >
+              <option value="all">All statuses</option>
+              {STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s.replace(/_/g, " ")}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value as SortKey)}
+              className="h-9 shrink-0 rounded-lg bg-white/80 border border-emerald-200 px-1.5 text-[11px] text-emerald-900 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30 focus:bg-white transition-all sm:h-10 sm:px-3 sm:text-sm"
+            >
+              <option value="createdAt">Newest</option>
+              <option value="dueDate">Due date</option>
+              <option value="total">Total (high-low)</option>
+            </select>
           </div>
 
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-            className="h-10 rounded-lg bg-white/80 border border-emerald-200 px-3 text-sm text-emerald-900 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30 focus:bg-white transition-all"
-          >
-            <option value="all">All statuses</option>
+          {/* Quick status filters — pills instead of a dropdown, so
+              switching status is a single click/tap, matching the
+              lifecycle-tab pattern already used on the Estimates list.
+              Hidden on mobile (the select above covers it there) since
+              a full row of pills ate half the screen on small phones. */}
+          <div className="hidden flex-wrap gap-1.5 sm:flex">
+            <button
+              type="button"
+              onClick={() => setStatusFilter("all")}
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                statusFilter === "all" ? "bg-emerald-600 text-white shadow-sm" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+              }`}
+            >
+              All
+            </button>
             {STATUS_OPTIONS.map((s) => (
-              <option key={s} value={s}>
+              <button
+                key={s}
+                type="button"
+                onClick={() => setStatusFilter(s)}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${
+                  statusFilter === s ? "bg-emerald-600 text-white shadow-sm" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                }`}
+              >
                 {s.replace(/_/g, " ")}
-              </option>
+              </button>
             ))}
-          </select>
-
-          <select
-            value={sortKey}
-            onChange={(e) => setSortKey(e.target.value as SortKey)}
-            className="h-10 rounded-lg bg-white/80 border border-emerald-200 px-3 text-sm text-emerald-900 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30 focus:bg-white transition-all"
-          >
-            <option value="createdAt">Newest first</option>
-            <option value="dueDate">Due date</option>
-            <option value="total">Total (high-low)</option>
-          </select>
+          </div>
         </div>
 
         {loading ? (

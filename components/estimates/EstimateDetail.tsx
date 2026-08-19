@@ -83,7 +83,7 @@ const formatMoney = (n: number) => n.toLocaleString("en-US", { style: "currency"
 
 export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { estimateId: string; editBasePath?: string }) {
   const router = useRouter();
-  const { estimateService, projectService, clientService, changeOrderService, auditService, financialEngine, roofingAreaService, estimateAreaLineItemService, invoiceService, paymentService, estimateWorkflow, companyService } = useServices();
+  const { estimateService, projectService, clientService, changeOrderService, auditService, financialEngine, roofingAreaService, estimateAreaLineItemService, invoiceService, paymentService, estimateWorkflow, companyService, expenseService } = useServices();
   const { profile, user } = useAuth();
   const canEditExpenses = usePermission("expense", "create");
   const canEditPayments = usePermission("payment", "create");
@@ -153,6 +153,18 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
   const [signatureNotice, setSignatureNotice] = useState<{ tone: "error" | "success"; message: string } | null>(null);
   const [signatureBusy, setSignatureBusy] = useState(false);
 
+  /** Delete confirmation — replaces window.prompt, which some browsers
+   * (e.g. inside an embedded/PWA webview) refuse to render at all
+   * ("prompt() is not supported"), silently breaking the button. Also
+   * lets softDelete's "cannot delete: has an invoice/change order/
+   * expenses" refusal show inline in the modal instead of only as a
+   * page-level banner far from the button the user just pressed. */
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [hasExpenses, setHasExpenses] = useState(false);
+
   const loadFinancials = useCallback(async () => {
     if (!estimateId) return;
     try {
@@ -195,7 +207,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
         // includeDeleted: true on project/client — this estimate's own
         // context must never disappear just because either was later
         // deleted; financial history is permanent.
-        const [p, c, cos, scope, history, projectInvoices, companySettingsResult] = await Promise.all([
+        const [p, c, cos, scope, history, projectInvoices, companySettingsResult, estimateExpenses] = await Promise.all([
           projectService.getById(e.projectId, true),
           e.clientId ? clientService.getById(e.clientId, true) : Promise.resolve(null),
           changeOrderService.listForEstimate(e.id),
@@ -203,6 +215,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
           auditService.getHistory(e.companyId, "estimates", e.id),
           invoiceService.listForProject(e.projectId),
           companyService.getByCompanyId(e.companyId),
+          expenseService.listForEstimate(e.id),
         ]);
         setProject(p);
         if (c) setClient(c);
@@ -210,6 +223,11 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
         setScopeLines(scope);
         setActivity(history);
         setCompanySettings(companySettingsResult);
+        // Drives the Delete button's disabled state below — mirrors
+        // EstimateService.softDelete's own assertNoFinancialActivity
+        // check (invoice/change order/expenses), so the button is
+        // disabled BEFORE the click instead of only failing after.
+        setHasExpenses(estimateExpenses.length > 0);
 
         if (e.estimateType === "roofing") {
           const areas = await roofingAreaService.listForEstimate(e.id, true);
@@ -263,15 +281,30 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
     load();
   }, [load]);
 
+  function openDeleteConfirm() {
+    setDeleteReason("");
+    setDeleteError(null);
+    setShowDeleteConfirm(true);
+  }
+
   async function handleDelete() {
     if (!estimate) return;
-    const reason = window.prompt(`Why are you deleting estimate ${estimate.estimateNumber ?? estimate.id}?`);
-    if (!reason) return;
+    if (!deleteReason.trim()) {
+      setDeleteError("A reason is required.");
+      return;
+    }
+    setDeleteBusy(true);
+    setDeleteError(null);
     try {
-      await estimateService.softDelete(estimate.id, reason);
+      await estimateService.softDelete(estimate.id, deleteReason.trim());
       router.push(editBasePath);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete estimate.");
+      // softDelete refuses (and throws) when this estimate has an
+      // invoice, change order, or expenses attached — surfaced here,
+      // inline in the modal, rather than the page-level banner.
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete estimate.");
+    } finally {
+      setDeleteBusy(false);
     }
   }
 
@@ -364,6 +397,17 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
   const hasApprovedChangeOrders = changeOrders.some((c) => c.status === "approved");
   const approvedChangeOrderRevenue = sumApprovedChangeOrderRevenue(changeOrders);
   const revisedTotal = calculateRevisedEstimateTotal(estimate.total, changeOrders);
+  // Mirrors EstimateService.softDelete's own assertNoFinancialActivity
+  // check — disables the Delete button (with a tooltip explaining why)
+  // instead of letting the user click it and only then see a refusal.
+  const deleteBlockedReason =
+    invoices.length > 0
+      ? "Cannot delete: this estimate has an invoice (and possibly payments). Delete the invoice first."
+      : changeOrders.length > 0
+      ? "Cannot delete: this estimate has a change order attached. Delete the change order first."
+      : hasExpenses
+      ? "Cannot delete: this estimate has recorded expenses attached."
+      : null;
 
   return (
     <PageContainer>
@@ -491,7 +535,13 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
             </button>
           )}
 
-          <button type="button" onClick={handleDelete} className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-danger hover:bg-danger/10 transition-colors" title="Delete">
+          <button
+            type="button"
+            onClick={openDeleteConfirm}
+            disabled={!!deleteBlockedReason}
+            className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-danger hover:bg-danger/10 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-card transition-colors"
+            title={deleteBlockedReason ?? "Delete this estimate (requires a reason)"}
+          >
             <Trash2 className="size-3.5" />
             <span className="hidden sm:inline">Delete</span>
           </button>
@@ -1290,6 +1340,48 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
               className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
             >
               {completeBusy ? "Marking Complete…" : "Mark Complete"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={showDeleteConfirm} onClose={() => { if (!deleteBusy) setShowDeleteConfirm(false); }} title="Delete this estimate?">
+        <div className="space-y-3 text-sm">
+          <p className="text-foreground">
+            Deleting <span className="font-semibold">{estimate.estimateNumber ?? estimate.id.slice(0, 8)}</span> is a soft
+            delete — it disappears from lists but can be restored later. This is blocked if it already has an invoice,
+            change order, or recorded expenses attached; delete those first if you really need to remove it.
+          </p>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Reason (required)
+            <textarea
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              rows={2}
+              autoFocus
+              className="mt-1 w-full rounded-lg border border-input bg-card px-3 py-2 text-sm font-normal normal-case text-foreground focus:border-primary focus:outline-none"
+              placeholder="e.g. duplicate, created in error…"
+            />
+          </label>
+          {deleteError && (
+            <div role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-xs text-danger">{deleteError}</div>
+          )}
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => setShowDeleteConfirm(false)}
+              disabled={deleteBusy}
+              className="rounded-lg border border-input px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleteBusy || !deleteReason.trim()}
+              className="rounded-lg bg-danger px-3 py-1.5 text-xs font-semibold text-danger-foreground hover:bg-danger/90 disabled:opacity-50"
+            >
+              {deleteBusy ? "Deleting…" : "Delete Estimate"}
             </button>
           </div>
         </div>

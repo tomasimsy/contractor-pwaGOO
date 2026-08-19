@@ -14,6 +14,7 @@
 import { forwardRef, useImperativeHandle, useState } from "react";
 import { Plus, Pencil, Trash2, Wallet } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Modal } from "@/components/ui/Modal";
 import { PaymentDialog } from "./PaymentDialog";
 import { formatPaymentMethod } from "./paymentMethods";
 import { useServices } from "@/components/providers/ServicesProvider";
@@ -56,6 +57,12 @@ export const InvoicePaymentsPanel = forwardRef<InvoicePaymentsPanelRef, {
   const { paymentService } = useServices();
   const [dialogFor, setDialogFor] = useState<CustomerPayment | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Delete confirmation — replaces window.prompt, which some browsers
+   * (embedded/PWA webviews in particular) refuse to render at all
+   * ("prompt() is not supported"), silently breaking the button. */
+  const [deleteTarget, setDeleteTarget] = useState<CustomerPayment | null>(null);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   useImperativeHandle(ref, () => ({
     openNewPayment() {
@@ -101,18 +108,31 @@ export const InvoicePaymentsPanel = forwardRef<InvoicePaymentsPanelRef, {
     }
   }
 
-  async function handleDelete(payment: CustomerPayment) {
+  function requestDelete(payment: CustomerPayment) {
+    setError(null);
+    setDeleteReason("");
+    setDeleteTarget(payment);
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
     // Money leaving the record needs a reason — the same discipline
     // every other financial delete in this codebase enforces, and
     // PaymentService.softDelete rejects an empty one regardless.
-    const reason = window.prompt(`Why are you deleting this ${money(payment.amount)} payment?`);
-    if (!reason) return;
+    if (!deleteReason.trim()) {
+      setError("A reason is required.");
+      return;
+    }
+    setDeleteBusy(true);
     setError(null);
     try {
-      await paymentService.softDelete(payment.id, reason);
+      await paymentService.softDelete(deleteTarget.id, deleteReason.trim());
       await onChanged();
+      setDeleteTarget(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not delete this payment.");
+    } finally {
+      setDeleteBusy(false);
     }
   }
 
@@ -158,7 +178,7 @@ export const InvoicePaymentsPanel = forwardRef<InvoicePaymentsPanelRef, {
                     className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
                     <Pencil className="size-3.5" />
                   </button>
-                  <button type="button" onClick={() => handleDelete(p)} aria-label="Delete payment"
+                  <button type="button" onClick={() => requestDelete(p)} aria-label="Delete payment"
                     className="rounded-md p-1 text-muted-foreground hover:bg-danger/10 hover:text-danger">
                     <Trash2 className="size-3.5" />
                   </button>
@@ -178,6 +198,46 @@ export const InvoicePaymentsPanel = forwardRef<InvoicePaymentsPanelRef, {
           onSubmit={handleSubmit}
         />
       )}
+
+      <Modal open={!!deleteTarget} onClose={() => { if (!deleteBusy) setDeleteTarget(null); }} title="Delete this payment?">
+        {deleteTarget && (
+          <div className="space-y-3 text-sm">
+            <p className="text-foreground">
+              Delete this {money(deleteTarget.amount)} payment? This can be restored later.
+            </p>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Reason (required)
+              <textarea
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                rows={2}
+                autoFocus
+                className="mt-1 w-full rounded-lg border border-input bg-card px-3 py-2 text-sm font-normal normal-case text-foreground focus:border-primary focus:outline-none"
+                placeholder="e.g. recorded in error…"
+              />
+            </label>
+            {error && <div role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleteBusy}
+                className="rounded-lg border border-input px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleteBusy || !deleteReason.trim()}
+                className="rounded-lg bg-danger px-3 py-1.5 text-xs font-semibold text-danger-foreground hover:bg-danger/90 disabled:opacity-50"
+              >
+                {deleteBusy ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 });

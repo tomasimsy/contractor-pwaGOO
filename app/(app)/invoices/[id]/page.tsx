@@ -50,6 +50,15 @@ function InvoiceDetailContent() {
   const [projectInvoices, setProjectInvoices] = useState<Invoice[]>([]);
   const [voidConfirmOpen, setVoidConfirmOpen] = useState(false);
   const [voiding, setVoiding] = useState(false);
+  /** Delete confirmation — replaces window.prompt, which some browsers
+   * (embedded/PWA webviews in particular) refuse to render at all
+   * ("prompt() is not supported"), silently breaking the button. Also
+   * surfaces softDelete's "cannot delete: has payments/is issued"
+   * refusal inline instead of only in the page-level banner. */
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -127,15 +136,30 @@ function InvoiceDetailContent() {
     }
   }
 
+  function openDeleteConfirm() {
+    setDeleteReason("");
+    setDeleteError(null);
+    setDeleteConfirmOpen(true);
+  }
+
   async function handleDelete() {
     if (!invoice) return;
-    const reason = window.prompt(`Why are you deleting invoice ${invoice.invoiceNumber}?`);
-    if (!reason) return;
+    if (!deleteReason.trim()) {
+      setDeleteError("A reason is required.");
+      return;
+    }
+    setDeleteBusy(true);
+    setDeleteError(null);
     try {
-      await invoiceService.softDelete(invoice.id, reason);
+      await invoiceService.softDelete(invoice.id, deleteReason.trim());
       router.push("/invoices");
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Failed to delete invoice.");
+      // softDelete refuses (and throws) when this invoice has active
+      // payments recorded against it — surfaced here, inline in the
+      // modal, rather than the page-level banner.
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete invoice.");
+    } finally {
+      setDeleteBusy(false);
     }
   }
 
@@ -181,6 +205,13 @@ function InvoiceDetailContent() {
 
   const isDraft = invoice.lifecycleStatus === "draft";
   const isTerminal = invoice.lifecycleStatus === "cancelled" || invoice.lifecycleStatus === "void";
+  // Mirrors InvoiceService.softDelete's own assertNoFinancialActivity
+  // check — disables the Delete button (with a tooltip explaining why)
+  // instead of letting the user click it and only then see a refusal.
+  const deleteBlockedReason =
+    payments.length > 0
+      ? "Cannot delete: this invoice has payments recorded against it. Void it instead, or delete the payments first if they were recorded in error."
+      : null;
 
   return (
     <PageContainer>
@@ -190,25 +221,41 @@ function InvoiceDetailContent() {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={INVOICE_STATUS_TONE[invoice.status]}>{invoice.status.replace(/_/g, " ")}</Badge>
-            <button type="button" onClick={handleDownloadPdf} className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted">
+            <button type="button" onClick={handleDownloadPdf} title="Download this invoice as a PDF" className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted">
               <Download className="size-3.5" /> PDF
             </button>
             {canUpdate && isDraft && (
               <>
-                <Link href={`/invoices/${invoice.id}/edit`} className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted">
+                <Link href={`/invoices/${invoice.id}/edit`} title="Edit this draft invoice's line items and details" className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted">
                   <Pencil className="size-3.5" /> Edit
                 </Link>
-                <button type="button" onClick={() => handleStatus("sent")} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+                <button
+                  type="button"
+                  onClick={() => handleStatus("sent")}
+                  title="Issue this invoice — locks its line items/total and marks it Sent"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                >
                   <Send className="size-3.5" /> Mark Sent
                 </button>
               </>
             )}
             {canUpdate && !isDraft && !isTerminal && (
-              <button type="button" onClick={() => setVoidConfirmOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-danger hover:bg-danger/10">
+              <button
+                type="button"
+                onClick={() => setVoidConfirmOpen(true)}
+                title="Void this invoice — removes it from revenue totals everywhere, but keeps it and its history visible for the record. Cannot be undone."
+                className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-danger hover:bg-danger/10"
+              >
                 <Ban className="size-3.5" /> Void
               </button>
             )}
-            <button type="button" onClick={handleDelete} className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-danger hover:bg-danger/10">
+            <button
+              type="button"
+              onClick={openDeleteConfirm}
+              disabled={!!deleteBlockedReason}
+              title={deleteBlockedReason ?? "Delete this invoice (requires a reason)"}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-danger hover:bg-danger/10 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            >
               <Trash2 className="size-3.5" /> Delete
             </button>
           </div>
@@ -428,6 +475,7 @@ function InvoiceDetailContent() {
                 <button
                   type="button"
                   onClick={handleCopyLink}
+                  title="Copy the public, no-login link customers use to view this invoice"
                   className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
                 >
                   {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
@@ -492,6 +540,48 @@ function InvoiceDetailContent() {
               className="inline-flex items-center gap-1.5 rounded-lg bg-danger px-3 py-1.5 text-sm font-medium text-danger-foreground hover:bg-danger/90 disabled:opacity-50"
             >
               <Ban className="size-3.5" /> {voiding ? "Voiding…" : "Void Invoice"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={deleteConfirmOpen} onClose={() => { if (!deleteBusy) setDeleteConfirmOpen(false); }} title="Delete this invoice?">
+        <div className="space-y-3 text-sm">
+          <p className="text-foreground">
+            Deleting <span className="font-semibold">{invoice.invoiceNumber || invoice.id.slice(0, 8)}</span> is a soft
+            delete — it disappears from lists but can be restored later. This is blocked if it has payments recorded
+            against it; void the invoice instead if it's already been issued.
+          </p>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Reason (required)
+            <textarea
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              rows={2}
+              autoFocus
+              className="mt-1 w-full rounded-lg border border-input bg-card px-3 py-2 text-sm font-normal normal-case text-foreground focus:border-primary focus:outline-none"
+              placeholder="e.g. duplicate, created in error…"
+            />
+          </label>
+          {deleteError && (
+            <div role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-xs text-danger">{deleteError}</div>
+          )}
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => setDeleteConfirmOpen(false)}
+              disabled={deleteBusy}
+              className="rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleteBusy || !deleteReason.trim()}
+              className="rounded-lg bg-danger px-3 py-1.5 text-sm font-semibold text-danger-foreground hover:bg-danger/90 disabled:opacity-50"
+            >
+              {deleteBusy ? "Deleting…" : "Delete Invoice"}
             </button>
           </div>
         </div>

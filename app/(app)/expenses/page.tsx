@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ReceiptText, Search, Trash2, Image as ImageIcon } from "lucide-react";
+import { ReceiptText, Search, Trash2, Image as ImageIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -27,6 +27,9 @@ import type { ExpenseReceipt } from "@/lib/services/expenseReceiptService";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
+const PAGE_SIZE = 30;
+type SortKey = "newest" | "oldest";
+
 function ExpensesContent() {
   const { expenseService, estimateService, expenseReceiptService } = useServices();
   const { profile } = useAuth();
@@ -41,6 +44,8 @@ function ExpensesContent() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<ExpenseType | "all">("all");
+  const [sortKey, setSortKey] = useState<SortKey>("newest");
+  const [page, setPage] = useState(1);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const companyId = profile?.companyId ?? null;
@@ -90,16 +95,37 @@ function ExpensesContent() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return expenses.filter((e) => {
+    const rows = expenses.filter((e) => {
       if (typeFilter !== "all" && e.expenseType !== typeFilter) return false;
       if (!q) return true;
       return [e.vendor, e.description, e.notes].some((v) => v?.toLowerCase().includes(q));
     });
-  }, [expenses, query, typeFilter]);
+    return [...rows].sort((a, b) =>
+      sortKey === "newest" ? b.createdAt.localeCompare(a.createdAt) : a.createdAt.localeCompare(b.createdAt)
+    );
+  }, [expenses, query, typeFilter, sortKey]);
 
   // Same shared formula as the project panel — a filtered view must not
-  // invent its own way of adding money up.
+  // invent its own way of adding money up. Totals reflect every
+  // matching row, not just the current page.
   const totals = useMemo(() => calculateExpenseTotals(filtered), [filtered]);
+
+  // Any filter/sort change invalidates the current page — jump back to
+  // 1 rather than risk landing on a now-nonexistent page.
+  useEffect(() => {
+    setPage(1);
+  }, [query, typeFilter, sortKey]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageStart = (page - 1) * PAGE_SIZE;
+  const paged = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+  const pageNumbers = (() => {
+    const span = 5;
+    let start = Math.max(1, page - Math.floor(span / 2));
+    const end = Math.min(totalPages, start + span - 1);
+    start = Math.max(1, end - span + 1);
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  })();
 
   return (
     <PageContainer>
@@ -107,39 +133,55 @@ function ExpensesContent() {
 
       {error && <div className="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</div>}
 
-      <dl className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {/* One tight row at every width — four 2-line stat tiles used to
+          be a 2x2 grid on mobile (two full rows) with sm:p-3/text-lg
+          sizing meant for desktop, eating a large chunk of a phone
+          screen before any actual data appeared. */}
+      <dl className="mb-3 grid grid-cols-4 gap-1.5 sm:gap-3">
         {[
           { label: "Total", value: totals.total },
           { label: "Company paid", value: totals.companyPaid },
           { label: "Owed back", value: totals.outstandingReimbursements },
           { label: "Unpaid bills", value: totals.unpaid },
         ].map((tile) => (
-          <div key={tile.label} className="rounded-xl border border-border bg-card p-3">
-            <dt className="text-xs text-muted-foreground">{tile.label}</dt>
-            <dd className="mt-0.5 text-lg font-semibold text-foreground">{money(tile.value)}</dd>
+          <div key={tile.label} className="rounded-lg border border-border bg-card p-1.5 sm:rounded-xl sm:p-3">
+            <dt className="truncate text-[9px] text-muted-foreground sm:text-xs">{tile.label}</dt>
+            <dd className="mt-0.5 truncate text-xs font-semibold text-foreground sm:text-lg">{money(tile.value)}</dd>
           </div>
         ))}
       </dl>
 
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row">
-        <div className="flex flex-1 items-center gap-2 rounded-lg border border-input bg-background px-3">
-          <Search className="size-4 shrink-0 text-muted-foreground" />
+      {/* Search + type + sort share ONE row at every width — was three
+          full-width stacked rows on mobile (flex-col), each its own
+          line, instead of the compact single-row bar the rest of the
+          app's list pages already use (e.g. /estimates). */}
+      <div className="mb-4 flex flex-nowrap items-center gap-1.5">
+        <div className="flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-input bg-background px-2">
+          <Search className="size-3.5 shrink-0 text-muted-foreground" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search vendor, description or notes…"
-            className="min-h-10 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            placeholder="Search…"
+            className="min-w-0 w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground sm:text-sm"
           />
         </div>
         <select
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value as ExpenseType | "all")}
-          className="min-h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring"
+          className="h-9 shrink-0 rounded-lg border border-input bg-background px-1.5 text-[11px] outline-none focus-visible:border-ring sm:px-3 sm:text-sm"
         >
           <option value="all">All types</option>
           {EXPENSE_TYPES.map((t) => (
             <option key={t} value={t}>{EXPENSE_TYPE_LABEL[t]}</option>
           ))}
+        </select>
+        <select
+          value={sortKey}
+          onChange={(e) => setSortKey(e.target.value as SortKey)}
+          className="h-9 shrink-0 rounded-lg border border-input bg-background px-1.5 text-[11px] outline-none focus-visible:border-ring sm:px-3 sm:text-sm"
+        >
+          <option value="newest">Newest</option>
+          <option value="oldest">Oldest</option>
         </select>
       </div>
 
@@ -157,7 +199,7 @@ function ExpensesContent() {
         />
       ) : (
         <ul className="divide-y divide-border rounded-xl border border-border bg-card">
-          {filtered.map((e) => (
+          {paged.map((e) => (
             <li key={e.id} className="flex items-start justify-between gap-3 p-3 text-sm">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -220,6 +262,44 @@ function ExpensesContent() {
             </li>
           ))}
         </ul>
+      )}
+
+      {!loading && filtered.length > PAGE_SIZE && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span>
+            Showing {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, filtered.length)} of {filtered.length}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-input bg-background px-2 font-medium hover:bg-muted disabled:opacity-40 disabled:hover:bg-background"
+            >
+              <ChevronLeft className="size-3.5" /> Prev
+            </button>
+            {pageNumbers.map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setPage(n)}
+                className={`inline-flex h-7 min-w-7 items-center justify-center rounded-md px-1.5 font-semibold ${
+                  n === page ? "bg-primary text-primary-foreground" : "border border-input bg-background hover:bg-muted"
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-input bg-background px-2 font-medium hover:bg-muted disabled:opacity-40 disabled:hover:bg-background"
+            >
+              Next <ChevronRight className="size-3.5" />
+            </button>
+          </div>
+        </div>
       )}
     </PageContainer>
   );
