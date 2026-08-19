@@ -163,16 +163,67 @@ export function extractDate(text: string): string | null {
   return null;
 }
 
-/** Weakest guess of the three — a receipt's vendor name is usually its
- * first non-empty printed line (store name/logo text), but OCR noise
- * (garbled header text, a stray barcode line) means this is genuinely
- * just a starting point, not a confident read. */
+/** Weakest guess of the three — a receipt's vendor name is near the top,
+ * but "just take the first line with a letter in it" (the old
+ * approach) grabbed whatever OCR made of the LOGO — a stylized
+ * wordmark/icon that reads as garbage far more often than the plain
+ * printed business-name line just below it (e.g. Lowe's: the house-
+ * icon logo OCRs unreliably, but "LOWE'S HOME CENTERS, LLC" right
+ * under it reads cleanly).
+ *
+ * An earlier version of this function SCORED all candidate lines and
+ * weighted word count heavily, on the theory that a fuller business
+ * name beats a single stray word. That backfired hard on single-word
+ * brands: "TARGET" (1 word) lost to the tagline right below it,
+ * "EXPECT MORE. PAY LESS." (4 words) — same for "Walmart" losing to
+ * "Save money. Live better." Word count is not a proxy for "is this
+ * the vendor name"; position is. This now takes the FIRST line that
+ * passes the filters below, in top-to-bottom order, rather than the
+ * best-scoring line anywhere in the first several — a receipt's
+ * business name is essentially always the first legitimate text on
+ * it, once logos/taglines/boilerplate are filtered out. */
 export function extractVendor(text: string): string | null {
-  const line = text
+  const candidateLines = text
     .split("\n")
     .map((l) => l.trim())
-    .find((l) => l.length >= 3 && /[a-zA-Z]/.test(l));
-  return line || null;
+    .filter((l) => l.length > 0)
+    .slice(0, 8); // the vendor name is always near the top, never buried mid-receipt
+
+  const phoneRegex = /\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/;
+  // Street address: a leading number followed by a word (street/ave/etc).
+  const addressRegex = /^\d+\s+\S/;
+  const transactionLineRegex = /\b(sale|sales#|trans#|invoice|order|receipt|store|terminal|manager|cashier|welcome|thank you)\b/i;
+  const dateRegex = /\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/;
+  // Tagline/slogan shape: "Expect more. Pay less." / "Save money. Live
+  // better." — a sentence-cased phrase with a period mid-line, not a
+  // business name (those are ALL CAPS or a single brand word/phrase
+  // with no internal sentence punctuation).
+  const taglineRegex = /[a-zA-Z]\.\s+[A-Z]/;
+
+  for (const line of candidateLines) {
+    if (
+      phoneRegex.test(line) ||
+      addressRegex.test(line) ||
+      transactionLineRegex.test(line) ||
+      dateRegex.test(line) ||
+      taglineRegex.test(line)
+    ) {
+      continue;
+    }
+
+    const letters = line.replace(/[^a-zA-Z]/g, "");
+    const nonSpaceLength = line.replace(/\s/g, "").length;
+    if (nonSpaceLength === 0) continue;
+    const letterRatio = letters.length / nonSpaceLength;
+    // Mostly-punctuation/garbled OCR noise (e.g. a mangled logo) fails
+    // this outright — real business names are overwhelmingly letters.
+    if (letterRatio < 0.7) continue;
+    if (letters.length < 3) continue;
+
+    return line; // first line to pass every filter — take it and stop.
+  }
+
+  return null;
 }
 
 export async function scanReceipt(file: File, onProgress?: ReceiptScanProgress): Promise<ReceiptScanResult> {

@@ -401,7 +401,14 @@ export function ExpenseFormV2({
 
           {/* ---- REQUIRED ---- */}
           <label className="block">
-            <span className={LABEL}>Amount</span>
+            <span className={LABEL}>
+              Amount
+              {amountFromScan && (
+                <span className="ml-1.5 rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium normal-case text-neutral-500">
+                  from scan — tap to fix
+                </span>
+              )}
+            </span>
             <input
               type="number"
               min="0"
@@ -495,7 +502,14 @@ export function ExpenseFormV2({
           </p>
 
           <div>
-            <span className={LABEL}>Vendor</span>
+            <span className={LABEL}>
+              Vendor
+              {vendorFromScan && (
+                <span className="ml-1.5 rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium normal-case text-neutral-500">
+                  from scan — tap to fix
+                </span>
+              )}
+            </span>
             <CreateOrSelect
               adapter={vendorDir}
               value={payeeId}

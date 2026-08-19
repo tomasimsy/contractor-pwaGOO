@@ -53,4 +53,58 @@ describe("extractVendor", () => {
   test("returns null for text with no usable line", () => {
     expect(extractVendor("123\n456")).toBeNull();
   });
+
+  test("skips a garbled logo line and picks the real business-name line below it — a real Lowe's receipt layout", () => {
+    // Approximates what OCR actually produces for a receipt whose top
+    // is a stylized logo icon (reads as near-garbage) followed by the
+    // plain-text business name, address and phone — the exact shape
+    // that made the old "just take line one" heuristic grab noise.
+    const text = [
+      "L0\\WE'§", // garbled logo OCR — low letter ratio, should be skipped
+      "LOWE'S HOME CENTERS, LLC",
+      "1200 DARK AVENUE",
+      "MONSTERVILLE, CA 94608   (510) 555-0127",
+      "- SALE -",
+      "SALES#: S2513US0 3644746",
+      "TRANS#: 18854480 07-09-21",
+    ].join("\n");
+    expect(extractVendor(text)).toBe("LOWE'S HOME CENTERS, LLC");
+  });
+
+  test("picks the single-word brand name over a longer tagline right below it — Target", () => {
+    // The old word-count-weighted scoring lost this one: "EXPECT MORE.
+    // PAY LESS." has 4 words vs "TARGET"'s 1, so it used to win purely
+    // on word count despite being a slogan, not the vendor.
+    const text = ["TARGET", "EXPECT MORE. PAY LESS.", "IRVINE - 949-857-8337", "12/21/2024  12:37 PM"].join("\n");
+    expect(extractVendor(text)).toBe("TARGET");
+  });
+
+  test("picks the brand name over a longer tagline and manager boilerplate — Walmart", () => {
+    const text = [
+      "Walmart",
+      "Save money. Live better.",
+      "MANAGER IRENE BROWN",
+      "(360) 532-7595",
+      "ST# 2037 OP# 00003048 TE# 18 TR# 05704",
+    ].join("\n");
+    expect(extractVendor(text)).toBe("Walmart");
+  });
+});
+
+describe("extractAmount — real receipt layout", () => {
+  test("reads the final total, not the subtotal, tax, or transaction number, on a real Lowe's-shaped receipt", () => {
+    const text = [
+      "LOWE'S HOME CENTERS, LLC",
+      "234567 OATEY 14-OZ PLUMBERS PUTT     2.99",
+      "345678 MR BBQ 18-IN GRILL BRUSH      4.99",
+      "456789 GORILLA GEL SUPER GLUE        5.94",
+      "567890 LOGIC 12 SKILLET             23.97",
+      "678901 SS 6FT ROUND BEACH MAT       13.99",
+      "SUBTOTAL:  51.88",
+      "TAX:        4.28",
+      "INVOICE 18934 TOTAL: 56.16",
+      "VISA 56.16",
+    ].join("\n");
+    expect(extractAmount(text)).toBe(56.16);
+  });
 });
