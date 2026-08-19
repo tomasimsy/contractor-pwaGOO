@@ -3,24 +3,25 @@
  * nowhere the authenticated app renders (app/layout.tsx keeps Geist
  * for the product itself).
  *
- *   Bricolage Grotesque — a bold, characterful display grotesk with
- *   unusual proportions. Distinct from the generic bold-Helvetica look
- *   every contractor site (this one's previous version included)
- *   reaches for.
+ *   Fraunces — a warm, soft-edged serif. The standard register for
+ *   home/renovation branding: approachable and established, not
+ *   corporate-tech. Used for headlines only.
  *
- *   IBM Plex Mono — labels, eyebrows, numbers, nav. A technical
- *   register against Bricolage's more expressive one.
+ *   Work Sans — clean, highly readable body copy. The quiet workhorse
+ *   most real remodeling sites reach for so the photography and the
+ *   headline carry the personality instead of the type.
  */
-import { Bricolage_Grotesque, IBM_Plex_Mono } from "next/font/google";
+import { Fraunces, Work_Sans } from "next/font/google";
 
-export const displayFont = Bricolage_Grotesque({
+export const displayFont = Fraunces({
   subsets: ["latin"],
   variable: "--font-landing-display",
-  weight: ["500", "700", "800"],
+  weight: ["500", "600"],
+  style: ["normal", "italic"],
 });
 
-export const monoFont = IBM_Plex_Mono({
+export const bodyFont = Work_Sans({
   subsets: ["latin"],
-  variable: "--font-landing-mono",
-  weight: ["400", "600"],
+  variable: "--font-landing-body",
+  weight: ["400", "500", "600"],
 });

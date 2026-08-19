@@ -1,4 +1,4 @@
-import { displayFont, monoFont } from "./fonts";
+import { displayFont, bodyFont } from "./fonts";
 import { EstimateCtaProvider } from "./EstimateCta";
 import { Hero } from "./Hero";
 import { Services } from "./Services";
@@ -22,9 +22,9 @@ import { Footer } from "./Footer";
  */
 export function LandingPage({ isSignedIn = false }: { isSignedIn?: boolean }) {
   return (
-    <div className={`${displayFont.variable} ${monoFont.variable}`}>
+    <div className={`${displayFont.variable} ${bodyFont.variable}`}>
       <EstimateCtaProvider>
-        <main className="min-h-screen bg-[#F4F3EF]">
+        <main className="min-h-screen bg-[#FAF6EF]">
           <Hero isSignedIn={isSignedIn} />
           <Services />
           <BehindTheScene />

@@ -2,148 +2,111 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Menu, X, ArrowUpRight } from "lucide-react";
+import { Menu, X, ArrowRight } from "lucide-react";
 import { EstimateCtaButton } from "./EstimateCta";
 
 export function Hero({ isSignedIn = false }: { isSignedIn?: boolean }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <section className="relative w-full overflow-hidden bg-[#1C1410] text-white">
-      {/* NAV */}
-      <nav className="relative z-50 w-full">
+    <section className="relative w-full overflow-hidden">
+      {/* NAV — floats over the photo, on a dark gradient for contrast.
+          The standard pattern: no separate colored nav bar, just enough
+          overlay to keep white text legible over any photo. */}
+      <nav className="absolute inset-x-0 top-0 z-50 w-full">
         <div className="mx-auto flex h-20 max-w-[1400px] items-center justify-between px-6 md:px-10 lg:px-16">
-          <div>
-            <span className="block font-[family-name:var(--font-landing-mono)] text-[10px] uppercase tracking-[0.35em] text-white/40">
-              Est. Charlotte, NC
-            </span>
-            <h1 className="mt-0.5 font-[family-name:var(--font-landing-display)] text-lg font-semibold tracking-tight text-white">
-              OSR <span className="italic text-[#CB9A3E]">Pros</span>
-            </h1>
-          </div>
+          <h1 className="font-[family-name:var(--font-landing-display)] text-2xl font-semibold tracking-tight text-white">
+            OSR Pros
+          </h1>
 
-          <div className="hidden items-center gap-9 md:flex">
-            <a
-              href="#work"
-              className="font-[family-name:var(--font-landing-mono)] text-[11px] uppercase tracking-[0.2em] text-white/60 transition-colors hover:text-white"
-            >
-              Work
+          <div className="hidden items-center gap-8 md:flex">
+            <a href="#work" className="text-sm font-medium text-white/90 transition-colors hover:text-white">
+              Our Work
             </a>
-            <a
-              href="#process"
-              className="font-[family-name:var(--font-landing-mono)] text-[11px] uppercase tracking-[0.2em] text-white/60 transition-colors hover:text-white"
-            >
+            <a href="#process" className="text-sm font-medium text-white/90 transition-colors hover:text-white">
               Process
             </a>
-            <EstimateCtaButton className="flex items-center gap-1.5 border border-[#CB9A3E]/40 px-5 py-2.5 font-[family-name:var(--font-landing-mono)] text-[11px] uppercase tracking-[0.2em] text-[#CB9A3E] transition-colors hover:bg-[#CB9A3E] hover:text-[#1C1410]">
-              Inquire <ArrowUpRight className="size-3.5" />
-            </EstimateCtaButton>
-            {/* Not in the previous app (that landing page lived on its
-                own domain, separate from the product). Needed here:
-                `/` is now the home page for EVERYONE, signed in or
-                not — so this is the only way an authenticated visitor
-                gets back into the app from the root URL. */}
             <Link
               href={isSignedIn ? "/dashboard" : "/login"}
-              className="font-[family-name:var(--font-landing-mono)] text-[11px] uppercase tracking-[0.2em] text-white/40 transition-colors hover:text-white"
+              className="text-sm font-medium text-white/70 transition-colors hover:text-white"
             >
               {isSignedIn ? "Dashboard" : "Sign In"}
             </Link>
+            <EstimateCtaButton className="rounded-full bg-[#4B6B4F] px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-black/10 transition-colors hover:bg-[#3A5540]">
+              Get a Free Estimate
+            </EstimateCtaButton>
           </div>
 
-          <button
-            onClick={() => setMenuOpen(!menuOpen)}
-            className="text-white md:hidden"
-            aria-label="Toggle menu"
-          >
+          <button onClick={() => setMenuOpen(!menuOpen)} className="text-white md:hidden" aria-label="Toggle menu">
             {menuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
           </button>
         </div>
 
         {menuOpen && (
-          <div className="border-t border-white/10 bg-[#1C1410] px-6 py-6 md:hidden">
+          <div className="border-t border-white/10 bg-[#24352B] px-6 py-6 md:hidden">
             <div className="flex flex-col gap-5">
-              <a href="#work" onClick={() => setMenuOpen(false)} className="font-[family-name:var(--font-landing-mono)] text-xs uppercase tracking-[0.2em] text-white/70">
-                Work
+              <a href="#work" onClick={() => setMenuOpen(false)} className="text-sm font-medium text-white/90">
+                Our Work
               </a>
-              <a href="#process" onClick={() => setMenuOpen(false)} className="font-[family-name:var(--font-landing-mono)] text-xs uppercase tracking-[0.2em] text-white/70">
+              <a href="#process" onClick={() => setMenuOpen(false)} className="text-sm font-medium text-white/90">
                 Process
               </a>
-              <EstimateCtaButton className="w-fit border border-[#CB9A3E]/40 px-5 py-2.5 font-[family-name:var(--font-landing-mono)] text-[11px] uppercase tracking-[0.2em] text-[#CB9A3E]">
-                Inquire
+              <Link
+                href={isSignedIn ? "/dashboard" : "/login"}
+                onClick={() => setMenuOpen(false)}
+                className="text-sm font-medium text-white/70"
+              >
+                {isSignedIn ? "Dashboard" : "Sign In"}
+              </Link>
+              <EstimateCtaButton className="w-fit rounded-full bg-[#4B6B4F] px-6 py-2.5 text-sm font-semibold text-white">
+                Get a Free Estimate
               </EstimateCtaButton>
             </div>
           </div>
         )}
       </nav>
 
-      {/* SPLIT BODY — asymmetric, not a full-bleed hero photo */}
-      <div className="relative mx-auto grid max-w-[1400px] grid-cols-1 gap-0 px-6 pb-16 pt-8 md:grid-cols-12 md:gap-10 md:px-10 md:pb-24 lg:px-16">
-        {/* Left — headline block */}
-        <div className="flex flex-col justify-center md:col-span-7 md:py-16">
-          <p className="mb-7 font-[family-name:var(--font-landing-mono)] text-[11px] uppercase tracking-[0.3em] text-[#CB9A3E]">
-            Home &amp; Commercial Remodeling
+      {/* FULL-BLEED PHOTO HERO — the standard pattern for this
+          category: the work itself is the opening statement, not an
+          abstract layout device. */}
+      <div className="relative h-[640px] w-full sm:h-[720px] md:h-[820px]">
+        <div
+          className="absolute inset-0 bg-cover bg-center"
+          style={{ backgroundImage: "url('/landingPageImages/kitchen.jpg')" }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-black/40" />
+
+        <div className="relative flex h-full flex-col items-center justify-center px-6 text-center">
+          <p className="mb-5 text-sm font-semibold uppercase tracking-[0.2em] text-white/80">
+            Charlotte, NC · Home &amp; Commercial Remodeling
+          </p>
+          <h2 className="max-w-3xl font-[family-name:var(--font-landing-display)] text-5xl font-medium leading-[1.08] text-white sm:text-6xl md:text-7xl">
+            Remodeling done right, <span className="italic text-[#A8C4A2]">start to finish</span>.
+          </h2>
+          <p className="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-white/85">
+            Quality workmanship and thoughtful design for kitchens, bathrooms, full renovations, and more — built around how you actually live.
           </p>
 
-          <h2 className="font-[family-name:var(--font-landing-display)] text-[15vw] font-semibold leading-[0.92] tracking-tight sm:text-6xl md:text-6xl lg:text-7xl xl:text-8xl">
-            We rebuild
-            <br />
-            what you
-            <br />
-            <span className="italic text-[#CB9A3E]">actually</span> live in.
-          </h2>
-
-          <div className="mt-9 max-w-md space-y-4">
-            <p className="text-lg leading-relaxed text-white/80">
-              Remodeling done right with quality workmanship, thoughtful design, and a focus on what works for you.
-
-            </p>
-            <p className="text-sm leading-relaxed text-white/45">
-              From kitchens and bathrooms to full renovations, salons, offices, flooring, decks, and more — serving Charlotte and the surrounding area.
-
-            </p>
-          </div>
-
-          <div className="mt-9 flex flex-wrap items-center gap-6">
-            <EstimateCtaButton className="group relative overflow-hidden bg-[#CB9A3E] px-8 py-4 font-[family-name:var(--font-landing-mono)] text-xs font-bold uppercase tracking-[0.2em] text-[#1C1410] transition-transform hover:-translate-y-0.5">
+          <div className="mt-9 flex flex-wrap items-center justify-center gap-4">
+            <EstimateCtaButton className="rounded-full bg-[#4B6B4F] px-8 py-4 text-sm font-semibold text-white shadow-lg shadow-black/20 transition-transform hover:-translate-y-0.5 hover:bg-[#3A5540]">
               Get a Free Estimate
             </EstimateCtaButton>
             <a
               href="#work"
-              className="flex items-center gap-1.5 font-[family-name:var(--font-landing-mono)] text-xs uppercase tracking-[0.2em] text-white/60 transition-colors hover:text-white"
+              className="flex items-center gap-1.5 rounded-full border border-white/40 px-8 py-4 text-sm font-semibold text-white transition-colors hover:bg-white/10"
             >
-              See the Work <ArrowUpRight className="size-3.5" />
+              See Our Work <ArrowRight className="size-4" />
             </a>
-          </div>
-
-          <div className="mt-10 flex flex-wrap items-center gap-x-7 gap-y-2 font-[family-name:var(--font-landing-mono)] text-[10px] uppercase tracking-[0.15em] text-white/35">
-            <span>Licensed &amp; Insured</span>
-            <span className="hidden h-3 w-px bg-white/20 sm:block" />
-            <span>Free Estimates</span>
-            <span className="hidden h-3 w-px bg-white/20 sm:block" />
-            <span>Local Crew</span>
           </div>
         </div>
 
-        {/* Right — photo panel, framed rather than full-bleed */}
-        <div className="relative mt-10 md:col-span-5 md:mt-0">
-          <div className="relative h-[320px] w-full overflow-hidden sm:h-[440px] md:h-full md:min-h-[560px]">
-            <div
-              className="absolute inset-0 bg-cover bg-center"
-              style={{ backgroundImage: "url('/landingPageImages/kitchen.jpg')" }}
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#1C1410]/70 via-transparent to-transparent" />
-          </div>
-          {/* Notch tag — breaks the rectangle. Honest, not a fabricated
-              years-in-business stat: this is a new company, and the
-              claim here is about attention, not tenure. */}
-          <div className="absolute -bottom-5 -left-5 max-w-[220px] bg-[#CB9A3E] px-5 py-4 sm:-bottom-6 sm:-left-6">
-            <span className="font-[family-name:var(--font-landing-display)] text-lg font-semibold leading-snug text-[#1C1410]">
-              Nothing to coast on.
-            </span>
-            <span className="mt-1.5 block font-[family-name:var(--font-landing-mono)] text-[10px] uppercase leading-tight tracking-[0.1em] text-[#1C1410]/70">
-              Every job earns the next one
-            </span>
+        {/* Trust badges — a real convention in this category, visible
+            without scrolling, anchored to the bottom of the hero. */}
+        <div className="absolute inset-x-0 bottom-0 border-t border-white/15 bg-black/25 backdrop-blur-sm">
+          <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-center gap-x-10 gap-y-3 px-6 py-5 text-sm font-medium text-white/90 md:justify-between md:px-10 lg:px-16">
+            <span>Free Estimates</span>
+            <span>Local Charlotte Crew</span>
+            <span>Written Scope &amp; Pricing</span>
           </div>
         </div>
       </div>

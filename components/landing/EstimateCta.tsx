@@ -65,11 +65,11 @@ export function EstimateCtaProvider({ children }: { children: ReactNode }) {
 
       {open && (
         <div
-          className="fixed inset-0 z-[100] flex items-end justify-center bg-[#1C1410]/80 p-4 backdrop-blur-sm sm:items-center sm:p-6"
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 p-4 backdrop-blur-sm sm:items-center sm:p-6"
           onClick={closeModal}
         >
           <div
-            className="w-full max-w-md border-2 border-[#CB9A3E]/30 bg-[#1C1410] p-8 shadow-2xl"
+            className="w-full max-w-md rounded-2xl bg-white p-8 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
@@ -77,33 +77,33 @@ export function EstimateCtaProvider({ children }: { children: ReactNode }) {
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="font-[family-name:var(--font-landing-mono)] text-[10px] font-bold uppercase tracking-[0.35em] text-[#CB9A3E]">
+                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#4B6B4F]">
                   Free Estimate
                 </p>
                 <h2
                   id="estimate-cta-title"
-                  className="mt-2 font-[family-name:var(--font-landing-display)] text-2xl font-semibold tracking-tight text-white"
+                  className="mt-2 font-[family-name:var(--font-landing-display)] text-2xl font-medium tracking-tight text-[#26231F]"
                 >
                   Tell us about your project
                 </h2>
-                <p className="mt-2 text-sm text-white/50">
+                <p className="mt-2 text-sm text-[#6E6659]">
                   We&apos;ll open your messages app with everything filled in.
                 </p>
               </div>
               <button
                 onClick={closeModal}
-                className="text-white/40 transition-colors hover:text-[#CB9A3E]"
+                className="text-[#6E6659]/60 transition-colors hover:text-[#26231F]"
                 aria-label="Close"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="mt-9 space-y-5">
+            <form onSubmit={handleSubmit} className="mt-8 space-y-5">
               <div>
                 <label
                   htmlFor="estimate-name"
-                  className="font-[family-name:var(--font-landing-mono)] text-[10px] font-bold uppercase tracking-[0.2em] text-white/50"
+                  className="text-xs font-semibold uppercase tracking-[0.1em] text-[#6E6659]"
                 >
                   Your Name
                 </label>
@@ -114,14 +114,14 @@ export function EstimateCtaProvider({ children }: { children: ReactNode }) {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="John Smith"
-                  className="mt-2 w-full border border-white/15 bg-black/30 px-4 py-3 text-sm text-white placeholder:text-white/25 outline-none transition-colors focus:border-[#CB9A3E]"
+                  className="mt-2 w-full rounded-lg border border-black/10 bg-[#FAF6EF] px-4 py-3 text-sm text-[#26231F] placeholder:text-[#6E6659]/50 outline-none transition-colors focus:border-[#4B6B4F]"
                 />
               </div>
 
               <div>
                 <label
                   htmlFor="estimate-project"
-                  className="font-[family-name:var(--font-landing-mono)] text-[10px] font-bold uppercase tracking-[0.2em] text-white/50"
+                  className="text-xs font-semibold uppercase tracking-[0.1em] text-[#6E6659]"
                 >
                   Project Name
                 </label>
@@ -132,14 +132,14 @@ export function EstimateCtaProvider({ children }: { children: ReactNode }) {
                   value={project}
                   onChange={(e) => setProject(e.target.value)}
                   placeholder="e.g. Kitchen renovation, bathroom remodel, deck build"
-                  className="mt-2 w-full border border-white/15 bg-black/30 px-4 py-3 text-sm text-white placeholder:text-white/25 outline-none transition-colors focus:border-[#CB9A3E]"
+                  className="mt-2 w-full rounded-lg border border-black/10 bg-[#FAF6EF] px-4 py-3 text-sm text-[#26231F] placeholder:text-[#6E6659]/50 outline-none transition-colors focus:border-[#4B6B4F]"
                 />
               </div>
 
               <button
                 type="submit"
                 disabled={!name.trim() || !project.trim()}
-                className="w-full bg-[#CB9A3E] px-8 py-4 font-[family-name:var(--font-landing-mono)] text-[11px] font-bold uppercase tracking-[0.2em] text-[#1C1410] transition-all hover:bg-white disabled:cursor-not-allowed disabled:opacity-30"
+                className="w-full rounded-full bg-[#4B6B4F] px-8 py-4 text-sm font-semibold text-white transition-colors hover:bg-[#3A5540] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Send Text Message
               </button>

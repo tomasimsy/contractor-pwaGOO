@@ -105,27 +105,24 @@ export function BehindTheScene() {
   }, []);
 
   return (
-    <section id="process" className="w-full bg-[#1C1410] py-24 md:py-32">
+    <section id="process" className="w-full bg-[#FAF6EF] py-24 md:py-28">
       <div className="mx-auto max-w-4xl px-6 text-center md:px-10 lg:px-16">
-        <p className="mb-6 font-[family-name:var(--font-landing-mono)] text-[11px] uppercase tracking-[0.3em] text-[#CB9A3E]">
-          The Process
-        </p>
+        <p className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-[#4B6B4F]">See the Transformation</p>
 
-        <h2 className="font-[family-name:var(--font-landing-display)] text-4xl font-semibold tracking-tight text-white md:text-5xl lg:text-6xl">
-          From skeleton to <span className="italic text-[#CB9A3E]">masterpiece</span>.
+        <h2 className="font-[family-name:var(--font-landing-display)] text-4xl font-medium leading-tight text-[#26231F] md:text-5xl">
+          From <span className="italic">before</span> to after.
         </h2>
 
-        <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-white/50 md:text-lg">
-          Every project starts raw — exposed walls, unfinished floors, and
-          open frames. Drag the line to see the transformation.
+        <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-[#6E6659] md:text-lg">
+          Every project starts raw — exposed walls, unfinished floors, and open frames. Drag the line to see the transformation.
         </p>
       </div>
 
-      <div className="mx-auto mt-16 grid max-w-[1400px] grid-cols-1 gap-8 px-6 md:mt-20 md:gap-10 md:px-10 lg:grid-cols-2 lg:px-16">
+      <div className="mx-auto mt-14 grid max-w-[1400px] grid-cols-1 gap-8 px-6 md:mt-16 md:gap-10 md:px-10 lg:grid-cols-2 lg:px-16">
         {steps.map((step, i) => {
           const sliderPosition = sliderPositions[i] ?? 50;
           return (
-            <div key={step.title} className="group relative overflow-hidden border border-white/10 bg-[#2A211B]">
+            <div key={step.title} className="group overflow-hidden rounded-2xl border border-black/5 bg-white shadow-sm">
               <div
                 ref={(el) => {
                   containerRefs.current[i] = el;
@@ -147,42 +144,39 @@ export function BehindTheScene() {
                 />
 
                 <div
-                  className="absolute bottom-0 top-0 w-0.5 cursor-ew-resize touch-none bg-[#CB9A3E] shadow-[0_0_16px_rgba(203,154,62,0.5)]"
+                  className="absolute bottom-0 top-0 w-1 cursor-ew-resize touch-none bg-white shadow-[0_0_10px_rgba(0,0,0,0.35)]"
                   style={{ left: `${sliderPosition}%` }}
                 >
-                  <div className="absolute left-1/2 top-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center bg-[#CB9A3E] transition-transform active:cursor-grabbing group-hover:scale-105">
-                    <svg className="h-4 w-4 text-[#1C1410]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="absolute left-1/2 top-1/2 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center rounded-full bg-white shadow-lg transition-transform active:cursor-grabbing group-hover:scale-105">
+                    <svg className="h-4 w-4 text-[#26231F]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l-7 7 7 7M15 5l7 7-7 7" />
                     </svg>
                   </div>
                 </div>
 
-                <div className="absolute left-5 top-5">
-                  <span className="bg-black/50 px-3 py-1.5 font-[family-name:var(--font-landing-mono)] text-[9px] uppercase tracking-[0.2em] text-white/80 backdrop-blur-sm">
+                <div className="absolute left-4 top-4">
+                  <span className="rounded-full bg-black/55 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-white backdrop-blur-sm">
                     Before
                   </span>
                 </div>
-                <div className="absolute right-5 top-5">
-                  <span className="bg-[#B23A1C] px-3 py-1.5 font-[family-name:var(--font-landing-mono)] text-[9px] uppercase tracking-[0.2em] text-white">
+                <div className="absolute right-4 top-4">
+                  <span className="rounded-full bg-[#4B6B4F] px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-white">
                     After
                   </span>
                 </div>
 
                 {sliderPositions[i] === 50 && (
-                  <div className="pointer-events-none absolute bottom-6 left-1/2 -translate-x-1/2 whitespace-nowrap bg-black/60 px-4 py-2 font-[family-name:var(--font-landing-mono)] text-[10px] uppercase tracking-[0.15em] text-white/60 backdrop-blur-sm">
+                  <div className="pointer-events-none absolute bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/55 px-4 py-2 text-xs font-medium text-white backdrop-blur-sm">
                     Drag to compare
                   </div>
                 )}
               </div>
 
-              <div className="border-t border-white/10 p-6 md:p-7">
-                <span className="font-[family-name:var(--font-landing-mono)] text-[10px] uppercase tracking-[0.2em] text-[#CB9A3E]/70">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <h3 className="mt-2 font-[family-name:var(--font-landing-display)] text-xl font-medium tracking-tight text-white md:text-2xl">
+              <div className="p-6 md:p-7">
+                <h3 className="font-[family-name:var(--font-landing-display)] text-xl font-medium text-[#26231F] md:text-2xl">
                   {step.title}
                 </h3>
-                <p className="mt-2.5 text-sm leading-relaxed text-white/45">{step.desc}</p>
+                <p className="mt-2 text-sm leading-relaxed text-[#6E6659]">{step.desc}</p>
               </div>
             </div>
           );

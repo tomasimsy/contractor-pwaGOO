@@ -49,60 +49,41 @@ const services = [
 
 export function Services() {
   return (
-    <section id="work" className="w-full bg-[#F4F3EF] py-24 md:py-32">
-      {/* Header — off-center, not the usual centered marketing block */}
-      <div className="mx-auto mb-14 max-w-[1400px] px-6 md:mb-20 md:px-10 lg:px-16">
-        <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="mb-5 font-[family-name:var(--font-landing-mono)] text-[11px] uppercase tracking-[0.3em] text-[#B23A1C]">
-              Services Index
-            </p>
-            <h2 className="max-w-xl font-[family-name:var(--font-landing-display)] text-4xl font-semibold leading-[1.02] tracking-tight text-[#1C1410] md:text-5xl lg:text-6xl">
-              Six ways we <span className="italic">rebuild</span> a space.
-            </h2>
-          </div>
-          <EstimateCtaButton className="shrink-0 border-2 border-[#1C1410] px-7 py-3.5 font-[family-name:var(--font-landing-mono)] text-[11px] font-bold uppercase tracking-[0.2em] text-[#1C1410] transition-colors hover:bg-[#1C1410] hover:text-white">
-            Start Your Project
-          </EstimateCtaButton>
-        </div>
+    <section id="work" className="w-full bg-white py-24 md:py-28">
+      <div className="mx-auto mb-14 max-w-[1400px] px-6 text-center md:mb-16 md:px-10 lg:px-16">
+        <p className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-[#4B6B4F]">Our Services</p>
+        <h2 className="mx-auto max-w-2xl font-[family-name:var(--font-landing-display)] text-4xl font-medium leading-tight text-[#26231F] md:text-5xl">
+          Every room, done <span className="italic">right</span>.
+        </h2>
+        <p className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-[#6E6659]">
+          From a single room to a full rebuild — one crew, one point of contact, start to finish.
+        </p>
       </div>
 
-      {/* Spec-sheet index — numbered rows, not a photo-card grid */}
-      <div className="mx-auto max-w-[1400px] border-t border-[#1C1410]/10 px-6 md:px-10 lg:px-16">
-        {services.map((service, index) => (
-          <div
-            key={service.title}
-            className="group grid grid-cols-1 items-center gap-6 border-b border-[#1C1410]/10 py-8 md:grid-cols-12 md:gap-10 md:py-10"
-          >
-            <span className="font-[family-name:var(--font-landing-mono)] text-sm text-[#1C1410]/30 md:col-span-1">
-              {String(index + 1).padStart(2, "0")}
-            </span>
-
-            <h3 className="font-[family-name:var(--font-landing-display)] text-2xl font-medium leading-tight tracking-tight text-[#1C1410] md:col-span-4 md:text-3xl">
-              {service.title}
-            </h3>
-
-            <p className="text-sm leading-relaxed text-[#1C1410]/55 md:col-span-4 md:text-[15px]">
-              {service.description}
-            </p>
-
-            <div className="overflow-hidden md:col-span-3 md:justify-self-end">
+      {/* Photo-forward card grid — the standard pattern: the work is
+          the pitch, cards aren't decorative chrome around it. */}
+      <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-8 px-6 sm:grid-cols-2 md:px-10 lg:grid-cols-3 lg:px-16">
+        {services.map((service) => (
+          <div key={service.title} className="group overflow-hidden rounded-2xl border border-black/5 bg-white shadow-sm transition-shadow hover:shadow-lg">
+            <div className="h-56 w-full overflow-hidden">
               <div
-                className="h-40 w-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105 md:h-24 md:w-40"
+                className="h-full w-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105"
                 style={{ backgroundImage: `url('${service.image}')` }}
               />
+            </div>
+            <div className="p-6">
+              <h3 className="font-[family-name:var(--font-landing-display)] text-xl font-medium text-[#26231F]">
+                {service.title}
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-[#6E6659]">{service.description}</p>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Bottom CTA strip */}
-      <div className="mx-auto mt-16 max-w-[1400px] px-6 text-center md:px-10 lg:px-16">
-        <p className="font-[family-name:var(--font-landing-mono)] text-[11px] uppercase tracking-[0.2em] text-[#1C1410]/40">
-          Ready to transform your space?
-        </p>
-        <EstimateCtaButton className="mt-5 inline-block font-[family-name:var(--font-landing-mono)] text-xs font-bold uppercase tracking-[0.2em] text-[#B23A1C] transition-colors hover:text-[#1C1410]">
-          Get a Free Estimate →
+      <div className="mx-auto mt-14 max-w-[1400px] px-6 text-center md:px-10 lg:px-16">
+        <EstimateCtaButton className="rounded-full bg-[#24352B] px-8 py-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#1A281F]">
+          Start Your Project
         </EstimateCtaButton>
       </div>
     </section>

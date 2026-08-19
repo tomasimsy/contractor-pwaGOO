@@ -30,8 +30,8 @@ const commitments = [
     text: "Clear timelines, and a heads-up the moment anything changes — not silence.",
   },
   {
-    title: "Licensed and insured, from day one",
-    text: "New doesn't mean unqualified. The paperwork is real, checked, and current.",
+    title: "The same crew starts and finishes your job",
+    text: "No subcontractor shuffle — the people who scope your project are the ones who build it.",
   },
   {
     title: "Small enough to sweat the details",
@@ -87,26 +87,24 @@ export function Commitments() {
   };
 
   return (
-    <section className="w-full overflow-hidden bg-[#F4F3EF] py-24 md:py-32">
+    <section className="w-full overflow-hidden bg-white py-24 md:py-28">
       <div className="mx-auto max-w-4xl px-6 text-center lg:px-16">
-        <p className="mb-6 font-[family-name:var(--font-landing-mono)] text-[11px] uppercase tracking-[0.3em] text-[#B23A1C]">
-          Why a New Company
-        </p>
+        <p className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-[#4B6B4F]">Why a New Company</p>
 
-        <h2 className="font-[family-name:var(--font-landing-display)] text-4xl font-semibold tracking-tight text-[#1C1410] md:text-5xl lg:text-6xl">
+        <h2 className="font-[family-name:var(--font-landing-display)] text-4xl font-medium leading-tight text-[#26231F] md:text-5xl">
           We&apos;re new. <span className="italic">Here&apos;s what that gets you.</span>
         </h2>
 
-        <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-[#1C1410]/55 md:text-lg">
+        <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-[#6E6659] md:text-lg">
           We&apos;re not going to pretend we&apos;ve got decades of jobs behind
           us — we don&apos;t. What you get instead: a company with everything
           riding on getting your project right.
         </p>
       </div>
 
-      <div className="relative mt-16 md:mt-20">
-        <div className="pointer-events-none absolute left-0 top-0 z-10 h-full w-16 bg-gradient-to-r from-[#F4F3EF] to-transparent md:w-24" />
-        <div className="pointer-events-none absolute right-0 top-0 z-10 h-full w-16 bg-gradient-to-l from-[#F4F3EF] to-transparent md:w-24" />
+      <div className="relative mt-14 md:mt-16">
+        <div className="pointer-events-none absolute left-0 top-0 z-10 h-full w-16 bg-gradient-to-r from-white to-transparent md:w-24" />
+        <div className="pointer-events-none absolute right-0 top-0 z-10 h-full w-16 bg-gradient-to-l from-white to-transparent md:w-24" />
 
         <div
           ref={containerRef}
@@ -124,17 +122,13 @@ export function Commitments() {
           {looped.map((c, i) => (
             <div
               key={i}
-              className="w-[280px] shrink-0 border-2 border-[#1C1410] bg-white p-7 md:w-[320px] md:p-8"
+              className="w-[280px] shrink-0 rounded-2xl border border-black/5 bg-[#FAF6EF] p-7 shadow-sm md:w-[320px] md:p-8"
             >
-              <span className="font-[family-name:var(--font-landing-mono)] text-[10px] uppercase tracking-[0.15em] text-[#B23A1C]">
-                {String((i % commitments.length) + 1).padStart(2, "0")}
-              </span>
-
-              <p className="mt-4 font-[family-name:var(--font-landing-display)] text-lg font-medium leading-snug text-[#1C1410]">
+              <p className="font-[family-name:var(--font-landing-display)] text-lg font-medium leading-snug text-[#26231F]">
                 {c.title}
               </p>
 
-              <p className="mt-3 text-sm leading-relaxed text-[#1C1410]/55">{c.text}</p>
+              <p className="mt-3 text-sm leading-relaxed text-[#6E6659]">{c.text}</p>
             </div>
           ))}
         </div>
