@@ -178,6 +178,13 @@ export function ExpenseFormV2({
         if (scanTokenRef.current === token) setScanProgress(info);
       });
       if (scanTokenRef.current !== token) return; // superseded — ignore
+      // Debug aid only — lets a bad vendor/amount guess be diagnosed
+      // from the browser console (raw OCR text in, wrong guess out)
+      // instead of guessing blind at what Tesseract actually read.
+      // console.log, not console.debug — most browsers hide "debug"
+      // level messages under a "Verbose" filter that's off by default,
+      // so this line simply never appeared.
+      console.log("[receiptOcr] raw text:", result.rawText);
       // Prefill only what's still empty — never overwrite something the
       // user already typed, even if the scan disagrees with it.
       if (result.guessedAmount && !amount) {

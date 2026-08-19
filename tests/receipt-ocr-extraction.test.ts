@@ -29,6 +29,55 @@ describe("extractAmount", () => {
   test("returns null when there's no dollar amount at all", () => {
     expect(extractAmount("no numbers here")).toBeNull();
   });
+
+  test("ignores Cash/Change/Tip/Payment lines even though they're larger than the real total", () => {
+    // Cash tendered and change are routinely bigger numbers than the
+    // total they're change for — a plain "largest number on the
+    // receipt" fallback picks the $60.00 cash line here, not the
+    // $56.16 total.
+    const text = [
+      "Subtotal    51.88",
+      "Tax          4.28",
+      "Total       56.16",
+      "Cash Tendered 60.00",
+      "Change         3.84",
+    ].join("\n");
+    expect(extractAmount(text)).toBe(56.16);
+  });
+
+  test("ignores a card-brand/payment line in the largest-amount fallback when no Total line exists", () => {
+    const text = ["Item A  $12.50", "Item B  $7.25", "VISA  $19.75"].join("\n");
+    expect(extractAmount(text)).toBe(12.5);
+  });
+
+  test("uses subtotal + tax arithmetic to confirm the total when the word 'total' never appears", () => {
+    // OCR dropped the "Total" label itself, but Subtotal/Tax are
+    // legible and a line elsewhere carries their sum — that's strong
+    // enough evidence to prefer it over the largest raw number ($60,
+    // the cash tendered).
+    const text = ["Subtotal   51.88", "Tax         4.28", "56.16", "Cash        60.00", "Change       3.84"].join("\n");
+    expect(extractAmount(text)).toBe(56.16);
+  });
+
+  test("picks the real Total over a suggested-gratuity block's own per-option Totals — Breakfast Club receipt", () => {
+    // A real diner/restaurant receipt shape: below the actual total, a
+    // "Suggested Gratuity" block prints its OWN "Total" per tip option
+    // for the customer to circle and sign. Those are later in the text
+    // and bigger than the real total, so the old "last total line"/
+    // "largest amount" logic picked $15.88 (the 20% option) instead of
+    // the $13.32 actually charged.
+    const text = [
+      "SUBTOTAL:                    $12.77",
+      "TAX:                          $0.55",
+      "TOTAL:                       $13.32",
+      "",
+      "      SUGGESTED GRATUITY:",
+      "[ ] 15% - $1.92 TOTAL: $15.24",
+      "[ ] 18% - $2.30 TOTAL: $15.62",
+      "[ ] 20% - $2.55 TOTAL: $15.88",
+    ].join("\n");
+    expect(extractAmount(text)).toBe(13.32);
+  });
 });
 
 describe("extractDate", () => {
@@ -89,6 +138,76 @@ describe("extractVendor", () => {
     ].join("\n");
     expect(extractVendor(text)).toBe("Walmart");
   });
+
+  test("skips a short garbled-logo fragment and a self-checkout line — Home Depot receipt", () => {
+    // Real failure: a Home Depot self-checkout receipt's stylized
+    // logo+icon OCR'd down to a clean 3-letter fragment ("SEV") with no
+    // digits/punctuation to trip the letter-ratio check, so it won as
+    // "first line to pass every filter" ahead of the real vendor text.
+    const text = [
+      "SEV",
+      "THE HOME DEPOT",
+      "More saving. More doing.",
+      "1234 BLUED GREEN ROAD",
+      "READYING, MA 45678   (901)222-3333",
+      "1234 56789 01234  12/30/22 04:01 PM",
+      "SELF CHECK OUT",
+    ].join("\n");
+    expect(extractVendor(text)).toBe("THE HOME DEPOT");
+  });
+
+  test("returns null rather than a garbled fragment when OCR never actually read the vendor name — real Home Depot scan", () => {
+    // The exact raw Tesseract output from a live scan: the logo/wordmark
+    // wasn't recognized as "THE HOME DEPOT" at all, just short garbage
+    // ("SEV", "NW") and the tagline split across two lines, each ending
+    // its own sentence ("El Hore savin.", "Xl} More doing.\""), which
+    // used to slip through since neither has the mid-line period+capital
+    // shape the tagline filter looks for. There is no usable vendor text
+    // anywhere in this scan — returning null (so the user types it
+    // manually) is the correct outcome, not confidently guessing wrong.
+    const text = [
+      "SEV",
+      "NW",
+      "El Hore savin.",
+      'Xl} More doing."',
+      "1234 BLUED GREEN ROAD",
+      "READYING. MA 45678 (90122-3333",
+      "1234 E789 01234 12/30/22 04:01 PM",
+      "SELF CHECK OUT",
+    ].join("\n");
+    expect(extractVendor(text)).toBeNull();
+  });
+
+  test("recovers the vendor from the known-vendor dictionary when it's absent near the top but named later on the receipt", () => {
+    // The full real scan (not just the truncated top-of-receipt text
+    // above): "THE HOME DEPOT" never OCR'd near the logo at all, but
+    // "HOME DEPOT" prints cleanly further down in the survey blurb
+    // ("$5,000 HOME DEPOT GIFT CARD"). No position/filter heuristic
+    // over the top of the receipt can find a name that isn't there —
+    // this is exactly what the dictionary fallback exists to recover.
+    const text = [
+      "SEV",
+      "NW",
+      "El Hore savin.",
+      'Xl} More doing."',
+      "1234 BLUED GREEN ROAD",
+      "READYING. MA 45678 (90122-3333",
+      "1234 E789 01234 12/30/22 04:01 PM",
+      "SELF CHECK OUT",
+      "SUBTOTAL 1.78",
+      "SALES TAX 0.13",
+      "TOTAL $1.91",
+      "CASH 1.00",
+      "CASH 1.00",
+      "CHANGE DUE 0.09",
+      "RETURN POLICY DEFINITIONS",
+      "DID WE NAIL IT?",
+      "Take 3 short survey for a chance T0 WIN",
+      "A°$5.000 HOME DEPOT GIFT CARD",
+      "www. homedepo't . con/ survey",
+    ].join("\n");
+    expect(extractVendor(text)).toBe("The Home Depot");
+  });
 });
 
 describe("extractAmount — real receipt layout", () => {
@@ -106,5 +225,17 @@ describe("extractAmount — real receipt layout", () => {
       "VISA 56.16",
     ].join("\n");
     expect(extractAmount(text)).toBe(56.16);
+  });
+
+  test("reads $1.91, not the two Cash lines or Change Due, on a real Home Depot self-checkout scan", () => {
+    const text = [
+      "SUBTOTAL 1.78",
+      "SALES TAX 0.13",
+      "TOTAL $1.91",
+      "CASH 1.00",
+      "CASH 1.00",
+      "CHANGE DUE 0.09",
+    ].join("\n");
+    expect(extractAmount(text)).toBe(1.91);
   });
 });

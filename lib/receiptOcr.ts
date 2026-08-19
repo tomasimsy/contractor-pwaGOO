@@ -104,6 +104,24 @@ export function extractAmount(text: string): number | null {
     return !Number.isNaN(value) && value > 0 ? value : null;
   };
 
+  // Lines that name a DIFFERENT figure than the final total — subtotal,
+  // tax, a discount, or how the total was PAID (cash tendered, change
+  // given, a tip, a card brand). A dollar amount on one of these lines
+  // must never be picked as the total, even by the "largest amount"
+  // fallback below: "Cash Tendered $60.00" / "Change $3.84" are
+  // routinely larger than the $56.16 total they're change for, and used
+  // to win the old largest-number fallback for exactly that reason.
+  const excludeContextRegex =
+    /\b(sub[\s-]?total|tax|discount|savings|cash|tender(?:ed)?|change|tip|gratuity|payment|visa|mastercard|amex|american express|credit|debit)\b/i;
+
+  // A "suggested gratuity" block prints its OWN "Total" per tip option
+  // ("15% - $1.92 TOTAL: $15.24") below the real total, for the
+  // customer to optionally circle and sign — none of those are what was
+  // actually charged, and being later in the text they'd otherwise win
+  // the "last total line" pass below. A percent sign is the tell: the
+  // real total line never carries one, every suggested-tip line does.
+  const percentRegex = /%/;
+
   // Highest confidence: an unambiguous "this is the final amount" label.
   // Checked BEFORE the generic "total" pass below because "grand total"/
   // "total due" would also match a bare /total/ regex — no need to fall
@@ -119,28 +137,61 @@ export function extractAmount(text: string): number | null {
 
   // Generic "total" — but a receipt lists Subtotal (pre-tax), Tax, then
   // Total (final, what we actually want) in that order, and "subtotal"
-  // contains the substring "total". Explicitly excluding it here was
-  // the bug: matching /total/i against "Subtotal: $45.00" returned the
-  // PRE-TAX amount. Also take the LAST match, not the first — Total is
-  // the final line of that group, appearing after Subtotal/Tax.
+  // contains the substring "total". Excluding every "different figure"
+  // line above (not just subtotal) covers the same OCR shape where a
+  // total-ish line also carries a payment-method word ("Total (Visa)").
+  // Also take the LAST match, not the first — Total is the final line
+  // of that group, appearing after Subtotal/Tax.
   const bareTotalRegex = /\btotal\b/i;
-  const subtotalRegex = /sub[\s-]?total/i;
   let lastTotalValue: number | null = null;
   for (const line of lines) {
-    if (bareTotalRegex.test(line) && !subtotalRegex.test(line)) {
+    if (bareTotalRegex.test(line) && !excludeContextRegex.test(line) && !percentRegex.test(line)) {
       const value = moneyOnLine(line);
       if (value !== null) lastTotalValue = value;
     }
   }
   if (lastTotalValue !== null) return lastTotalValue;
 
-  // Fall back to the largest dollar-shaped number anywhere in the text.
-  const allMatches = [...text.matchAll(new RegExp(moneyRegex, "g"))];
-  const values = allMatches
-    .map((m) => parseFloat(m[1].replace(/,/g, "")))
-    .filter((v) => !Number.isNaN(v) && v > 0);
-  if (values.length === 0) return null;
-  return Math.max(...values);
+  // No total-shaped line at all (bad crop, unusual layout, OCR dropped
+  // the word). Arithmetic as a validation signal: subtotal + tax -
+  // discount is what the total would have said, if those lines are
+  // legible even though "total" itself isn't. Only trusted when some
+  // OTHER (non-excluded) line on the receipt actually carries that
+  // exact number — this confirms a real printed total we failed to
+  // label, rather than manufacturing an amount no line agrees with.
+  let subtotalValue: number | null = null;
+  let taxValue = 0;
+  let discountValue = 0;
+  for (const line of lines) {
+    if (/sub[\s-]?total/i.test(line)) {
+      const v = moneyOnLine(line);
+      if (v !== null) subtotalValue = v;
+    } else if (/\btax\b/i.test(line)) {
+      const v = moneyOnLine(line);
+      if (v !== null) taxValue += v;
+    } else if (/\b(discount|savings)\b/i.test(line)) {
+      const v = moneyOnLine(line);
+      if (v !== null) discountValue += v;
+    }
+  }
+
+  // Fall back to the largest dollar-shaped number among lines that
+  // aren't already spoken for by subtotal/tax/discount/cash/tip/card —
+  // never the largest number on the WHOLE receipt, which is routinely
+  // the cash tendered or a pre-discount price, not the total.
+  const candidateValues = lines
+    .filter((line) => !excludeContextRegex.test(line) && !percentRegex.test(line))
+    .map(moneyOnLine)
+    .filter((v): v is number => v !== null);
+
+  if (subtotalValue !== null) {
+    const expected = Math.round((subtotalValue + taxValue - discountValue) * 100) / 100;
+    const arithmeticMatch = candidateValues.find((v) => Math.abs(v - expected) < 0.005);
+    if (arithmeticMatch !== undefined) return arithmeticMatch;
+  }
+
+  if (candidateValues.length === 0) return null;
+  return Math.max(...candidateValues);
 }
 
 /** Common receipt date shapes: MM/DD/YYYY, MM-DD-YYYY, and "Mon DD, YYYY". */
@@ -192,13 +243,23 @@ export function extractVendor(text: string): string | null {
   const phoneRegex = /\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/;
   // Street address: a leading number followed by a word (street/ave/etc).
   const addressRegex = /^\d+\s+\S/;
-  const transactionLineRegex = /\b(sale|sales#|trans#|invoice|order|receipt|store|terminal|manager|cashier|welcome|thank you)\b/i;
+  const transactionLineRegex = /\b(sale|sales#|trans#|invoice|order|receipt|store|terminal|manager|cashier|welcome|thank you|self[\s-]?check[\s-]?out|register|lane)\b/i;
   const dateRegex = /\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/;
   // Tagline/slogan shape: "Expect more. Pay less." / "Save money. Live
   // better." — a sentence-cased phrase with a period mid-line, not a
   // business name (those are ALL CAPS or a single brand word/phrase
   // with no internal sentence punctuation).
   const taglineRegex = /[a-zA-Z]\.\s+[A-Z]/;
+  // Catches the same kind of tagline text when OCR garbles it too badly
+  // for the mid-line period+capital shape above to still be there — a
+  // real receipt logo("More saving. More doing.") OCR'd as two SEPARATE
+  // lines, each ending its own sentence ("El Hore savin.", "Xl} More
+  // doing.\""), so neither has an internal period-then-capital to match.
+  // A trailing period (after stripping stray closing quotes/brackets
+  // OCR tacks on) is still a strong "this is a sentence fragment, not a
+  // business name" signal on its own — real vendor names don't end with
+  // a full stop.
+  const trailingSentencePunctuationRegex = /[”"'’)\]}]+$/;
 
   for (const line of candidateLines) {
     if (
@@ -206,7 +267,8 @@ export function extractVendor(text: string): string | null {
       addressRegex.test(line) ||
       transactionLineRegex.test(line) ||
       dateRegex.test(line) ||
-      taglineRegex.test(line)
+      taglineRegex.test(line) ||
+      line.replace(trailingSentencePunctuationRegex, "").trimEnd().endsWith(".")
     ) {
       continue;
     }
@@ -218,9 +280,91 @@ export function extractVendor(text: string): string | null {
     // Mostly-punctuation/garbled OCR noise (e.g. a mangled logo) fails
     // this outright — real business names are overwhelmingly letters.
     if (letterRatio < 0.7) continue;
-    if (letters.length < 3) continue;
+    // A stylized logo (Home Depot's icon+wordmark, etc.) can garble down
+    // to a short run of otherwise-clean letters with no digits or
+    // punctuation to trip the ratio check above — e.g. "SEV" scanned
+    // off a Home Depot receipt, which then won as "first line to pass
+    // every filter" ahead of the real "THE HOME DEPOT" text beneath it.
+    // 3 was too permissive to catch that; every real vendor name this
+    // extractor is tested against is 4+ letters (TARGET, IKEA, ACME…).
+    if (letters.length < 4) continue;
 
     return line; // first line to pass every filter — take it and stop.
+  }
+
+  // Nothing near the top passed — the vendor's name genuinely isn't in
+  // the OCR text there (a stylized logo that failed to OCR at all, not
+  // just an OCR'd-badly one — see the Home Depot case this fallback was
+  // built for: "THE HOME DEPOT" never appears anywhere in the top of
+  // the receipt, only mangled fragments of its logo and tagline do).
+  // Regex/position heuristics over an ABSENT name can't recover it; a
+  // small dictionary of common vendors can, because the SAME name often
+  // still appears in plain print further down the receipt (a survey
+  // blurb, a loyalty-program footer) even when the logo didn't OCR.
+  return matchKnownVendor(text);
+}
+
+/** Curated fallback list — common chains a contractor's expenses are
+ * likely to include (hardware/home-improvement/fuel/office-supply).
+ * NOT consulted unless the position heuristic above found nothing, so
+ * it can never override or change any of that heuristic's own tests;
+ * it only recovers cases that would otherwise be a flat null. */
+const KNOWN_VENDORS: string[] = [
+  "The Home Depot", "Lowe's", "Walmart", "Target", "Costco", "Sam's Club",
+  "Menards", "Ace Hardware", "True Value", "Harbor Freight", "Tractor Supply",
+  "CVS", "Walgreens", "Rite Aid", "Starbucks", "Shell", "Chevron", "ExxonMobil",
+  "7-Eleven", "Circle K", "Office Depot", "Staples", "Best Buy", "Amazon",
+  "Grainger", "Fastenal", "Ferguson", "Sherwin-Williams", "Behr",
+  "ABC Supply", "SRS Distribution", "Beacon Roofing Supply", "GAF",
+  "Owens Corning", "McDonald's", "Subway", "Chick-fil-A", "Wendy's",
+  "Dunkin", "U-Haul", "Enterprise Rent-A-Car", "Sunbelt Rentals",
+  "United Rentals",
+];
+
+const VENDOR_STOPWORDS = new Set(["THE", "OF", "AND", "FOR", "INC", "LLC", "CO"]);
+
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  let prevRow = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const currRow = [i];
+    for (let j = 1; j <= b.length; j++) {
+      currRow[j] =
+        a[i - 1] === b[j - 1] ? prevRow[j - 1] : 1 + Math.min(prevRow[j - 1], prevRow[j], currRow[j - 1]);
+    }
+    prevRow = currRow;
+  }
+  return prevRow[b.length];
+}
+
+/** Word-by-word, not whole-name-at-once — a vendor's name doesn't need
+ * to survive intact on one line; "HOME" and "DEPOT" each turning up
+ * SEPARATELY anywhere in the receipt is enough, which is exactly how
+ * they showed up (in a "$5,000 HOME DEPOT gift card" survey blurb, not
+ * near the logo) on the real receipt that motivated this. Multi-word
+ * vendors require every significant word (stopwords like "The"
+ * excluded) to be found with a small edit-distance allowance for OCR
+ * noise; single-word vendors (Target, Walmart, Costco…) require an
+ * EXACT match — a fuzzy match on one short word alone is too easy to
+ * hit by coincidence to trust. */
+function matchKnownVendor(text: string): string | null {
+  const ocrWords = text.toUpperCase().split(/[^A-Z]+/).filter((w) => w.length >= 3);
+  if (ocrWords.length === 0) return null;
+
+  for (const vendor of KNOWN_VENDORS) {
+    const vendorWords = vendor
+      .toUpperCase()
+      .split(/[^A-Z]+/)
+      .filter((w) => w.length >= 3 && !VENDOR_STOPWORDS.has(w));
+    if (vendorWords.length === 0) continue;
+
+    const allWordsFound = vendorWords.every((vw) => {
+      const maxDistance = vendorWords.length === 1 ? 0 : Math.max(1, Math.floor(vw.length * 0.3));
+      return ocrWords.some((ow) => levenshtein(vw, ow) <= maxDistance);
+    });
+    if (allWordsFound) return vendor;
   }
 
   return null;
