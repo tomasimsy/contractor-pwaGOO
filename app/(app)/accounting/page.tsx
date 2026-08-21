@@ -513,14 +513,16 @@ function AccountingContent() {
       </p>
 
       {/* ---------- 5. RECONCILIATION ----------
-          Deliberately not built. There is no bank feed, no imported
-          statement and no cleared/uncleared flag anywhere in the schema,
-          so a "reconciliation" view could only restate the register
-          above under a different heading. Left for when a statement
-          source exists, per the brief. */}
+          A bank statement source now exists: upload a CSV export
+          (no bank connection required) at /accounting/reconciliation.
+          There is still no cleared/uncleared flag persisted anywhere —
+          each run is a fresh comparison against the current register,
+          not a saved reconciliation state. */}
       <p className="mt-6 text-[11px] text-muted-foreground">
-        Reconciliation needs a bank statement source, which this schema doesn&apos;t have yet — the
-        register above is the closest existing view. See{" "}
+        <Link href="/accounting/reconciliation" className="font-medium text-primary hover:underline">
+          Reconcile a bank statement
+        </Link>{" "}
+        — upload a CSV export and match it against the payments and expenses below. See also{" "}
         <Link href="/reports" className="text-primary hover:underline">Reports</Link> and{" "}
         <Link href="/tax-center" className="text-primary hover:underline">Tax Center</Link> for
         statements and tax summaries.

@@ -15,6 +15,8 @@ import { createAccountsReceivableService } from "@/lib/services/accountsReceivab
 import { createAccountsPayableService } from "@/lib/services/accountsPayableService";
 import { createSupabaseCompanyDocumentService } from "@/lib/services/supabase/companyDocumentService";
 import { createCpaPackageService } from "@/lib/services/cpaPackageService";
+import { createReconciliationCashFlowAdapter } from "@/lib/services/reconciliationCashFlowAdapter";
+import { createBankReconciliationService } from "@/lib/services/bankReconciliationService";
 import { createFinancialEngine } from "@/lib/services";
 import type { ClientService } from "@/lib/services/clientService";
 import type { ProjectService } from "@/lib/services/projectService";
@@ -37,6 +39,7 @@ import type { AccountsReceivableService } from "@/lib/services/accountsReceivabl
 import type { AccountsPayableService } from "@/lib/services/accountsPayableService";
 import type { CompanyDocumentService } from "@/lib/services/companyDocumentService";
 import type { CpaPackageService } from "@/lib/services/cpaPackageService";
+import type { BankReconciliationService } from "@/lib/services/bankReconciliationService";
 import type { AuditService } from "@/lib/services";
 import type { EstimateWorkflow } from "@/lib/services/estimateWorkflow";
 import type { ChangeOrderWorkflow } from "@/lib/services/changeOrderWorkflow";
@@ -73,6 +76,10 @@ export interface AppServices extends InMemoryServices {
   /** Cash-basis only — see cpaPackageService.ts's header for why this
    * is never given financialEngine. */
   cpaPackageService: CpaPackageService;
+  /** Reads real payments/expenses (via reconciliationCashFlowAdapter),
+   * never the abandoned in-memory ledger stack — see that adapter's
+   * header. The matching algorithm itself is untouched. */
+  bankReconciliationService: BankReconciliationService;
   auditService: AuditService;
   /** The single canonical estimate-signing workflow (sign/unsign) — see
    * lib/services/estimateWorkflow.ts. The portal reaches the exact same
@@ -179,6 +186,8 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
     // FinancialEngine's committed-cost model into a report a CPA relies
     // on for what was actually paid.
     const cpaPackageService = createCpaPackageService({ expenseService, paymentService, invoiceService, projectService, clientService });
+    const reconciliationCashFlowAdapter = createReconciliationCashFlowAdapter({ paymentService, expenseService });
+    const bankReconciliationService = createBankReconciliationService({ financialStatementsService: reconciliationCashFlowAdapter });
 
     return {
       ...inMemory,
@@ -204,6 +213,7 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
       accountsPayableService,
       companyDocumentService,
       cpaPackageService,
+      bankReconciliationService,
       estimateWorkflow,
       changeOrderWorkflow,
     };
