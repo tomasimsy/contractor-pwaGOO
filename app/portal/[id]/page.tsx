@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabase/env";
-import { mergeCompanyDefaults } from "@/lib/company";
+import { mergeCompanyDefaults, mergeProfileOverrides, parseCompanyProfileRow } from "@/lib/company";
 import { getEstimateTermsTemplate } from "@/lib/estimateTerms";
 import { TermsBody } from "@/components/shared/TermsBody";
 import { SignEstimateForm } from "@/components/portal/SignEstimateForm";
@@ -93,6 +93,19 @@ export default async function CustomerPortalPage({
   );
   const hasAnyPhotos = beforePhotos.length > 0 || afterPhotos.length > 0 || areaPhotoGroups.length > 0;
 
+  // Which brand this estimate presents as — get_customer_portal can't
+  // safely be rewritten to return profile_id itself (same "lives
+  // outside this repo's tracked migrations" reasoning as
+  // get_portal_change_orders), so a one-column read plus the profile
+  // row itself, both via the same SECURITY DEFINER pattern.
+  const { data: profileIdData } = token && estimate
+    ? await supabase.rpc("get_portal_estimate_profile_id", { p_token: token })
+    : { data: null };
+  const { data: profileData } = profileIdData
+    ? await supabase.rpc("get_company_profile", { p_profile_id: profileIdData })
+    : { data: null };
+  const profile = parseCompanyProfileRow(profileData as Record<string, unknown> | null);
+
   if (!estimate) {
     return (
       <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-6 text-center bg-gray-50">
@@ -111,7 +124,7 @@ export default async function CustomerPortalPage({
     );
   }
 
-  const company = mergeCompanyDefaults(payload?.company ?? null);
+  const company = mergeProfileOverrides(mergeCompanyDefaults(payload?.company ?? null), profile);
   const client = payload?.client ?? null;
   const lineItems = payload?.line_items ?? [];
   const changeOrders = payload?.change_orders ?? [];

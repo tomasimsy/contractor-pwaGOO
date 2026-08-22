@@ -85,6 +85,7 @@ interface InvoiceRow {
   notes: string | null;
   description: string | null;
   customer_token: string | null;
+  profile_id: string | null;
   is_locked: boolean | null;
   created_by: string | null;
   created_at: string;
@@ -217,6 +218,7 @@ export function createSupabaseInvoiceService(
       dueDate: row.due_date,
       isLocked: row.is_locked ?? false,
       customerToken: row.customer_token,
+      profileId: row.profile_id,
       createdBy: row.created_by,
       createdAt: row.created_at,
       updatedBy: row.updated_by,
@@ -414,6 +416,10 @@ export function createSupabaseInvoiceService(
     issueDate: string;
     dueDate: string;
     notes?: string | null;
+    /** Copied from the source estimate by createFromEstimate, the
+     * same way companyId/clientId already are. Omitted/null for a
+     * standalone invoice = the company's own default identity. */
+    profileId?: UUID | null;
   }): Promise<Invoice> {
     for (const li of input.lineItems) {
       const check = validationService.validateLineItem({ name: li.name, quantity: li.quantity, unitPrice: li.unitPrice });
@@ -461,6 +467,7 @@ export function createSupabaseInvoiceService(
           // invoice page — generated at creation so a customer link can
           // be shared without a later migration step.
           customer_token: crypto.randomUUID(),
+          profile_id: input.profileId ?? null,
           created_by: actorId,
         })
         .select()
@@ -582,6 +589,11 @@ export function createSupabaseInvoiceService(
       tax,
       issueDate: input.issueDate,
       dueDate: input.dueDate,
+      // Same brand the customer already saw on the estimate — an
+      // OSRPros-branded estimate must not silently become a
+      // default-branded invoice at the one handoff point that matters
+      // most for running two brands "separately."
+      profileId: estimate.profileId,
     });
   }
 

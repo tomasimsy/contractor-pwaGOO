@@ -142,17 +142,101 @@ export function mergeCompanyDefaults(row: Partial<CompanySettings> | null | unde
 // signup, without merging the two tables or duplicating this query.
 export async function getCompanySettingsByCompanyId(
   supabase: SupabaseClient,
-  companyId: string | null | undefined
+  companyId: string | null | undefined,
+  // Optional — an estimate/invoice's own `profile_id`. Null/undefined
+  // (every call site before this parameter existed, and every
+  // existing estimate/invoice today) behaves EXACTLY as before: the
+  // company's own default identity, unchanged. Passing one overlays
+  // that brand's fields (name/logo/phone/email/website/address/
+  // footer) on top — see mergeProfileOverrides.
+  profileId?: string | null
 ): Promise<CompanySettings> {
   if (!companyId) return mergeCompanyDefaults(null);
   const [{ data: settingsRow }, { data: companyRow }] = await Promise.all([
     supabase.from("company_settings").select("*").eq("company_id", companyId).single(),
     supabase.from("companies").select("name").eq("id", companyId).single(),
   ]);
-  return mergeCompanyDefaults({
+  const merged = mergeCompanyDefaults({
     ...(settingsRow as Partial<CompanySettings> | null),
     company_name: companyRow?.name || (settingsRow as { company_name?: string } | null)?.company_name,
   });
+  if (!profileId) return merged;
+  const profile = await getCompanyProfileById(supabase, profileId);
+  return mergeProfileOverrides(merged, profile);
+}
+
+/** A customer-facing brand identity, layered on top of a company's own
+ * CompanySettings for one specific estimate/invoice — see
+ * supabase/migrations/20260821010000_company_profiles.sql's header.
+ * Deliberately a SUBSET of CompanySettings' fields: only what actually
+ * varies by brand. tax_id/license_number/terms/warranty/deposit
+ * default etc. stay company-wide and are never part of this type. */
+export type CompanyProfile = {
+  id: string;
+  companyId: string;
+  companyName: string;
+  logoUrl: string | null;
+  companyPhone: string | null;
+  companyEmail: string | null;
+  companyWebsite: string | null;
+  companyAddress: string | null;
+  footerMessage: string | null;
+};
+
+/** Parses the raw snake_case row this table's own SELECT and every
+ * SECURITY DEFINER function that reads it (get_company_profile) both
+ * return — one mapping used by every consumer (server routes with a
+ * direct table read, and portal/public pages calling the RPC), so the
+ * shape can't drift between them. */
+export function parseCompanyProfileRow(row: Record<string, unknown> | null | undefined): CompanyProfile | null {
+  if (!row) return null;
+  return {
+    id: row.id as string,
+    companyId: row.company_id as string,
+    companyName: (row.company_name as string) || "",
+    logoUrl: (row.logo_url as string) || null,
+    companyPhone: (row.company_phone as string) || null,
+    companyEmail: (row.company_email as string) || null,
+    companyWebsite: (row.company_website as string) || null,
+    companyAddress: (row.company_address as string) || null,
+    footerMessage: (row.footer_message as string) || null,
+  };
+}
+
+/** Always goes through get_company_profile (a SECURITY DEFINER
+ * function), never a direct `.from("company_profiles")` read —
+ * company_profiles' own RLS is staff-only (company_id =
+ * current_company_id()), so a direct read would return nothing for
+ * the anon customer-token PDF/email/portal paths. The function works
+ * identically for a staff-authenticated client too, so this is the
+ * one path every caller uses, regardless of who's asking. */
+export async function getCompanyProfileById(
+  supabase: SupabaseClient,
+  profileId: string | null | undefined
+): Promise<CompanyProfile | null> {
+  if (!profileId) return null;
+  const { data } = await supabase.rpc("get_company_profile", { p_profile_id: profileId });
+  return parseCompanyProfileRow(data as Record<string, unknown> | null);
+}
+
+/** Overlays a brand profile's fields on top of an already-resolved
+ * CompanySettings — null profile is a no-op (returns base untouched),
+ * so every call site's existing "no profile" behavior is exactly
+ * today's behavior, not a special case. Only the fields the profile
+ * actually specifies are overridden; an unset profile field falls back
+ * to the company's own setting rather than blanking it. */
+export function mergeProfileOverrides(base: CompanySettings, profile: CompanyProfile | null): CompanySettings {
+  if (!profile) return base;
+  return {
+    ...base,
+    company_name: profile.companyName || base.company_name,
+    logo_url: profile.logoUrl || base.logo_url,
+    company_phone: profile.companyPhone || base.company_phone,
+    company_email: profile.companyEmail || base.company_email,
+    company_website: profile.companyWebsite || base.company_website,
+    company_address: profile.companyAddress || base.company_address,
+    footer_message: profile.footerMessage || base.footer_message,
+  };
 }
 
 /** Writes company_settings — the ONE write path for company branding/

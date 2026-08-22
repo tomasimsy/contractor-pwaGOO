@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { FolderLock, Upload } from "lucide-react";
+import { Building2, FolderLock, Upload } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { RequirePermission } from "@/components/layout/RequirePermission";
@@ -214,9 +214,14 @@ function CompanySettingsContent() {
         title="Company Settings"
         description="This information appears on every invoice, estimate, PDF, and customer-facing page."
         actions={
-          <Link href="/settings/company/documents" className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted">
-            <FolderLock className="size-3.5" /> Company Documents
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/settings/company/profiles" className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted">
+              <Building2 className="size-3.5" /> Business Profiles
+            </Link>
+            <Link href="/settings/company/documents" className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted">
+              <FolderLock className="size-3.5" /> Company Documents
+            </Link>
+          </div>
         }
       />
 

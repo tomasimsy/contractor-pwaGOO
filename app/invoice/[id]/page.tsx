@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabase/env";
 import { calculateSubtotal, calculateInvoiceTotal, calculateRemainingBalance, deriveInvoiceStatus } from "@/lib/services/financialCalculations";
-import { mergeCompanyDefaults } from "@/lib/company";
+import { mergeCompanyDefaults, mergeProfileOverrides, parseCompanyProfileRow } from "@/lib/company";
 import { formatPaymentMethod } from "@/components/payments/paymentMethods";
 
 /**
@@ -85,7 +85,21 @@ export default async function PublicInvoicePage({
   // a pending or rejected change order can never reach this page even
   // if one exists on the estimate.
   const changeOrders = payload?.change_orders ?? [];
-  const company = mergeCompanyDefaults(payload?.company ?? null);
+
+  // Which brand this invoice presents as — get_public_invoice can't
+  // safely be rewritten to return profile_id itself (its body lives
+  // outside this repo's tracked migrations), so a one-column read plus
+  // the profile row itself, both via the same SECURITY DEFINER
+  // functions the estimate portal uses.
+  const { data: profileIdData } = token
+    ? await supabase.rpc("get_portal_invoice_profile_id", { p_token: token })
+    : { data: null };
+  const { data: profileData } = profileIdData
+    ? await supabase.rpc("get_company_profile", { p_profile_id: profileIdData })
+    : { data: null };
+  const profile = parseCompanyProfileRow(profileData as Record<string, unknown> | null);
+
+  const company = mergeProfileOverrides(mergeCompanyDefaults(payload?.company ?? null), profile);
 
   // Same rule as InvoiceService.getById and the PDF route: an issued
   // invoice shows its as-billed stored total; only a draft recomputes

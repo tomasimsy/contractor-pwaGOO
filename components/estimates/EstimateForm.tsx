@@ -42,6 +42,7 @@ import type { EstimatePhoto } from "@/lib/services/estimatePhotoService";
 import type { RoofingArea } from "@/lib/services";
 import type { Project } from "@/lib/services/projectService";
 import type { Client } from "@/lib/services/clientService";
+import type { CompanyProfile } from "@/lib/services/companyProfileService";
 
 const formatMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
@@ -179,7 +180,7 @@ export function EstimateForm({
   // route it is on or it floats above (or under) the wrong thing.
   const navHidden = hidesMobileBottomNav(usePathname());
   const searchParams = useSearchParams();
-  const { estimateService, projectService, clientService, roofingAreaService, estimatePhotoService } = useServices();
+  const { estimateService, projectService, clientService, roofingAreaService, estimatePhotoService, companyProfileService } = useServices();
   const { profile } = useAuth();
 
   // Collapsible sections — the form is long and dense, so let users hide what they don't need to see.
@@ -209,6 +210,13 @@ const [pricingOpen, setPricingOpen] = useState(true);
   const [termsTemplate, setTermsTemplate] = useState<EstimateTermsTemplateKey>(
     estimate?.termsTemplate ?? DEFAULT_ESTIMATE_TERMS_TEMPLATE
   );
+  /** Which customer-facing brand this estimate presents as (PDF/email/
+   * portal) — see CompanyProfileService. Empty string = the company's
+   * own default identity (profileId: null), exactly today's behavior
+   * for any estimate that never touches this field. */
+  const [profiles, setProfiles] = useState<CompanyProfile[]>([]);
+  const [profileId, setProfileId] = useState(estimate?.profileId ?? "");
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [lineItems, setLineItems] = useState<DraftLineItem[]>(
     initialLineItems?.map((li) => ({ category: li.category, name: li.name, description: li.description, quantity: li.quantity, unitPrice: li.unitPrice, unit: li.unit ?? null, taxable: li.taxable })) ?? []
   );
@@ -242,6 +250,11 @@ const [pricingOpen, setPricingOpen] = useState(true);
     if (!profile?.companyId) return;
     clientService.list({ companyId: profile.companyId }).then(setClients);
   }, [clientService, profile?.companyId]);
+
+  useEffect(() => {
+    if (!profile?.companyId) return;
+    companyProfileService.listForCompany(profile.companyId).then(setProfiles);
+  }, [companyProfileService, profile?.companyId]);
 
   useEffect(() => {
     if (!estimate || estimateType !== "roofing") return;
@@ -302,7 +315,7 @@ const [pricingOpen, setPricingOpen] = useState(true);
     : calculateSubtotal(lineItems.map((li) => ({ total: calculateLineItemTotal(li) })));
   const total = calculateDocumentTotal(subtotal, markup, discount, taxRate).total;
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     // A project is no longer required up front: with a client chosen
     // and no project, createEstimateForClient resolves (or creates)
@@ -312,6 +325,23 @@ const [pricingOpen, setPricingOpen] = useState(true);
       setError("An estimate needs a title.");
       return;
     }
+    // Which brand this estimate presents as is asked right before the
+    // actual save — a confirm-and-pick step, not a field buried in the
+    // form — but only when there's an actual choice to make; a company
+    // with no profiles set up skips straight to saving, same as today.
+    if (profiles.length > 0) {
+      setError(null);
+      setShowProfileModal(true);
+      return;
+    }
+    void performSubmit();
+  }
+
+  async function performSubmit() {
+    // Re-checked here (not just in handleSubmit) because this now runs
+    // from the profile-confirmation modal's button too, a separate
+    // call stack TypeScript can't narrow `profile` across.
+    if (!profile?.companyId || (!projectId && !manualClientId)) return;
     setSaving(true);
     setError(null);
     try {
@@ -327,6 +357,7 @@ const [pricingOpen, setPricingOpen] = useState(true);
           depositAmount,
           estimateType,
           termsTemplate,
+          profileId: profileId || null,
         });
         // Roofing scope lives in roof areas — EstimateService rejects
         // this call for a roofing estimate, so don't make it.
@@ -367,6 +398,7 @@ const [pricingOpen, setPricingOpen] = useState(true);
             depositAmount,
             estimateType,
             termsTemplate,
+            profileId: profileId || null,
           },
           basePath
         );
@@ -634,6 +666,10 @@ const [pricingOpen, setPricingOpen] = useState(true);
         </p>
       </div>
 
+      {/* Business Profile is chosen in a popup right at submit time
+          (see the Modal below, triggered from handleSubmit) rather
+          than as an always-visible field here. */}
+
       {/* Locked message – shown only when type is locked */}
       {typeLocked && (
         <p className="text-[10px] text-muted-foreground -mt-1">
@@ -894,6 +930,55 @@ const [pricingOpen, setPricingOpen] = useState(true);
           setShowNewClientModal(false);
         }}
       />
+    </Modal>
+
+    <Modal
+      open={showProfileModal}
+      onClose={() => { if (!saving) setShowProfileModal(false); }}
+      title={estimate ? "Confirm business profile" : "Which business is this estimate for?"}
+    >
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Controls the name, logo, and contact info shown on this estimate&apos;s PDF, email, and customer portal only — never the company or its financials.
+        </p>
+        <div>
+          <label className={LABEL}>Business Profile</label>
+          <select
+            autoFocus
+            value={profileId}
+            onChange={(e) => setProfileId(e.target.value)}
+            className={FIELD}
+          >
+            <option value="">Company default</option>
+            {profiles.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.companyName}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => setShowProfileModal(false)}
+            disabled={saving}
+            className="rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={async () => {
+              setShowProfileModal(false);
+              await performSubmit();
+            }}
+            className="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            {saving ? "Saving…" : estimate ? "Save Changes" : "Create Estimate"}
+          </button>
+        </div>
+      </div>
     </Modal>
     </>
   );

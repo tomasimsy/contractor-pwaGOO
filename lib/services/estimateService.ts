@@ -95,6 +95,12 @@ export interface Estimate extends AuditedEntity {
    * document field — never recomputed, never inferred from
    * `estimateType`. Defaults to "custom". */
   termsTemplate: EstimateTermsTemplateKey;
+  /** Which customer-facing brand/business profile this estimate
+   * presents as (PDF/email/portal) — see CompanyProfileService and
+   * lib/company.ts's getCompanySettingsByCompanyId. Null = the
+   * company's own default identity, exactly today's behavior; not a
+   * "needs backfilling" state. */
+  profileId: UUID | null;
 }
 
 /**
@@ -176,6 +182,9 @@ export interface EstimateService {
     /** Defaults to "custom" (lib/estimateTerms.ts's
      * DEFAULT_ESTIMATE_TERMS_TEMPLATE) when omitted. */
     termsTemplate?: EstimateTermsTemplateKey;
+    /** Which brand profile this estimate presents as. Omitted/null =
+     * the company's own default identity (today's behavior). */
+    profileId?: UUID | null;
   }): Promise<Estimate>;
 
   updateLineItems(estimateId: UUID, lineItems: Omit<EstimateLineItem, "id" | "total">[]): Promise<Estimate>;
@@ -186,7 +195,7 @@ export interface EstimateService {
    * taxRate recalculates the total the same way updateLineItems does
    * (both funnel through recalculateTotal internally) — never a bare
    * column write that leaves `total` stale. */
-  update(estimateId: UUID, changes: Partial<{ title: string | null; description: string | null; projectId: UUID; clientId: UUID | null; markup: number; discount: number; taxRate: number; depositAmount: number; estimateType: "standard" | "roofing"; termsTemplate: EstimateTermsTemplateKey }>): Promise<Estimate>;
+  update(estimateId: UUID, changes: Partial<{ title: string | null; description: string | null; projectId: UUID; clientId: UUID | null; markup: number; discount: number; taxRate: number; depositAmount: number; estimateType: "standard" | "roofing"; termsTemplate: EstimateTermsTemplateKey; profileId: UUID | null }>): Promise<Estimate>;
 
   /** Recomputes subtotal/total from current line items + markup/
    * discount/tax — the ONE implementation of that formula (replaces

@@ -14,6 +14,7 @@ import { createSupabaseBillScheduleService } from "@/lib/services/supabase/billS
 import { createAccountsReceivableService } from "@/lib/services/accountsReceivableService";
 import { createAccountsPayableService } from "@/lib/services/accountsPayableService";
 import { createSupabaseCompanyDocumentService } from "@/lib/services/supabase/companyDocumentService";
+import { createSupabaseCompanyProfileService } from "@/lib/services/supabase/companyProfileService";
 import { createCpaPackageService } from "@/lib/services/cpaPackageService";
 import { createReconciliationCashFlowAdapter } from "@/lib/services/reconciliationCashFlowAdapter";
 import { createBankReconciliationService } from "@/lib/services/bankReconciliationService";
@@ -38,6 +39,7 @@ import type { BillScheduleService } from "@/lib/services/billScheduleService";
 import type { AccountsReceivableService } from "@/lib/services/accountsReceivableService";
 import type { AccountsPayableService } from "@/lib/services/accountsPayableService";
 import type { CompanyDocumentService } from "@/lib/services/companyDocumentService";
+import type { CompanyProfileService } from "@/lib/services/companyProfileService";
 import type { CpaPackageService } from "@/lib/services/cpaPackageService";
 import type { BankReconciliationService } from "@/lib/services/bankReconciliationService";
 import type { AuditService } from "@/lib/services";
@@ -73,6 +75,12 @@ export interface AppServices extends InMemoryServices {
   accountsReceivableService: AccountsReceivableService;
   accountsPayableService: AccountsPayableService;
   companyDocumentService: CompanyDocumentService;
+  /** Customer-facing brand identities (e.g. a dba operating under a
+   * second name) — selected per estimate/invoice via their profile_id
+   * column, layered on top of CompanySettings by lib/company.ts's
+   * getCompanySettingsByCompanyId. Never duplicates company_id or any
+   * financial data. */
+  companyProfileService: CompanyProfileService;
   /** Cash-basis only — see cpaPackageService.ts's header for why this
    * is never given financialEngine. */
   cpaPackageService: CpaPackageService;
@@ -159,6 +167,7 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
     const billScheduleService = createSupabaseBillScheduleService(supabase, expenseService, inMemory.validationService, currentUserId);
     const accountsReceivableService = createAccountsReceivableService({ invoiceService, paymentService });
     const companyDocumentService = createSupabaseCompanyDocumentService(supabase, inMemory.validationService, currentUserId);
+    const companyProfileService = createSupabaseCompanyProfileService(supabase, inMemory.validationService, currentUserId);
 
     // Rebuilt over the real services rather than reusing
     // inMemory.financialEngine, which was closed over the in-memory
@@ -212,6 +221,7 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
       accountsReceivableService,
       accountsPayableService,
       companyDocumentService,
+      companyProfileService,
       cpaPackageService,
       bankReconciliationService,
       estimateWorkflow,

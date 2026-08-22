@@ -91,6 +91,12 @@ export interface Invoice extends AuditedEntity {
    * holder of one link mint others. Null on invoices predating the
    * token backfill. */
   customerToken: string | null;
+  /** Which brand/business profile this invoice presents as — copied
+   * from the source estimate at creation time (see
+   * InvoiceService.createFromEstimate), the same way company_id
+   * already is. Null = the company's own default identity, exactly
+   * today's behavior. */
+  profileId: UUID | null;
 }
 
 export interface InvoiceService {

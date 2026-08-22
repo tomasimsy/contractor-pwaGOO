@@ -80,7 +80,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const lineItems = (items ?? []) as { name?: string; description?: string; quantity?: number; unit_price?: number; total?: number }[];
     const paymentRows = (payments ?? []) as { amount?: number; payment_date?: string; method?: string; reference_number?: string }[];
     const changeOrders = (changeOrderRows ?? []) as { change_order_number?: string; title?: string; total_amount?: number; tax?: number; approved_at?: string }[];
-    const company = await getCompanySettingsByCompanyId(supabase, invoice.company_id);
+    // profile_id (copied from the source estimate at invoice creation
+    // — see InvoiceService.createFromEstimate) overlays this invoice's
+    // own brand, same as the estimate PDF.
+    const company = await getCompanySettingsByCompanyId(supabase, invoice.company_id, invoice.profile_id);
 
     // ---------- Totals ----------
     // Payments are ALWAYS derived from active rows. The invoice's own

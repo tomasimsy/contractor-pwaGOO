@@ -96,6 +96,7 @@ interface EstimateRow {
   customer_token: string | null;
   estimate_type: "standard" | "roofing";
   terms_template: string | null;
+  profile_id: string | null;
 }
 
 interface EstimateItemRow {
@@ -137,6 +138,7 @@ function rowToEstimate(row: EstimateRow): Estimate {
     // documented default for exactly that case — see the migration's
     // header on why "custom" specifically.
     termsTemplate: (row.terms_template as EstimateTermsTemplateKey | null) ?? "custom",
+    profileId: row.profile_id,
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedBy: row.updated_by,
@@ -437,6 +439,7 @@ export function createSupabaseEstimateService(
     depositAmount?: number;
     estimateType?: "standard" | "roofing";
     termsTemplate?: EstimateTermsTemplateKey;
+    profileId?: UUID | null;
   }): Promise<Estimate> {
     // Project ownership: the project must belong to the caller's own
     // company — mirrors ProjectService's own clientOwnership check.
@@ -480,6 +483,7 @@ export function createSupabaseEstimateService(
           deposit_amount: input.depositAmount ?? 0,
           estimate_type: input.estimateType ?? "standard",
           terms_template: input.termsTemplate ?? DEFAULT_ESTIMATE_TERMS_TEMPLATE,
+          profile_id: input.profileId ?? null,
           // Portal capability token, minted at creation so every new
           // estimate is shareable immediately. Without this only rows
           // touched by the backfill migration would have one, and any
@@ -582,7 +586,7 @@ export function createSupabaseEstimateService(
 
   async function update(
     estimateId: UUID,
-    changes: Partial<{ title: string | null; description: string | null; projectId: UUID; clientId: UUID | null; markup: number; discount: number; taxRate: number; depositAmount: number; estimateType: "standard" | "roofing"; termsTemplate: EstimateTermsTemplateKey }>
+    changes: Partial<{ title: string | null; description: string | null; projectId: UUID; clientId: UUID | null; markup: number; discount: number; taxRate: number; depositAmount: number; estimateType: "standard" | "roofing"; termsTemplate: EstimateTermsTemplateKey; profileId: UUID | null }>
   ): Promise<Estimate> {
     // Defense-in-depth: `changes`'s type already excludes subtotal/
     // total, so this can only fire if that type is loosened later (an
@@ -640,6 +644,7 @@ export function createSupabaseEstimateService(
     if (changes.depositAmount !== undefined) payload.deposit_amount = changes.depositAmount;
     if (changes.estimateType !== undefined) payload.estimate_type = changes.estimateType;
     if (changes.termsTemplate !== undefined) payload.terms_template = changes.termsTemplate;
+    if (changes.profileId !== undefined) payload.profile_id = changes.profileId;
 
     if (Object.keys(payload).length > 0) {
       const { error } = await supabase.from("estimates").update(payload).eq("id", estimateId);

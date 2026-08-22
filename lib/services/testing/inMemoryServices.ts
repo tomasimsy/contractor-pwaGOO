@@ -503,6 +503,7 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
     lineItems: Omit<EstimateLineItem, "id" | "total">[]; markup: number; discount: number; taxRate: number; depositAmount?: number;
     estimateType?: "standard" | "roofing";
     termsTemplate?: EstimateTermsTemplateKey;
+    profileId?: UUID | null;
   }): Promise<Estimate> {
     for (const li of input.lineItems) {
       const check = validation.validateLineItem(li);
@@ -531,6 +532,7 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
       depositAmount: input.depositAmount ?? 0,
       estimateType: input.estimateType ?? "standard",
       termsTemplate: input.termsTemplate ?? DEFAULT_ESTIMATE_TERMS_TEMPLATE,
+      profileId: input.profileId ?? null,
       signature: null,
       customerToken: null,
       createdBy: null,
@@ -575,7 +577,7 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
   }
   async function update(
     estimateId: UUID,
-    changes: Partial<{ title: string | null; description: string | null; projectId: UUID; clientId: UUID | null; markup: number; discount: number; taxRate: number; depositAmount: number; estimateType: "standard" | "roofing"; termsTemplate: EstimateTermsTemplateKey }>
+    changes: Partial<{ title: string | null; description: string | null; projectId: UUID; clientId: UUID | null; markup: number; discount: number; taxRate: number; depositAmount: number; estimateType: "standard" | "roofing"; termsTemplate: EstimateTermsTemplateKey; profileId: UUID | null }>
   ) {
     // Defense-in-depth, matching the real Supabase-backed
     // implementation's guard — subtotal/total are derived and must
@@ -612,6 +614,7 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
       depositAmount: changes.depositAmount !== undefined ? changes.depositAmount : estimate.depositAmount,
       estimateType: changes.estimateType !== undefined ? changes.estimateType : estimate.estimateType,
       termsTemplate: changes.termsTemplate !== undefined ? changes.termsTemplate : estimate.termsTemplate,
+      profileId: changes.profileId !== undefined ? changes.profileId : estimate.profileId,
       updatedAt: now(),
     };
     store.estimates.set(estimateId, updated);
@@ -959,7 +962,8 @@ function createInvoiceService(store: InMemoryStore, transactionService: Transact
     lineItems: InvoiceLineItem[],
     issueDate: string,
     dueDate: string,
-    totalOverride?: { subtotal: number; tax: number; total: number }
+    totalOverride?: { subtotal: number; tax: number; total: number },
+    profileId: UUID | null = null
   ): Promise<Invoice> {
     // When generated from an estimate, the invoice's total must equal
     // the estimate's total (subtotal + markup - discount + tax) exactly
@@ -995,6 +999,7 @@ function createInvoiceService(store: InMemoryStore, transactionService: Transact
       dueDate,
       isLocked: false,
       customerToken: null,
+      profileId,
       createdBy: null,
       createdAt: now(),
       updatedBy: null,
@@ -1033,7 +1038,7 @@ function createInvoiceService(store: InMemoryStore, transactionService: Transact
       subtotal: taxedBase,
       tax,
       total,
-    });
+    }, estimate.profileId);
   }
   async function createStandalone(input: { companyId: UUID; projectId: UUID; clientId: UUID | null; lineItems: Omit<InvoiceLineItem, "id" | "total">[]; issueDate: string; dueDate: string }) {
     const lineItems: InvoiceLineItem[] = input.lineItems.map((li) => ({ id: id(), ...li, total: calculateLineItemTotal(li) }));

@@ -60,7 +60,11 @@ export async function loadEstimateProposalData(
   const { data: items } = await supabase.from("estimate_items").select("*").eq("estimate_id", id).is("deleted_at", null);
   const estimateItems = items || [];
 
-  const company = await getCompanySettingsByCompanyId(supabase, estimate.company_id);
+  // profile_id (null on most estimates) overlays that estimate's own
+  // brand — see lib/company.ts's getCompanySettingsByCompanyId. This
+  // is the ONE data loader both the PDF route and the "Email Customer"
+  // send flow go through, so both stay in sync automatically.
+  const company = await getCompanySettingsByCompanyId(supabase, estimate.company_id, estimate.profile_id);
 
   let roofingAreas: any[] = [];
   let roofingAreaPhotos: any[] = [];
