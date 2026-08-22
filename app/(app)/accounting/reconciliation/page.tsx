@@ -21,11 +21,12 @@
  */
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Upload, CheckCircle2, AlertTriangle, XCircle, FileWarning } from "lucide-react";
+import { ArrowLeft, Upload, CheckCircle2, AlertTriangle, XCircle, FileWarning, HelpCircle } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
+import { Modal } from "@/components/ui/Modal";
 import { RequirePermission } from "@/components/layout/RequirePermission";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
@@ -56,6 +57,7 @@ function ReconciliationContent() {
   const companyId = profile?.companyId ?? null;
 
   const [step, setStep] = useState<Step>("upload");
+  const [showHelp, setShowHelp] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<string[][]>([]);
@@ -142,9 +144,18 @@ function ReconciliationContent() {
         title="Bank Reconciliation"
         description="Upload a bank statement CSV and match it against your recorded payments and expenses. No bank account connection required."
         actions={
-          <Link href="/accounting" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="size-3.5" /> Accounting
-          </Link>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setShowHelp(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
+            >
+              <HelpCircle className="size-3.5" /> How this works
+            </button>
+            <Link href="/accounting" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground">
+              <ArrowLeft className="size-3.5" /> Accounting
+            </Link>
+          </div>
         }
       />
 
@@ -169,6 +180,12 @@ function ReconciliationContent() {
             />
           </label>
           {parseError && <p className="mt-4 text-xs text-danger">{parseError}</p>}
+          <p className="mt-5 text-xs text-muted-foreground">
+            First time?{" "}
+            <button type="button" onClick={() => setShowHelp(true)} className="font-medium text-primary hover:underline">
+              See how this works
+            </button>
+          </p>
         </div>
       )}
 
@@ -442,6 +459,66 @@ function ReconciliationContent() {
           </button>
         </div>
       )}
+
+      <Modal open={showHelp} onClose={() => setShowHelp(false)} title="How Bank Reconciliation works">
+        <div className="space-y-5 text-sm text-foreground">
+          <ol className="space-y-4">
+            <li className="flex gap-3">
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">1</span>
+              <div>
+                <p className="font-medium">Export a CSV from your bank</p>
+                <p className="mt-0.5 text-muted-foreground">
+                  Log into your bank's website and download your checking/savings activity as a CSV file — most banks
+                  offer this under "Download," "Export," or "Statements." This app never connects to your bank
+                  directly.
+                </p>
+              </div>
+            </li>
+            <li className="flex gap-3">
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">2</span>
+              <div>
+                <p className="font-medium">Upload it here</p>
+                <p className="mt-0.5 text-muted-foreground">
+                  Nothing is sent to a server — the file is read entirely in your browser and never saved anywhere.
+                </p>
+              </div>
+            </li>
+            <li className="flex gap-3">
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">3</span>
+              <div>
+                <p className="font-medium">Confirm the column mapping</p>
+                <p className="mt-0.5 text-muted-foreground">
+                  It guesses which columns are Date, Description, and Amount (or separate Debit/Credit columns) from
+                  your file's headers. Check the preview table matches before running it — correct any dropdown that
+                  guessed wrong.
+                </p>
+              </div>
+            </li>
+            <li className="flex gap-3">
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">4</span>
+              <div>
+                <p className="font-medium">Review the results</p>
+                <p className="mt-0.5 space-y-1.5 text-muted-foreground">
+                  <span className="block"><span className="font-medium text-success">Matched</span> — a statement line and a recorded payment/expense agree on amount and date.</span>
+                  <span className="block"><span className="font-medium text-warning">Needs Review</span> — same amount, but the dates are further apart than expected. Likely the same transaction; confirm it yourself.</span>
+                  <span className="block"><span className="font-medium text-danger">Unmatched</span> — either a statement line with nothing recorded for it, or something recorded in the app that hasn't shown up on the statement yet.</span>
+                </p>
+              </div>
+            </li>
+          </ol>
+          <div className="rounded-lg bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground">
+            Nothing here is saved — each run is a fresh comparison. You can re-upload and re-run as many times as you
+            like; it never affects your actual payments or expenses.
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowHelp(false)}
+            className="w-full rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+          >
+            Got it
+          </button>
+        </div>
+      </Modal>
     </PageContainer>
   );
 }

@@ -34,6 +34,20 @@ type PortalPayload = {
   company?: Record<string, string | null> | null;
 };
 
+type PortalPhoto = { id: string; photo_type: "before" | "after"; storage_path: string; display_order: number };
+type PortalAreaPhoto = PortalPhoto & { area_id: string; area_name: string };
+type PortalPhotosPayload = { estimate_photos: PortalPhoto[]; area_photos: PortalAreaPhoto[] };
+
+const PHOTO_TYPE_LABEL: Record<PortalPhoto["photo_type"], string> = { before: "Before", after: "After" };
+
+/** Same route the PDF already uses to serve these exact photos to a
+ * customer (lib/pdf/estimateProposal.ts's `photoUrl`) — no auth check
+ * of its own (see app/api/estimate-photos/download/route.ts), so
+ * reachable the same way here. */
+function estimatePhotoUrl(storagePath: string): string {
+  return `/api/estimate-photos/download?path=${encodeURIComponent(storagePath)}`;
+}
+
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 export default async function CustomerPortalPage({
@@ -61,6 +75,23 @@ export default async function CustomerPortalPage({
     ? await supabase.rpc("get_estimate_terms_template", { p_token: token })
     : { data: null };
   const termsPayload = termsData as { key: string | null; override: string | null } | null;
+
+  // Parity with the PDF (lib/pdf/estimateProposal.ts), which already
+  // shows a customer these same photos — the portal page previously
+  // showed none of them.
+  const { data: photosData } = token && estimate
+    ? await supabase.rpc("get_portal_estimate_photos", { p_token: token })
+    : { data: null };
+  const photosPayload = (photosData as PortalPhotosPayload | null) ?? { estimate_photos: [], area_photos: [] };
+  const beforePhotos = photosPayload.estimate_photos.filter((p) => p.photo_type === "before");
+  const afterPhotos = photosPayload.estimate_photos.filter((p) => p.photo_type === "after");
+  const areaPhotoGroups = Object.values(
+    photosPayload.area_photos.reduce<Record<string, { areaName: string; photos: PortalAreaPhoto[] }>>((acc, p) => {
+      (acc[p.area_id] ??= { areaName: p.area_name, photos: [] }).photos.push(p);
+      return acc;
+    }, {})
+  );
+  const hasAnyPhotos = beforePhotos.length > 0 || afterPhotos.length > 0 || areaPhotoGroups.length > 0;
 
   if (!estimate) {
     return (
@@ -262,6 +293,70 @@ export default async function CustomerPortalPage({
             </div>
           </div>
         </section>
+
+        {/* PHOTOS SECTION — same photos the PDF already shows */}
+        {hasAnyPhotos && (
+          <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm space-y-3">
+            <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Photos</h2>
+
+            {(beforePhotos.length > 0 || afterPhotos.length > 0) && (
+              <div className="space-y-2">
+                {beforePhotos.length > 0 && (
+                  <div>
+                    <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Before</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {beforePhotos.map((photo) => (
+                        <a key={photo.id} href={estimatePhotoUrl(photo.storage_path)} target="_blank" rel="noopener noreferrer">
+                          <img
+                            src={estimatePhotoUrl(photo.storage_path)}
+                            alt="Before photo"
+                            className="h-24 w-full rounded-lg border border-gray-200 object-cover"
+                          />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {afterPhotos.length > 0 && (
+                  <div>
+                    <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">After</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {afterPhotos.map((photo) => (
+                        <a key={photo.id} href={estimatePhotoUrl(photo.storage_path)} target="_blank" rel="noopener noreferrer">
+                          <img
+                            src={estimatePhotoUrl(photo.storage_path)}
+                            alt="After photo"
+                            className="h-24 w-full rounded-lg border border-gray-200 object-cover"
+                          />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {areaPhotoGroups.map((group) => (
+              <div key={group.areaName} className="border-t border-gray-100 pt-3">
+                <p className="mb-1.5 text-xs font-semibold text-gray-800">{group.areaName}</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {group.photos.map((photo) => (
+                    <a key={photo.id} href={estimatePhotoUrl(photo.storage_path)} target="_blank" rel="noopener noreferrer" className="relative">
+                      <img
+                        src={estimatePhotoUrl(photo.storage_path)}
+                        alt={`${PHOTO_TYPE_LABEL[photo.photo_type]} photo — ${group.areaName}`}
+                        className="h-24 w-full rounded-lg border border-gray-200 object-cover"
+                      />
+                      <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                        {PHOTO_TYPE_LABEL[photo.photo_type]}
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </section>
+        )}
 
         {/* CHANGE ORDERS SECTION */}
         {allChangeOrders.length > 0 && (
