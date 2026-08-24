@@ -13,8 +13,8 @@ export function createSupabaseCompanyService(
   supabase: SupabaseClient,
   currentUserId: () => Promise<UUID | null>
 ): CompanyService {
-  async function getByCompanyId(companyId: UUID): Promise<CompanySettings> {
-    return getCompanySettingsByCompanyId(supabase, companyId);
+  async function getByCompanyId(companyId: UUID, profileId?: UUID | null): Promise<CompanySettings> {
+    return getCompanySettingsByCompanyId(supabase, companyId, profileId);
   }
 
   async function update(companyId: UUID, changes: Partial<CompanySettings>): Promise<CompanySettings> {

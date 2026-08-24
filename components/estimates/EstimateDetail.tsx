@@ -30,6 +30,7 @@ import {
   type EstimateEmailStatus,
 } from "@/lib/email/emailTracking";
 import { supabase } from "@/lib/supabase/client";
+import { resolvePortalOrigin } from "@/lib/portalDomain";
 import { EstimateNotesPanel } from "@/components/estimates/EstimateNotesPanel";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -214,7 +215,10 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
           estimateService.getScopeLines(e.id, e.estimateType),
           auditService.getHistory(e.companyId, "estimates", e.id),
           invoiceService.listForProject(e.projectId),
-          companyService.getByCompanyId(e.companyId),
+          // profileId so this matches the SAME identity the PDF/email
+          // send will actually use — not just the company's bare
+          // default — see the "Email Customer" modal below.
+          companyService.getByCompanyId(e.companyId, e.profileId),
           expenseService.listForEstimate(e.id),
         ]);
         setProject(p);
@@ -497,7 +501,10 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
                 </span>
               );
             }
-            const portalUrl = `${origin}/portal/${estimate.customerToken}`;
+            // Brand-resolved, not window.location.origin — see
+            // lib/portalDomain.ts's header. `origin` is only the
+            // fallback for a null/unrecognized profile.
+            const portalUrl = `${resolvePortalOrigin(estimate.profileId, origin)}/portal/${estimate.customerToken}`;
             const greeting = client?.name ? `Hi ${client.name.split(" ")[0]}, ` : "Hi, ";
             const from = companySettings?.company_name ? ` from ${companySettings.company_name}` : "";
             const smsBody = `${greeting}here's your estimate${from}. You can review, approve, and download it here: ${portalUrl}`;
@@ -1178,7 +1185,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
 
           {estimate.customerToken ? (
             <SharePortalPanel
-              portalUrl={`${origin}/portal/${estimate.customerToken}`}
+              portalUrl={`${resolvePortalOrigin(estimate.profileId, origin)}/portal/${estimate.customerToken}`}
               clientName={client?.name ?? null}
               clientPhone={client?.phone ?? null}
               clientEmail={client?.email ?? null}
@@ -1311,6 +1318,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
         clientName={client?.name ?? ""}
         clientEmail={client?.email ?? null}
         companyName={companySettings?.company_name ?? "Your Company"}
+        fromEmail={companySettings?.company_email ?? null}
         hasPortalLink={!!estimate.customerToken}
       />
 

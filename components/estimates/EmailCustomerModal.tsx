@@ -28,7 +28,24 @@ export interface EmailCustomerModalProps {
   clientName: string;
   clientEmail: string | null;
   companyName: string;
+  /** This estimate's resolved sending address (Business Profile
+   * override applied if one is selected — see lib/company.ts's
+   * mergeProfileOverrides) — the SAME address app/api/estimates/[id]/
+   * send-email actually sends from. Null/placeholder means no address
+   * is configured, so Resend's own EMAIL_FROM_ADDRESS env default will
+   * be used instead. Shown so staff can see, before sending, which
+   * inbox this will appear to come from — not guessable otherwise
+   * when a company has more than one Business Profile. */
+  fromEmail: string | null;
   hasPortalLink: boolean;
+}
+
+/** Same "unconfigured placeholder" rule sendEstimateEmail.ts applies
+ * server-side — DEFAULT_COMPANY_SETTINGS.company_email starts with
+ * "Add your", and showing that verbatim here would look like a real
+ * address. */
+function realFromEmail(value: string | null): string | null {
+  return value && !value.startsWith("Add your") ? value : null;
 }
 
 function buildDefaultMessage(clientName: string, companyName: string): string {
@@ -50,6 +67,7 @@ export function EmailCustomerModal({
   clientName,
   clientEmail,
   companyName,
+  fromEmail,
   hasPortalLink,
 }: EmailCustomerModalProps) {
   const [to, setTo] = useState(clientEmail ?? "");
@@ -112,6 +130,14 @@ export function EmailCustomerModal({
               This estimate has no portal link yet. Re-save it, then try again.
             </div>
           )}
+
+          <div className="rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+            Sending from{" "}
+            <span className="font-medium text-foreground">
+              {companyName}
+              {realFromEmail(fromEmail) ? ` <${realFromEmail(fromEmail)}>` : " (default sender — no email configured for this business profile)"}
+            </span>
+          </div>
 
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="email-to">

@@ -3,6 +3,7 @@ import { loadEstimateProposalData, renderEstimateProposalHtml } from "@/lib/pdf/
 import { pdfDocument } from "@/lib/pdf/pdfLayout";
 import { htmlToPdfBuffer } from "@/lib/pdf/htmlToPdfBuffer";
 import { getResendClient, getFromAddress } from "@/lib/email/resendClient";
+import { resolvePortalOrigin } from "@/lib/portalDomain";
 import { recordEmailSent } from "@/lib/email/emailTracking";
 
 export interface SendEstimateEmailInput {
@@ -156,7 +157,10 @@ export async function sendEstimateEmail(input: SendEstimateEmailInput): Promise<
   if (!data.estimate.customer_token) {
     return { ok: false, error: "This estimate has no portal link yet. Re-save the estimate to generate one, then try again." };
   }
-  const portalUrl = `${input.origin}/portal/${data.estimate.customer_token}`;
+  // Brand-resolved by profile id, not request.nextUrl.origin — see
+  // lib/portalDomain.ts's header. input.origin is only the fallback
+  // for a null/unmapped profile.
+  const portalUrl = `${resolvePortalOrigin(data.estimate.profile_id, input.origin)}/portal/${data.estimate.customer_token}`;
 
   const { docTitle, bodyHtml } = renderEstimateProposalHtml(data);
   const proposalHtml = pdfDocument({ docTitle, bodyHtml });
@@ -196,7 +200,12 @@ export async function sendEstimateEmail(input: SendEstimateEmailInput): Promise<
   try {
     const resend = getResendClient();
     const result = await resend.emails.send({
-      from: `${data.company.company_name} <${getFromAddress()}>`,
+      // companyEmail is already this estimate's resolved brand
+      // identity (Business Profile override applied, if one is
+      // selected — see lib/company.ts's mergeProfileOverrides), so a
+      // profile-A estimate sends from A's address and profile-B from
+      // B's automatically. Falls back to EMAIL_FROM_ADDRESS otherwise.
+      from: `${data.company.company_name} <${getFromAddress(companyEmail)}>`,
       to: recipient,
       subject: input.subject,
       html: emailHtml,

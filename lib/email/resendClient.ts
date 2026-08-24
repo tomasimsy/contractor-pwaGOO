@@ -27,6 +27,20 @@ export function getResendClient(): Resend {
  * set to a verified sending domain. */
 export const DEFAULT_FROM_ADDRESS = "onboarding@resend.dev";
 
-export function getFromAddress(): string {
-  return process.env.EMAIL_FROM_ADDRESS || DEFAULT_FROM_ADDRESS;
+/** `preferred` is a specific document's own resolved company_email
+ * (e.g. a Business Profile's address, already merged in by
+ * lib/company.ts's mergeProfileOverrides) — used verbatim when set, so
+ * a profile-A estimate sends from A's address and a profile-B one from
+ * B's, with no other code change. Falls back to the single company-
+ * wide EMAIL_FROM_ADDRESS when the caller has no per-document address
+ * (no profile selected, or the profile didn't set an email) — exactly
+ * today's behavior.
+ *
+ * IMPORTANT: Resend will only actually send from an address whose
+ * DOMAIN is verified (SPF/DKIM) in the Resend dashboard — this
+ * function cannot make an unverified domain work. Two different
+ * sending domains means two separate domain verifications in Resend,
+ * done outside this codebase. */
+export function getFromAddress(preferred?: string | null): string {
+  return preferred || process.env.EMAIL_FROM_ADDRESS || DEFAULT_FROM_ADDRESS;
 }
