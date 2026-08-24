@@ -504,7 +504,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
             // Brand-resolved, not window.location.origin — see
             // lib/portalDomain.ts's header. `origin` is only the
             // fallback for a null/unrecognized profile.
-            const portalUrl = `${resolvePortalOrigin(estimate.profileId, origin)}/portal/${estimate.customerToken}`;
+            const portalUrl = `${resolvePortalOrigin(estimate.profileId)}/portal/${estimate.customerToken}`;
             const greeting = client?.name ? `Hi ${client.name.split(" ")[0]}, ` : "Hi, ";
             const from = companySettings?.company_name ? ` from ${companySettings.company_name}` : "";
             const smsBody = `${greeting}here's your estimate${from}. You can review, approve, and download it here: ${portalUrl}`;
@@ -1185,7 +1185,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
 
           {estimate.customerToken ? (
             <SharePortalPanel
-              portalUrl={`${resolvePortalOrigin(estimate.profileId, origin)}/portal/${estimate.customerToken}`}
+              portalUrl={`${resolvePortalOrigin(estimate.profileId)}/portal/${estimate.customerToken}`}
               clientName={client?.name ?? null}
               clientPhone={client?.phone ?? null}
               clientEmail={client?.email ?? null}
