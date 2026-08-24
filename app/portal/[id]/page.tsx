@@ -210,6 +210,24 @@ export default async function CustomerPortalPage({
           )}
         </header>
 
+        {/* DOWNLOAD PDF — a RELATIVE link, deliberately: this page is
+            already being viewed on the correctly-resolved brand domain
+            (see the profile_id -> portal_domain lookup above), so a
+            relative href automatically stays on that same domain
+            rather than needing to re-resolve/hardcode it here.
+            customerToken (not a staff session cookie) is what
+            authorizes this — same public/token-based auth the PDF
+            route already supports for the customer-token case. */}
+        <div className="flex justify-end">
+          <Link
+            href={`/api/estimates/${estimate.id}/pdf?customerToken=${encodeURIComponent(token ?? "")}`}
+            target="_blank"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+          >
+            Download PDF
+          </Link>
+        </div>
+
         {/* STREAMLINED COMBINED FINANCIAL & SCOPE CARD */}
         <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           {/* Header Bar with Total Contract Price */}
