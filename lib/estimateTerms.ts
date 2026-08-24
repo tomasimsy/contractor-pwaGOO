@@ -61,19 +61,22 @@ Any pre-existing roof deck damage, rot, or structural deficiency discovered afte
 
 Manufacturer material warranties are provided directly by the manufacturer per their published terms; Contractor separately warrants its own workmanship for one (1) year from substantial completion. Contractor is not responsible for existing interior damage from a roof leak that predates this Agreement.
 
-Permits, dumpster/debris removal, and job-site cleanup are included unless noted otherwise in the scope above. Contractor reserves the right to subcontract any or all of the work to one or more of its qualified affiliates.
+Permits, dumpster/debris removal, and job-site cleanup are included unless noted otherwise in the scope above.
+
+**Material Price Notice**
+Pricing reflects current material costs. Supplier price changes before work begins may result in a corresponding adjustment to the contract price.
 
 **Workmanship Warranty**
-This workmanship warranty covers:
+Covered: roof leaks and defects caused by installation errors in the roofing system installed by the Contractor.
 
-* Roof leaks caused by installation errors.
-* Defects in workmanship related to the roofing system installed by the Contractor.
-
-This warranty does not cover:
+Not covered:
 
 * Storm, hail, wind, fallen trees, or other acts of nature.
 * Damage caused by foot traffic, other contractors, or homeowner modifications.
-* Structural movement, settling, pre-existing building defects, clogged gutters, lack of maintenance, improper ventilation, or manufacturer defects.`,
+* Structural movement, settling, pre-existing building defects, clogged gutters, lack of maintenance, improper ventilation, or manufacturer defects.
+
+**Terms and Conditions**
+The Contractor's standard Terms and Conditions are incorporated by reference and govern this Proposal/Agreement. Copies are available on request. No changes to this Proposal/Agreement are valid unless approved in writing by an authorized Contractor representative. The Contractor may subcontract any or all work to qualified affiliates.`,
   },
   home_remodel: {
     key: "home_remodel",
