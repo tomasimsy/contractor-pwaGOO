@@ -94,6 +94,7 @@ function Section({
   icon: Icon,
   title,
   hint,
+  headerRight,
   accent = true,
   flush = false,
   children,
@@ -101,6 +102,12 @@ function Section({
   icon: typeof FileText;
   title: string;
   hint?: string;
+  /** Renders inline in the header row, right-aligned — e.g. the
+   * Standard/Roofing pill toggle. Replaces the old pattern of
+   * absolutely-positioning controls over the body and padding the
+   * body down to clear them (which is where the extra top gap on
+   * "Client & Project" came from). */
+  headerRight?: ReactNode;
   /** Tinted surface + left accent rail. Used for the PHOTO sections so
    * they are recognisable at a glance while scanning past text fields —
    * same footprint, more contrast. */
@@ -135,6 +142,7 @@ function Section({
         <Icon className={`size-4 shrink-0 translate-y-0.5 ${accent ? "text-primary" : "text-primary"}`} />
         <h2 className={`text-xs font-bold uppercase tracking-wider ${accent ? "text-primary" : "text-foreground"}`}>{title}</h2>
         {hint && <span className="ml-auto hidden text-[11px] text-muted-foreground sm:block">{hint}</span>}
+        {headerRight && <span className={hint ? "" : "ml-auto"}>{headerRight}</span>}
       </header>
       {/* 12px of inner padding on phones, the original 16px from `sm`
           up. Section padding stacks on top of the page gutter, so this
@@ -420,20 +428,25 @@ const [pricingOpen, setPricingOpen] = useState(true);
     <>
     {/* Trailing padding clears the sticky action bar, plus the bottom
         nav when it's there — 65px less to reserve when it isn't. */}
-    <form onSubmit={handleSubmit} className={`mx-auto max-w-4xl space-y-5 lg:pb-28 ${navHidden ? "pb-24" : "pb-40"}`}>
+    <form onSubmit={handleSubmit} className={`mx-auto max-w-6xl space-y-4 lg:pb-28 ${navHidden ? "pb-24" : "pb-40"}`}>
       {error && (
         <div role="alert" className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm font-medium text-danger">
           {error}
         </div>
       )}
 
+      {/* Compact metadata — Client & Project and Estimate Details are
+          document metadata, not the workspace, so they run full-width
+          above the two-column split rather than competing with Line
+          Items for the wide left column. */}
+      <div className="space-y-4">
+
       {/* ---------- 1. CLIENT & PROJECT ---------- */}
-<div className="relative">
-  <Section icon={Building2} title="Client & Project"  >
-    {/* Pills – positioned in the top-right corner of the card header */}
-    {!roofV2 && (
-      <div className="absolute right-4 top-2 flex items-center gap-1.5">
-        {/* <span className="text-[10px] font-medium text-muted-foreground">Type:</span> */}
+  <Section
+    icon={Building2}
+    title="Client & Project"
+    headerRight={
+      !roofV2 && (
         <div className="flex gap-0.5">
           <label
         className={`flex cursor-pointer items-center rounded border px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
@@ -472,11 +485,10 @@ const [pricingOpen, setPricingOpen] = useState(true);
             Roofing
           </label>
         </div>
-      </div>
-    )}
-
-    {/* Content – adds top padding to avoid overlap with pills */}
-    <div className="pt-8">
+      )
+    }
+  >
+    <div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {/* Project column – unchanged */}
         <div className="space-y-1.5">
@@ -545,7 +557,6 @@ const [pricingOpen, setPricingOpen] = useState(true);
       )}
     </div>
   </Section>
-</div>
 
       {/* ---------- 2. ESTIMATE DETAILS ---------- */}
 <Section icon={FileText} title="Estimate Details" accent>
@@ -574,10 +585,12 @@ const [pricingOpen, setPricingOpen] = useState(true);
       detailsOpen ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0"
     }`}
   >
-    <div className="space-y-4">
-      {/* Row: Title + Type selector (inline) */}
-      <div className="flex flex-wrap items-end gap-2">
-        <div className="flex-1 min-w-[180px]">
+    <div className="space-y-3">
+      {/* Row: Title + Terms & Conditions side by side — both are
+          single-line metadata fields, so they share a row instead of
+          each claiming a full-width block. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
           <label className={LABEL}>Title *</label>
           <input
             value={title}
@@ -587,50 +600,25 @@ const [pricingOpen, setPricingOpen] = useState(true);
             className={FIELD}
           />
         </div>
-{/* 
-        {!roofV2 && (
-          <div className="flex items-center gap-1.5 pb-1">
-            <span className="text-[10px] font-medium text-muted-foreground">Type:</span>
-            <div className="flex gap-0.5">
-              <label
-                className={`flex cursor-pointer items-center rounded border px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
-                  estimateType === "standard"
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-input text-muted-foreground"
-                } ${typeLocked ? "cursor-not-allowed opacity-50" : "hover:bg-muted/60"}`}
-              >
-                <input
-                  type="radio"
-                  name="estimateType"
-                  value="standard"
-                  checked={estimateType === "standard"}
-                  disabled={typeLocked}
-                  onChange={(e) => setEstimateType(e.target.value as "standard" | "roofing")}
-                  className="hidden"
-                />
-                Standard
-              </label>
-              <label
-                className={`flex cursor-pointer items-center rounded border px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
-                  estimateType === "roofing"
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-input text-muted-foreground"
-                } ${typeLocked ? "cursor-not-allowed opacity-50" : "hover:bg-muted/60"}`}
-              >
-                <input
-                  type="radio"
-                  name="estimateType"
-                  value="roofing"
-                  checked={estimateType === "roofing"}
-                  disabled={typeLocked}
-                  onChange={(e) => setEstimateType(e.target.value as "standard" | "roofing")}
-                  className="hidden"
-                />
-                Roofing
-              </label>
-            </div>
-          </div>
-        )} */}
+
+        {/* Terms & Conditions template — the KEY is saved with the
+            estimate; the text itself lives once in lib/estimateTerms.ts
+            and is shown on Estimate Detail, the customer portal, and
+            the PDF, all reading through the same source. */}
+        <div className="space-y-1.5">
+          <label className={LABEL}>Terms &amp; Conditions</label>
+          <select
+            value={termsTemplate}
+            onChange={(e) => setTermsTemplate(e.target.value as EstimateTermsTemplateKey)}
+            className={FIELD}
+          >
+            {ESTIMATE_TERMS_TEMPLATE_OPTIONS.map((t) => (
+              <option key={t.key} value={t.key}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Description */}
@@ -639,33 +627,15 @@ const [pricingOpen, setPricingOpen] = useState(true);
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          rows={3}
+          rows={2}
           placeholder="Project overview shown on the estimate and its PDF"
           className={FIELD}
         />
       </div>
 
-      {/* Terms & Conditions template — the KEY is saved with the
-          estimate; the text itself lives once in lib/estimateTerms.ts
-          and is shown on Estimate Detail, the customer portal, and the
-          PDF, all reading through the same source. */}
-      <div className="space-y-1.5">
-        <label className={LABEL}>Terms &amp; Conditions</label>
-        <select
-          value={termsTemplate}
-          onChange={(e) => setTermsTemplate(e.target.value as EstimateTermsTemplateKey)}
-          className={FIELD}
-        >
-          {ESTIMATE_TERMS_TEMPLATE_OPTIONS.map((t) => (
-            <option key={t.key} value={t.key}>
-              {t.label}
-            </option>
-          ))}
-        </select>
-        <p className="text-[10.5px] leading-relaxed text-muted-foreground line-clamp-2">
-          {ESTIMATE_TERMS_TEMPLATE_OPTIONS.find((t) => t.key === termsTemplate)?.body}
-        </p>
-      </div>
+      <p className="text-[10.5px] leading-relaxed text-muted-foreground line-clamp-2">
+        {ESTIMATE_TERMS_TEMPLATE_OPTIONS.find((t) => t.key === termsTemplate)?.body}
+      </p>
 
       {/* Business Profile is chosen in a popup right at submit time
           (see the Modal below, triggered from handleSubmit) rather
@@ -680,6 +650,15 @@ const [pricingOpen, setPricingOpen] = useState(true);
     </div>
   </div>
 </Section>
+
+      </div>
+      {/* End compact metadata. Below: the two-column workspace — Line
+          Items (and, for an edit-page roofing/photo estimate, Roof
+          Areas/Photos) as the primary ~70% column, Pricing & Totals as
+          a sticky ~30% sidebar. Collapses to a single stacked column
+          below `lg`, in the same top-to-bottom order as before. */}
+      <div className="lg:grid lg:grid-cols-[1fr_320px] lg:items-start lg:gap-5">
+      <div className="space-y-4 lg:min-w-0">
 
       {/* ---------- 5. ATTACHMENTS (estimate-level) ----------
           Retitled from a bare "Photos": the roof-area cards below have
@@ -818,7 +797,9 @@ const [pricingOpen, setPricingOpen] = useState(true);
         </Section>
       )}
 
-      {/* ---------- 6. PRICING & TOTALS ---------- */}
+      </div>
+      {/* ---------- 6. PRICING & TOTALS (sticky sidebar) ---------- */}
+      <div className="mt-4 lg:sticky lg:top-4 lg:mt-0">
 <Section icon={Calculator} title="Pricing & Totals">
   <div className="flex justify-end -mt-1">
     <button
@@ -896,6 +877,8 @@ const [pricingOpen, setPricingOpen] = useState(true);
     </div>
   </div>
 </Section>
+      </div>
+      </div>
 
       {/* ---------- STICKY ACTIONS ----------
           Offset by the 65px mobile bottom nav so the Save button is
@@ -903,7 +886,7 @@ const [pricingOpen, setPricingOpen] = useState(true);
           where that nav isn't rendered. Carries the total too, so the
           number stays visible however far down the form you are. */}
 <div className="sticky bottom-0 z-30 -mx-4 border-t border-border bg-background/95 px-3 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-6 sm:px-4">
-  <div className="mx-auto flex max-w-4xl items-center justify-between gap-2">
+  <div className="mx-auto flex max-w-6xl items-center justify-between gap-2">
     <div className="min-w-0">
       <div className="text-[8px] font-bold uppercase tracking-wider text-muted-foreground">Total</div>
       <div className="truncate text-sm font-bold text-foreground sm:text-base">{formatMoney(total)}</div>

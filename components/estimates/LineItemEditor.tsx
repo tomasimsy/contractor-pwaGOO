@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Trash2, Layers } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import type { EstimateLineItem } from "@/lib/services/estimateService";
 import { calculateLineItemTotal, calculateSubtotal } from "@/lib/services/financialCalculations";
 
@@ -33,18 +33,12 @@ export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; on
   const subtotal = calculateSubtotal(items.map((item) => ({ total: calculateLineItemTotal(item) })));
 
   return (
-    <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm space-y-4">
-      {/* Section Header */}
-      <div className="flex items-center justify-between border-b border-border/60 pb-3">
-        <div className="flex items-center gap-2">
-          <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <Layers className="size-4" />
-          </div>
-          <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground">Line Items</h3>
-            <p className="text-[11px] text-muted-foreground">Manage project materials, labor, and additional costs</p>
-          </div>
-        </div>
+    <div className="space-y-3">
+      {/* Item count — the outer Section header already says "Scope —
+          Line Items"; this used to be a second full header (icon +
+          title + subtitle) duplicating that, wrapped in its own card
+          border/padding. One line is enough context here. */}
+      <div className="flex items-center justify-end">
         <div className="text-xs font-medium text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-md border border-border/40">
           Items: <span className="font-semibold text-foreground">{items.length}</span>
         </div>
