@@ -396,17 +396,31 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
     }
   }
 
-  // Synchronous, no `await` before window.open. The route now
-  // authenticates from the browser's own session cookie (see
-  // app/api/estimates/[id]/pdf/route.ts) — no bearer token, so nothing
-  // needs fetching first. That matters beyond tidiness: a `window.open`
-  // called AFTER an `await` loses the browser's "this came from a real
-  // click" signal, and gets silently blocked as a popup by exactly the
-  // browsers/conditions a local dev session tends not to hit — which is
-  // why this worked while testing locally and not for real users.
-  function handleDownloadPdf() {
+  // window.open is called synchronously (before any `await`) so the
+  // browser still credits it to the click that triggered this handler
+  // — calling it after an await loses that "real click" signal and
+  // gets silently popup-blocked. The tab starts blank, then we point
+  // it at the real URL once the access token is fetched.
+  //
+  // Absolute + bearer token (not the relative/cookie link this used to
+  // be): the estimate's own brand can live on a different domain than
+  // whatever domain staff happen to be browsing admin from (portalOrigin,
+  // resolved from the estimate's company_profiles.portal_domain, same
+  // as the portal/share links below) — a cookie is scoped to the domain
+  // that set it, so a relative link silently opened the WRONG brand's
+  // PDF whenever those two domains differed. The route's existing
+  // `token` bearer-auth mode (see app/api/estimates/[id]/pdf/route.ts)
+  // authenticates the same as the cookie does, just cross-domain-safe.
+  async function handleDownloadPdf() {
     if (!estimate) return;
-    window.open(`/api/estimates/${estimate.id}/pdf`, "_blank");
+    const win = window.open("", "_blank");
+    const { data } = await supabase.auth.getSession();
+    const accessToken = data.session?.access_token;
+    const url = accessToken
+      ? `${portalOrigin}/api/estimates/${estimate.id}/pdf?token=${encodeURIComponent(accessToken)}`
+      : `/api/estimates/${estimate.id}/pdf`;
+    if (win) win.location.href = url;
+    else window.open(url, "_blank");
   }
 
   if (loading) return <PageContainer><div className="py-16 text-center text-sm font-medium text-muted-foreground animate-pulse">Loading estimate details...</div></PageContainer>;

@@ -32,6 +32,7 @@ import { ProjectForm } from "@/components/projects/ProjectForm";
 import { ClientForm } from "@/components/clients/ClientForm";
 import { calculateSubtotal, calculateLineItemTotal, calculateDocumentTotal } from "@/lib/services/financialCalculations";
 import { createEstimateForClient } from "@/lib/services/estimateCreationWorkflow";
+import { EMERGENCY_ROOF_RESPONSE_TEMPLATE } from "@/lib/estimateQuickTemplates";
 import type { Estimate, EstimateLineItem } from "@/lib/services/estimateService";
 import {
   ESTIMATE_TERMS_TEMPLATE_OPTIONS,
@@ -794,6 +795,25 @@ const [pricingOpen, setPricingOpen] = useState(true);
           the UI offering it in the first place. */}
       {estimateType !== "roofing" && (
         <Section icon={ListChecks} title="Scope — Line Items">
+          <div className="flex justify-end -mt-1 mb-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (
+                  lineItems.length > 0 &&
+                  !window.confirm("Load the Emergency Roof Response template? This replaces the current line items.")
+                ) {
+                  return;
+                }
+                setLineItems(EMERGENCY_ROOF_RESPONSE_TEMPLATE.items);
+                setTitle((prev) => prev || EMERGENCY_ROOF_RESPONSE_TEMPLATE.suggestedTitle);
+                setDescription((prev) => prev || EMERGENCY_ROOF_RESPONSE_TEMPLATE.suggestedDescription);
+              }}
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              Load Emergency Response Template
+            </button>
+          </div>
           <LineItemEditor items={lineItems} onChange={setLineItems} />
         </Section>
       )}

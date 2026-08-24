@@ -3,7 +3,10 @@ import {
   formatCurrency, formatDate, renderSignature, renderCompanyHeaderBlock, renderCompanyFooterBlock, renderCompanySignatureLine,
   labelValueBlock, statTile, photoGrid,
 } from "@/lib/pdf/pdfLayout";
-import { getCompanySettingsByCompanyId } from "@/lib/company";
+import {
+  getCompanySettingsByCompanyId, mergeCompanyDefaults, mergeProfileOverrides, getCompanyProfileById,
+  type CompanySettings,
+} from "@/lib/company";
 import { sumApprovedChangeOrderRevenue } from "@/lib/services/financialCalculations";
 
 /**
@@ -49,70 +52,107 @@ export async function loadEstimateProposalData(
   id: string,
   options: { customerToken?: string | null; origin: string }
 ): Promise<EstimateProposalData | null> {
-  let estimateQuery = supabase.from("estimates").select("*").eq("id", id).is("deleted_at", null);
+  // customerToken -> anon client with NO session, so every plain table
+  // select below (RLS is company-scoped, and an anon client has no
+  // company context) would return nothing. get_portal_estimate_pdf_data
+  // is a SECURITY DEFINER function — same precedent as
+  // get_customer_portal/get_portal_estimate_photos — that does this
+  // exact bundle of reads server-side, gated on the token matching the
+  // estimate's own customer_token, and returns it as one JSON payload.
+  let estimate: any;
+  let client: any;
+  let estimateItems: any[];
+  let rawRoofingAreas: any[];
+  let rawRoofingAreaPhotos: any[];
+  let rawEstimatePhotos: any[];
+  let changeOrders: any[];
+  let company: CompanySettings;
+
   if (options.customerToken) {
-    estimateQuery = estimateQuery.eq("customer_token", options.customerToken);
-  }
-  const { data: estimate } = await estimateQuery.maybeSingle();
-  if (!estimate) return null;
+    const { data: bundle } = await supabase.rpc("get_portal_estimate_pdf_data", { p_token: options.customerToken });
+    if (!bundle) return null;
+    estimate = bundle.estimate;
+    client = bundle.client;
+    estimateItems = bundle.items || [];
+    rawRoofingAreas = bundle.roofing_areas || [];
+    rawRoofingAreaPhotos = bundle.roofing_area_photos || [];
+    rawEstimatePhotos = bundle.estimate_photos || [];
+    changeOrders = bundle.change_orders || [];
 
-  const { data: client } = await supabase.from("clients").select("*").eq("id", estimate.client_id).single();
-  const { data: items } = await supabase.from("estimate_items").select("*").eq("estimate_id", id).is("deleted_at", null);
-  const estimateItems = items || [];
+    const baseSettings = mergeCompanyDefaults({
+      ...(bundle.company_settings as Partial<CompanySettings> | null),
+      company_name: bundle.company_name || (bundle.company_settings as { company_name?: string } | null)?.company_name,
+    });
+    const profile = estimate.profile_id ? await getCompanyProfileById(supabase, estimate.profile_id) : null;
+    company = mergeProfileOverrides(baseSettings, profile);
+  } else {
+    const { data: estimateRow } = await supabase.from("estimates").select("*").eq("id", id).is("deleted_at", null).maybeSingle();
+    if (!estimateRow) return null;
+    estimate = estimateRow;
 
-  // profile_id (null on most estimates) overlays that estimate's own
-  // brand — see lib/company.ts's getCompanySettingsByCompanyId. This
-  // is the ONE data loader both the PDF route and the "Email Customer"
-  // send flow go through, so both stay in sync automatically.
-  const company = await getCompanySettingsByCompanyId(supabase, estimate.company_id, estimate.profile_id);
+    const { data: clientRow } = await supabase.from("clients").select("*").eq("id", estimate.client_id).single();
+    client = clientRow;
+    const { data: items } = await supabase.from("estimate_items").select("*").eq("estimate_id", id).is("deleted_at", null);
+    estimateItems = items || [];
 
-  let roofingAreas: any[] = [];
-  let roofingAreaPhotos: any[] = [];
+    // profile_id (null on most estimates) overlays that estimate's own
+    // brand — see lib/company.ts's getCompanySettingsByCompanyId. This
+    // is the ONE data loader both the PDF route and the "Email Customer"
+    // send flow go through, so both stay in sync automatically.
+    company = await getCompanySettingsByCompanyId(supabase, estimate.company_id, estimate.profile_id);
 
-  if (estimate.estimate_type === "roofing") {
-    const { data: areas } = await supabase
-      .from("estimate_areas")
+    rawRoofingAreas = [];
+    rawRoofingAreaPhotos = [];
+    if (estimate.estimate_type === "roofing") {
+      const { data: areas } = await supabase
+        .from("estimate_areas")
+        .select("*")
+        .eq("estimate_id", id)
+        .is("deleted_at", null)
+        .order("sequence_number", { ascending: true });
+      rawRoofingAreas = areas || [];
+
+      if (rawRoofingAreas.length > 0) {
+        const areaIds = rawRoofingAreas.map((a) => a.id);
+        const { data: photos } = await supabase
+          .from("estimate_area_photos")
+          .select("*")
+          .in("estimate_area_id", areaIds)
+          .is("deleted_at", null)
+          .order("display_order", { ascending: true });
+        rawRoofingAreaPhotos = photos || [];
+        // Note: estimate_area_line_items are fetched by the original
+        // route but never referenced in the template — preserved as
+        // dead work there; not carried over here since nothing reads it.
+      }
+    }
+
+    const { data: estimatePhotos } = await supabase
+      .from("estimate_photos")
       .select("*")
       .eq("estimate_id", id)
       .is("deleted_at", null)
-      .order("sequence_number", { ascending: true });
-    roofingAreas = areas || [];
+      .order("display_order", { ascending: true });
+    rawEstimatePhotos = estimatePhotos || [];
 
-    if (roofingAreas.length > 0) {
-      const areaIds = roofingAreas.map((a) => a.id);
-      const { data: photos } = await supabase
-        .from("estimate_area_photos")
-        .select("*")
-        .in("estimate_area_id", areaIds)
-        .is("deleted_at", null)
-        .order("display_order", { ascending: true });
-      roofingAreaPhotos = photos || [];
-      // Note: estimate_area_line_items are fetched by the original
-      // route but never referenced in the template — preserved as
-      // dead work there; not carried over here since nothing reads it.
-    }
+    const { data: cos } = await supabase
+      .from("change_orders")
+      .select("total_amount, tax, status")
+      .eq("estimate_id", id)
+      .eq("company_id", estimate.company_id)
+      .is("deleted_at", null);
+    changeOrders = cos || [];
   }
+
+  const roofingAreas = rawRoofingAreas;
+  const roofingAreaPhotos = rawRoofingAreaPhotos;
 
   const photoUrl = (storagePath: string) => `${options.origin}/api/estimate-photos/download?path=${encodeURIComponent(storagePath)}`;
 
-  const { data: estimatePhotos } = await supabase
-    .from("estimate_photos")
-    .select("*")
-    .eq("estimate_id", id)
-    .is("deleted_at", null)
-    .order("display_order", { ascending: true });
-
   const estimatePhotosByType = {
-    before: (estimatePhotos || []).filter((p) => p.photo_type === "before"),
-    after: (estimatePhotos || []).filter((p) => p.photo_type === "after"),
+    before: rawEstimatePhotos.filter((p) => p.photo_type === "before"),
+    after: rawEstimatePhotos.filter((p) => p.photo_type === "after"),
   };
-
-  const { data: changeOrders } = await supabase
-    .from("change_orders")
-    .select("total_amount, tax, status")
-    .eq("estimate_id", id)
-    .eq("company_id", estimate.company_id)
-    .is("deleted_at", null);
 
   const subtotal = estimateItems.reduce((sum: number, i: { total?: number }) => sum + (i.total || 0), 0);
   const taxAmount = subtotal * ((estimate.tax_rate || 0) / 100);
