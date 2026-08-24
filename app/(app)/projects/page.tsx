@@ -13,7 +13,11 @@ import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
 import type { Project } from "@/lib/services/projectService";
 import type { Client } from "@/lib/services/clientService";
+import type { Estimate } from "@/lib/services/estimateService";
+import type { Invoice } from "@/lib/services/invoiceService";
 import type { ProjectStatus } from "@/lib/services";
+
+const formatMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 type SortKey = "name" | "createdAt" | "status";
 
@@ -28,13 +32,19 @@ const STATUS_TONE: Record<ProjectStatus, "neutral" | "success" | "warning" | "da
 };
 
 function ProjectsListContent() {
-  const { projectService, clientService } = useServices();
+  const { projectService, clientService, estimateService, invoiceService } = useServices();
   const { profile } = useAuth();
   const searchParams = useSearchParams();
   const clientIdFilter = searchParams.get("clientId");
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [clientsById, setClientsById] = useState<Record<string, Client>>({});
+  // Company-wide, fetched once and grouped by projectId below — one
+  // round trip each instead of one per row, and the actual counts/
+  // totals this table always claimed to show but never fetched (see
+  // estimatesByProject/invoicesByProject).
+  const [estimates, setEstimates] = useState<Estimate[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,12 +57,16 @@ function ProjectsListContent() {
     setLoading(true);
     setError(null);
     try {
-      const [projectList, clientList] = await Promise.all([
+      const [projectList, clientList, estimateList, invoiceList] = await Promise.all([
         projectService.list({ companyId: profile.companyId }),
         clientService.list({ companyId: profile.companyId }),
+        estimateService.list({ companyId: profile.companyId }),
+        invoiceService.listForCompany({ companyId: profile.companyId }),
       ]);
       setProjects(projectList);
       setClientsById(Object.fromEntries(clientList.map((c) => [c.id, c])));
+      setEstimates(estimateList);
+      setInvoices(invoiceList);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load projects.");
     } finally {
@@ -61,7 +75,19 @@ function ProjectsListContent() {
     // Depends on the whole `profile` object — the React Compiler infers
     // that as the dependency regardless of the narrower `profile?.companyId`
     // written here, so matching it keeps this memoized correctly.
-  }, [projectService, clientService, profile]);
+  }, [projectService, clientService, estimateService, invoiceService, profile]);
+
+  const estimatesByProject = useMemo(() => {
+    const map: Record<string, Estimate[]> = {};
+    for (const e of estimates) (map[e.projectId] ??= []).push(e);
+    return map;
+  }, [estimates]);
+
+  const invoicesByProject = useMemo(() => {
+    const map: Record<string, Invoice[]> = {};
+    for (const i of invoices) (map[i.projectId] ??= []).push(i);
+    return map;
+  }, [invoices]);
 
   useEffect(() => {
     // Fetch-on-mount is this effect's entire purpose — synchronizing
@@ -163,7 +189,11 @@ function ProjectsListContent() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filtered.map((project) => (
+                {filtered.map((project) => {
+                  const projectEstimates = estimatesByProject[project.id] ?? [];
+                  const projectInvoices = invoicesByProject[project.id] ?? [];
+                  const invoicedTotal = projectInvoices.reduce((sum, i) => sum + i.total, 0);
+                  return (
                   <tr key={project.id} className="hover:bg-muted/40">
                     <td className="px-3 py-2.5">
                       <Link href={`/projects/${project.id}`} className="font-medium text-foreground hover:text-primary">
@@ -181,16 +211,22 @@ function ProjectsListContent() {
                     <td className="hidden px-3 py-2.5 text-xs text-muted-foreground md:table-cell">
                       {new Date(project.updatedAt).toLocaleDateString()}
                     </td>
-                    {/* Estimate/Invoice status and financial summary are honest
-                        placeholders: EstimateService/InvoiceService have no
-                        Supabase-backed implementation yet, so a real project
-                        created through this app genuinely has zero estimates/
-                        invoices attached today — not faked, not yet wired. */}
-                    <td className="hidden px-3 py-2.5 text-xs text-muted-foreground lg:table-cell">No estimates</td>
-                    <td className="hidden px-3 py-2.5 text-xs text-muted-foreground lg:table-cell">No invoices</td>
-                    <td className="hidden px-3 py-2.5 text-right text-xs text-muted-foreground lg:table-cell">$0.00</td>
+                    <td className="hidden px-3 py-2.5 text-xs text-muted-foreground lg:table-cell">
+                      {projectEstimates.length === 0
+                        ? "No estimates"
+                        : `${projectEstimates.length} estimate${projectEstimates.length === 1 ? "" : "s"}`}
+                    </td>
+                    <td className="hidden px-3 py-2.5 text-xs text-muted-foreground lg:table-cell">
+                      {projectInvoices.length === 0
+                        ? "No invoices"
+                        : `${projectInvoices.length} invoice${projectInvoices.length === 1 ? "" : "s"}`}
+                    </td>
+                    <td className="hidden px-3 py-2.5 text-right text-xs text-muted-foreground lg:table-cell">
+                      {formatMoney(invoicedTotal)}
+                    </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
