@@ -245,7 +245,7 @@ export default async function CustomerPortalPage({
           <div className="p-4 space-y-4 text-xs">
             {estimate.description && (
               <div className="rounded-lg border-l-2 border-amber-500 bg-amber-50 p-3 text-amber-950">
-                <p className="font-bold uppercase tracking-wider text-[10px] text-amber-700 mb-1">Objective</p>
+                <p className="font-bold uppercase tracking-wider text-[10px] text-amber-700 mb-1">Description</p>
                 <p className="whitespace-pre-wrap leading-relaxed">{estimate.description}</p>
               </div>
             )}

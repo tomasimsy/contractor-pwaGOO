@@ -1,13 +1,17 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   formatCurrency, formatDate, renderSignature, renderCompanyHeaderBlock, renderCompanyFooterBlock, renderCompanySignatureLine,
-  labelValueBlock, statTile, photoGrid,
+  labelValueBlock, statTile, beforeAfterPhotos,
 } from "@/lib/pdf/pdfLayout";
 import {
   getCompanySettingsByCompanyId, mergeCompanyDefaults, mergeProfileOverrides, getCompanyProfileById,
   type CompanySettings,
 } from "@/lib/company";
 import { sumApprovedChangeOrderRevenue } from "@/lib/services/financialCalculations";
+import {
+  getEstimateTermsTemplate, overrideForTemplateKey, renderTermsBodyHtml, DEFAULT_ESTIMATE_TERMS_TEMPLATE,
+  type EstimateTermsTemplateKey,
+} from "@/lib/estimateTerms";
 
 /**
  * Estimate proposal HTML — the ONE template both the browser "Save as
@@ -207,6 +211,13 @@ export function renderEstimateProposalHtml(data: EstimateProposalData): { docTit
 
   const docTitle = `Contractor Proposal ${estimate.estimate_number || estimate.id.slice(0, 8)}`;
 
+  // Same template EstimateDetail and the customer portal resolve
+  // through — the built-in default for this estimate's terms_template
+  // key, or the company's own override (Settings → Company →
+  // Terms & Conditions). See getEstimateTermsTemplate's doc comment.
+  const termsKey = (estimate.terms_template as EstimateTermsTemplateKey) ?? DEFAULT_ESTIMATE_TERMS_TEMPLATE;
+  const termsTemplate = getEstimateTermsTemplate(termsKey, overrideForTemplateKey(company, termsKey));
+
   const bodyHtml = `
     <!-- Minimal Header -->
     <div class="header" style="border-bottom: 1px solid #e5e7eb; padding-bottom: 16px; margin-bottom: 24px;">
@@ -260,11 +271,11 @@ export function renderEstimateProposalHtml(data: EstimateProposalData): { docTit
     </div>
 
     ${
-      estimatePhotosByType.before.length > 0
+      estimatePhotosByType.before.length > 0 || estimatePhotosByType.after.length > 0
         ? `
           <div class="section">
-            <div class="section-title">Initial Site Photos</div>
-            ${photoGrid(estimatePhotosByType.before, photoUrl, "Before photo")}
+            <div class="section-title">Before &amp; After</div>
+            ${beforeAfterPhotos(estimatePhotosByType.before, estimatePhotosByType.after, photoUrl)}
           </div>
         `
         : ""
@@ -298,29 +309,9 @@ export function renderEstimateProposalHtml(data: EstimateProposalData): { docTit
                     <div style="display:flex; gap:20px; align-items:flex-start; margin-bottom:16px;">
                       <div style="width:46%; flex-shrink:0;">
                         ${
-                          beforePhotos.length > 0
-                            ? `
-                              <div style="margin-bottom:${afterPhotos.length > 0 ? "12px" : "0"};">
-                                <div style="font-size:9.5px; font-weight:700; text-transform:uppercase; color:#6b7280; letter-spacing:0.05em; margin-bottom:4px;">Before Photos</div>
-                                ${photoGrid(beforePhotos, photoUrl, "Before Photo", 132, 96)}
-                              </div>
-                            `
-                            : ""
-                        }
-                        ${
-                          afterPhotos.length > 0
-                            ? `
-                              <div>
-                                <div style="font-size:9.5px; font-weight:700; text-transform:uppercase; color:#6b7280; letter-spacing:0.05em; margin-bottom:4px;">After Photos</div>
-                                ${photoGrid(afterPhotos, photoUrl, "After Photo", 132, 96)}
-                              </div>
-                            `
-                            : ""
-                        }
-                        ${
-                          beforePhotos.length === 0 && afterPhotos.length === 0
-                            ? `<div style="width:100%; height:140px; background:#f3f4f6; border:1px dashed #d1d5db; border-radius:6px; display:flex; align-items:center; justify-content:center; color:#9ca3af; font-size:11px; font-weight:600;">No Photo Available</div>`
-                            : ""
+                          beforePhotos.length > 0 || afterPhotos.length > 0
+                            ? beforeAfterPhotos(beforePhotos, afterPhotos, photoUrl, { tileWidth: 132, tileHeight: 96, stacked: true })
+                            : `<div style="width:100%; height:140px; background:#f3f4f6; border:1px dashed #d1d5db; border-radius:6px; display:flex; align-items:center; justify-content:center; color:#9ca3af; font-size:11px; font-weight:600;">No Photo Available</div>`
                         }
                       </div>
                       <div style="width:54%; flex-grow:1; font-size:11.5px; color:#374151; line-height:1.5;">
@@ -424,59 +415,20 @@ export function renderEstimateProposalHtml(data: EstimateProposalData): { docTit
       </div>
     </div>
 
-    <!-- Material Price Notice -->
-    <div class="section">
-      <div class="section-title">Material Price Notice</div>
-      <div style="font-size:10.5px; line-height:1.6; color:#6b7280;">
-        Our price stated in this proposal is based on current material prices. Due to raw material price volatility,
-        material suppliers may adjust pricing without notice. If material costs increase before work begins, the
-        contract price may be adjusted accordingly.
-      </div>
-    </div>
+    <!-- Terms & Conditions — the SAME template (built-in default or the
+         company's own override) EstimateDetail and the customer portal
+         show, resolved via getEstimateTermsTemplate/overrideForTemplateKey
+         and rendered with the one shared parser (renderTermsBodyHtml).
+         This used to be a hardcoded copy of the old default text
+         (Material Price Notice / Workmanship Warranty / Terms and
+         Conditions) that never read the template system at all — a
+         company's own customization, or a template edit, showed
+         everywhere BUT this PDF. -->
 
-    <!-- MANDATORY WORKMANSHIP WARRANTY -->
-    <div class="section" style="page-break-inside:avoid; margin-top:20px;">
-      <div class="section-title">Workmanship Warranty</div>
+    <div class="section" style="page-break-inside:avoid;">
+      <div class="section-title">${termsTemplate.label}</div>
       <div style="font-size:10.5px; line-height:1.65; color:#374151;">
-        <div style="font-weight:700; color:#111827; margin-bottom:5px;">This workmanship warranty covers:</div>
-        <ul style="margin:0 0 12px 18px; padding:0;">
-          <li style="margin-bottom:3px;">Roof leaks caused by installation errors.</li>
-          <li style="margin-bottom:3px;">Defects in workmanship related to the roofing system installed by One Square Roofing, LLC.</li>
-        </ul>
-        <div style="font-weight:700; color:#111827; margin-bottom:5px;">This warranty does not cover:</div>
-        <ul style="margin:0 0 12px 18px; padding:0;">
-          <li style="margin-bottom:3px;">Storm, hail, wind, fallen trees, or other acts of nature.</li>
-          <li style="margin-bottom:3px;">Damage caused by foot traffic, other contractors, or homeowner modifications.</li>
-          <li style="margin-bottom:3px;">Structural movement, settling, pre-existing building defects, clogged gutters, lack of maintenance, improper ventilation, or manufacturer defects.</li>
-        </ul>
-        ${company.warranty_text ? `<div style="border-top:1px solid #e5e7eb; padding-top:9px; margin-top:9px; white-space:pre-wrap;">${company.warranty_text}</div>` : ""}
-      </div>
-    </div>
-
-    <!-- Completed Photos -->
-    ${
-      estimatePhotosByType.after.length > 0
-        ? `
-          <div class="section">
-            <div class="section-title">Completed Photos</div>
-            ${photoGrid(estimatePhotosByType.after, photoUrl, "After photo")}
-          </div>
-        `
-        : ""
-    }
-
-    <!-- Additional Terms & Conditions -->
-    <div class="section">
-      <div style="font-size:10.5px; line-height:1.6; color:#374151;">
-        <div style="margin-bottom: 16px;">
-          <div style="font-weight: 700; color: #111827; font-size: 11px; margin-bottom: 6px;">Terms and Conditions</div>
-          <div style="color: #4b5563;">
-            The Contractor's standard Terms and Conditions are incorporated herein by reference and made a part of this Proposal/Agreement as if wholly re-written herein. The Terms and Conditions may be reviewed or a copy may be obtained by contacting our office. These Terms and Conditions are the only terms and conditions that apply to this Proposal/Agreement. The Contractor rejects any changes made by the Owner to this Proposal/Agreement unless the Contractor approves such changes in a writing signed by our authorized representative.
-          </div>
-          <div style="margin-top: 6px; color: #4b5563;">
-            Contractor reserves the right to subcontract any or all of the work to one or more of its qualified affiliates.
-          </div>
-        </div>
+        ${renderTermsBodyHtml(termsTemplate.body)}
       </div>
     </div>
 

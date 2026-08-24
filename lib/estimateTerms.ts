@@ -55,17 +55,12 @@ Contractor reserves the right to subcontract any or all of the work to one or mo
   roofing: {
     key: "roofing",
     label: "Roofing",
-    body: `This Proposal/Agreement is for roofing work only, as described in the scope above. All work will be performed in accordance with manufacturer installation specifications and applicable local building codes. Contractor is not responsible for delays caused by weather conditions unsuitable for roofing work.
+    body: `This Proposal/Agreement is for roofing work only, as described in the scope above. Contractor is not responsible for delays caused by weather conditions unsuitable for roofing work.
 
-Any pre-existing roof deck damage, rot, or structural deficiency discovered after tear-off is not included in this price and will be addressed via a separate change order before work continues on the affected area.
+ 
+ 
 
-Manufacturer material warranties are provided directly by the manufacturer per their published terms; Contractor separately warrants its own workmanship for one (1) year from substantial completion. Contractor is not responsible for existing interior damage from a roof leak that predates this Agreement.
-
-Permits, dumpster/debris removal, and job-site cleanup are included unless noted otherwise in the scope above.
-
-**Material Price Notice**
-Pricing reflects current material costs. Supplier price changes before work begins may result in a corresponding adjustment to the contract price.
-
+ 
 **Workmanship Warranty**
 Covered: roof leaks and defects caused by installation errors in the roofing system installed by the Contractor.
 

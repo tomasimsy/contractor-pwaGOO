@@ -259,3 +259,58 @@ export function photoGrid(photos: Array<Record<string, any>>, photoUrl: (path: s
     </div>
   `;
 }
+
+// Before/After, side by side in ONE block — replaces two separate
+// photoGrid calls (estimate-level "Initial Site Photos" and "Completed
+// Photos" used to render as two sections, pages apart, with no shared
+// label styling tying a before photo to its after counterpart). Each
+// side gets a solid, high-contrast pill label (never relying on
+// position alone), and a single hairline divider between them is the
+// only "chrome" — no boxed card, no extra borders, so this stays
+// visually light even next to the rest of the document.
+//
+// `stacked` is for the roofing-area card, whose photo column is only
+// ~46% of the page width: side by side there would squeeze both sides
+// to the point the photos stop being useful, so it falls back to
+// BEFORE above AFTER instead — still one block, still clearly labeled,
+// just not side by side when the space genuinely isn't there.
+export function beforeAfterPhotos(
+  before: Array<Record<string, any>>,
+  after: Array<Record<string, any>>,
+  photoUrl: (path: string) => string,
+  opts?: { tileWidth?: number; tileHeight?: number; stacked?: boolean }
+) {
+  if (before.length === 0 && after.length === 0) return "";
+  const tileWidth = opts?.tileWidth ?? 150;
+  const tileHeight = opts?.tileHeight ?? 112;
+  const stacked = opts?.stacked ?? false;
+
+  const column = (label: "BEFORE" | "AFTER", photos: Array<Record<string, any>>) => {
+    const color = label === "BEFORE" ? "#6b7280" : "#059669";
+    return `
+      <div style="flex:1; min-width:0;">
+        <span style="display:inline-block; font-size:9px; font-weight:800; letter-spacing:0.08em; color:#ffffff; background:${color}; padding:2px 8px; border-radius:3px; margin-bottom:6px;">${label}</span>
+        ${
+          photos.length > 0
+            ? `<div style="display:flex; flex-wrap:wrap; gap:6px;">
+                ${photos
+                  .map(
+                    (photo) =>
+                      `<img src="${photoUrl(photo.storage_path)}" style="width:${tileWidth}px; height:${tileHeight}px; object-fit:cover; border-radius:4px; border:1px solid #e5e7eb;" alt="${label === "BEFORE" ? "Before photo" : "After photo"}" />`
+                  )
+                  .join("")}
+              </div>`
+            : `<div style="font-size:10px; color:#9ca3af; padding-top:2px;">No photo</div>`
+        }
+      </div>
+    `;
+  };
+
+  return `
+    <div style="display:flex; ${stacked ? "flex-direction:column; gap:14px;" : "align-items:flex-start; gap:16px;"}">
+      ${column("BEFORE", before)}
+      ${!stacked ? `<div style="width:1px; align-self:stretch; background:#e5e7eb;"></div>` : ""}
+      ${column("AFTER", after)}
+    </div>
+  `;
+}
