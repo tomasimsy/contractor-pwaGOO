@@ -29,6 +29,11 @@ export interface CompanyProfile extends AuditedEntity {
    * origin-only, no local/private hostname. Null = use the app's
    * fixed default origin. */
   portalDomain: string | null;
+  /** This profile's own "Email Customer" default message body — see
+   * lib/email/sendEstimateEmail.ts's buildDefaultEstimateMessage, the
+   * fallback used when this is null. Supports `{clientName}` and
+   * `{companyName}` placeholders, substituted when a send is composed. */
+  emailMessageTemplate: string | null;
 }
 
 export interface CompanyProfileService {
@@ -46,6 +51,7 @@ export interface CompanyProfileService {
     /** Raw user input — validated/normalized by the implementation
      * via lib/portalDomainValidation.ts before it's ever written. */
     portalDomain?: string | null;
+    emailMessageTemplate?: string | null;
   }): Promise<CompanyProfile>;
 
   update(
@@ -59,6 +65,7 @@ export interface CompanyProfileService {
       companyAddress: string | null;
       footerMessage: string | null;
       portalDomain: string | null;
+      emailMessageTemplate: string | null;
     }>
   ): Promise<CompanyProfile>;
 

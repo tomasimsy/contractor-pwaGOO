@@ -38,6 +38,9 @@ export interface EmailCustomerModalProps {
    * when a company has more than one Business Profile. */
   fromEmail: string | null;
   hasPortalLink: boolean;
+  /** This estimate's resolved Business Profile message override, if
+   * any — see buildDefaultMessage above. */
+  messageTemplate?: string | null;
 }
 
 /** Same "unconfigured placeholder" rule sendEstimateEmail.ts applies
@@ -48,12 +51,16 @@ function realFromEmail(value: string | null): string | null {
   return value && !value.startsWith("Add your") ? value : null;
 }
 
-function buildDefaultMessage(clientName: string, companyName: string): string {
-  return `Hi ${clientName || "there"},\n\nThank you for the opportunity to work with you. Please find
-   your proposal attached, and you can also view it online using the button in this email.
-   \n\nIf you have any questions or would like to move forward, just sign the proposal by clicking the link.
-   \n\nBest regards,\n${companyName}`;
-   
+/** `messageTemplate` is a Business Profile's own override (Settings →
+ * Business Profiles → Email Message Template), with `{clientName}`/
+ * `{companyName}` placeholders substituted — falls back to this
+ * built-in default when the profile has none set. */
+function buildDefaultMessage(clientName: string, companyName: string, messageTemplate?: string | null): string {
+  const name = clientName || "there";
+  if (messageTemplate && messageTemplate.trim()) {
+    return messageTemplate.replaceAll("{clientName}", name).replaceAll("{companyName}", companyName);
+  }
+  return `Hi ${name},\n\nThank you for the opportunity to work with you. Please find your proposal attached, and you can also view it online using the button in this email.\n\nIf you have any questions or would like to move forward, just sign the proposal by clicking the link.\n\nBest regards,\n${companyName}`;
 }
 
 type SendState = { status: "idle" } | { status: "sending" } | { status: "success" } | { status: "error"; message: string };
@@ -69,10 +76,11 @@ export function EmailCustomerModal({
   companyName,
   fromEmail,
   hasPortalLink,
+  messageTemplate,
 }: EmailCustomerModalProps) {
   const [to, setTo] = useState(clientEmail ?? "");
   const [subject, setSubject] = useState(`Your Proposal from ${companyName} — #${estimateNumber}`);
-  const [message, setMessage] = useState(buildDefaultMessage(clientName, companyName));
+  const [message, setMessage] = useState(buildDefaultMessage(clientName, companyName, messageTemplate));
   const [state, setState] = useState<SendState>({ status: "idle" });
 
   // Reset to fresh defaults every time the modal is (re)opened, so a
@@ -81,10 +89,10 @@ export function EmailCustomerModal({
     if (open) {
       setTo(clientEmail ?? "");
       setSubject(`Your Proposal from ${companyName} — #${estimateNumber}`);
-      setMessage(buildDefaultMessage(clientName, companyName));
+      setMessage(buildDefaultMessage(clientName, companyName, messageTemplate));
       setState({ status: "idle" });
     }
-  }, [open, clientEmail, companyName, estimateNumber, clientName]);
+  }, [open, clientEmail, companyName, estimateNumber, clientName, messageTemplate]);
 
   if (!open) return null;
 

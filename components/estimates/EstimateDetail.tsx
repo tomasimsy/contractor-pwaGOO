@@ -31,6 +31,7 @@ import {
 } from "@/lib/email/emailTracking";
 import { supabase } from "@/lib/supabase/client";
 import { resolvePortalOrigin, DEFAULT_ORIGIN } from "@/lib/portalDomain";
+import { getCompanyProfileById } from "@/lib/company";
 import { EstimateNotesPanel } from "@/components/estimates/EstimateNotesPanel";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -121,6 +122,10 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
    * a share action taken before this resolves still gets a safe,
    * correct-shape link rather than an empty string. */
   const [portalOrigin, setPortalOrigin] = useState(DEFAULT_ORIGIN);
+  /** This estimate's resolved profile's "Email Customer" default
+   * message override, if any — see lib/company.ts's CompanyProfile.
+   * Null until loaded or when the profile has none set. */
+  const [emailMessageTemplate, setEmailMessageTemplate] = useState<string | null>(null);
   /** The estimate's scope, normalized by EstimateService — items for a
    * standard estimate, roof-area scope for a roofing one. Rendering
    * `estimate.lineItems` directly showed a roofing estimate's dead
@@ -295,6 +300,16 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
     let cancelled = false;
     resolvePortalOrigin(supabase, estimate?.profileId ?? null).then((origin) => {
       if (!cancelled) setPortalOrigin(origin);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [estimate?.profileId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getCompanyProfileById(supabase, estimate?.profileId ?? null).then((profile) => {
+      if (!cancelled) setEmailMessageTemplate(profile?.emailMessageTemplate ?? null);
     });
     return () => {
       cancelled = true;
@@ -1350,6 +1365,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
         companyName={companySettings?.company_name ?? "Your Company"}
         fromEmail={companySettings?.company_email ?? null}
         hasPortalLink={!!estimate.customerToken}
+        messageTemplate={emailMessageTemplate}
       />
 
       <Modal open={showCompleteConfirm} onClose={() => { if (!completeBusy) setShowCompleteConfirm(false); }} title="Mark Project Complete?">

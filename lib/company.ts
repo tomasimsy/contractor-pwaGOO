@@ -187,6 +187,13 @@ export type CompanyProfile = {
    * override; NOT a branding field, so mergeProfileOverrides below
    * deliberately does not touch it. */
   portalDomain: string | null;
+  /** This profile's own "Email Customer" default message body — the
+   * fallback used is buildDefaultEstimateMessage
+   * (lib/email/sendEstimateEmail.ts) when null. Supports `{clientName}`
+   * and `{companyName}` placeholders. NOT a branding field — same
+   * reasoning as portalDomain, so mergeProfileOverrides below
+   * deliberately does not touch it either. */
+  emailMessageTemplate: string | null;
 };
 
 /** Parses the raw snake_case row this table's own SELECT and every
@@ -207,6 +214,7 @@ export function parseCompanyProfileRow(row: Record<string, unknown> | null | und
     companyAddress: (row.company_address as string) || null,
     footerMessage: (row.footer_message as string) || null,
     portalDomain: (row.portal_domain as string) || null,
+    emailMessageTemplate: (row.email_message_template as string) || null,
   };
 }
 

@@ -22,6 +22,7 @@ interface CompanyProfileRow {
   company_address: string | null;
   footer_message: string | null;
   portal_domain: string | null;
+  email_message_template: string | null;
   created_by: string | null;
   created_at: string;
   updated_by: string | null;
@@ -43,6 +44,7 @@ function rowToProfile(row: CompanyProfileRow): CompanyProfile {
     companyAddress: row.company_address,
     footerMessage: row.footer_message,
     portalDomain: row.portal_domain,
+    emailMessageTemplate: row.email_message_template,
     createdBy: row.created_by as UUID | null,
     createdAt: row.created_at,
     updatedBy: row.updated_by as UUID | null,
@@ -76,6 +78,7 @@ export function createSupabaseCompanyProfileService(
     companyAddress?: string | null;
     footerMessage?: string | null;
     portalDomain?: string | null;
+    emailMessageTemplate?: string | null;
   }): Promise<CompanyProfile> {
     if (!input.companyName.trim()) throw new Error("A business name is required.");
     const domainCheck = validatePortalDomain(input.portalDomain ?? "");
@@ -93,6 +96,7 @@ export function createSupabaseCompanyProfileService(
         company_address: input.companyAddress ?? null,
         footer_message: input.footerMessage ?? null,
         portal_domain: domainCheck.normalized ?? null,
+        email_message_template: input.emailMessageTemplate?.trim() || null,
         created_by: actorId,
       })
       .select()
@@ -112,6 +116,7 @@ export function createSupabaseCompanyProfileService(
       companyAddress: string | null;
       footerMessage: string | null;
       portalDomain: string | null;
+      emailMessageTemplate: string | null;
     }>
   ): Promise<CompanyProfile> {
     if (changes.companyName !== undefined && !changes.companyName.trim()) {
@@ -133,6 +138,7 @@ export function createSupabaseCompanyProfileService(
     if (changes.companyAddress !== undefined) payload.company_address = changes.companyAddress;
     if (changes.footerMessage !== undefined) payload.footer_message = changes.footerMessage;
     if (normalizedPortalDomain !== undefined) payload.portal_domain = normalizedPortalDomain;
+    if (changes.emailMessageTemplate !== undefined) payload.email_message_template = changes.emailMessageTemplate?.trim() || null;
 
     const { data, error } = await supabase.from("company_profiles").update(payload).eq("id", profileId).select().single();
     if (error) throw new Error(`Failed to update business profile: ${error.message}`);

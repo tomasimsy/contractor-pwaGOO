@@ -39,6 +39,7 @@ type ProfileFormState = {
   companyAddress: string;
   footerMessage: string;
   portalDomain: string;
+  emailMessageTemplate: string;
 };
 
 const EMPTY_FORM: ProfileFormState = {
@@ -50,6 +51,7 @@ const EMPTY_FORM: ProfileFormState = {
   companyAddress: "",
   footerMessage: "",
   portalDomain: "",
+  emailMessageTemplate: "",
 };
 
 function profileToForm(p: CompanyProfile): ProfileFormState {
@@ -62,6 +64,7 @@ function profileToForm(p: CompanyProfile): ProfileFormState {
     companyAddress: p.companyAddress ?? "",
     footerMessage: p.footerMessage ?? "",
     portalDomain: p.portalDomain ?? "",
+    emailMessageTemplate: p.emailMessageTemplate ?? "",
   };
 }
 
@@ -136,6 +139,7 @@ function BusinessProfilesContent() {
         companyAddress: form.companyAddress.trim() || null,
         footerMessage: form.footerMessage.trim() || null,
         portalDomain: domainCheck.normalized ?? null,
+        emailMessageTemplate: form.emailMessageTemplate.trim() || null,
       };
       if (editingId) {
         await companyProfileService.update(editingId, payload);
@@ -298,6 +302,19 @@ function BusinessProfilesContent() {
             {form.portalDomain.trim() && !domainCheck.valid && (
               <p className="mt-1 text-[10.5px] text-danger">{domainCheck.message}</p>
             )}
+          </div>
+          <div>
+            <label className={LABEL}>Email Message Template</label>
+            <textarea
+              value={form.emailMessageTemplate}
+              onChange={(e) => setForm((f) => ({ ...f, emailMessageTemplate: e.target.value }))}
+              placeholder={"Hi {clientName},\n\nThank you for the opportunity to work with you...\n\nBest regards,\n{companyName}"}
+              rows={5}
+              className={`${FIELD} h-auto py-2 leading-relaxed`}
+            />
+            <p className="mt-1 text-[10.5px] leading-relaxed text-muted-foreground">
+              Default message body for &quot;Email Customer&quot; sends using this profile. Use {"{clientName}"} and {"{companyName}"} as placeholders. Leave blank to use the built-in default.
+            </p>
           </div>
 
           <div className="flex justify-end gap-2 pt-1">
