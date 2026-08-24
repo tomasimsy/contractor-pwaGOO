@@ -12,6 +12,7 @@ function profile(overrides: Partial<CompanyProfile>): CompanyProfile {
     companyWebsite: null,
     companyAddress: null,
     footerMessage: null,
+    portalDomain: null,
     ...overrides,
   };
 }
@@ -65,6 +66,7 @@ describe("parseCompanyProfileRow", () => {
       company_website: "https://osrpros.com",
       company_address: "123 Main St",
       footer_message: "Thanks for choosing OSRPros!",
+      portal_domain: "https://osrpros.com",
     };
     expect(parseCompanyProfileRow(row)).toEqual({
       id: "profile-1",
@@ -76,6 +78,7 @@ describe("parseCompanyProfileRow", () => {
       companyWebsite: "https://osrpros.com",
       companyAddress: "123 Main St",
       footerMessage: "Thanks for choosing OSRPros!",
+      portalDomain: "https://osrpros.com",
     });
   });
 });

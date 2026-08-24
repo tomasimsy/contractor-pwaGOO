@@ -22,6 +22,13 @@ export interface CompanyProfile extends AuditedEntity {
   companyWebsite: string | null;
   companyAddress: string | null;
   footerMessage: string | null;
+  /** This profile's customer-facing base URL (e.g.
+   * "https://osrpros.com") for portal/estimate links — see
+   * lib/portalDomain.ts's resolvePortalOrigin, the only reader.
+   * Validated on write (lib/portalDomainValidation.ts): HTTPS,
+   * origin-only, no local/private hostname. Null = use the app's
+   * fixed default origin. */
+  portalDomain: string | null;
 }
 
 export interface CompanyProfileService {
@@ -36,6 +43,9 @@ export interface CompanyProfileService {
     companyWebsite?: string | null;
     companyAddress?: string | null;
     footerMessage?: string | null;
+    /** Raw user input — validated/normalized by the implementation
+     * via lib/portalDomainValidation.ts before it's ever written. */
+    portalDomain?: string | null;
   }): Promise<CompanyProfile>;
 
   update(
@@ -48,6 +58,7 @@ export interface CompanyProfileService {
       companyWebsite: string | null;
       companyAddress: string | null;
       footerMessage: string | null;
+      portalDomain: string | null;
     }>
   ): Promise<CompanyProfile>;
 

@@ -181,6 +181,12 @@ export type CompanyProfile = {
   companyWebsite: string | null;
   companyAddress: string | null;
   footerMessage: string | null;
+  /** This profile's customer-facing base URL (e.g. "https://osrpros.com")
+   * for portal/estimate links — see lib/portalDomain.ts's
+   * resolvePortalOrigin, the only reader of this field. Null means no
+   * override; NOT a branding field, so mergeProfileOverrides below
+   * deliberately does not touch it. */
+  portalDomain: string | null;
 };
 
 /** Parses the raw snake_case row this table's own SELECT and every
@@ -200,6 +206,7 @@ export function parseCompanyProfileRow(row: Record<string, unknown> | null | und
     companyWebsite: (row.company_website as string) || null,
     companyAddress: (row.company_address as string) || null,
     footerMessage: (row.footer_message as string) || null,
+    portalDomain: (row.portal_domain as string) || null,
   };
 }
 

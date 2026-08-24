@@ -1,62 +1,108 @@
 import { describe, test, expect } from "vitest";
-import { resolvePortalOrigin } from "../lib/portalDomain";
+import { resolvePortalOrigin, DEFAULT_ORIGIN } from "../lib/portalDomain";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 const TOKEN = "9f2c1a4e-9999-4b7c-8b3e-abc123456789";
 
-// The real company_profiles.id values for BOTH company accounts
-// currently in live use (retrieved directly from the live database —
-// see lib/portalDomain.ts's header for how/why, including the known
-// duplicate-company situation). Kept in sync by hand with that file if
-// a profile is ever recreated.
-const OSRPROS_PROFILE_ID = "651e1317-991b-4fdf-b903-d52d1d43779f";
-const ONE_SQUARE_ROOFING_PROFILE_ID = "c7280b32-8ea3-4cd0-8276-57d8d352365c";
-// Second company account.
-const OTHER_COMPANY_OSRPROS_PROFILE_ID = "6b189d56-6109-47f5-a625-9379db6307e3";
-const OTHER_COMPANY_DEFAULT_PROFILE_ID = "b91770aa-516c-4800-8d89-3240b0f0b8f2";
-const DEFAULT_ORIGIN = "https://app.onesquareroof.com";
+/** A stub Supabase client exposing only what getCompanyProfileById
+ * actually calls (supabase.rpc("get_company_profile", {p_profile_id}))
+ * — mirrors the RPC's real return shape (a row_to_json of the profile,
+ * or null when not found/deleted). Lets these tests exercise the
+ * resolver's real DB-driven code path without a live database. */
+function stubSupabase(profilesById: Record<string, Record<string, unknown>>): SupabaseClient {
+  return {
+    rpc: async (fnName: string, args: Record<string, unknown>) => {
+      if (fnName !== "get_company_profile") throw new Error(`Unexpected RPC: ${fnName}`);
+      const row = profilesById[args.p_profile_id as string] ?? null;
+      return { data: row, error: null };
+    },
+  } as unknown as SupabaseClient;
+}
+
+function profileRow(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: "profile-1",
+    company_id: "company-1",
+    company_name: "OSRPros",
+    logo_url: null,
+    company_phone: null,
+    company_email: null,
+    company_website: null,
+    company_address: null,
+    footer_message: null,
+    portal_domain: null,
+    ...overrides,
+  };
+}
 
 describe("resolvePortalOrigin", () => {
-  test("OSRPros' profile id resolves to osrpros.com", () => {
-    expect(resolvePortalOrigin(OSRPROS_PROFILE_ID)).toBe("https://osrpros.com");
+  test("a profile with a configured portal_domain resolves to it — OSRPros case", async () => {
+    const supabase = stubSupabase({
+      "osrpros-id": profileRow({ id: "osrpros-id", portal_domain: "https://osrpros.com" }),
+    });
+    expect(await resolvePortalOrigin(supabase, "osrpros-id")).toBe("https://osrpros.com");
   });
 
-  test("One Square Roofing's own profile id resolves to app.onesquareroof.com — a deliberate selection, not the fallback", () => {
-    expect(resolvePortalOrigin(ONE_SQUARE_ROOFING_PROFILE_ID)).toBe(DEFAULT_ORIGIN);
+  test("a profile with a configured portal_domain resolves to it — One Square Roofing case", async () => {
+    const supabase = stubSupabase({
+      "one-square-id": profileRow({ id: "one-square-id", portal_domain: "https://app.onesquareroof.com" }),
+    });
+    expect(await resolvePortalOrigin(supabase, "one-square-id")).toBe("https://app.onesquareroof.com");
   });
 
-  test("a null profile_id (legacy/unassigned estimate, NOT a deliberate brand choice) resolves to the fixed default origin", () => {
-    expect(resolvePortalOrigin(null)).toBe(DEFAULT_ORIGIN);
-    expect(resolvePortalOrigin(undefined)).toBe(DEFAULT_ORIGIN);
+  test("a newly created profile with its own configured portal_domain resolves correctly — no source-code change needed", async () => {
+    // Simulates exactly the "profile deleted and recreated in Settings"
+    // scenario that broke the old hardcoded-map approach: a brand-new
+    // id, never seen before, works purely because the DOMAIN is read
+    // from the row itself.
+    const supabase = stubSupabase({
+      "brand-new-id-never-seen-before": profileRow({ id: "brand-new-id-never-seen-before", portal_domain: "https://freshly-created-brand.example.com" }),
+    });
+    expect(await resolvePortalOrigin(supabase, "brand-new-id-never-seen-before")).toBe("https://freshly-created-brand.example.com");
   });
 
-  test("an unrecognized profile id (e.g. from the separate duplicate-company account) resolves to the fixed default — no regression, no crash", () => {
-    expect(resolvePortalOrigin("00000000-0000-0000-0000-000000000000")).toBe(DEFAULT_ORIGIN);
+  test("a null profile_id (legacy/unassigned estimate) resolves to the safe default — never queries the database", async () => {
+    let called = false;
+    const supabase = { rpc: async () => { called = true; return { data: null, error: null }; } } as unknown as SupabaseClient;
+    expect(await resolvePortalOrigin(supabase, null)).toBe(DEFAULT_ORIGIN);
+    expect(await resolvePortalOrigin(supabase, undefined)).toBe(DEFAULT_ORIGIN);
+    expect(called).toBe(false);
   });
 
-  test("the resolver never depends on the caller's current origin — same profile id, same result regardless of what domain admin is browsing from", () => {
-    // No origin/host is passed in at all anymore — this test exists to
-    // document that the function's signature makes it structurally
-    // impossible for window.location.origin/request.nextUrl.origin to
-    // influence the result, not just that it happens not to today.
-    expect(resolvePortalOrigin(OSRPROS_PROFILE_ID)).toBe("https://osrpros.com");
-    expect(resolvePortalOrigin(OSRPROS_PROFILE_ID)).toBe(resolvePortalOrigin(OSRPROS_PROFILE_ID));
+  test("a profile with no portal_domain configured resolves to the safe default", async () => {
+    const supabase = stubSupabase({
+      "no-domain-set": profileRow({ id: "no-domain-set", portal_domain: null }),
+    });
+    expect(await resolvePortalOrigin(supabase, "no-domain-set")).toBe(DEFAULT_ORIGIN);
   });
 
-  test("the second company account's real profiles also resolve correctly — this map covers both accounts, not just one", () => {
-    expect(resolvePortalOrigin(OTHER_COMPANY_OSRPROS_PROFILE_ID)).toBe("https://osrpros.com");
-    expect(resolvePortalOrigin(OTHER_COMPANY_DEFAULT_PROFILE_ID)).toBe(DEFAULT_ORIGIN);
+  test("a deleted/missing profile id resolves to the safe default — no crash", async () => {
+    const supabase = stubSupabase({});
+    expect(await resolvePortalOrigin(supabase, "does-not-exist")).toBe(DEFAULT_ORIGIN);
   });
 
-  test("full portal URL assembly: brand match overrides the default, the token is untouched either way", () => {
-    const osrProsUrl = `${resolvePortalOrigin(OSRPROS_PROFILE_ID)}/portal/${TOKEN}`;
-    const oneSquareUrl = `${resolvePortalOrigin(ONE_SQUARE_ROOFING_PROFILE_ID)}/portal/${TOKEN}`;
-    const legacyUrl = `${resolvePortalOrigin(null)}/portal/${TOKEN}`;
+  test("the resolver's signature makes it structurally impossible for the admin's current hostname to affect the result — no origin/host parameter exists at all", async () => {
+    const supabase = stubSupabase({
+      "osrpros-id": profileRow({ id: "osrpros-id", portal_domain: "https://osrpros.com" }),
+    });
+    // Same call, same result, regardless of what domain this code is
+    // running on — there is no window/request object involved.
+    const first = await resolvePortalOrigin(supabase, "osrpros-id");
+    const second = await resolvePortalOrigin(supabase, "osrpros-id");
+    expect(first).toBe(second);
+    expect(first).toBe("https://osrpros.com");
+  });
 
-    expect(osrProsUrl).toBe(`https://osrpros.com/portal/${TOKEN}`);
-    expect(oneSquareUrl).toBe(`${DEFAULT_ORIGIN}/portal/${TOKEN}`);
-    // No regression: a legacy estimate with no profile keeps the same
-    // /portal/{token} path and the same token value, just resolved to
-    // the fixed default origin instead of an ambiguous browser host.
+  test("full portal URL assembly: the resolved domain combines with the token, which the resolver never sees or touches", async () => {
+    const supabase = stubSupabase({
+      "osrpros-id": profileRow({ id: "osrpros-id", portal_domain: "https://osrpros.com" }),
+    });
+    const origin = await resolvePortalOrigin(supabase, "osrpros-id");
+    const url = `${origin}/portal/${TOKEN}`;
+    expect(url).toBe(`https://osrpros.com/portal/${TOKEN}`);
+
+    const legacyOrigin = await resolvePortalOrigin(supabase, null);
+    const legacyUrl = `${legacyOrigin}/portal/${TOKEN}`;
     expect(legacyUrl).toBe(`${DEFAULT_ORIGIN}/portal/${TOKEN}`);
   });
 });

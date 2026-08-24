@@ -30,7 +30,7 @@ import {
   type EstimateEmailStatus,
 } from "@/lib/email/emailTracking";
 import { supabase } from "@/lib/supabase/client";
-import { resolvePortalOrigin } from "@/lib/portalDomain";
+import { resolvePortalOrigin, DEFAULT_ORIGIN } from "@/lib/portalDomain";
 import { EstimateNotesPanel } from "@/components/estimates/EstimateNotesPanel";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -115,6 +115,12 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
    * the meantime (getEstimateTermsTemplate handles a missing override
    * the same way either way). */
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
+  /** This estimate's resolved customer-facing domain (its profile's
+   * portal_domain, read live from the database — see
+   * lib/portalDomain.ts) — defaults to DEFAULT_ORIGIN until loaded, so
+   * a share action taken before this resolves still gets a safe,
+   * correct-shape link rather than an empty string. */
+  const [portalOrigin, setPortalOrigin] = useState(DEFAULT_ORIGIN);
   /** The estimate's scope, normalized by EstimateService — items for a
    * standard estimate, roof-area scope for a roofing one. Rendering
    * `estimate.lineItems` directly showed a roofing estimate's dead
@@ -284,6 +290,16 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    resolvePortalOrigin(supabase, estimate?.profileId ?? null).then((origin) => {
+      if (!cancelled) setPortalOrigin(origin);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [estimate?.profileId]);
 
   function openDeleteConfirm() {
     setDeleteReason("");
@@ -504,7 +520,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
             // Brand-resolved, not window.location.origin — see
             // lib/portalDomain.ts's header. `origin` is only the
             // fallback for a null/unrecognized profile.
-            const portalUrl = `${resolvePortalOrigin(estimate.profileId)}/portal/${estimate.customerToken}`;
+            const portalUrl = `${portalOrigin}/portal/${estimate.customerToken}`;
             const greeting = client?.name ? `Hi ${client.name.split(" ")[0]}, ` : "Hi, ";
             const from = companySettings?.company_name ? ` from ${companySettings.company_name}` : "";
             const smsBody = `${greeting}here's your estimate${from}. You can review, approve, and download it here: ${portalUrl}`;
@@ -1185,7 +1201,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
 
           {estimate.customerToken ? (
             <SharePortalPanel
-              portalUrl={`${resolvePortalOrigin(estimate.profileId)}/portal/${estimate.customerToken}`}
+              portalUrl={`${portalOrigin}/portal/${estimate.customerToken}`}
               clientName={client?.name ?? null}
               clientPhone={client?.phone ?? null}
               clientEmail={client?.email ?? null}

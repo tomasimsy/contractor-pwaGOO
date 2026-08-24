@@ -25,6 +25,7 @@ import { usePermission } from "@/lib/hooks/usePermission";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
 import type { CompanyProfile } from "@/lib/services/companyProfileService";
+import { validatePortalDomain } from "@/lib/portalDomainValidation";
 
 const FIELD = "h-9 w-full rounded-lg border border-input bg-background px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30";
 const LABEL = "mb-1 block text-xs font-medium text-foreground";
@@ -37,6 +38,7 @@ type ProfileFormState = {
   companyWebsite: string;
   companyAddress: string;
   footerMessage: string;
+  portalDomain: string;
 };
 
 const EMPTY_FORM: ProfileFormState = {
@@ -47,6 +49,7 @@ const EMPTY_FORM: ProfileFormState = {
   companyWebsite: "",
   companyAddress: "",
   footerMessage: "",
+  portalDomain: "",
 };
 
 function profileToForm(p: CompanyProfile): ProfileFormState {
@@ -58,6 +61,7 @@ function profileToForm(p: CompanyProfile): ProfileFormState {
     companyWebsite: p.companyWebsite ?? "",
     companyAddress: p.companyAddress ?? "",
     footerMessage: p.footerMessage ?? "",
+    portalDomain: p.portalDomain ?? "",
   };
 }
 
@@ -112,8 +116,14 @@ function BusinessProfilesContent() {
     setEditorOpen(true);
   }
 
+  const domainCheck = validatePortalDomain(form.portalDomain);
+
   async function handleSave() {
     if (!companyId || !form.companyName.trim()) return;
+    if (!domainCheck.valid) {
+      setError(domainCheck.message ?? "Invalid portal domain.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -125,6 +135,7 @@ function BusinessProfilesContent() {
         companyWebsite: form.companyWebsite.trim() || null,
         companyAddress: form.companyAddress.trim() || null,
         footerMessage: form.footerMessage.trim() || null,
+        portalDomain: domainCheck.normalized ?? null,
       };
       if (editingId) {
         await companyProfileService.update(editingId, payload);
@@ -197,6 +208,7 @@ function BusinessProfilesContent() {
                 <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Name</th>
                 <th className="hidden px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:table-cell">Phone</th>
                 <th className="hidden px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground md:table-cell">Email</th>
+                <th className="hidden px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground lg:table-cell">Portal Domain</th>
                 <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actions</th>
               </tr>
             </thead>
@@ -206,6 +218,13 @@ function BusinessProfilesContent() {
                   <td className="px-3 py-2.5 font-medium text-foreground">{p.companyName}</td>
                   <td className="hidden px-3 py-2.5 text-muted-foreground sm:table-cell">{p.companyPhone ?? "—"}</td>
                   <td className="hidden px-3 py-2.5 text-muted-foreground md:table-cell">{p.companyEmail ?? "—"}</td>
+                  <td className="hidden px-3 py-2.5 lg:table-cell">
+                    {p.portalDomain ? (
+                      <span className="text-foreground">{p.portalDomain}</span>
+                    ) : (
+                      <span className="text-muted-foreground">Uses the default domain</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2.5">
                     <div className="flex items-center justify-end gap-1">
                       {canEdit && (
@@ -265,6 +284,21 @@ function BusinessProfilesContent() {
             <label className={LABEL}>Footer Message</label>
             <input value={form.footerMessage} onChange={(e) => setForm((f) => ({ ...f, footerMessage: e.target.value }))} placeholder="Thank you for your business!" className={FIELD} />
           </div>
+          <div>
+            <label className={LABEL}>Portal Domain</label>
+            <input
+              value={form.portalDomain}
+              onChange={(e) => setForm((f) => ({ ...f, portalDomain: e.target.value }))}
+              placeholder="https://osrpros.com"
+              className={FIELD}
+            />
+            <p className="mt-1 text-[10.5px] leading-relaxed text-muted-foreground">
+              Where a customer lands when they open an estimate/invoice using this profile — e.g. https://osrpros.com. Leave blank to use the default domain instead.
+            </p>
+            {form.portalDomain.trim() && !domainCheck.valid && (
+              <p className="mt-1 text-[10.5px] text-danger">{domainCheck.message}</p>
+            )}
+          </div>
 
           <div className="flex justify-end gap-2 pt-1">
             <button type="button" onClick={() => setEditorOpen(false)} className="rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted">
@@ -272,7 +306,7 @@ function BusinessProfilesContent() {
             </button>
             <button
               type="button"
-              disabled={saving || !form.companyName.trim()}
+              disabled={saving || !form.companyName.trim() || !domainCheck.valid}
               onClick={handleSave}
               className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >

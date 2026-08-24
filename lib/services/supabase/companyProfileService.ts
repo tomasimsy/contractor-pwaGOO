@@ -9,6 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CompanyProfile, CompanyProfileService } from "../companyProfileService";
 import type { UUID } from "../types";
 import type { ValidationService } from "../validationService";
+import { validatePortalDomain } from "../../portalDomainValidation";
 
 interface CompanyProfileRow {
   id: string;
@@ -20,6 +21,7 @@ interface CompanyProfileRow {
   company_website: string | null;
   company_address: string | null;
   footer_message: string | null;
+  portal_domain: string | null;
   created_by: string | null;
   created_at: string;
   updated_by: string | null;
@@ -40,6 +42,7 @@ function rowToProfile(row: CompanyProfileRow): CompanyProfile {
     companyWebsite: row.company_website,
     companyAddress: row.company_address,
     footerMessage: row.footer_message,
+    portalDomain: row.portal_domain,
     createdBy: row.created_by as UUID | null,
     createdAt: row.created_at,
     updatedBy: row.updated_by as UUID | null,
@@ -72,8 +75,11 @@ export function createSupabaseCompanyProfileService(
     companyWebsite?: string | null;
     companyAddress?: string | null;
     footerMessage?: string | null;
+    portalDomain?: string | null;
   }): Promise<CompanyProfile> {
     if (!input.companyName.trim()) throw new Error("A business name is required.");
+    const domainCheck = validatePortalDomain(input.portalDomain ?? "");
+    if (!domainCheck.valid) throw new Error(domainCheck.message ?? "Invalid portal domain.");
     const actorId = await currentUserId();
     const { data, error } = await supabase
       .from("company_profiles")
@@ -86,6 +92,7 @@ export function createSupabaseCompanyProfileService(
         company_website: input.companyWebsite ?? null,
         company_address: input.companyAddress ?? null,
         footer_message: input.footerMessage ?? null,
+        portal_domain: domainCheck.normalized ?? null,
         created_by: actorId,
       })
       .select()
@@ -104,10 +111,17 @@ export function createSupabaseCompanyProfileService(
       companyWebsite: string | null;
       companyAddress: string | null;
       footerMessage: string | null;
+      portalDomain: string | null;
     }>
   ): Promise<CompanyProfile> {
     if (changes.companyName !== undefined && !changes.companyName.trim()) {
       throw new Error("A business name is required.");
+    }
+    let normalizedPortalDomain: string | null | undefined;
+    if (changes.portalDomain !== undefined) {
+      const domainCheck = validatePortalDomain(changes.portalDomain ?? "");
+      if (!domainCheck.valid) throw new Error(domainCheck.message ?? "Invalid portal domain.");
+      normalizedPortalDomain = domainCheck.normalized ?? null;
     }
     const actorId = await currentUserId();
     const payload: Record<string, unknown> = { updated_by: actorId, updated_at: new Date().toISOString() };
@@ -118,6 +132,7 @@ export function createSupabaseCompanyProfileService(
     if (changes.companyWebsite !== undefined) payload.company_website = changes.companyWebsite;
     if (changes.companyAddress !== undefined) payload.company_address = changes.companyAddress;
     if (changes.footerMessage !== undefined) payload.footer_message = changes.footerMessage;
+    if (normalizedPortalDomain !== undefined) payload.portal_domain = normalizedPortalDomain;
 
     const { data, error } = await supabase.from("company_profiles").update(payload).eq("id", profileId).select().single();
     if (error) throw new Error(`Failed to update business profile: ${error.message}`);

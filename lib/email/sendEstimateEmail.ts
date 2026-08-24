@@ -160,7 +160,7 @@ export async function sendEstimateEmail(input: SendEstimateEmailInput): Promise<
   // Brand-resolved by profile id, not request.nextUrl.origin — see
   // lib/portalDomain.ts's header. input.origin is only the fallback
   // for a null/unmapped profile.
-  const portalUrl = `${resolvePortalOrigin(data.estimate.profile_id)}/portal/${data.estimate.customer_token}`;
+  const portalUrl = `${await resolvePortalOrigin(input.supabase, data.estimate.profile_id)}/portal/${data.estimate.customer_token}`;
 
   const { docTitle, bodyHtml } = renderEstimateProposalHtml(data);
   const proposalHtml = pdfDocument({ docTitle, bodyHtml });
