@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Trash2, ChevronDown, FolderPlus } from "lucide-react";
+import { Plus, Trash2, ChevronDown, FolderPlus, Pencil } from "lucide-react";
 import type { EstimateLineItem } from "@/lib/services/estimateService";
 import { calculateLineItemTotal, calculateSubtotal } from "@/lib/services/financialCalculations";
 
@@ -38,7 +38,7 @@ function blankItem(groupName: string | null = null): DraftLineItem {
  * that array, not a different data structure.
  */
 export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; onChange: (items: DraftLineItem[]) => void }) {
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [collapsed, setCollapsed] = useState<Record<number, boolean>>({});
 
   function updateItem(index: number, changes: Partial<DraftLineItem>) {
     onChange(items.map((item, i) => (i === index ? { ...item, ...changes } : item)));
@@ -105,26 +105,38 @@ export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; on
 
       {ungrouped.length > 0 && <ItemRows entries={ungrouped} onUpdate={updateItem} onRemove={removeItem} />}
 
-      {groups.map((group) => {
+      {groups.map((group, groupIndex) => {
         const groupTotal = calculateSubtotal(group.entries.map((e) => ({ total: calculateLineItemTotal(e.item) })));
-        const isCollapsed = collapsed[group.name] ?? false;
+        const isCollapsed = collapsed[groupIndex] ?? false;
         return (
-          <div key={group.name} className="rounded-lg border border-border/70 bg-muted/20">
+          // Keyed by position, NOT group.name: the name is a live-edited
+          // text field, and a key that changes on every keystroke makes
+          // React unmount/remount this whole block each time — which is
+          // exactly what made the input lose focus after one character.
+          // Position stays stable while typing; only add/remove project
+          // changes it, which already re-renders this list anyway.
+          <div key={groupIndex} className="rounded-lg border border-border/70 bg-muted/20">
             <div className="flex items-center gap-2 px-2.5 py-1.5">
               <button
                 type="button"
-                onClick={() => setCollapsed((c) => ({ ...c, [group.name]: !isCollapsed }))}
+                onClick={() => setCollapsed((c) => ({ ...c, [groupIndex]: !isCollapsed }))}
                 aria-label={isCollapsed ? "Expand project" : "Collapse project"}
                 className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted/60"
               >
                 <ChevronDown className={`size-3.5 transition-transform ${isCollapsed ? "-rotate-90" : ""}`} />
               </button>
-              <input
-                value={group.name}
-                onChange={(e) => renameGroup(group.name, e.target.value)}
-                placeholder="Project name"
-                className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-xs font-semibold text-foreground outline-none hover:border-input focus-visible:border-ring focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-ring/20"
-              />
+              {/* A visible border + pencil icon at rest — a borderless
+                  field that only gained a border on hover/focus read as
+                  plain text, not something you could click to rename. */}
+              <div className="relative min-w-0 flex-1">
+                <input
+                  value={group.name}
+                  onChange={(e) => renameGroup(group.name, e.target.value)}
+                  placeholder="Project name"
+                  className="w-full min-w-0 rounded-md border border-border/70 bg-background px-1.5 py-1 pr-6 text-xs font-semibold text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
+                />
+                <Pencil className="pointer-events-none absolute right-1.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/60" />
+              </div>
               <span className="shrink-0 text-[10.5px] text-muted-foreground">
                 {group.entries.length} item{group.entries.length === 1 ? "" : "s"}
               </span>
