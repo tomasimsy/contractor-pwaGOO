@@ -1,6 +1,7 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { Plus, Trash2, ChevronDown, FolderPlus } from "lucide-react";
 import type { EstimateLineItem } from "@/lib/services/estimateService";
 import { calculateLineItemTotal, calculateSubtotal } from "@/lib/services/financialCalculations";
 
@@ -9,6 +10,14 @@ export type DraftLineItem = Omit<EstimateLineItem, "id" | "total">;
 const CATEGORIES: DraftLineItem["category"][] = ["material", "labor", "other"];
 const UNITS: NonNullable<DraftLineItem["unit"]>[] = ["EA", "SF", "SQFT", "SQ", "LF", "FT", "HR", "DAY", "LS"];
 
+const formatMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+
+type Entry = { item: DraftLineItem; index: number };
+
+function blankItem(groupName: string | null = null): DraftLineItem {
+  return { category: "material", name: "", description: null, quantity: 1, unitPrice: 0, unit: null, taxable: true, groupName };
+}
+
 /**
  * The shared line-item table for Create/Edit Estimate — the ONE place
  * this app edits estimate line items, matching contractor-pwa's single
@@ -16,34 +25,164 @@ const UNITS: NonNullable<DraftLineItem["unit"]>[] = ["EA", "SF", "SQFT", "SQ", "
  * of a parallel implementation. Every total shown here is derived via
  * financialCalculations.ts (calculateLineItemTotal/calculateSubtotal)
  * — this component never computes a total itself.
+ *
+ * Items with no `groupName` render as a flat list, exactly as every
+ * estimate did before project grouping existed — including every
+ * pre-existing estimate_items row, which has no groupName and needs
+ * none. Items sharing a groupName render together under a collapsible
+ * project header whose total is calculateSubtotal() over just that
+ * group's items — never a separately stored/editable number, so it
+ * can never drift from the items underneath it. `items` stays ONE
+ * flat array throughout (same shape EstimateForm already saves) —
+ * grouping is purely how this component chooses to render and edit
+ * that array, not a different data structure.
  */
 export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; onChange: (items: DraftLineItem[]) => void }) {
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
   function updateItem(index: number, changes: Partial<DraftLineItem>) {
     onChange(items.map((item, i) => (i === index ? { ...item, ...changes } : item)));
-  }
-
-  function addItem() {
-    onChange([...items, { category: "material", name: "", description: null, quantity: 1, unitPrice: 0, unit: null, taxable: true }]);
   }
 
   function removeItem(index: number) {
     onChange(items.filter((_, i) => i !== index));
   }
 
+  function addItem() {
+    onChange([...items, blankItem()]);
+  }
+
+  function addProject() {
+    const existingNames = new Set(items.filter((i) => i.groupName).map((i) => i.groupName));
+    let name = "New Project";
+    let n = 2;
+    while (existingNames.has(name)) {
+      name = `New Project ${n}`;
+      n += 1;
+    }
+    onChange([...items, blankItem(name)]);
+  }
+
+  function addItemToGroup(groupName: string) {
+    onChange([...items, blankItem(groupName)]);
+  }
+
+  function renameGroup(oldName: string, newName: string) {
+    onChange(items.map((item) => (item.groupName === oldName ? { ...item, groupName: newName } : item)));
+  }
+
+  function removeGroup(groupName: string, count: number) {
+    if (!window.confirm(`Remove project "${groupName}" and its ${count} item${count === 1 ? "" : "s"}?`)) return;
+    onChange(items.filter((item) => item.groupName !== groupName));
+  }
+
+  const ungrouped: Entry[] = items.map((item, index) => ({ item, index })).filter((e) => !e.item.groupName);
+
+  const groupOrder: string[] = [];
+  for (const item of items) {
+    if (item.groupName && !groupOrder.includes(item.groupName)) groupOrder.push(item.groupName);
+  }
+  const groups = groupOrder.map((name) => ({
+    name,
+    entries: items.map((item, index) => ({ item, index })).filter((e) => e.item.groupName === name),
+  }));
+
   const subtotal = calculateSubtotal(items.map((item) => ({ total: calculateLineItemTotal(item) })));
 
   return (
     <div className="space-y-3">
-      {/* Item count — the outer Section header already says "Scope —
-          Line Items"; this used to be a second full header (icon +
-          title + subtitle) duplicating that, wrapped in its own card
-          border/padding. One line is enough context here. */}
       <div className="flex items-center justify-end">
         <div className="text-xs font-medium text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-md border border-border/40">
           Items: <span className="font-semibold text-foreground">{items.length}</span>
         </div>
       </div>
 
+      {items.length === 0 && (
+        <div className="rounded-lg border border-border/80 bg-background px-3 py-8 text-center text-xs text-muted-foreground">
+          No line items yet. Click &quot;Add Item&quot; or &quot;Add Project&quot; below to start building your estimate.
+        </div>
+      )}
+
+      {ungrouped.length > 0 && <ItemRows entries={ungrouped} onUpdate={updateItem} onRemove={removeItem} />}
+
+      {groups.map((group) => {
+        const groupTotal = calculateSubtotal(group.entries.map((e) => ({ total: calculateLineItemTotal(e.item) })));
+        const isCollapsed = collapsed[group.name] ?? false;
+        return (
+          <div key={group.name} className="rounded-lg border border-border/70 bg-muted/20">
+            <div className="flex items-center gap-2 px-2.5 py-1.5">
+              <button
+                type="button"
+                onClick={() => setCollapsed((c) => ({ ...c, [group.name]: !isCollapsed }))}
+                aria-label={isCollapsed ? "Expand project" : "Collapse project"}
+                className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted/60"
+              >
+                <ChevronDown className={`size-3.5 transition-transform ${isCollapsed ? "-rotate-90" : ""}`} />
+              </button>
+              <input
+                value={group.name}
+                onChange={(e) => renameGroup(group.name, e.target.value)}
+                placeholder="Project name"
+                className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-xs font-semibold text-foreground outline-none hover:border-input focus-visible:border-ring focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-ring/20"
+              />
+              <span className="shrink-0 text-[10.5px] text-muted-foreground">
+                {group.entries.length} item{group.entries.length === 1 ? "" : "s"}
+              </span>
+              <span className="shrink-0 text-xs font-semibold text-foreground tabular-nums">{formatMoney(groupTotal)}</span>
+              <button
+                type="button"
+                onClick={() => removeGroup(group.name, group.entries.length)}
+                aria-label="Remove project"
+                className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-danger/10 hover:text-danger transition-colors"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            </div>
+
+            {!isCollapsed && (
+              <div className="space-y-2 border-t border-border/60 px-2 pb-2 pt-2">
+                {group.entries.length > 0 && <ItemRows entries={group.entries} onUpdate={updateItem} onRemove={removeItem} />}
+                <button
+                  type="button"
+                  onClick={() => addItemToGroup(group.name)}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-primary hover:bg-primary/10"
+                >
+                  <Plus className="size-3" /> Add Item
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Footer Controls & Subtotal Breakdown */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-border/60">
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={addItem} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-medium text-white hover:bg-emerald-700 shadow-2xs transition-all">
+            <Plus className="size-3.5 text-white" /> Add Item
+          </button>
+          <button type="button" onClick={addProject} className="inline-flex items-center gap-1.5 rounded-lg border border-input bg-background px-3.5 py-2 text-xs font-medium text-foreground hover:bg-muted transition-colors">
+            <FolderPlus className="size-3.5" /> Add Project
+          </button>
+        </div>
+        <div className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-1.5 border border-border/50 text-xs">
+          <span className="text-muted-foreground">Subtotal:</span>
+          <span className="font-semibold text-foreground text-sm">{formatMoney(subtotal)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Renders one flat set of line-item rows (mobile cards + desktop
+ * table) — shared by the ungrouped list and every project group, so
+ * grouping never duplicates this markup. `entries` carry each item's
+ * ORIGINAL index into the full flat array, so update/remove always
+ * operate on the same single source of truth regardless of which
+ * group (or no group) an item is currently rendered under. */
+function ItemRows({ entries, onUpdate, onRemove }: { entries: Entry[]; onUpdate: (index: number, changes: Partial<DraftLineItem>) => void; onRemove: (index: number) => void }) {
+  return (
+    <>
       {/* ---------- MOBILE: one card per line item ----------
           The table below has seven columns and fixed-width inputs
           (`w-20`, `w-24`, `min-w-[140px]`), which together overflow any
@@ -51,18 +190,18 @@ export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; on
           stack full-width; from `sm` up the table renders unchanged.
           Same state, same handlers — only the arrangement differs. */}
       <div className="space-y-2 sm:hidden">
-        {items.map((item, i) => (
-          <div key={i} className="space-y-2 rounded-lg border border-border/80 bg-background p-2.5 shadow-2xs">
+        {entries.map(({ item, index }) => (
+          <div key={index} className="space-y-2 rounded-lg border border-border/80 bg-background p-2.5 shadow-2xs">
             <div className="flex items-start gap-2">
               <input
                 value={item.name}
-                onChange={(e) => updateItem(i, { name: e.target.value })}
+                onChange={(e) => onUpdate(index, { name: e.target.value })}
                 placeholder="Item name"
                 className="w-full min-w-0 rounded-md border border-input bg-background px-2.5 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
               />
               <button
                 type="button"
-                onClick={() => removeItem(i)}
+                onClick={() => onRemove(index)}
                 aria-label="Remove line item"
                 className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger"
               >
@@ -75,7 +214,7 @@ export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; on
                 <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Category</span>
                 <select
                   value={item.category}
-                  onChange={(e) => updateItem(i, { category: e.target.value as DraftLineItem["category"] })}
+                  onChange={(e) => onUpdate(index, { category: e.target.value as DraftLineItem["category"] })}
                   className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs font-medium capitalize outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
                 >
                   {CATEGORIES.map((c) => (
@@ -90,7 +229,7 @@ export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; on
                   min="0"
                   step="any"
                   value={item.quantity}
-                  onChange={(e) => updateItem(i, { quantity: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => onUpdate(index, { quantity: parseFloat(e.target.value) || 0 })}
                   className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
                 />
               </label>
@@ -98,7 +237,7 @@ export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; on
                 <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Unit</span>
                 <select
                   value={item.unit ?? ""}
-                  onChange={(e) => updateItem(i, { unit: (e.target.value || null) as DraftLineItem["unit"] })}
+                  onChange={(e) => onUpdate(index, { unit: (e.target.value || null) as DraftLineItem["unit"] })}
                   className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
                 >
                   <option value="">—</option>
@@ -117,24 +256,17 @@ export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; on
                   min="0"
                   step="any"
                   value={item.unitPrice}
-                  onChange={(e) => updateItem(i, { unitPrice: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => onUpdate(index, { unitPrice: parseFloat(e.target.value) || 0 })}
                   className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
                 />
               </label>
               <div className="text-right">
                 <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Total</span>
-                <span className="block py-1.5 text-xs font-semibold text-foreground">
-                  {calculateLineItemTotal(item).toLocaleString("en-US", { style: "currency", currency: "USD" })}
-                </span>
+                <span className="block py-1.5 text-xs font-semibold text-foreground">{formatMoney(calculateLineItemTotal(item))}</span>
               </div>
             </div>
           </div>
         ))}
-        {items.length === 0 && (
-          <div className="rounded-lg border border-border/80 bg-background px-3 py-8 text-center text-xs text-muted-foreground">
-            No line items yet. Click &quot;Add line item&quot; below to start building your estimate.
-          </div>
-        )}
       </div>
 
       {/* Table Container with clear separation */}
@@ -152,12 +284,12 @@ export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; on
             </tr>
           </thead>
           <tbody className="divide-y divide-border/60">
-            {items.map((item, i) => (
-              <tr key={i} className="group hover:bg-muted/30 transition-colors">
+            {entries.map(({ item, index }) => (
+              <tr key={index} className="group hover:bg-muted/30 transition-colors">
                 <td className="px-3 py-2">
                   <select
                     value={item.category}
-                    onChange={(e) => updateItem(i, { category: e.target.value as DraftLineItem["category"] })}
+                    onChange={(e) => onUpdate(index, { category: e.target.value as DraftLineItem["category"] })}
                     className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs font-medium capitalize outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
                   >
                     {CATEGORIES.map((c) => (
@@ -168,7 +300,7 @@ export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; on
                 <td className="px-3 py-2">
                   <input
                     value={item.name}
-                    onChange={(e) => updateItem(i, { name: e.target.value })}
+                    onChange={(e) => onUpdate(index, { name: e.target.value })}
                     placeholder="Item name"
                     className="w-full min-w-[140px] rounded-md border border-input bg-background px-2.5 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
                   />
@@ -179,14 +311,14 @@ export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; on
                     min="0"
                     step="any"
                     value={item.quantity}
-                    onChange={(e) => updateItem(i, { quantity: parseFloat(e.target.value) || 0 })}
+                    onChange={(e) => onUpdate(index, { quantity: parseFloat(e.target.value) || 0 })}
                     className="w-20 rounded-md border border-input bg-background px-2.5 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
                   />
                 </td>
                 <td className="px-3 py-2">
                   <select
                     value={item.unit ?? ""}
-                    onChange={(e) => updateItem(i, { unit: (e.target.value || null) as DraftLineItem["unit"] })}
+                    onChange={(e) => onUpdate(index, { unit: (e.target.value || null) as DraftLineItem["unit"] })}
                     className="w-20 rounded-md border border-input bg-background px-2 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
                   >
                     <option value="">—</option>
@@ -201,43 +333,21 @@ export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; on
                     min="0"
                     step="any"
                     value={item.unitPrice}
-                    onChange={(e) => updateItem(i, { unitPrice: parseFloat(e.target.value) || 0 })}
+                    onChange={(e) => onUpdate(index, { unitPrice: parseFloat(e.target.value) || 0 })}
                     className="w-24 rounded-md border border-input bg-background px-2.5 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
                   />
                 </td>
-                <td className="px-3 py-2 text-right text-xs font-semibold text-foreground">
-                  {calculateLineItemTotal(item).toLocaleString("en-US", { style: "currency", currency: "USD" })}
-                </td>
+                <td className="px-3 py-2 text-right text-xs font-semibold text-foreground">{formatMoney(calculateLineItemTotal(item))}</td>
                 <td className="px-2 py-2 text-right">
-                  <button type="button" onClick={() => removeItem(i)} aria-label="Remove line item" className="rounded-md p-1.5 text-muted-foreground hover:bg-danger/10 hover:text-danger transition-colors">
+                  <button type="button" onClick={() => onRemove(index)} aria-label="Remove line item" className="rounded-md p-1.5 text-muted-foreground hover:bg-danger/10 hover:text-danger transition-colors">
                     <Trash2 className="size-3.5" />
                   </button>
                 </td>
               </tr>
             ))}
-            {items.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-3 py-8 text-center text-xs text-muted-foreground">
-                  No line items yet. Click &quot;Add line item&quot; below to start building your estimate.
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
-
-      {/* Footer Controls & Subtotal Breakdown */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-border/60">
-        <button type="button" onClick={addItem} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-medium text-white hover:bg-emerald-700 shadow-2xs transition-all">
-          <Plus className="size-3.5 text-white" /> Add line item
-        </button>
-        <div className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-1.5 border border-border/50 text-xs">
-          <span className="text-muted-foreground">Subtotal:</span>
-          <span className="font-semibold text-foreground text-sm">
-            {subtotal.toLocaleString("en-US", { style: "currency", currency: "USD" })}
-          </span>
-        </div>
-      </div>
-    </div>
+    </>
   );
 }

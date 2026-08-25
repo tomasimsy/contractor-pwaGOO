@@ -111,6 +111,7 @@ interface EstimateItemRow {
   total: number;
   taxable: boolean;
   deleted_at: string | null;
+  group_name: string | null;
 }
 
 function rowToEstimate(row: EstimateRow): Estimate {
@@ -160,6 +161,7 @@ function itemRowToLineItem(row: EstimateItemRow): EstimateLineItem {
     unit: (row.unit as EstimateLineItem["unit"]) ?? null,
     total: row.total,
     taxable: row.taxable,
+    groupName: row.group_name ?? null,
   };
 }
 
@@ -310,6 +312,7 @@ export function createSupabaseEstimateService(
       source: "estimate_item" as const,
       areaId: null,
       areaName: null,
+      groupName: li.groupName ?? null,
     }));
   }
 
@@ -517,6 +520,7 @@ export function createSupabaseEstimateService(
               unit: li.unit ?? null,
               total: li.total,
               taxable: li.taxable,
+              group_name: li.groupName ?? null,
             }))
           );
           if (itemsError) throw new Error(`Failed to save estimate line items: ${itemsError.message}`);
@@ -576,6 +580,7 @@ export function createSupabaseEstimateService(
           unit: li.unit ?? null,
           total: li.total,
           taxable: li.taxable,
+          group_name: li.groupName ?? null,
         }))
       );
       if (insertError) throw new Error(`Failed to save estimate line items: ${insertError.message}`);

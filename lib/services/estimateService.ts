@@ -29,6 +29,14 @@ export interface EstimateLineItem {
   unit?: EstimateLineItemUnit | null;
   total: number;
   taxable: boolean;
+  /** Optional project/section grouping — items sharing the same
+   * groupName render together with an automatically-computed project
+   * total (sum of that group's items, via calculateSubtotal — never a
+   * separately stored/editable number). Null/undefined = ungrouped,
+   * rendered flat exactly as every estimate did before this field
+   * existed; every pre-existing estimate_items row has no value here
+   * and needs none for correct rendering. */
+  groupName?: string | null;
 }
 
 export interface Estimate extends AuditedEntity {
@@ -142,6 +150,10 @@ export interface ScopeLine {
    * in the PDF. Null for standard estimates. */
   areaId?: UUID | null;
   areaName?: string | null;
+  /** Standard estimates only — the item's project grouping, if any
+   * (see EstimateLineItem.groupName). Always null for roofing lines,
+   * which already group by areaName instead. */
+  groupName?: string | null;
 }
 
 export interface EstimateService {

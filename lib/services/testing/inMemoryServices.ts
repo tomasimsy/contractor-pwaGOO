@@ -674,7 +674,7 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
       return estimate.lineItems.map((li) => ({
         id: li.id, category: li.category, name: li.name, description: li.description,
         quantity: li.quantity, unitPrice: li.unitPrice, unit: li.unit ?? null, total: li.total,
-        source: "estimate_item" as const, areaId: null, areaName: null,
+        source: "estimate_item" as const, areaId: null, areaName: null, groupName: li.groupName ?? null,
       }));
     }
 

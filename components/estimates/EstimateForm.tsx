@@ -227,7 +227,7 @@ const [pricingOpen, setPricingOpen] = useState(true);
   const [profileId, setProfileId] = useState(estimate?.profileId ?? "");
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [lineItems, setLineItems] = useState<DraftLineItem[]>(
-    initialLineItems?.map((li) => ({ category: li.category, name: li.name, description: li.description, quantity: li.quantity, unitPrice: li.unitPrice, unit: li.unit ?? null, taxable: li.taxable })) ?? []
+    initialLineItems?.map((li) => ({ category: li.category, name: li.name, description: li.description, quantity: li.quantity, unitPrice: li.unitPrice, unit: li.unit ?? null, taxable: li.taxable, groupName: li.groupName ?? null })) ?? []
   );
   const [roofingAreas, setRoofingAreas] = useState<RoofingArea[]>([]);
   const [estimatePhotos, setEstimatePhotos] = useState<{ before: EstimatePhoto[]; after: EstimatePhoto[] }>({ before: [], after: [] });

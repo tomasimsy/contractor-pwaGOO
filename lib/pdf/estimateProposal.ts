@@ -338,38 +338,72 @@ export function renderEstimateProposalHtml(data: EstimateProposalData): { docTit
         : ""
     }
 
-    <!-- Standard Line Items -->
+    <!-- Standard Line Items — grouped into projects when the estimate
+         uses them (item.group_name), otherwise one flat table exactly
+         as every estimate rendered before grouping existed. Every
+         pre-existing estimate_items row has no group_name, so it falls
+         straight into the ungrouped branch below with no visual change.
+         A project's total is the sum of just that group's own items'
+         total field — the same field the overall subtotal already
+         sums, never a separately computed number. -->
     ${
       estimateItems.length > 0
         ? `
           <div class="section">
             <div class="section-title">Additional Items</div>
-            <table>
-              <thead>
+            ${(() => {
+              type Item = { name?: string; description?: string; quantity?: number; unit?: string | null; unit_price?: number; total?: number; group_name?: string | null };
+              const itemRow = (item: Item) => `
                 <tr>
-                  <th style="width:25%">Item</th>
-                  <th style="width:35%">Description</th>
-                  <th style="width:10%">Qty</th>
-                  <th style="width:15%">Unit Price</th>
-                  <th style="width:15%">Total</th>
+                  <td>${item.name || "-"}</td>
+                  <td>${item.description || "-"}</td>
+                  <td>${item.quantity || 0} ${item.unit || ""}</td>
+                  <td>${formatCurrency(item.unit_price || 0)}</td>
+                  <td><strong>${formatCurrency(item.total || 0)}</strong></td>
                 </tr>
-              </thead>
-              <tbody>
-                ${estimateItems
-                  .map(
-                    (item: { name?: string; description?: string; quantity?: number; unit?: string | null; unit_price?: number; total?: number }) => `
-                      <tr>
-                        <td>${item.name || "-"}</td>
-                        <td>${item.description || "-"}</td>
-                        <td>${item.quantity || 0} ${item.unit || ""}</td>
-                        <td>${formatCurrency(item.unit_price || 0)}</td>
-                        <td><strong>${formatCurrency(item.total || 0)}</strong></td>
-                      </tr>
-                    `
-                  )
-                  .join("")}
-              </tbody>
-            </table>
+              `;
+              const tableOpen = `
+                <table>
+                  <thead>
+                    <tr>
+                      <th style="width:25%">Item</th>
+                      <th style="width:35%">Description</th>
+                      <th style="width:10%">Qty</th>
+                      <th style="width:15%">Unit Price</th>
+                      <th style="width:15%">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+              `;
+              const tableClose = `</tbody></table>`;
+
+              const ungrouped = (estimateItems as Item[]).filter((i) => !i.group_name);
+              const groupOrder: string[] = [];
+              for (const i of estimateItems as Item[]) {
+                if (i.group_name && !groupOrder.includes(i.group_name)) groupOrder.push(i.group_name);
+              }
+
+              const ungroupedHtml = ungrouped.length > 0 ? `${tableOpen}${ungrouped.map(itemRow).join("")}${tableClose}` : "";
+
+              const groupsHtml = groupOrder
+                .map((groupName) => {
+                  const groupItems = (estimateItems as Item[]).filter((i) => i.group_name === groupName);
+                  const groupTotal = groupItems.reduce((sum, i) => sum + (i.total || 0), 0);
+                  return `
+                    <div style="margin-top:${ungroupedHtml || groupName !== groupOrder[0] ? "14px" : "0"};">
+                      <div style="font-size:11.5px; font-weight:700; color:#111827; margin-bottom:4px;">${groupName}</div>
+                      ${tableOpen}${groupItems.map(itemRow).join("")}${tableClose}
+                      <div style="display:flex; justify-content:flex-end; gap:8px; padding:5px 3px 0; font-size:10.5px; font-weight:700; color:#111827;">
+                        <span style="color:#6b7280; font-weight:600;">Project Total</span>
+                        <span>${formatCurrency(groupTotal)}</span>
+                      </div>
+                    </div>
+                  `;
+                })
+                .join("");
+
+              return `${ungroupedHtml}${groupsHtml}`;
+            })()}
           </div>
         `
         : ""

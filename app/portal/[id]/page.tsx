@@ -23,7 +23,7 @@ type PortalPayload = {
     tax_rate: number | null; total: number | null; deposit_amount: number | null;
     signature: { type?: string; value?: string; date?: string } | null; created_at: string;
   } | null;
-  line_items?: { id: string; category?: string | null; name?: string; description?: string; quantity?: number; unit_price?: number; total?: number }[];
+  line_items?: { id: string; category?: string | null; name?: string; description?: string; quantity?: number; unit_price?: number; total?: number; group_name?: string | null }[];
   change_orders?: { change_order_number?: string; title?: string; description?: string; total_amount?: number; tax?: number; approved_at?: string }[];
   invoices?: {
     id: string; invoice_number: string | null; status: string | null; issue_date: string | null; due_date: string | null;
@@ -106,6 +106,17 @@ export default async function CustomerPortalPage({
     : { data: null };
   const profile = parseCompanyProfileRow(profileData as Record<string, unknown> | null);
 
+  // Superset of get_customer_portal's line_items (adds group_name, the
+  // estimate form/PDF's project grouping) — see get_portal_estimate_items's
+  // own comment for why this is a second, narrowly-scoped function
+  // rather than a rewrite of get_customer_portal. Falls back to
+  // payload.line_items (still correct, just ungrouped) if this
+  // migration hasn't run yet or the estimate has no items.
+  const { data: portalItemsData } = token && estimate
+    ? await supabase.rpc("get_portal_estimate_items", { p_token: token })
+    : { data: null };
+  const portalItems = portalItemsData as PortalPayload["line_items"] | null;
+
   if (!estimate) {
     return (
       <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-6 text-center bg-gray-50">
@@ -126,7 +137,7 @@ export default async function CustomerPortalPage({
 
   const company = mergeProfileOverrides(mergeCompanyDefaults(payload?.company ?? null), profile);
   const client = payload?.client ?? null;
-  const lineItems = payload?.line_items ?? [];
+  const lineItems = portalItems && portalItems.length > 0 ? portalItems : (payload?.line_items ?? []);
   const changeOrders = payload?.change_orders ?? [];
   const invoices = payload?.invoices ?? [];
   const today = new Date().toISOString().slice(0, 10);
@@ -159,6 +170,23 @@ export default async function CustomerPortalPage({
     return { label, items, subtotal: calculateSubtotal(items.map((i) => ({ total: i.total ?? 0 }))) };
   }).filter((g) => g.items.length > 0);
 
+  // Project grouping (estimate form's "+ Add Project") takes priority
+  // over category grouping when present — it's the more specific,
+  // customer-meaningful label. Items with no group_name (every
+  // estimate created before grouping existed, or any ungrouped item
+  // on a newer one) still render flat below the named projects,
+  // exactly as this page always rendered them.
+  const projectOrder: string[] = [];
+  for (const i of lineItems) {
+    if (i.group_name && !projectOrder.includes(i.group_name)) projectOrder.push(i.group_name);
+  }
+  const hasProjectGroups = projectOrder.length > 0;
+  const projectGroups = projectOrder.map((name) => {
+    const items = lineItems.filter((i) => i.group_name === name);
+    return { name, items, subtotal: calculateSubtotal(items.map((i) => ({ total: i.total ?? 0 }))) };
+  });
+  const ungroupedItems = hasProjectGroups ? lineItems.filter((i) => !i.group_name) : [];
+
   const approvedChangeOrderItems = changeOrders.map((co, i) => ({
     id: `${co.change_order_number ?? "co"}-${i}`,
     name: co.change_order_number ? `${co.change_order_number} — ${co.title ?? "Change order"}` : (co.title ?? "Change order"),
@@ -176,7 +204,7 @@ export default async function CustomerPortalPage({
   const scopeItemCount =
     (lineItemsAreAuthoritative ? lineItems.length : 1) + approvedChangeOrderItems.length;
 
-  const flatScopeItems = lineItemsAreAuthoritative && !hasCategories ? lineItems : [];
+  const flatScopeItems = lineItemsAreAuthoritative && !hasCategories && !hasProjectGroups ? lineItems : [];
 
   return (
     <div className="min-h-screen bg-gray-50 pb-16">
@@ -263,6 +291,31 @@ export default async function CustomerPortalPage({
                       <span className="font-medium">{money(storedSubtotal)}</span>
                     </div>
                   )}
+                  {lineItemsAreAuthoritative && hasProjectGroups && projectGroups.map((group) => (
+                    <div key={group.name} className="space-y-1 pb-1.5">
+                      <p className="font-bold text-gray-900 text-[11px]">{group.name}</p>
+                      {group.items.map((item) => (
+                        <div key={item.id} className="flex justify-between items-start gap-2 pl-2 text-gray-800">
+                          <span className="truncate">
+                            {item.name} {(item.quantity ?? 0) > 1 && <span className="text-gray-500">× {item.quantity}</span>}
+                          </span>
+                          <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
+                        </div>
+                      ))}
+                      <div className="flex justify-between items-center pl-2 text-gray-500 font-semibold">
+                        <span>Project Total</span>
+                        <span>{money(group.subtotal)}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {lineItemsAreAuthoritative && hasProjectGroups && ungroupedItems.map((item) => (
+                    <div key={item.id} className="flex justify-between items-start gap-2 text-gray-800">
+                      <span className="truncate">
+                        {item.name} {(item.quantity ?? 0) > 1 && <span className="text-gray-500">× {item.quantity}</span>}
+                      </span>
+                      <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
+                    </div>
+                  ))}
                   {flatScopeItems.map((item) => (
                     <div key={item.id} className="flex justify-between items-start gap-2 text-gray-800">
                       <span className="truncate">
@@ -271,7 +324,7 @@ export default async function CustomerPortalPage({
                       <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
                     </div>
                   ))}
-                  {lineItemsAreAuthoritative && scopeGroups.flatMap(g => g.items).map((item) => (
+                  {lineItemsAreAuthoritative && !hasProjectGroups && scopeGroups.flatMap(g => g.items).map((item) => (
                     <div key={item.id} className="flex justify-between items-start gap-2 text-gray-800">
                       <span className="truncate">
                         {item.name} {(item.quantity ?? 0) > 1 && <span className="text-gray-500">× {item.quantity}</span>}

@@ -13,7 +13,7 @@
  * subtotal come straight from EstimateService, revised total from the
  * shared calculateRevisedEstimateTotal(), same as before extraction.
  */
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, Fragment } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -458,6 +458,21 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
       ? "Cannot delete: this estimate has recorded expenses attached."
       : null;
 
+  // Project grouping (the estimate form's "+ Add Project") — same
+  // derivation the customer portal and PDF use: named groups first (in
+  // first-appearance order), then any ungrouped lines flat exactly as
+  // this page always rendered them. Every pre-existing scope line has
+  // no groupName and falls straight into ungroupedScopeLines.
+  const scopeGroupOrder: string[] = [];
+  for (const line of scopeLines) {
+    if (line.groupName && !scopeGroupOrder.includes(line.groupName)) scopeGroupOrder.push(line.groupName);
+  }
+  const scopeGroups = scopeGroupOrder.map((name) => {
+    const lines = scopeLines.filter((l) => l.groupName === name);
+    return { name, lines, subtotal: calculateSubtotal(lines.map((l) => ({ total: l.total }))) };
+  });
+  const ungroupedScopeLines = scopeGroupOrder.length > 0 ? scopeLines.filter((l) => !l.groupName) : scopeLines;
+
   return (
     <PageContainer>
       {/* Top Toolbar / Header — wraps to a second row on narrow screens
@@ -852,7 +867,36 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
             line with the total right-aligned. Read-only either way —
             same values, same formatting, same palette. */}
         <div className="divide-y divide-emerald-100 rounded-lg border border-emerald-200 bg-white dark:divide-emerald-900/80 dark:border-emerald-800/80 dark:bg-emerald-950 sm:hidden">
-          {scopeLines.map((item) => (
+          {scopeGroups.map((group) => (
+            <div key={group.name}>
+              <div className="flex items-center justify-between bg-emerald-50/80 dark:bg-emerald-900/40 px-2.5 py-1.5">
+                <span className="text-[11px] font-bold text-emerald-900 dark:text-emerald-200">{group.name}</span>
+                <span className="text-[11px] font-semibold text-emerald-800 dark:text-emerald-300">{formatMoney(group.subtotal)}</span>
+              </div>
+              {group.lines.map((item) => (
+                <div key={item.id} className="px-2.5 py-2 pl-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-emerald-950 dark:text-white">{item.name}</div>
+                      {item.description && (
+                        <div className="mt-0.5 text-[11px] text-emerald-700/80 dark:text-emerald-300/80">
+                          {item.description}
+                        </div>
+                      )}
+                    </div>
+                    <div className="shrink-0 text-right text-xs font-semibold text-emerald-950 dark:text-white">
+                      {formatMoney(item.total)}
+                    </div>
+                  </div>
+                  <div className="mt-1 text-[11px] text-emerald-800 dark:text-emerald-200">
+                    {item.quantity}
+                    {item.unit ? ` ${item.unit}` : ""} × {formatMoney(item.unitPrice)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+          {ungroupedScopeLines.map((item) => (
             <div key={item.id} className="px-2.5 py-2">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
@@ -887,7 +931,34 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
               </tr>
             </thead>
             <tbody className="divide-y divide-emerald-100 dark:divide-emerald-900/80">
-              {scopeLines.map((item) => (
+              {scopeGroups.map((group) => (
+                <Fragment key={group.name}>
+                  <tr className="bg-emerald-50/80 dark:bg-emerald-900/40">
+                    <td colSpan={4} className="px-2 py-1.5 text-[11px] font-bold text-emerald-900 dark:text-emerald-200">{group.name}</td>
+                    <td className="px-2 py-1.5 text-right text-[11px] font-semibold text-emerald-800 dark:text-emerald-300">{formatMoney(group.subtotal)}</td>
+                  </tr>
+                  {group.lines.map((item) => (
+                    <tr key={item.id} className="hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors">
+                      <td className="px-2 py-1.5 pl-4">
+                        <div className="font-semibold text-emerald-950 dark:text-white">{item.name}</div>
+                        {item.description && (
+                          <div
+                            className="text-[11px] text-emerald-700/80 dark:text-emerald-300/80 truncate max-w-[180px]"
+                            title={item.description}
+                          >
+                            {item.description}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 text-center text-emerald-800 dark:text-emerald-200">{item.quantity}</td>
+                      <td className="px-2 py-1.5 text-center text-emerald-800 dark:text-emerald-200">{item.unit ?? "—"}</td>
+                      <td className="px-2 py-1.5 text-right text-emerald-800 dark:text-emerald-200">{formatMoney(item.unitPrice)}</td>
+                      <td className="px-2 py-1.5 text-right font-semibold text-emerald-950 dark:text-white">{formatMoney(item.total)}</td>
+                    </tr>
+                  ))}
+                </Fragment>
+              ))}
+              {ungroupedScopeLines.map((item) => (
                 <tr key={item.id} className="hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors">
                   <td className="px-2 py-1.5">
                     <div className="font-semibold text-emerald-950 dark:text-white">{item.name}</div>
