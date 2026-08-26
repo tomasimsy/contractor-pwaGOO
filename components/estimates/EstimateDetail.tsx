@@ -517,7 +517,13 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
             <Wallet className="size-3.5" />
             <span className="hidden sm:inline">Payment</span>
           </button>
-          <button type="button" onClick={handleDownloadPdf} className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors" title="PDF">
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            disabled
+            className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+            title="PDF"
+          >
             <Download className="size-3.5" />
             <span className="hidden sm:inline">PDF</span>
           </button>

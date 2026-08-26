@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadEstimateProposalData, renderEstimateProposalHtml } from "@/lib/pdf/estimateProposal";
 import { pdfDocument } from "@/lib/pdf/pdfLayout";
 import { htmlToPdfBuffer } from "@/lib/pdf/htmlToPdfBuffer";
-import { getResendClient, getFromAddress } from "@/lib/email/resendClient";
+import { getResendClient, getFromAddress, ONE_SQUARE_ROOFING_FROM_ADDRESS, ONE_SQUARE_ROOFING_REPLY_TO, ONE_SQUARE_ROOFING_BCC } from "@/lib/email/resendClient";
 import { resolvePortalOrigin } from "@/lib/portalDomain";
 import { recordEmailSent } from "@/lib/email/emailTracking";
 
@@ -197,15 +197,40 @@ export async function sendEstimateEmail(input: SendEstimateEmailInput): Promise<
     footerMessage: data.company.footer_message,
   });
 
+  // Scoped brand override: a ROOFING estimate sent under the "One
+  // Square Roofing" company/profile uses the verified onesquareroof.com
+  // custom domain (DKIM + rsend MX/SPF, confirmed verified in the
+  // Resend dashboard) instead of whatever company_email happens to be
+  // configured for that profile. Every other estimate type or profile
+  // is UNCHANGED — still resolves from companyEmail -> EMAIL_FROM_ADDRESS
+  // via getFromAddress, exactly as before this override existed.
+  // Matched on company_name (this codebase has no separate "is this
+  // the OSR brand" flag); startsWith/lowercased so the "LLC" suffix
+  // (or its absence) doesn't matter.
+  const isOneSquareRoofingRoofingEstimate =
+    data.estimate.estimate_type === "roofing" &&
+    (data.company.company_name || "").trim().toLowerCase().startsWith("one square roofing");
+
+  const fromAddress = isOneSquareRoofingRoofingEstimate
+    ? process.env.EMAIL_FROM_ADDRESS || ONE_SQUARE_ROOFING_FROM_ADDRESS
+    : `${data.company.company_name} <${getFromAddress(companyEmail)}>`;
+  const replyToAddress = isOneSquareRoofingRoofingEstimate
+    ? process.env.EMAIL_REPLY_TO || ONE_SQUARE_ROOFING_REPLY_TO
+    : undefined;
+  // Copies the mailbox itself on every send, since Resend/SES sends
+  // never touch office@'s own SMTP and so never land in that mailbox's
+  // Sent folder on their own — see ONE_SQUARE_ROOFING_BCC's own doc
+  // comment in resendClient.ts.
+  const bccAddress = isOneSquareRoofingRoofingEstimate
+    ? process.env.EMAIL_BCC || ONE_SQUARE_ROOFING_BCC
+    : undefined;
+
   try {
     const resend = getResendClient();
     const result = await resend.emails.send({
-      // companyEmail is already this estimate's resolved brand
-      // identity (Business Profile override applied, if one is
-      // selected — see lib/company.ts's mergeProfileOverrides), so a
-      // profile-A estimate sends from A's address and profile-B from
-      // B's automatically. Falls back to EMAIL_FROM_ADDRESS otherwise.
-      from: `${data.company.company_name} <${getFromAddress(companyEmail)}>`,
+      from: fromAddress,
+      ...(replyToAddress ? { replyTo: replyToAddress } : {}),
+      ...(bccAddress ? { bcc: bccAddress } : {}),
       to: recipient,
       subject: input.subject,
       html: emailHtml,
