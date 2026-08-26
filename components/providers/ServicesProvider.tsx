@@ -6,6 +6,7 @@ import { createServerAppServices } from "@/lib/services/server";
 import { createEstimatePhotoService } from "@/lib/services/supabase/estimatePhotoService";
 import { createSupabaseExpenseReceiptService } from "@/lib/services/supabase/expenseReceiptService";
 import { createRoofingAreaService } from "@/lib/services/supabase/roofingAreaService";
+import { createRoofingAreaTemplateService } from "@/lib/services/supabase/roofingAreaTemplateService";
 import { createSupabaseEstimateAreaLineItemService } from "@/lib/services/supabase/estimateAreaLineItemService";
 import { createSupabaseExpenseService } from "@/lib/services/supabase/expenseService";
 import { createSupabaseCompanyService } from "@/lib/services/supabase/companyService";
@@ -25,6 +26,7 @@ import type { EstimateService } from "@/lib/services/estimateService";
 import type { EstimatePhotoService } from "@/lib/services/estimatePhotoService";
 import type { ExpenseReceiptService } from "@/lib/services/expenseReceiptService";
 import type { RoofingAreaService } from "@/lib/services/roofingAreaService";
+import type { RoofingAreaTemplateService } from "@/lib/services/roofingAreaTemplateService";
 import type { EstimateAreaLineItemService } from "@/lib/services/estimateAreaLineItemService";
 import type { ChangeOrderService } from "@/lib/services/changeOrderService";
 import type { InvoiceService } from "@/lib/services/invoiceService";
@@ -54,6 +56,7 @@ export interface AppServices extends InMemoryServices {
   estimatePhotoService: EstimatePhotoService;
   expenseReceiptService: ExpenseReceiptService;
   roofingAreaService: RoofingAreaService;
+  roofingAreaTemplateService: RoofingAreaTemplateService;
   estimateAreaLineItemService: EstimateAreaLineItemService;
   changeOrderService: ChangeOrderService;
   invoiceService: InvoiceService;
@@ -161,6 +164,7 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
     const estimatePhotoService = createEstimatePhotoService(supabase);
     const expenseReceiptService = createSupabaseExpenseReceiptService(supabase);
     const roofingAreaService = createRoofingAreaService(supabase);
+    const roofingAreaTemplateService = createRoofingAreaTemplateService(supabase);
     const estimateAreaLineItemService = createSupabaseEstimateAreaLineItemService(supabase, inMemory.validationService);
     const companyService = createSupabaseCompanyService(supabase, currentUserId);
     const teamAssignmentService = createSupabaseTeamAssignmentService(supabase, inMemory.validationService, currentUserId);
@@ -207,6 +211,7 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
       estimatePhotoService,
       expenseReceiptService,
       roofingAreaService,
+      roofingAreaTemplateService,
       estimateAreaLineItemService,
       changeOrderService,
       invoiceService,

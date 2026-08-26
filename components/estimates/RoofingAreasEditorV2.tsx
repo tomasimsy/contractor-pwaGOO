@@ -32,6 +32,8 @@ import { calculateAreaRepairCost } from "@/lib/services/financialCalculations";
 import { ROOFING_AREA_QUANTITY_UNITS, type RoofingAreaQuantityUnit } from "@/lib/services/roofingAreaService";
 import type { RoofingArea, RoofingPhoto } from "@/lib/services";
 import { autoResizeTextarea } from "@/lib/autoResizeTextarea";
+import { EMERGENCY_ROOF_AREA_TEMPLATE } from "@/lib/estimateQuickTemplates";
+import type { RoofingAreaTemplate } from "@/lib/services/roofingAreaTemplateService";
 import type { UUID } from "@/lib/services/types";
 
 const formatMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -60,6 +62,11 @@ export interface RoofingAreaSaveInput {
 
 export interface RoofingAreasEditorV2Props {
   estimateId: UUID;
+  /** Needed to save/load the technician-created roof-area templates
+   * below (company-scoped) — optional only because a couple of test/
+   * story call sites don't pass it and the Save/Load Template UI
+   * simply doesn't render without it. */
+  companyId?: UUID;
   areas: RoofingArea[];
   onChange: (areas: RoofingArea[]) => void;
   /**
@@ -99,15 +106,17 @@ export interface RoofingAreasEditorV2Ref {
 }
 
 function RoofingAreasEditorV2Inner(
-  { estimateId, areas, onChange, onSave, onDelete, onAreaLineItemsSaved }: RoofingAreasEditorV2Props,
+  { estimateId, companyId, areas, onChange, onSave, onDelete, onAreaLineItemsSaved }: RoofingAreasEditorV2Props,
   ref: React.ForwardedRef<RoofingAreasEditorV2Ref>
 ) {
-  const { roofingAreaService } = useServices();
+  const { roofingAreaService, roofingAreaTemplateService } = useServices();
   const [savingAreaIds, setSavingAreaIds] = useState<Set<UUID>>(new Set());
   const [deletingAreaIds, setDeletingAreaIds] = useState<Set<UUID>>(new Set());
   const [savedAreaIds, setSavedAreaIds] = useState<Set<UUID>>(new Set());
   const [uploading, setUploading] = useState<{ [key: string]: boolean }>({});
   const [areaPhotos, setAreaPhotos] = useState<{ [areaId: string]: { before: RoofingPhoto[]; after: RoofingPhoto[] } }>({});
+  const [areaTemplates, setAreaTemplates] = useState<RoofingAreaTemplate[]>([]);
+  const [savingTemplateAreaIds, setSavingTemplateAreaIds] = useState<Set<UUID>>(new Set());
   const lineItemEditorRefs = useRef<{ [areaId: string]: RoofingAreaLineItemEditorHandle | null }>({});
   const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
 const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
@@ -131,6 +140,88 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
     };
     if (areas.length > 0) loadPhotos();
   }, [areas, roofingAreaService]);
+
+  useEffect(() => {
+    if (!companyId) return;
+    roofingAreaTemplateService.listForCompany(companyId).then(setAreaTemplates).catch((err) => {
+      console.error("Failed to load roof area templates:", err);
+    });
+  }, [companyId, roofingAreaTemplateService]);
+
+  /** Prefills a brand-new area from a technician-saved template — same
+   * "starting point, not a live link" contract as the hardcoded
+   * EMERGENCY_ROOF_AREA_TEMPLATE above, just sourced from the
+   * company's own saved templates instead of a fixed preset. */
+  const handleAddFromTemplate = useCallback(
+    (template: RoofingAreaTemplate) => {
+      const newArea: Partial<RoofingArea> = {
+        id: crypto.randomUUID() as UUID,
+        estimateId,
+        areaName: template.areaName,
+        sequenceNumber: areas.length,
+        scopeItems: template.scopeItems,
+        areaTotal: 0,
+        measurements: "",
+        inspectionNotes: "",
+        notes: "",
+        quantity: template.quantity,
+        quantityUnit: template.quantityUnit,
+        defect: template.defect,
+        location: template.location,
+        correctiveAction: template.correctiveAction,
+        materialsIncluded: template.materialsIncluded,
+        materialCost: template.materialCost,
+        laborCost: template.laborCost,
+        tax: template.tax,
+        estimatedRepairCost: calculateAreaRepairCost(template.materialCost, template.laborCost, template.tax),
+        companyId: "" as UUID,
+      };
+      onChange([...areas, newArea as RoofingArea]);
+    },
+    [areas, estimateId, onChange]
+  );
+
+  /** Saves the CURRENT state of one area's fields as a new named,
+   * company-scoped template the technician can reuse on future
+   * estimates — a snapshot at the moment of saving, never a live link
+   * back to this area (editing the area later never touches the
+   * template, and vice versa). */
+  const handleSaveAreaAsTemplate = useCallback(
+    async (area: RoofingArea) => {
+      if (!companyId) return;
+      const name = window.prompt("Save this area as a template. Template name:", area.areaName || "");
+      if (!name || !name.trim()) return;
+      setSavingTemplateAreaIds((prev) => new Set([...prev, area.id]));
+      try {
+        const created = await roofingAreaTemplateService.create({
+          companyId,
+          name: name.trim(),
+          areaName: area.areaName,
+          quantity: area.quantity ?? 1,
+          quantityUnit: area.quantityUnit ?? null,
+          defect: area.defect ?? null,
+          location: area.location ?? null,
+          correctiveAction: area.correctiveAction ?? null,
+          materialsIncluded: area.materialsIncluded ?? null,
+          scopeItems: area.scopeItems ?? null,
+          materialCost: area.materialCost ?? 0,
+          laborCost: area.laborCost ?? 0,
+          tax: area.tax ?? 0,
+        });
+        setAreaTemplates((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+      } catch (err) {
+        console.error("Failed to save area template:", err);
+        alert("Failed to save template. Please try again.");
+      } finally {
+        setSavingTemplateAreaIds((prev) => {
+          const next = new Set(prev);
+          next.delete(area.id);
+          return next;
+        });
+      }
+    },
+    [companyId, roofingAreaTemplateService]
+  );
 
   const handlePhotoUpload = useCallback(
     async (areaId: UUID, photoType: "before" | "after", file: File) => {
@@ -208,6 +299,38 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
       laborCost: 0,
       tax: 0,
       estimatedRepairCost: 0,
+      companyId: "" as UUID,
+    };
+    onChange([...areas, newArea as RoofingArea]);
+  }, [areas, estimateId, onChange]);
+
+  /** Same one-click "starting point, not a saved template" pattern as
+   * the standard estimate's "Load Emergency Response Template" —
+   * prefills a brand-new area's fields with emergency-leak boilerplate
+   * the technician then edits for the actual job, instead of typing
+   * the same defect/corrective-action text from scratch every time. */
+  const handleAddEmergencyTemplateArea = useCallback(() => {
+    const t = EMERGENCY_ROOF_AREA_TEMPLATE;
+    const newArea: Partial<RoofingArea> = {
+      id: crypto.randomUUID() as UUID,
+      estimateId,
+      areaName: t.areaName,
+      sequenceNumber: areas.length,
+      scopeItems: t.scopeItems,
+      areaTotal: 0,
+      measurements: "",
+      inspectionNotes: "",
+      notes: "",
+      quantity: t.quantity,
+      quantityUnit: t.quantityUnit,
+      defect: t.defect,
+      location: t.location,
+      correctiveAction: t.correctiveAction,
+      materialsIncluded: t.materialsIncluded,
+      materialCost: t.materialCost,
+      laborCost: t.laborCost,
+      tax: t.tax,
+      estimatedRepairCost: calculateAreaRepairCost(t.materialCost, t.laborCost, t.tax),
       companyId: "" as UUID,
     };
     onChange([...areas, newArea as RoofingArea]);
@@ -388,14 +511,39 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
     return (
       <div className="rounded-lg border border-dashed border-input p-8 text-center">
         <p className="text-sm text-muted-foreground mb-3">No roof areas yet</p>
-        <button
-          type="button"
-          onClick={handleAddArea}
-          disabled={savingAreaIds.size > 0 || deletingAreaIds.size > 0}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-        >
-          <Plus className="size-4" /> Add First Area
-        </button>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={handleAddArea}
+            disabled={savingAreaIds.size > 0 || deletingAreaIds.size > 0}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            <Plus className="size-4" /> Add First Area
+          </button>
+          <button
+            type="button"
+            onClick={handleAddEmergencyTemplateArea}
+            disabled={savingAreaIds.size > 0 || deletingAreaIds.size > 0}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
+          >
+            <Plus className="size-4" /> {EMERGENCY_ROOF_AREA_TEMPLATE.label}
+          </button>
+          {areaTemplates.length > 0 && (
+            <select
+              value=""
+              onChange={(e) => {
+                const t = areaTemplates.find((t) => t.id === e.target.value);
+                if (t) handleAddFromTemplate(t);
+              }}
+              className="rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none"
+            >
+              <option value="">Load a saved template…</option>
+              {areaTemplates.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
       </div>
     );
   }
@@ -427,6 +575,21 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
               <span className="text-xs font-semibold text-primary-foreground/90 tabular-nums">
                 {formatMoney(calculateAreaRepairCost(area.materialCost ?? 0, area.laborCost ?? 0, area.tax ?? 0))}
               </span>
+              {companyId && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSaveAreaAsTemplate(area);
+                  }}
+                  disabled={savingTemplateAreaIds.has(area.id)}
+                  aria-label="Save as template"
+                  title="Save as template"
+                  className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground/80 transition-colors hover:bg-primary-foreground/15 hover:text-primary-foreground disabled:opacity-50"
+                >
+                  {savingTemplateAreaIds.has(area.id) ? "Saving…" : "Save as Template"}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={(e) => {
@@ -769,14 +932,39 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
         </div>
       ))}
 
-      <button
-        type="button"
-        onClick={handleAddArea}
-        disabled={savingAreaIds.size > 0 || deletingAreaIds.size > 0}
-        className="w-full rounded-lg border-2 border-dashed border-primary/50 py-2.5 text-sm font-semibold text-primary transition-colors hover:border-primary hover:bg-primary/5 disabled:opacity-50"
-      >
-        <Plus className="inline size-4 mr-1" /> Add Another Area
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={handleAddArea}
+          disabled={savingAreaIds.size > 0 || deletingAreaIds.size > 0}
+          className="flex-1 rounded-lg border-2 border-dashed border-primary/50 py-2.5 text-sm font-semibold text-primary transition-colors hover:border-primary hover:bg-primary/5 disabled:opacity-50"
+        >
+          <Plus className="inline size-4 mr-1" /> Add Another Area
+        </button>
+        <button
+          type="button"
+          onClick={handleAddEmergencyTemplateArea}
+          disabled={savingAreaIds.size > 0 || deletingAreaIds.size > 0}
+          className="rounded-lg border-2 border-dashed border-input py-2.5 px-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary disabled:opacity-50"
+        >
+          <Plus className="inline size-4 mr-1" /> {EMERGENCY_ROOF_AREA_TEMPLATE.label}
+        </button>
+        {areaTemplates.length > 0 && (
+          <select
+            value=""
+            onChange={(e) => {
+              const t = areaTemplates.find((t) => t.id === e.target.value);
+              if (t) handleAddFromTemplate(t);
+            }}
+            className="rounded-lg border-2 border-dashed border-input bg-card px-3 py-2.5 text-sm font-semibold text-muted-foreground focus:border-ring focus:outline-none"
+          >
+            <option value="">Load a saved template…</option>
+            {areaTemplates.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+        )}
+      </div>
     </div>
   );
 }

@@ -6,6 +6,7 @@
  * changes how an estimate is saved or calculated.
  */
 import type { DraftLineItem } from "@/components/estimates/LineItemEditor";
+import type { RoofingAreaQuantityUnit } from "@/lib/services/roofingAreaService";
 
 export interface EstimateQuickTemplate {
   key: string;
@@ -52,4 +53,44 @@ export const EMERGENCY_ROOF_RESPONSE_TEMPLATE: EstimateQuickTemplate = {
       taxable: true,
     },
   ],
+};
+
+/** Same idea as EMERGENCY_ROOF_RESPONSE_TEMPLATE above, but for a
+ * roofing estimate's AREA fields (RoofingAreasEditorV2) instead of
+ * flat line items — one click prefills a new area's defect/corrective
+ * action/scope/materials with emergency-leak boilerplate a technician
+ * can then edit for the specific job, same "starting point, not a
+ * saved/named template system" scope as the standard-estimate one. */
+export interface RoofingAreaQuickTemplate {
+  key: string;
+  label: string;
+  areaName: string;
+  quantity: number;
+  quantityUnit: RoofingAreaQuantityUnit;
+  defect: string;
+  location: string;
+  correctiveAction: string;
+  materialsIncluded: string;
+  scopeItems: string;
+  materialCost: number;
+  laborCost: number;
+  tax: number;
+}
+
+export const EMERGENCY_ROOF_AREA_TEMPLATE: RoofingAreaQuickTemplate = {
+  key: "emergency-roof-area-response",
+  label: "Emergency Roof Response",
+  areaName: "Emergency Roof Leak",
+  quantity: 1,
+  quantityUnit: "EA",
+  location: "",
+  defect: "Active roof leak identified during emergency inspection. Exact cause and extent to be confirmed on site.",
+  correctiveAction:
+    "* Inspect the affected area and identify the source of the leak.\n* Apply temporary sealant/tarping to stop active water intrusion.\n* Document conditions found for the permanent repair scope.",
+  materialsIncluded: "Roofing sealant, tarp, fasteners, and related materials as needed for temporary stabilization.",
+  scopeItems:
+    "Temporary repair / emergency stabilization only. Intended to reduce or stop active water intrusion until a permanent repair can be scheduled. Permanent repairs, if needed, will be quoted separately.",
+  materialCost: 0,
+  laborCost: 295,
+  tax: 0,
 };

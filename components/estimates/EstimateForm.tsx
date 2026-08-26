@@ -30,9 +30,9 @@ import { EstimatePhotosEditor } from "./EstimatePhotosEditor";
 import { Modal } from "@/components/ui/Modal";
 import { ProjectForm } from "@/components/projects/ProjectForm";
 import { ClientForm } from "@/components/clients/ClientForm";
-import { calculateSubtotal, calculateLineItemTotal, calculateDocumentTotal } from "@/lib/services/financialCalculations";
+import { calculateSubtotal, calculateLineItemTotal, calculateDocumentTotal, calculateAreaRepairCost } from "@/lib/services/financialCalculations";
 import { createEstimateForClient } from "@/lib/services/estimateCreationWorkflow";
-import { EMERGENCY_ROOF_RESPONSE_TEMPLATE } from "@/lib/estimateQuickTemplates";
+import { EMERGENCY_ROOF_RESPONSE_TEMPLATE, EMERGENCY_ROOF_AREA_TEMPLATE } from "@/lib/estimateQuickTemplates";
 import { autoResizeTextarea } from "@/lib/autoResizeTextarea";
 import type { Estimate, EstimateLineItem } from "@/lib/services/estimateService";
 import {
@@ -190,7 +190,7 @@ export function EstimateForm({
   // route it is on or it floats above (or under) the wrong thing.
   const navHidden = hidesMobileBottomNav(usePathname());
   const searchParams = useSearchParams();
-  const { estimateService, projectService, clientService, roofingAreaService, estimatePhotoService, companyProfileService } = useServices();
+  const { estimateService, projectService, clientService, roofingAreaService, roofingAreaTemplateService, estimatePhotoService, companyProfileService } = useServices();
   const { profile } = useAuth();
 
   // Collapsible sections — the form is long and dense, so let users hide what they don't need to see.
@@ -279,6 +279,75 @@ const [pricingOpen, setPricingOpen] = useState(true);
     if (!estimate || estimateType !== "roofing") return;
     roofingAreaService.listForEstimate(estimate.id).then(setRoofingAreas);
   }, [estimate, estimateType, roofingAreaService]);
+
+  /** "New Estimate" from /roof-templates lands here with ?templateId=
+   * (a saved roofing_area_templates row) or ?templateKey= (the built-in
+   * EMERGENCY_ROOF_AREA_TEMPLATE preset) — prefill a first area from it
+   * so the technician doesn't have to add-area-then-load-template as a
+   * second step. Only for a brand-new roofing estimate with no areas
+   * yet; never overwrites an existing draft's areas. */
+  useEffect(() => {
+    if (estimate || estimateType !== "roofing" || roofingAreas.length > 0) return;
+    const templateKey = searchParams.get("templateKey");
+    if (templateKey && templateKey === EMERGENCY_ROOF_AREA_TEMPLATE.key) {
+      const t = EMERGENCY_ROOF_AREA_TEMPLATE;
+      setRoofingAreas([
+        {
+          id: crypto.randomUUID(),
+          estimateId: "",
+          companyId: "",
+          areaName: t.areaName,
+          sequenceNumber: 0,
+          scopeItems: t.scopeItems,
+          areaTotal: 0,
+          measurements: "",
+          inspectionNotes: "",
+          notes: "",
+          quantity: t.quantity,
+          quantityUnit: t.quantityUnit,
+          defect: t.defect,
+          location: t.location,
+          correctiveAction: t.correctiveAction,
+          materialsIncluded: t.materialsIncluded,
+          materialCost: t.materialCost,
+          laborCost: t.laborCost,
+          tax: t.tax,
+          estimatedRepairCost: calculateAreaRepairCost(t.materialCost, t.laborCost, t.tax),
+        } as RoofingArea,
+      ]);
+      return;
+    }
+    const templateId = searchParams.get("templateId");
+    if (!templateId || !profile?.companyId) return;
+    roofingAreaTemplateService.listForCompany(profile.companyId).then((templates) => {
+      const t = templates.find((tpl) => tpl.id === templateId);
+      if (!t) return;
+      setRoofingAreas([
+        {
+          id: crypto.randomUUID(),
+          estimateId: "",
+          companyId: "",
+          areaName: t.areaName,
+          sequenceNumber: 0,
+          scopeItems: t.scopeItems,
+          areaTotal: 0,
+          measurements: "",
+          inspectionNotes: "",
+          notes: "",
+          quantity: t.quantity,
+          quantityUnit: t.quantityUnit,
+          defect: t.defect,
+          location: t.location,
+          correctiveAction: t.correctiveAction,
+          materialsIncluded: t.materialsIncluded,
+          materialCost: t.materialCost,
+          laborCost: t.laborCost,
+          tax: t.tax,
+          estimatedRepairCost: calculateAreaRepairCost(t.materialCost, t.laborCost, t.tax),
+        } as RoofingArea,
+      ]);
+    });
+  }, [estimate, estimateType, roofingAreas.length, searchParams, profile?.companyId, roofingAreaTemplateService]);
 
   // Seeds the preview from the persisted figures for ANY roofing
   // estimate (refreshRoofingTotals keeps it live after each area save).
@@ -764,6 +833,7 @@ const [pricingOpen, setPricingOpen] = useState(true);
         // attach to) — the upload button itself explains that inline
         // rather than the whole section being blocked.
         estimateId={estimate?.id ?? ""}
+        companyId={profile.companyId}
         areas={roofingAreas}
         onChange={setRoofingAreas}
         onSave={async (area) => {

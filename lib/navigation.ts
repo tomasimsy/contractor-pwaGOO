@@ -23,6 +23,7 @@ import {
   Home,
   HardHat,
   Briefcase,
+  LayoutTemplate,
 } from "lucide-react";
 import type { Resource, PermissionAction } from "@/lib/services";
 
@@ -69,6 +70,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: "projects", label: "Projects", href: "/projects", icon: FolderKanban, permission: { resource: "project", action: "view" } },
       { id: "estimates", label: "Estimates", href: "/estimates", icon: FileText, permission: { resource: "estimate", action: "view" } },
       { id: "estimate-roof", label: "Estimate Roof", href: "/estimates-roof", icon: Home, permission: { resource: "estimate", action: "view" } },
+      { id: "roof-templates", label: "Roof Templates", href: "/roof-templates", icon: LayoutTemplate, permission: { resource: "estimate", action: "view" } },
       { id: "change-orders", label: "Change Orders", href: "/change-orders", icon: GitPullRequest, permission: { resource: "estimate", action: "view" } },
       { id: "subcontractors", label: "Subcontractors", href: "/subcontractors", icon: HardHat, permission: { resource: "subcontractor_assignment", action: "view" } },
       { id: "agents", label: "Agents", href: "/agents", icon: Briefcase, permission: { resource: "agent_assignment", action: "view" } },
