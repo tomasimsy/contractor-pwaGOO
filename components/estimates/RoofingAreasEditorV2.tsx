@@ -25,12 +25,13 @@
  *   these sets, never affecting Area 1/3's rendered button state.
  */
 import { useState, useCallback, useRef, useEffect, useImperativeHandle, forwardRef } from "react";
-import { Plus, Trash2, Upload, Camera } from "lucide-react";
+import { Plus, Trash2, Upload, Camera, ChevronDown } from "lucide-react";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { RoofingAreaLineItemEditor, type RoofingAreaLineItemEditorHandle } from "./RoofingAreaLineItemEditor";
 import { calculateAreaRepairCost } from "@/lib/services/financialCalculations";
 import { ROOFING_AREA_QUANTITY_UNITS, type RoofingAreaQuantityUnit } from "@/lib/services/roofingAreaService";
 import type { RoofingArea, RoofingPhoto } from "@/lib/services";
+import { autoResizeTextarea } from "@/lib/autoResizeTextarea";
 import type { UUID } from "@/lib/services/types";
 
 const formatMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -87,7 +88,14 @@ export interface RoofingAreasEditorV2Props {
  * form-level "Save changes" would persist the estimate and silently
  * drop every roof-area edit. Same pattern as ProjectExpensesPanelRef. */
 export interface RoofingAreasEditorV2Ref {
-  saveAll: () => Promise<void>;
+  /** `estimateIdOverride` — pass the estimate's real id when this is
+   * being called right after the PARENT estimate itself was just
+   * created in the same submit (a brand-new estimate has no id yet
+   * while its roof areas are being drafted, so every drafted area's
+   * own `estimateId` field is still empty at that point). Omit it for
+   * the ordinary "editing an already-saved estimate" case, where every
+   * area already carries the real estimateId. */
+  saveAll: (estimateIdOverride?: UUID) => Promise<void>;
 }
 
 function RoofingAreasEditorV2Inner(
@@ -103,6 +111,11 @@ function RoofingAreasEditorV2Inner(
   const lineItemEditorRefs = useRef<{ [areaId: string]: RoofingAreaLineItemEditorHandle | null }>({});
   const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
 const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
+  // Collapsible area bodies — same "compact rows, not big cards"
+  // concept the estimate's line-item projects use. Keyed by area.id
+  // (stable across a rename), not area name, so collapsing/typing
+  // never fights with a key-driven remount.
+  const [collapsedAreas, setCollapsedAreas] = useState<Record<string, boolean>>({});
   useEffect(() => {
     const loadPhotos = async () => {
       const photos: { [areaId: string]: { before: RoofingPhoto[]; after: RoofingPhoto[] } } = {};
@@ -210,13 +223,13 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
   /** The save for ONE area, without UI chrome — throws instead of
    * alerting so a caller can decide how to surface it. */
   const saveOneArea = useCallback(
-    async (area: RoofingArea) => {
+    async (area: RoofingArea, estimateIdOverride?: UUID) => {
       if (!area.areaName.trim()) {
         throw new Error(`Area ${(area.sequenceNumber ?? 0) + 1}: a name is required before saving.`);
       }
       const saved = await onSave({
         id: area.id,
-        estimateId: area.estimateId,
+        estimateId: estimateIdOverride ?? area.estimateId,
         companyId: area.companyId,
         areaName: area.areaName,
         sequenceNumber: area.sequenceNumber,
@@ -242,17 +255,35 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
     [onSave]
   );
 
+  /** Saves the area first if it's never been saved (companyId is only
+   * ever set by a real, persisted row — see the FK-violation comment
+   * on saveOneArea's caller), then reflects the saved fields into
+   * `areas` via onChange. A no-op returning the area unchanged if it's
+   * already saved. Used by the photo upload buttons below so "Add
+   * Before/After Photo" always works instead of staying disabled with
+   * a "save the area first" tooltip — clicking it saves the area for
+   * you, the same write saveAll() already does at form-submit time. */
+  const ensureAreaSaved = useCallback(
+    async (area: RoofingArea): Promise<RoofingArea> => {
+      if (area.companyId) return area;
+      const saved = await saveOneArea(area);
+      onChange(areas.map((a) => (a.id === area.id ? saved : a)));
+      return saved;
+    },
+    [areas, onChange, saveOneArea]
+  );
+
   useImperativeHandle(
     ref,
     () => ({
-      async saveAll() {
+      async saveAll(estimateIdOverride?: UUID) {
         // SEQUENTIAL, not parallel: every area save recalculates the
         // same estimate's totals, and concurrent recalculation races.
         // Throws on the first failure so the form surfaces the error
         // and does NOT navigate away — a partial save that looked
         // successful would be the worst outcome.
         for (const area of areas) {
-          await saveOneArea(area);
+          await saveOneArea(area, estimateIdOverride);
         }
         if (areas.length > 0) onAreaLineItemsSaved?.();
       },
@@ -382,22 +413,40 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
            glance while scrolling. Tokens only — no `dark:` variants,
            which key off the OS rather than this app's data-theme. */
         <div key={area.id} className="overflow-hidden rounded-xl border border-primary  shadow-sm">
-          <div className="flex items-start justify-between gap-3 bg-primary px-3 py-3 sm:px-4">
-            <h3 className="flex items-center gap-2 font-semibold text-primary-foreground">
+          <div
+            className="flex items-center justify-between gap-3 bg-primary px-3 py-2.5 sm:px-4 cursor-pointer select-none"
+            onClick={() => setCollapsedAreas((prev) => ({ ...prev, [area.id]: !prev[area.id] }))}
+          >
+            <h3 className="flex min-w-0 items-center gap-2 font-semibold text-primary-foreground">
               <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-foreground/20 text-xs font-bold">
                 {idx + 1}
               </span>
-              <span className="min-w-0 break-words">{area.areaName || `Area ${idx + 1}`}</span>
+              <span className="min-w-0 truncate break-words">{area.areaName || `Area ${idx + 1}`}</span>
             </h3>
-            <button
-              type="button"
-              onClick={() => handleDeleteArea(area.id)}
-              disabled={deletingAreaIds.has(area.id) || savingAreaIds.has(area.id)}
-              className="shrink-0 rounded-md p-1 text-primary-foreground/80 transition-colors hover:bg-primary-foreground/15 hover:text-primary-foreground disabled:opacity-50"
-            >
-              <Trash2 className="size-4" />
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="text-xs font-semibold text-primary-foreground/90 tabular-nums">
+                {formatMoney(calculateAreaRepairCost(area.materialCost ?? 0, area.laborCost ?? 0, area.tax ?? 0))}
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteArea(area.id);
+                }}
+                disabled={deletingAreaIds.has(area.id) || savingAreaIds.has(area.id)}
+                aria-label="Delete area"
+                className="shrink-0 rounded-md p-1 text-primary-foreground/80 transition-colors hover:bg-primary-foreground/15 hover:text-primary-foreground disabled:opacity-50"
+              >
+                <Trash2 className="size-4" />
+              </button>
+              <ChevronDown
+                className={`size-4 shrink-0 text-primary-foreground/80 transition-transform ${collapsedAreas[area.id] ? "-rotate-90" : ""}`}
+              />
+            </div>
           </div>
+
+          {!collapsedAreas[area.id] && (
+          <>
 
   <div className="space-y-2 p-2">
   {/* Row: Title + Measurements */}
@@ -424,45 +473,39 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
     </div>
   </div>
 
-  {/* Row: Inspection + Scope – 3 rows */}
-  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-    {/* <div>
-      <label className="block text-[10px] font-medium text-foreground mb-0.5">Inspection / Condition</label>
-      <textarea
-        value={area.inspectionNotes ?? ""}
-        onChange={(e) => handleUpdateArea(area.id, { inspectionNotes: e.target.value })}
-        className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
-        placeholder="Observed condition, damage, existing layers, etc."
-        rows={3}
-      />
-    </div> */}
-    <div>
-      <label className="block text-[10px] font-medium text-foreground mb-0.5">Scope / Work Description</label>
-      <textarea
-        value={area.scopeItems || ""}
-        onChange={(e) => handleUpdateArea(area.id, { scopeItems: e.target.value })}
-        className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
-        placeholder="Tear off, new shingles, gutters, etc."
-        rows={3}
-      />
-    </div>
-  </div>
+  {/* Scope / Work Description field removed from this form per
+      request — not needed per area. area.scopeItems itself is
+      untouched (still read wherever it was previously set), just no
+      longer editable here. */}
 
-  {/* Notes – full width, 3 rows, now DISABLED */}
+  {/* Notes – full width, now DISABLED */}
   <div>
     <label className="block text-[10px] font-medium text-foreground mb-0.5">Notes</label>
     <textarea
+      ref={autoResizeTextarea}
       value={area.notes ?? ""}
       onChange={(e) => handleUpdateArea(area.id, { notes: e.target.value })}
-      className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+      className="w-full resize-none overflow-hidden rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
       placeholder="Any other notes for this area"
       rows={3}
       disabled // <-- disabled as requested
     />
   </div>
 
-  {/* ---- Repair Item (collapsible) ---- */}
-  <details className="rounded-lg border border-border bg-card/50 p-2">
+  {/* ---- Repair Item (collapsible, open by default) ---- */}
+  <details
+    open
+    className="rounded-lg border border-border bg-card/50 p-2"
+    // Still re-measure on open: a textarea's ref callback fires while
+    // display:none if this is ever collapsed and reopened (or starts
+    // collapsed for an area whose data was loaded some other way) —
+    // scrollHeight reads 0 then, so pre-existing long text wouldn't
+    // get its height until the box was touched otherwise.
+    onToggle={(e) => {
+      if (!(e.currentTarget as HTMLDetailsElement).open) return;
+      e.currentTarget.querySelectorAll("textarea").forEach((el) => autoResizeTextarea(el as HTMLTextAreaElement));
+    }}
+  >
     <summary className="text-xs font-semibold uppercase tracking-wide text-muted-foreground cursor-pointer select-none">
       Repair Item
     </summary>
@@ -471,11 +514,15 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
         <div>
           <label className="block text-[10px] font-medium text-foreground mb-0.5">Defect</label>
           <textarea
+            ref={autoResizeTextarea}
             value={area.defect ?? ""}
-            onChange={(e) => handleUpdateArea(area.id, { defect: e.target.value })}
-            className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+            onChange={(e) => {
+              handleUpdateArea(area.id, { defect: e.target.value });
+              autoResizeTextarea(e.target);
+            }}
+            className="w-full resize-none overflow-hidden rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
             placeholder="Describe the defect"
-            rows={3} // now 3 rows
+            rows={3}
           />
         </div>
         <div>
@@ -494,21 +541,29 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
         <div>
           <label className="block text-[10px] font-medium text-foreground mb-0.5">Corrective Action</label>
           <textarea
+            ref={autoResizeTextarea}
             value={area.correctiveAction ?? ""}
-            onChange={(e) => handleUpdateArea(area.id, { correctiveAction: e.target.value })}
-            className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+            onChange={(e) => {
+              handleUpdateArea(area.id, { correctiveAction: e.target.value });
+              autoResizeTextarea(e.target);
+            }}
+            className="w-full resize-none overflow-hidden rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
             placeholder="Planned repair"
-            rows={3} // now 3 rows
+            rows={3}
           />
         </div>
         <div>
           <label className="block text-[10px] font-medium text-foreground mb-0.5">Materials Included</label>
           <textarea
+            ref={autoResizeTextarea}
             value={area.materialsIncluded ?? ""}
-            onChange={(e) => handleUpdateArea(area.id, { materialsIncluded: e.target.value })}
-            className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+            onChange={(e) => {
+              handleUpdateArea(area.id, { materialsIncluded: e.target.value });
+              autoResizeTextarea(e.target);
+            }}
+            className="w-full resize-none overflow-hidden rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
             placeholder="Materials included"
-            rows={3} // now 3 rows
+            rows={3}
           />
         </div>
       </div>
@@ -644,9 +699,36 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
           />
           <button
             type="button"
-            onClick={() => fileInputRefs.current[`${area.id}-${type}`]?.click()}
-            disabled={uploading[`${area.id}-${type}`] || !area.companyId}
-            title={!area.companyId ? "Save area first" : ""}
+            onClick={async () => {
+              // No estimateId at all means the PARENT estimate hasn't
+              // been created yet (a brand-new estimate being drafted) —
+              // ensureAreaSaved would just fail with an FK error since
+              // there's no real estimate row for the area to attach to
+              // yet. Tell the user why up front instead of attempting
+              // a save that's guaranteed to fail.
+              if (!estimateId) {
+                alert("Save the estimate first, then you can add photos for this area.");
+                return;
+              }
+              if (!area.companyId) {
+                setSavingAreaIds((prev) => new Set([...prev, area.id]));
+                try {
+                  await ensureAreaSaved(area);
+                } catch (err) {
+                  alert(err instanceof Error ? err.message : "Failed to save this area. Please try again.");
+                  return;
+                } finally {
+                  setSavingAreaIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(area.id);
+                    return next;
+                  });
+                }
+              }
+              fileInputRefs.current[`${area.id}-${type}`]?.click();
+            }}
+            disabled={uploading[`${area.id}-${type}`] || savingAreaIds.has(area.id)}
+            title={savingAreaIds.has(area.id) ? "Saving area…" : ""}
             className="flex items-center gap-1 rounded-md border border-primary/40 px-2 py-0.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Upload className="size-3" />
@@ -682,6 +764,8 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
   </div>
 </div>
 </div>
+          </>
+          )}
         </div>
       ))}
 

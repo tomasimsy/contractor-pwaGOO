@@ -33,6 +33,7 @@ import { ClientForm } from "@/components/clients/ClientForm";
 import { calculateSubtotal, calculateLineItemTotal, calculateDocumentTotal } from "@/lib/services/financialCalculations";
 import { createEstimateForClient } from "@/lib/services/estimateCreationWorkflow";
 import { EMERGENCY_ROOF_RESPONSE_TEMPLATE } from "@/lib/estimateQuickTemplates";
+import { autoResizeTextarea } from "@/lib/autoResizeTextarea";
 import type { Estimate, EstimateLineItem } from "@/lib/services/estimateService";
 import {
   ESTIMATE_TERMS_TEMPLATE_OPTIONS,
@@ -211,6 +212,15 @@ const [pricingOpen, setPricingOpen] = useState(true);
   const [showNewClientModal, setShowNewClientModal] = useState(false);
   const [title, setTitle] = useState(estimate?.title ?? "");
   const [description, setDescription] = useState(estimate?.description ?? "");
+  // A ref (not just the onChange resize) so the "Load Emergency
+  // Response Template" button below — which sets this via
+  // setDescription programmatically, not through the textarea's own
+  // onChange — also resizes the box instead of leaving it at whatever
+  // size it was before the template filled it in.
+  const descriptionRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    autoResizeTextarea(descriptionRef.current);
+  }, [description]);
   const [estimateType, setEstimateType] = useState<"standard" | "roofing">(estimate?.estimateType ?? (roofV2 ? "roofing" : "standard"));
   /** Independent of estimateType — Roofing/Custom/Home Remodel are
    * legal-language categories, not the standard/roofing scope model.
@@ -390,7 +400,7 @@ const [pricingOpen, setPricingOpen] = useState(true);
         router.push(`${basePath}/${estimate.id}`);
       } else {
         const clientId = selectedProject?.clientId ?? (manualClientId || null);
-        const { redirectTo, projectCreated, project } = await createEstimateForClient(
+        const { redirectTo, projectCreated, project, estimate: createdEstimate } = await createEstimateForClient(
           { projectService, estimateService },
           {
             companyId: profile.companyId,
@@ -414,6 +424,23 @@ const [pricingOpen, setPricingOpen] = useState(true);
         // Keep the picker honest for anyone who navigates back: an
         // auto-created project is a real project and belongs in the list.
         if (projectCreated && project) setProjects((prev) => [...prev, project]);
+
+        // Roofing areas drafted before the estimate existed (see the
+        // render-gate comment above RoofingAreasEditorV2 below) were
+        // built with no real estimateId yet — saveAll's override
+        // patches every one of them to the estimate we just created,
+        // in the same "areas + their line items" write saveOneArea
+        // always does. Skipped entirely for a standard estimate/one
+        // with no areas drafted, so this is a no-op for every existing
+        // caller's behavior.
+        if (estimateType === "roofing" && roofingAreas.length > 0 && roofAreasRef.current) {
+          await roofAreasRef.current.saveAll(createdEstimate.id);
+          // saveAll's own onAreaLineItemsSaved->refreshRoofingTotals
+          // still closes over the pre-creation `estimate` (undefined)
+          // at this point, so it's a no-op — recompute directly here
+          // instead, same call that hook would have made.
+          await estimateService.recalculateTotal(createdEstimate.id);
+        }
         router.push(redirectTo);
       }
       router.refresh();
@@ -625,11 +652,12 @@ const [pricingOpen, setPricingOpen] = useState(true);
       <div className="space-y-1.5">
         <label className={LABEL}>Description</label>
         <textarea
+          ref={descriptionRef}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={2}
           placeholder="Project overview shown on the estimate and its PDF"
-          className={FIELD}
+          className={`${FIELD} resize-none overflow-hidden`}
         />
       </div>
 
@@ -723,10 +751,19 @@ const [pricingOpen, setPricingOpen] = useState(true);
 
 {estimateType === "roofing" && (
   <>
-    {estimate && profile?.companyId ? (
+    {profile?.companyId ? (
       <RoofingAreasEditorV2
         ref={roofAreasRef}
-        estimateId={estimate.id}
+        // Empty until the estimate itself is first created — every
+        // drafted area's own estimateId is patched to the real one at
+        // that point (see performSubmit's saveAll(createdEstimate.id)
+        // call below), so areas/photos/repair-item detail can all be
+        // entered up front instead of waiting on "create the estimate
+        // first." Photo upload is the one thing that still can't
+        // happen pre-creation (a photo needs a real, saved area row to
+        // attach to) — the upload button itself explains that inline
+        // rather than the whole section being blocked.
+        estimateId={estimate?.id ?? ""}
         areas={roofingAreas}
         onChange={setRoofingAreas}
         onSave={async (area) => {
@@ -757,9 +794,7 @@ const [pricingOpen, setPricingOpen] = useState(true);
         onAreaLineItemsSaved={refreshRoofingTotals}
       />
     ) : (
-      <p className="text-sm text-muted-foreground">
-        Create the estimate first, then you&apos;ll be able to add roof areas and photos on the edit page.
-      </p>
+      <p className="text-sm text-muted-foreground">Loading company details…</p>
     )}
   </>
 )}
@@ -798,8 +833,14 @@ const [pricingOpen, setPricingOpen] = useState(true);
       )}
 
       </div>
-      {/* ---------- 6. PRICING & TOTALS (sticky sidebar) ---------- */}
-      <div className="mt-4 lg:sticky lg:top-4 lg:mt-0">
+      {/* ---------- 6. PRICING & TOTALS (sticky sidebar) ----------
+          sm:max-w-sm keeps this from stretching edge-to-edge with a
+          loose, over-spread 4-column field grid in the tablet-width
+          range below `lg` (where it isn't in the sidebar grid column
+          yet, so nothing else constrains its width) — the exact range
+          that read as "taking excessive space." Unconstrained again at
+          `lg`, where the 320px sidebar column already does that job. */}
+      <div className="mt-4 sm:max-w-sm lg:sticky lg:top-4 lg:mt-0 lg:max-w-none">
 <Section icon={Calculator} title="Pricing & Totals">
   <div className="flex justify-end -mt-1">
     <button

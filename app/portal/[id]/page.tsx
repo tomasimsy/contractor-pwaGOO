@@ -37,6 +37,14 @@ type PortalPayload = {
 type PortalPhoto = { id: string; photo_type: "before" | "after"; storage_path: string; display_order: number };
 type PortalAreaPhoto = PortalPhoto & { area_id: string; area_name: string };
 type PortalPhotosPayload = { estimate_photos: PortalPhoto[]; area_photos: PortalAreaPhoto[] };
+type PortalAreaLineItem = { id: string; name: string; quantity: number; unit_price: number; unit: string | null; total: number };
+type PortalArea = {
+  id: string; area_name: string | null; sequence_number: number; estimated_repair_cost: number | null;
+  measurements: string | null; quantity: number | null; quantity_unit: string | null;
+  defect: string | null; location: string | null; corrective_action: string | null;
+  materials_included: string | null; scope_items: string | null;
+  line_items: PortalAreaLineItem[];
+};
 
 const PHOTO_TYPE_LABEL: Record<PortalPhoto["photo_type"], string> = { before: "Before", after: "After" };
 
@@ -91,7 +99,14 @@ export default async function CustomerPortalPage({
       return acc;
     }, {})
   );
-  const hasAnyPhotos = beforePhotos.length > 0 || afterPhotos.length > 0 || areaPhotoGroups.length > 0;
+  // Keyed by area id (not name — two areas can share a name) so each
+  // Roofing Areas card below can pull just its own before/after
+  // photos, same source as the generic areaPhotoGroups above.
+  const areaPhotosById = photosPayload.area_photos.reduce<Record<string, { before: PortalAreaPhoto[]; after: PortalAreaPhoto[] }>>((acc, p) => {
+    const bucket = (acc[p.area_id] ??= { before: [], after: [] });
+    bucket[p.photo_type].push(p);
+    return acc;
+  }, {});
 
   // Which brand this estimate presents as — get_customer_portal can't
   // safely be rewritten to return profile_id itself (same "lives
@@ -116,6 +131,20 @@ export default async function CustomerPortalPage({
     ? await supabase.rpc("get_portal_estimate_items", { p_token: token })
     : { data: null };
   const portalItems = portalItemsData as PortalPayload["line_items"] | null;
+
+  // A roofing estimate's scope lives in estimate_areas, not
+  // estimate_items (which get_customer_portal's line_items is always
+  // empty for on this estimate type) — see get_portal_estimate_areas's
+  // own comment for why this is a second function, not a rewrite of
+  // get_customer_portal. Empty array for a standard estimate.
+  const { data: portalAreasData } = token && estimate
+    ? await supabase.rpc("get_portal_estimate_areas", { p_token: token })
+    : { data: null };
+  // line_items defaults to [] per area — get_portal_estimate_areas only
+  // started returning it once its own migration ran; normalizing here
+  // means this page never breaks on a deploy where the DB migration
+  // and the code land at slightly different times.
+  const portalAreas = ((portalAreasData as PortalArea[] | null) ?? []).map((a) => ({ ...a, line_items: a.line_items ?? [] }));
 
   if (!estimate) {
     return (
@@ -201,10 +230,22 @@ export default async function CustomerPortalPage({
   const adjustments = estimateTotal - storedSubtotal;
   const hasAdjustments = Math.abs(adjustments) > 0.005;
 
-  const scopeItemCount =
-    (lineItemsAreAuthoritative ? lineItems.length : 1) + approvedChangeOrderItems.length;
+  // Roofing estimate: areas ARE the scope (estimate_items is always
+  // empty for these), so they take priority over the generic "Quoted
+  // work as specified" lumped-total fallback below — same parity fix
+  // as the PDF's own "Detailed Areas & Scope of Work" section.
+  const hasAreas = portalAreas.length > 0;
+  // Area photos move into each area's own card in the dedicated
+  // Roofing Areas section below when hasAreas — so the generic bottom
+  // Photos section only needs to gate on estimate-level photos then,
+  // not double-show the same area photos in two places.
+  const hasAnyPhotos = beforePhotos.length > 0 || afterPhotos.length > 0 || (!hasAreas && areaPhotoGroups.length > 0);
 
-  const flatScopeItems = lineItemsAreAuthoritative && !hasCategories && !hasProjectGroups ? lineItems : [];
+  const scopeItemCount = hasAreas
+    ? portalAreas.length + approvedChangeOrderItems.length
+    : (lineItemsAreAuthoritative ? lineItems.length : 1) + approvedChangeOrderItems.length;
+
+  const flatScopeItems = !hasAreas && lineItemsAreAuthoritative && !hasCategories && !hasProjectGroups ? lineItems : [];
 
   return (
     <div className="min-h-screen bg-gray-50 pb-16">
@@ -214,7 +255,12 @@ export default async function CustomerPortalPage({
         </div>
       )}
 
-      <main className="mx-auto max-w-xl px-4 py-6 sm:px-6 sm:py-8 space-y-4">
+      {/* max-w-xl was fixed regardless of viewport — correct on phones,
+          but the exact same ~576px column on a tablet or a 27" desktop
+          monitor too, wasting most of the width and every image grid
+          below stuck at 3-across no matter how much room there was.
+          Widens progressively at larger breakpoints instead. */}
+      <main className="mx-auto max-w-xl px-4 py-6 sm:max-w-2xl sm:px-6 sm:py-8 lg:max-w-4xl space-y-4">
 
         {/* HEADER / IDENTITY */}
         <header className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm flex items-center justify-between gap-4">
@@ -284,25 +330,41 @@ export default async function CustomerPortalPage({
                 <div className="flex items-center justify-between text-gray-500 font-semibold uppercase tracking-wider text-[10px]">
                   <span>Scope Items ({scopeItemCount})</span>
                 </div>
-                <div className="space-y-1.5">
-                  {!lineItemsAreAuthoritative && (
+                <div className="space-y-2">
+                  {/* Roofing areas — top-level scope, same visual weight
+                      as a project group header (bold name + blue accent
+                      rail) since each area IS the whole unit of scope,
+                      not a line item within one. */}
+                  {hasAreas && portalAreas.map((area) => (
+                    <div key={area.id} className="flex justify-between items-start gap-2 border-l-2 border-blue-400 bg-blue-50/50 rounded-r-md py-1 pl-2 pr-2">
+                      <span className="break-words font-bold text-gray-900">{area.area_name || `Area ${area.sequence_number + 1}`}</span>
+                      <span className="font-semibold shrink-0 text-gray-900">{money(area.estimated_repair_cost ?? 0)}</span>
+                    </div>
+                  ))}
+                  {!hasAreas && !lineItemsAreAuthoritative && (
                     <div className="flex justify-between items-center text-gray-800">
                       <span>Quoted work as specified</span>
                       <span className="font-medium">{money(storedSubtotal)}</span>
                     </div>
                   )}
+                  {/* Project groups — bold name in a tinted band (same
+                      accent-rail language as areas above, in a neutral
+                      color since a project is a plain grouping, not a
+                      distinct scope type), items indented and lighter
+                      so they read as "belonging to" the header, and the
+                      Project Total set off by its own top border. */}
                   {lineItemsAreAuthoritative && hasProjectGroups && projectGroups.map((group) => (
-                    <div key={group.name} className="space-y-1 pb-1.5">
-                      <p className="font-bold text-gray-900 text-[11px]">{group.name}</p>
+                    <div key={group.name} className="space-y-1 rounded-md border border-gray-200 bg-gray-50/60 p-2">
+                      <p className="font-bold text-gray-900 text-[11px] uppercase tracking-wide">{group.name}</p>
                       {group.items.map((item) => (
-                        <div key={item.id} className="flex justify-between items-start gap-2 pl-2 text-gray-800">
-                          <span className="truncate">
+                        <div key={item.id} className="flex justify-between items-start gap-2 pl-2 text-gray-700">
+                          <span className="break-words">
                             {item.name} {(item.quantity ?? 0) > 1 && <span className="text-gray-500">× {item.quantity}</span>}
                           </span>
                           <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
                         </div>
                       ))}
-                      <div className="flex justify-between items-center pl-2 text-gray-500 font-semibold">
+                      <div className="flex justify-between items-center border-t border-gray-200 pt-1 pl-2 text-gray-900 font-semibold">
                         <span>Project Total</span>
                         <span>{money(group.subtotal)}</span>
                       </div>
@@ -310,7 +372,7 @@ export default async function CustomerPortalPage({
                   ))}
                   {lineItemsAreAuthoritative && hasProjectGroups && ungroupedItems.map((item) => (
                     <div key={item.id} className="flex justify-between items-start gap-2 text-gray-800">
-                      <span className="truncate">
+                      <span className="break-words">
                         {item.name} {(item.quantity ?? 0) > 1 && <span className="text-gray-500">× {item.quantity}</span>}
                       </span>
                       <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
@@ -318,7 +380,7 @@ export default async function CustomerPortalPage({
                   ))}
                   {flatScopeItems.map((item) => (
                     <div key={item.id} className="flex justify-between items-start gap-2 text-gray-800">
-                      <span className="truncate">
+                      <span className="break-words">
                         {item.name} {(item.quantity ?? 0) > 1 && <span className="text-gray-500">× {item.quantity}</span>}
                       </span>
                       <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
@@ -326,16 +388,22 @@ export default async function CustomerPortalPage({
                   ))}
                   {lineItemsAreAuthoritative && !hasProjectGroups && scopeGroups.flatMap(g => g.items).map((item) => (
                     <div key={item.id} className="flex justify-between items-start gap-2 text-gray-800">
-                      <span className="truncate">
+                      <span className="break-words">
                         {item.name} {(item.quantity ?? 0) > 1 && <span className="text-gray-500">× {item.quantity}</span>}
                       </span>
                       <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
                     </div>
                   ))}
+                  {/* Change orders — the one scope type that ISN'T part
+                      of the original quote, so it's the only row with a
+                      warm (amber) accent rather than neutral/blue —
+                      visually flags "this was added after the fact." */}
                   {approvedChangeOrderItems.map((item) => (
-                    <div key={item.id} className="flex justify-between items-start gap-2 text-gray-800">
-                      <span className="truncate">{item.name} <span className="text-amber-600 font-semibold">(Change Order)</span></span>
-                      <span className="font-medium shrink-0">{money(item.total)}</span>
+                    <div key={item.id} className="flex justify-between items-start gap-2 border-l-2 border-amber-400 bg-amber-50/60 rounded-r-md py-1 pl-2 pr-2">
+                      <span className="break-words text-gray-800">
+                        {item.name} <span className="text-amber-700 font-semibold text-[10.5px] uppercase tracking-wide">Change Order</span>
+                      </span>
+                      <span className="font-semibold shrink-0 text-gray-900">{money(item.total)}</span>
                     </div>
                   ))}
                 </div>
@@ -378,6 +446,111 @@ export default async function CustomerPortalPage({
           </div>
         </section>
 
+        {/* ROOFING AREAS — a roofing estimate's real detail (defect,
+            location, corrective action, materials, before/after
+            photos) doesn't fit the compact Scope Items line above, so
+            it gets its own section per area, matching the PDF's own
+            "Detailed Areas & Scope of Work" cards rather than the flat
+            pricing-list format standard estimates use. Nothing here
+            for a standard estimate — hasAreas is only ever true for a
+            roofing one. */}
+        {hasAreas && (
+          <section className="space-y-3">
+            <h2 className="px-1 text-[11px] font-bold uppercase tracking-wider text-gray-500">Roofing Areas</h2>
+            {portalAreas.map((area) => {
+              const photos = areaPhotosById[area.id] ?? { before: [], after: [] };
+              const detailRows: { label: string; value: string }[] = [
+                area.measurements ? { label: "Measurements", value: area.measurements } : null,
+                area.quantity ? { label: "Quantity", value: `${area.quantity}${area.quantity_unit ? ` ${area.quantity_unit}` : ""}` } : null,
+                area.defect ? { label: "Defect", value: area.defect } : null,
+                area.location ? { label: "Location", value: area.location } : null,
+                area.corrective_action ? { label: "Corrective Action", value: area.corrective_action } : null,
+                area.materials_included ? { label: "Materials Included", value: area.materials_included } : null,
+                area.scope_items ? { label: "Scope", value: area.scope_items } : null,
+              ].filter((r): r is { label: string; value: string } => r !== null);
+
+              return (
+                <div key={area.id} className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+                  <div className="flex items-center justify-between gap-2 bg-gray-900 px-4 py-2.5 text-white">
+                    <span className="font-bold text-sm truncate">{area.area_name || `Area ${area.sequence_number + 1}`}</span>
+                    <span className="font-bold text-sm shrink-0">{money(area.estimated_repair_cost ?? 0)}</span>
+                  </div>
+
+                  {detailRows.length > 0 && (
+                    <div className="grid grid-cols-1 gap-2.5 p-4 text-xs sm:grid-cols-2">
+                      {detailRows.map((row) => (
+                        <div key={row.label}>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{row.label}</p>
+                          <p className="mt-0.5 whitespace-pre-wrap leading-relaxed text-gray-700">{row.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Line items — small, compact, no separate header
+                      row per field the way the detail grid above has;
+                      just a tight name/qty · price list, same visual
+                      weight as everything else in this card. */}
+                  {area.line_items.length > 0 && (
+                    <div className="space-y-1 border-t border-gray-100 p-4 text-xs">
+                      {area.line_items.map((li) => (
+                        <div key={li.id} className="flex justify-between items-start gap-2 text-gray-700">
+                          <span className="break-words">
+                            {li.name || "—"}
+                            {li.quantity > 1 && <span className="text-gray-400"> × {li.quantity}{li.unit ? ` ${li.unit}` : ""}</span>}
+                          </span>
+                          <span className="font-medium shrink-0">{money(li.total)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {(photos.before.length > 0 || photos.after.length > 0) && (
+                    <div className="grid grid-cols-1 gap-3 border-t border-gray-100 p-4 sm:grid-cols-2">
+                      {photos.before.length > 0 && (
+                        <div>
+                          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Before</p>
+                          <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4 lg:grid-cols-6">
+                            {photos.before.map((photo) => (
+                              <a key={photo.id} href={estimatePhotoUrl(photo.storage_path)} target="_blank" rel="noopener noreferrer">
+                                <img
+                                  src={estimatePhotoUrl(photo.storage_path)}
+                                  alt={`Before photo — ${area.area_name ?? ""}`}
+                                  className="h-16 w-full rounded-md border border-gray-200 object-cover"
+                                />
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {photos.after.length > 0 && (
+                        <div>
+                          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">After</p>
+                          <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4 lg:grid-cols-6">
+                            {photos.after.map((photo) => (
+                              <a key={photo.id} href={estimatePhotoUrl(photo.storage_path)} target="_blank" rel="noopener noreferrer">
+                                <img
+                                  src={estimatePhotoUrl(photo.storage_path)}
+                                  alt={`After photo — ${area.area_name ?? ""}`}
+                                  className="h-16 w-full rounded-md border border-gray-200 object-cover"
+                                />
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {detailRows.length === 0 && area.line_items.length === 0 && photos.before.length === 0 && photos.after.length === 0 && (
+                    <p className="p-4 text-xs text-gray-400">No additional details recorded for this area.</p>
+                  )}
+                </div>
+              );
+            })}
+          </section>
+        )}
+
         {/* PHOTOS SECTION — same photos the PDF already shows */}
         {hasAnyPhotos && (
           <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm space-y-3">
@@ -388,7 +561,7 @@ export default async function CustomerPortalPage({
                 {beforePhotos.length > 0 && (
                   <div>
                     <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Before</p>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
                       {beforePhotos.map((photo) => (
                         <a key={photo.id} href={estimatePhotoUrl(photo.storage_path)} target="_blank" rel="noopener noreferrer">
                           <img
@@ -404,7 +577,7 @@ export default async function CustomerPortalPage({
                 {afterPhotos.length > 0 && (
                   <div>
                     <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">After</p>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
                       {afterPhotos.map((photo) => (
                         <a key={photo.id} href={estimatePhotoUrl(photo.storage_path)} target="_blank" rel="noopener noreferrer">
                           <img
@@ -420,10 +593,10 @@ export default async function CustomerPortalPage({
               </div>
             )}
 
-            {areaPhotoGroups.map((group) => (
+            {!hasAreas && areaPhotoGroups.map((group) => (
               <div key={group.areaName} className="border-t border-gray-100 pt-3">
                 <p className="mb-1.5 text-xs font-semibold text-gray-800">{group.areaName}</p>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
                   {group.photos.map((photo) => (
                     <a key={photo.id} href={estimatePhotoUrl(photo.storage_path)} target="_blank" rel="noopener noreferrer" className="relative">
                       <img
