@@ -235,11 +235,13 @@ export default async function CustomerPortalPage({
   // work as specified" lumped-total fallback below — same parity fix
   // as the PDF's own "Detailed Areas & Scope of Work" section.
   const hasAreas = portalAreas.length > 0;
-  // Area photos move into each area's own card in the dedicated
-  // Roofing Areas section below when hasAreas — so the generic bottom
-  // Photos section only needs to gate on estimate-level photos then,
-  // not double-show the same area photos in two places.
-  const hasAnyPhotos = beforePhotos.length > 0 || afterPhotos.length > 0 || (!hasAreas && areaPhotoGroups.length > 0);
+  // A roofing estimate's photos are already shown inline, per area, in
+  // the "Detailed Areas & Scope of Work" section above — the generic
+  // bottom Photos section would just repeat them (or, for any
+  // estimate-level photos, show a redundant second photos block at the
+  // very end), so it's skipped entirely for roofing. Standard
+  // estimates (no areas) keep it as their only photos section.
+  const hasAnyPhotos = !hasAreas && (beforePhotos.length > 0 || afterPhotos.length > 0 || areaPhotoGroups.length > 0);
 
   const scopeItemCount = hasAreas
     ? portalAreas.length + approvedChangeOrderItems.length
@@ -366,14 +368,23 @@ export default async function CustomerPortalPage({
               <div className="space-y-4">
                 {portalAreas.map((area) => {
                   const photos = areaPhotosById[area.id] ?? { before: [], after: [] };
-                  const detailRows: { label: string; value: string }[] = [
-                    area.measurements ? { label: "Measurements", value: area.measurements } : null,
+                  // Quantity/Location/Measurements are short facts — one
+                  // line each, not boxed grid cells. The narrative
+                  // fields (scope → defect → corrective action →
+                  // materials) are full-width instead, each through
+                  // TermsBody so a "* " bullet list (like Corrective
+                  // Action's step-by-step) renders as a real <ul>, not
+                  // literal asterisks in a wall of text.
+                  const quickFacts: { label: string; value: string }[] = [
                     area.quantity ? { label: "Quantity", value: `${area.quantity}${area.quantity_unit ? ` ${area.quantity_unit}` : ""}` } : null,
-                    area.defect ? { label: "Defect", value: area.defect } : null,
                     area.location ? { label: "Location", value: area.location } : null,
+                    area.measurements ? { label: "Measurements", value: area.measurements } : null,
+                  ].filter((r): r is { label: string; value: string } => r !== null);
+                  const narrativeFields: { label: string; value: string }[] = [
+                    area.scope_items ? { label: "Scope", value: area.scope_items } : null,
+                    area.defect ? { label: "Defect", value: area.defect } : null,
                     area.corrective_action ? { label: "Corrective Action", value: area.corrective_action } : null,
                     area.materials_included ? { label: "Materials Included", value: area.materials_included } : null,
-                    area.scope_items ? { label: "Scope", value: area.scope_items } : null,
                   ].filter((r): r is { label: string; value: string } => r !== null);
 
                   return (
@@ -383,12 +394,17 @@ export default async function CustomerPortalPage({
                         <span className="font-bold text-[12px] text-[#1f2429] shrink-0">{money(area.estimated_repair_cost ?? 0)}</span>
                       </div>
 
-                      {detailRows.length > 0 && (
-                        <div className="grid grid-cols-1 gap-2.5 p-4 text-[11px] sm:grid-cols-2">
-                          {detailRows.map((row) => (
+                      {(quickFacts.length > 0 || narrativeFields.length > 0) && (
+                        <div className="p-4 text-[11px] space-y-3">
+                          {quickFacts.map((row) => (
+                            <p key={row.label} className="text-gray-700">
+                              <span className="font-bold text-[#1f2429]">{row.label}:</span> {row.value}
+                            </p>
+                          ))}
+                          {narrativeFields.map((row) => (
                             <div key={row.label}>
-                              <p className={`${rowLabel} border-none pb-0 mb-0`}>{row.label}</p>
-                              <p className="mt-0.5 whitespace-pre-wrap leading-relaxed text-gray-700">{row.value}</p>
+                              <p className="font-bold text-[#1f2429] mb-0.5">{row.label}</p>
+                              <TermsBody className="leading-relaxed text-gray-700" body={row.value} />
                             </div>
                           ))}
                         </div>
@@ -445,7 +461,7 @@ export default async function CustomerPortalPage({
                         </div>
                       )}
 
-                      {detailRows.length === 0 && area.line_items.length === 0 && photos.before.length === 0 && photos.after.length === 0 && (
+                      {quickFacts.length === 0 && narrativeFields.length === 0 && area.line_items.length === 0 && photos.before.length === 0 && photos.after.length === 0 && (
                         <p className="p-4 text-[11px] text-gray-400 italic">No additional details recorded for this area.</p>
                       )}
                     </div>

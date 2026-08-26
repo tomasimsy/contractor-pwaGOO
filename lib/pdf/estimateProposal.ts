@@ -325,11 +325,26 @@ export function renderEstimateProposalHtml(data: EstimateProposalData): { docTit
                       </div>
                       <div style="width:54%; flex-grow:1; font-size:11.5px; color:#374151; line-height:1.5;">
                         ${labelValueBlock("Title / Area Name", `<span style="font-weight:600; color:#1f2937; font-size:12px;">${area.area_name || "-"}</span>`)}
-                        ${area.quantity ? labelValueBlock("Quantity", `${area.quantity}${area.quantity_unit ? ` ${area.quantity_unit}` : ""}`) : ""}
-                        ${area.defect ? labelValueBlock("Defect Identified", area.defect) : ""}
-                        ${area.location ? labelValueBlock("Exact Location", area.location) : ""}
-                        ${area.corrective_action ? labelValueBlock("Corrective Action", area.corrective_action) : ""}
-                        ${area.materials_included ? labelValueBlock("Materials Included", area.materials_included, { compact: true }) : ""}
+                        ${area.quantity ? `<div style="margin-bottom:6px;"><strong style="color:#1f2937;">Quantity:</strong> ${area.quantity}${area.quantity_unit ? ` ${area.quantity_unit}` : ""}</div>` : ""}
+                        ${area.location ? `<div style="margin-bottom:6px;"><strong style="color:#1f2937;">Location:</strong> ${area.location}</div>` : ""}
+                        ${
+                          [
+                            area.scope_items ? { label: "Scope", value: area.scope_items } : null,
+                            area.defect ? { label: "Defect", value: area.defect } : null,
+                            area.corrective_action ? { label: "Corrective Action", value: area.corrective_action } : null,
+                            area.materials_included ? { label: "Materials Included", value: area.materials_included } : null,
+                          ]
+                            .filter((f): f is { label: string; value: string } => f !== null)
+                            .map(
+                              (f) => `
+                                <div style="margin-top:10px;">
+                                  <div style="font-weight:700; color:#111827; margin-bottom:3px;">${f.label}</div>
+                                  <div style="font-size:11px;">${renderTermsBodyHtml(f.value)}</div>
+                                </div>
+                              `
+                            )
+                            .join("")
+                        }
                       </div>
                     </div>
                     <div style="display:flex; gap:10px; border-top:1px solid #e5e7eb; padding-top:12px; margin-top:4px;">
