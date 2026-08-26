@@ -265,8 +265,17 @@ export function renderEstimateProposalHtml(data: EstimateProposalData): { docTit
           : ""
       }
       <div style="text-align: right;">
-        <div style="font-size: 9.5px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.05em;">Due Today (${company.default_deposit_percentage}%)</div>
-        <div style="font-size: 15px; font-weight: 700; color: #059669; margin-top: 2px;">${formatCurrency(depositAmount)}</div>
+        ${
+          estimate.estimate_type === "roofing"
+            ? `
+              <div style="font-size: 9.5px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.05em;">Payment Terms</div>
+              <div style="font-size: 11px; font-weight: 700; color: #111827; margin-top: 2px;">Due within 30 days</div>
+            `
+            : `
+              <div style="font-size: 9.5px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.05em;">Due Today (${company.default_deposit_percentage}%)</div>
+              <div style="font-size: 15px; font-weight: 700; color: #059669; margin-top: 2px;">${formatCurrency(depositAmount)}</div>
+            `
+        }
       </div>
     </div>
 
@@ -418,8 +427,14 @@ export function renderEstimateProposalHtml(data: EstimateProposalData): { docTit
         ${discountAmount ? `<div class="summary-row muted"><span>Discount</span><span>-${formatCurrency(discountAmount)}</span></div>` : ""}
         ${taxAmount ? `<div class="summary-row muted"><span>Tax (${estimate.tax_rate}%)</span><span>${formatCurrency(taxAmount)}</span></div>` : ""}
         ${approvedChangeOrderTotal ? `<div class="summary-row muted"><span>Approved Change Orders</span><span>${formatCurrency(approvedChangeOrderTotal)}</span></div>` : ""}
-        <div class="summary-row"><span>Due Today</span><span>${formatCurrency(depositAmount)}</span></div>
-        <div class="summary-row muted"><span>Deposit Required (${company.default_deposit_percentage}%)</span><span>${formatCurrency(depositAmount)}</span></div>
+        ${
+          estimate.estimate_type === "roofing"
+            ? `<div class="summary-row muted"><span>Payment Terms</span><span>Due within 30 days</span></div>`
+            : `
+              <div class="summary-row"><span>Due Today</span><span>${formatCurrency(depositAmount)}</span></div>
+              <div class="summary-row muted"><span>Deposit Required (${company.default_deposit_percentage}%)</span><span>${formatCurrency(depositAmount)}</span></div>
+            `
+        }
         <div class="summary-row balance"><span>Total</span><span>${formatCurrency(total)}</span></div>
       </div>
     </div>

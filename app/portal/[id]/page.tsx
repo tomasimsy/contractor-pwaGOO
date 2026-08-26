@@ -247,501 +247,523 @@ export default async function CustomerPortalPage({
 
   const flatScopeItems = !hasAreas && lineItemsAreAuthoritative && !hasCategories && !hasProjectGroups ? lineItems : [];
 
+  // Matches lib/pdf/pdfLayout.ts's .section-title exactly (border-bottom
+  // rule, uppercase, same tracking) — one shared class string so every
+  // section header here looks like a heading IN the same document
+  // instead of a card title, which is what made this page read as a
+  // different, unrelated piece of software from the PDF it's supposed
+  // to mirror.
+  const sectionTitle = "text-[11px] font-bold uppercase tracking-wider text-[#1f2429] border-b border-[#e2e5e8] pb-1.5 mb-2.5";
+  const rowLabel = "text-[10px] font-bold uppercase tracking-wider text-gray-500";
+
   return (
-    <div className="min-h-screen bg-gray-50 pb-16">
+    // #eef0f2 page backdrop + a single bordered white "document" —
+    // the exact two-tone the PDF route itself renders in a browser
+    // (PDF_STYLES' body/.document), so the portal and the PDF now look
+    // like the same document instead of a phone-app UI next to a
+    // printed page.
+    <div className="min-h-screen bg-[#eef0f2] pb-16">
       {!isSigned && (
         <div className="bg-amber-500 px-4 py-3 text-center text-xs font-bold uppercase tracking-wider text-amber-950">
           Review required — signature needed below
         </div>
       )}
 
-      {/* max-w-xl was fixed regardless of viewport — correct on phones,
-          but the exact same ~576px column on a tablet or a 27" desktop
-          monitor too, wasting most of the width and every image grid
-          below stuck at 3-across no matter how much room there was.
-          Widens progressively at larger breakpoints instead. */}
-      <main className="mx-auto max-w-xl px-4 py-6 sm:max-w-2xl sm:px-6 sm:py-8 lg:max-w-4xl space-y-4">
+      <main className="mx-auto max-w-xl px-3 py-6 sm:max-w-2xl sm:px-6 sm:py-8 lg:max-w-4xl">
+        <div className="border border-[#e2e5e8] bg-white p-5 shadow-sm sm:p-8 lg:p-12">
 
-        {/* HEADER / IDENTITY */}
-        <header className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <h1 className="text-sm font-bold leading-tight text-gray-900">{company.company_name}</h1>
-            {company.dba && (
-              <p className="text-[11px] leading-tight text-gray-500">dba {company.dba}</p>
-            )}
-            <p className="text-[11px] text-gray-500">
-              {new Date(estimate.created_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
-            </p>
-          </div>
-          {client?.name && (
-            <div className="min-w-0 text-right">
-              <p className="text-sm font-bold text-gray-900">{client.name}</p>
-              {client.phone && <p className="text-[11px] text-gray-500">{client.phone}</p>}
-              {client.email && <p className="truncate text-[11px] text-gray-500">{client.email}</p>}
-              {client.address && <p className="text-[11px] text-gray-500">{client.address}</p>}
-              <p className="font-mono text-[11px] text-gray-500">#{estimate.estimate_number ?? estimate.id.slice(0, 8)}</p>
-            </div>
-          )}
-        </header>
-
-        {/* DOWNLOAD PDF — a RELATIVE link, deliberately: this page is
-            already being viewed on the correctly-resolved brand domain
-            (see the profile_id -> portal_domain lookup above), so a
-            relative href automatically stays on that same domain
-            rather than needing to re-resolve/hardcode it here.
-            customerToken (not a staff session cookie) is what
-            authorizes this — same public/token-based auth the PDF
-            route already supports for the customer-token case. */}
-        <div className="flex justify-end">
-          <Link
-            href={`/api/estimates/${estimate.id}/pdf?customerToken=${encodeURIComponent(token ?? "")}`}
-            target="_blank"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-          >
-            Download PDF
-          </Link>
-        </div>
-
-        {/* STREAMLINED COMBINED FINANCIAL & SCOPE CARD */}
-        <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          {/* Header Bar with Total Contract Price */}
-          <div className="flex items-center justify-between bg-gray-900 px-4 py-3.5 text-white">
+          {/* HEADER — company on the left, doc title + estimate # on
+              the right, separated by a 2px rule, same shape as the
+              PDF's .header. */}
+          <div className="flex items-start justify-between gap-4 border-b-2 border-[#1f2429] pb-5 mb-6">
             <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Project Overview</p>
-              <h2 className="text-base font-bold leading-tight capitalize truncate">{estimate.title || "Project Estimate"}</h2>
+              <h1 className="text-lg font-bold tracking-tight text-[#1f2429]">{company.company_name}</h1>
+              {company.dba && <p className="mt-0.5 text-[10.5px] text-gray-500">dba {company.dba}</p>}
+              <p className="mt-0.5 text-[10.5px] text-gray-500 leading-relaxed">
+                {[company.company_phone, company.company_email].filter(Boolean).join(" · ")}
+              </p>
             </div>
             <div className="text-right shrink-0">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Contract Total</p>
-              <p className="text-xl font-bold leading-none">{money(contractTotal)}</p>
+              <p className="text-lg font-bold uppercase tracking-wide text-[#1f2429]">Proposal</p>
+              <p className="mt-0.5 text-[10.5px] text-gray-500">#{estimate.estimate_number ?? estimate.id.slice(0, 8)}</p>
+              <p className="text-[10.5px] text-gray-500">
+                Issued {new Date(estimate.created_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
+              </p>
             </div>
           </div>
 
-          <div className="p-4 space-y-4 text-xs">
-            {estimate.description && (
-              <div className="rounded-lg border-l-2 border-amber-500 bg-amber-50 p-3 text-amber-950">
-                <p className="font-bold uppercase tracking-wider text-[10px] text-amber-700 mb-1">Description</p>
-                <p className="whitespace-pre-wrap leading-relaxed">{estimate.description}</p>
-              </div>
-            )}
+          {/* DOWNLOAD PDF — a RELATIVE link, deliberately: this page is
+              already being viewed on the correctly-resolved brand domain
+              (see the profile_id -> portal_domain lookup above), so a
+              relative href automatically stays on that same domain
+              rather than needing to re-resolve/hardcode it here.
+              customerToken (not a staff session cookie) is what
+              authorizes this — same public/token-based auth the PDF
+              route already supports for the customer-token case. */}
+          <div className="flex justify-end -mt-3 mb-5">
+            <Link
+              href={`/api/estimates/${estimate.id}/pdf?customerToken=${encodeURIComponent(token ?? "")}`}
+              target="_blank"
+              className="inline-flex items-center gap-1.5 rounded-md border border-[#e2e5e8] px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Download PDF
+            </Link>
+          </div>
 
-            {/* Scope Items List (Compact) */}
-            {scopeItemCount > 0 && (
-              <div className="space-y-2 border-b border-gray-100 pb-3">
-                <div className="flex items-center justify-between text-gray-500 font-semibold uppercase tracking-wider text-[10px]">
-                  <span>Scope Items ({scopeItemCount})</span>
-                </div>
-                <div className="space-y-2">
-                  {/* Roofing areas — top-level scope, same visual weight
-                      as a project group header (bold name + blue accent
-                      rail) since each area IS the whole unit of scope,
-                      not a line item within one. */}
-                  {hasAreas && portalAreas.map((area) => (
-                    <div key={area.id} className="flex justify-between items-start gap-2 border-l-2 border-blue-400 bg-blue-50/50 rounded-r-md py-1 pl-2 pr-2">
-                      <span className="break-words font-bold text-gray-900">{area.area_name || `Area ${area.sequence_number + 1}`}</span>
-                      <span className="font-semibold shrink-0 text-gray-900">{money(area.estimated_repair_cost ?? 0)}</span>
-                    </div>
-                  ))}
-                  {!hasAreas && !lineItemsAreAuthoritative && (
-                    <div className="flex justify-between items-center text-gray-800">
-                      <span>Quoted work as specified</span>
-                      <span className="font-medium">{money(storedSubtotal)}</span>
-                    </div>
-                  )}
-                  {/* Project groups — bold name in a tinted band (same
-                      accent-rail language as areas above, in a neutral
-                      color since a project is a plain grouping, not a
-                      distinct scope type), items indented and lighter
-                      so they read as "belonging to" the header, and the
-                      Project Total set off by its own top border. */}
-                  {lineItemsAreAuthoritative && hasProjectGroups && projectGroups.map((group) => (
-                    <div key={group.name} className="space-y-1 rounded-md border border-gray-200 bg-gray-50/60 p-2">
-                      <p className="font-bold text-gray-900 text-[11px] uppercase tracking-wide">{group.name}</p>
-                      {group.items.map((item) => (
-                        <div key={item.id} className="flex justify-between items-start gap-2 pl-2 text-gray-700">
-                          <span className="break-words">
-                            {item.name} {(item.quantity ?? 0) > 1 && <span className="text-gray-500">× {item.quantity}</span>}
-                          </span>
-                          <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
-                        </div>
-                      ))}
-                      <div className="flex justify-between items-center border-t border-gray-200 pt-1 pl-2 text-gray-900 font-semibold">
-                        <span>Project Total</span>
-                        <span>{money(group.subtotal)}</span>
+          {/* PREPARED FOR / PROJECT SCOPE — the PDF's own two-column
+              info-grid: fixed-width label, value beside it. */}
+          <div className="flex flex-col gap-6 text-[11.5px] text-gray-700 sm:flex-row mb-6">
+            <div className="flex-1">
+              <p className={sectionTitle}>Prepared For</p>
+              <p className="text-[12.5px] font-bold text-[#1f2429] mb-0.5">{client?.name || "—"}</p>
+              {client?.phone && <p>{client.phone}</p>}
+              {client?.email && <p>{client.email}</p>}
+              {client?.address && <p>{client.address}</p>}
+            </div>
+            <div className="flex-1">
+              <p className={sectionTitle}>Project Scope</p>
+              <p className="text-[12.5px] font-bold text-[#1f2429] mb-0.5 capitalize">{estimate.title || "Project Estimate"}</p>
+              {estimate.description && (
+                <p className="whitespace-pre-wrap leading-relaxed text-gray-600">{estimate.description}</p>
+              )}
+            </div>
+          </div>
+
+          {/* CONTRACT TOTAL — the PDF's minimal summary bar (light gray
+              box, not a dark full-bleed banner). Roofing estimates show
+              a flat "due within 30 days" payment term instead of a
+              deposit split; standard estimates keep their existing
+              deposit-amount display. */}
+          <div className="flex items-center justify-between gap-4 rounded-md border border-[#e2e5e8] bg-[#f7f8f9] px-5 py-3.5 mb-6">
+            <div>
+              <p className={`${rowLabel} border-none pb-0 mb-0`}>Contract Total</p>
+              <p className="text-lg font-extrabold text-[#1f2429] leading-tight">{money(contractTotal)}</p>
+            </div>
+            {hasAreas ? (
+              <div className="text-right">
+                <p className={`${rowLabel} border-none pb-0 mb-0`}>Payment Terms</p>
+                <p className="text-[11px] font-bold text-[#1f2429] leading-tight">Due within 30 days</p>
+              </div>
+            ) : estimate.deposit_amount ? (
+              <div className="text-right">
+                <p className={`${rowLabel} border-none pb-0 mb-0`}>Deposit</p>
+                <p className="text-sm font-bold text-emerald-700 leading-tight">{money(estimate.deposit_amount)}</p>
+              </div>
+            ) : null}
+          </div>
+
+          {/* ROOFING AREAS — a roofing estimate's real detail (defect,
+              location, corrective action, materials, before/after
+              photos, per-area line items) doesn't fit the compact
+              Scope Items list above, so it gets its own section per
+              area, matching the PDF's own "Detailed Areas & Scope of
+              Work" cards — plain bordered box, no dark header bar.
+              Nothing here for a standard estimate — hasAreas is only
+              ever true for a roofing one. */}
+          {hasAreas && (
+            <div className="mb-6">
+              <p className={sectionTitle}>Detailed Areas &amp; Scope of Work</p>
+              <div className="space-y-4">
+                {portalAreas.map((area) => {
+                  const photos = areaPhotosById[area.id] ?? { before: [], after: [] };
+                  const detailRows: { label: string; value: string }[] = [
+                    area.measurements ? { label: "Measurements", value: area.measurements } : null,
+                    area.quantity ? { label: "Quantity", value: `${area.quantity}${area.quantity_unit ? ` ${area.quantity_unit}` : ""}` } : null,
+                    area.defect ? { label: "Defect", value: area.defect } : null,
+                    area.location ? { label: "Location", value: area.location } : null,
+                    area.corrective_action ? { label: "Corrective Action", value: area.corrective_action } : null,
+                    area.materials_included ? { label: "Materials Included", value: area.materials_included } : null,
+                    area.scope_items ? { label: "Scope", value: area.scope_items } : null,
+                  ].filter((r): r is { label: string; value: string } => r !== null);
+
+                  return (
+                    <div key={area.id} className="border border-[#e2e5e8] rounded-md">
+                      <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-[#e2e5e8] bg-[#f7f8f9]">
+                        <span className="font-bold text-[12px] text-[#1f2429] truncate">{area.area_name || `Area ${area.sequence_number + 1}`}</span>
+                        <span className="font-bold text-[12px] text-[#1f2429] shrink-0">{money(area.estimated_repair_cost ?? 0)}</span>
                       </div>
+
+                      {detailRows.length > 0 && (
+                        <div className="grid grid-cols-1 gap-2.5 p-4 text-[11px] sm:grid-cols-2">
+                          {detailRows.map((row) => (
+                            <div key={row.label}>
+                              <p className={`${rowLabel} border-none pb-0 mb-0`}>{row.label}</p>
+                              <p className="mt-0.5 whitespace-pre-wrap leading-relaxed text-gray-700">{row.value}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {area.line_items.length > 0 && (
+                        <div className="space-y-1 border-t border-[#eef0f2] p-4 text-[11px]">
+                          {area.line_items.map((li) => (
+                            <div key={li.id} className="flex justify-between items-start gap-2 text-gray-700">
+                              <span className="break-words">
+                                {li.name || "—"}
+                                {li.quantity > 1 && <span className="text-gray-400"> × {li.quantity}{li.unit ? ` ${li.unit}` : ""}</span>}
+                              </span>
+                              <span className="font-medium shrink-0">{money(li.total)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {(photos.before.length > 0 || photos.after.length > 0) && (
+                        <div className="grid grid-cols-1 gap-3 border-t border-[#eef0f2] p-4 sm:grid-cols-2">
+                          {photos.before.length > 0 && (
+                            <div>
+                              <p className={`${rowLabel} border-none pb-0 mb-1.5`}>Before</p>
+                              <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4 lg:grid-cols-6">
+                                {photos.before.map((photo) => (
+                                  <a key={photo.id} href={estimatePhotoUrl(photo.storage_path)} target="_blank" rel="noopener noreferrer">
+                                    <img
+                                      src={estimatePhotoUrl(photo.storage_path)}
+                                      alt={`Before photo — ${area.area_name ?? ""}`}
+                                      className="h-16 w-full rounded-sm border border-[#e2e5e8] object-cover"
+                                    />
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {photos.after.length > 0 && (
+                            <div>
+                              <p className={`${rowLabel} border-none pb-0 mb-1.5`}>After</p>
+                              <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4 lg:grid-cols-6">
+                                {photos.after.map((photo) => (
+                                  <a key={photo.id} href={estimatePhotoUrl(photo.storage_path)} target="_blank" rel="noopener noreferrer">
+                                    <img
+                                      src={estimatePhotoUrl(photo.storage_path)}
+                                      alt={`After photo — ${area.area_name ?? ""}`}
+                                      className="h-16 w-full rounded-sm border border-[#e2e5e8] object-cover"
+                                    />
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {detailRows.length === 0 && area.line_items.length === 0 && photos.before.length === 0 && photos.after.length === 0 && (
+                        <p className="p-4 text-[11px] text-gray-400 italic">No additional details recorded for this area.</p>
+                      )}
                     </div>
-                  ))}
-                  {lineItemsAreAuthoritative && hasProjectGroups && ungroupedItems.map((item) => (
-                    <div key={item.id} className="flex justify-between items-start gap-2 text-gray-800">
-                      <span className="break-words">
-                        {item.name} {(item.quantity ?? 0) > 1 && <span className="text-gray-500">× {item.quantity}</span>}
-                      </span>
-                      <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* SCOPE ITEMS — moved down next to the rest of the totals,
+              not on the cover page — plain rows with a hairline bottom
+              border, same as a PDF table row (td { border-bottom: 1px
+              solid #eef0f2 }), no colored pills/accent rails. */}
+          {scopeItemCount > 0 && (
+            <div className="mb-6">
+              <p className={sectionTitle}>Scope Items</p>
+              <div className="text-[11.5px] text-gray-700">
+                {hasAreas && portalAreas.map((area) => (
+                  <div key={area.id} className="flex justify-between items-start gap-2 py-1.5 border-b border-[#eef0f2]">
+                    <span className="break-words font-bold text-[#1f2429]">{area.area_name || `Area ${area.sequence_number + 1}`}</span>
+                    <span className="font-semibold shrink-0 text-[#1f2429]">{money(area.estimated_repair_cost ?? 0)}</span>
+                  </div>
+                ))}
+                {!hasAreas && !lineItemsAreAuthoritative && (
+                  <div className="flex justify-between items-center py-1.5 border-b border-[#eef0f2]">
+                    <span>Quoted work as specified</span>
+                    <span className="font-medium">{money(storedSubtotal)}</span>
+                  </div>
+                )}
+                {lineItemsAreAuthoritative && hasProjectGroups && projectGroups.map((group) => (
+                  <div key={group.name} className="py-1.5 border-b border-[#eef0f2]">
+                    <p className="font-bold text-[#1f2429] text-[11px] uppercase tracking-wide mb-1">{group.name}</p>
+                    {group.items.map((item) => (
+                      <div key={item.id} className="flex justify-between items-start gap-2 py-0.5 pl-2 text-gray-600">
+                        <span className="break-words">
+                          {item.name} {(item.quantity ?? 0) > 1 && <span className="text-gray-400">× {item.quantity}</span>}
+                        </span>
+                        <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between items-center pt-1 pl-2 text-[#1f2429] font-semibold">
+                      <span>Project Total</span>
+                      <span>{money(group.subtotal)}</span>
                     </div>
-                  ))}
-                  {flatScopeItems.map((item) => (
-                    <div key={item.id} className="flex justify-between items-start gap-2 text-gray-800">
-                      <span className="break-words">
-                        {item.name} {(item.quantity ?? 0) > 1 && <span className="text-gray-500">× {item.quantity}</span>}
-                      </span>
-                      <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
-                    </div>
-                  ))}
-                  {lineItemsAreAuthoritative && !hasProjectGroups && scopeGroups.flatMap(g => g.items).map((item) => (
-                    <div key={item.id} className="flex justify-between items-start gap-2 text-gray-800">
-                      <span className="break-words">
-                        {item.name} {(item.quantity ?? 0) > 1 && <span className="text-gray-500">× {item.quantity}</span>}
-                      </span>
-                      <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
-                    </div>
-                  ))}
-                  {/* Change orders — the one scope type that ISN'T part
-                      of the original quote, so it's the only row with a
-                      warm (amber) accent rather than neutral/blue —
-                      visually flags "this was added after the fact." */}
-                  {approvedChangeOrderItems.map((item) => (
-                    <div key={item.id} className="flex justify-between items-start gap-2 border-l-2 border-amber-400 bg-amber-50/60 rounded-r-md py-1 pl-2 pr-2">
-                      <span className="break-words text-gray-800">
-                        {item.name} <span className="text-amber-700 font-semibold text-[10.5px] uppercase tracking-wide">Change Order</span>
-                      </span>
-                      <span className="font-semibold shrink-0 text-gray-900">{money(item.total)}</span>
-                    </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
+                {lineItemsAreAuthoritative && hasProjectGroups && ungroupedItems.map((item) => (
+                  <div key={item.id} className="flex justify-between items-start gap-2 py-1.5 border-b border-[#eef0f2]">
+                    <span className="break-words">
+                      {item.name} {(item.quantity ?? 0) > 1 && <span className="text-gray-400">× {item.quantity}</span>}
+                    </span>
+                    <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
+                  </div>
+                ))}
+                {flatScopeItems.map((item) => (
+                  <div key={item.id} className="flex justify-between items-start gap-2 py-1.5 border-b border-[#eef0f2]">
+                    <span className="break-words">
+                      {item.name} {(item.quantity ?? 0) > 1 && <span className="text-gray-400">× {item.quantity}</span>}
+                    </span>
+                    <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
+                  </div>
+                ))}
+                {lineItemsAreAuthoritative && !hasProjectGroups && scopeGroups.flatMap(g => g.items).map((item) => (
+                  <div key={item.id} className="flex justify-between items-start gap-2 py-1.5 border-b border-[#eef0f2]">
+                    <span className="break-words">
+                      {item.name} {(item.quantity ?? 0) > 1 && <span className="text-gray-400">× {item.quantity}</span>}
+                    </span>
+                    <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
+                  </div>
+                ))}
+                {/* Change orders — still called out (amber label) since
+                    it's genuinely a different kind of scope (added
+                    after the original quote), just without the heavy
+                    tinted-pill treatment the rest of this page no
+                    longer uses either. */}
+                {approvedChangeOrderItems.map((item) => (
+                  <div key={item.id} className="flex justify-between items-start gap-2 py-1.5 border-b border-[#eef0f2]">
+                    <span className="break-words text-gray-700">
+                      {item.name} <span className="text-amber-700 font-semibold text-[10px] uppercase tracking-wide">Change Order</span>
+                    </span>
+                    <span className="font-semibold shrink-0 text-[#1f2429]">{money(item.total)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* FINANCIAL SUMMARY — matches the PDF's .summary-box: light
+              gray box, muted rows, a ruled total, and (when there's a
+              balance) a dark full-width bar at the bottom — the ONE
+              place on this page that still gets a dark background,
+              same as the PDF. */}
+          <div className="rounded-md border border-[#e2e5e8] bg-[#f7f8f9] px-5 py-4 mb-6 text-[11px] overflow-hidden">
+            {hasAdjustments && (
+              <div className="flex justify-between py-1 text-gray-600">
+                <span>Subtotal</span>
+                <span className="font-medium text-[#1f2429]">{money(storedSubtotal)}</span>
               </div>
             )}
-
-            {/* Financial Rollup Details */}
-            <div className="space-y-1.5 text-gray-600 pt-1">
-              {hasAdjustments && (
-                <div className="flex justify-between">
-                  <span>Subtotal</span>
-                  <span className="font-medium text-gray-900">{money(storedSubtotal)}</span>
-                </div>
-              )}
-              {hasAdjustments && (
-                <div className="flex justify-between">
-                  <span>Adjustments &amp; tax</span>
-                  <span className="font-medium text-gray-900">{adjustments < 0 ? `−${money(Math.abs(adjustments))}` : money(adjustments)}</span>
-                </div>
-              )}
-              
-              {(() => {
-                const totalPaid = invoices.reduce((sum, inv) => {
-                  const pays = inv.payments ?? [];
-                  return sum + pays.reduce((s, p) => s + (p.amount ?? 0), 0);
-                }, 0);
-                const totalBalance = Math.max(0, contractTotal - totalPaid);
-                const isPaidInFull = totalBalance === 0;
-
-                return (
-                  <div className="flex justify-between items-center pt-2 border-t border-gray-100 font-semibold text-gray-900">
-                    <span>Balance Due</span>
-                    <span className={`text-sm font-bold ${isPaidInFull ? "text-emerald-600" : "text-amber-600"}`}>
-                      {money(totalBalance)}
-                    </span>
-                  </div>
-                );
-              })()}
+            {hasAdjustments && (
+              <div className="flex justify-between py-1 text-gray-600">
+                <span>Adjustments &amp; tax</span>
+                <span className="font-medium text-[#1f2429]">{adjustments < 0 ? `−${money(Math.abs(adjustments))}` : money(adjustments)}</span>
+              </div>
+            )}
+            <div className="flex justify-between border-t border-[#dfe2e5] mt-1.5 pt-2.5 text-[13px] font-bold text-[#1f2429]">
+              <span>Total</span>
+              <span>{money(contractTotal)}</span>
             </div>
-          </div>
-        </section>
-
-        {/* ROOFING AREAS — a roofing estimate's real detail (defect,
-            location, corrective action, materials, before/after
-            photos) doesn't fit the compact Scope Items line above, so
-            it gets its own section per area, matching the PDF's own
-            "Detailed Areas & Scope of Work" cards rather than the flat
-            pricing-list format standard estimates use. Nothing here
-            for a standard estimate — hasAreas is only ever true for a
-            roofing one. */}
-        {hasAreas && (
-          <section className="space-y-3">
-            <h2 className="px-1 text-[11px] font-bold uppercase tracking-wider text-gray-500">Roofing Areas</h2>
-            {portalAreas.map((area) => {
-              const photos = areaPhotosById[area.id] ?? { before: [], after: [] };
-              const detailRows: { label: string; value: string }[] = [
-                area.measurements ? { label: "Measurements", value: area.measurements } : null,
-                area.quantity ? { label: "Quantity", value: `${area.quantity}${area.quantity_unit ? ` ${area.quantity_unit}` : ""}` } : null,
-                area.defect ? { label: "Defect", value: area.defect } : null,
-                area.location ? { label: "Location", value: area.location } : null,
-                area.corrective_action ? { label: "Corrective Action", value: area.corrective_action } : null,
-                area.materials_included ? { label: "Materials Included", value: area.materials_included } : null,
-                area.scope_items ? { label: "Scope", value: area.scope_items } : null,
-              ].filter((r): r is { label: string; value: string } => r !== null);
+            {hasAreas && (
+              <div className="flex justify-between py-1 mt-1 text-gray-600">
+                <span>Payment Terms</span>
+                <span className="font-medium text-[#1f2429]">Due within 30 days</span>
+              </div>
+            )}
+            {(() => {
+              const totalPaid = invoices.reduce((sum, inv) => {
+                const pays = inv.payments ?? [];
+                return sum + pays.reduce((s, p) => s + (p.amount ?? 0), 0);
+              }, 0);
+              const totalBalance = Math.max(0, contractTotal - totalPaid);
+              const isPaidInFull = totalBalance === 0;
 
               return (
-                <div key={area.id} className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-                  <div className="flex items-center justify-between gap-2 bg-gray-900 px-4 py-2.5 text-white">
-                    <span className="font-bold text-sm truncate">{area.area_name || `Area ${area.sequence_number + 1}`}</span>
-                    <span className="font-bold text-sm shrink-0">{money(area.estimated_repair_cost ?? 0)}</span>
-                  </div>
-
-                  {detailRows.length > 0 && (
-                    <div className="grid grid-cols-1 gap-2.5 p-4 text-xs sm:grid-cols-2">
-                      {detailRows.map((row) => (
-                        <div key={row.label}>
-                          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{row.label}</p>
-                          <p className="mt-0.5 whitespace-pre-wrap leading-relaxed text-gray-700">{row.value}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Line items — small, compact, no separate header
-                      row per field the way the detail grid above has;
-                      just a tight name/qty · price list, same visual
-                      weight as everything else in this card. */}
-                  {area.line_items.length > 0 && (
-                    <div className="space-y-1 border-t border-gray-100 p-4 text-xs">
-                      {area.line_items.map((li) => (
-                        <div key={li.id} className="flex justify-between items-start gap-2 text-gray-700">
-                          <span className="break-words">
-                            {li.name || "—"}
-                            {li.quantity > 1 && <span className="text-gray-400"> × {li.quantity}{li.unit ? ` ${li.unit}` : ""}</span>}
-                          </span>
-                          <span className="font-medium shrink-0">{money(li.total)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {(photos.before.length > 0 || photos.after.length > 0) && (
-                    <div className="grid grid-cols-1 gap-3 border-t border-gray-100 p-4 sm:grid-cols-2">
-                      {photos.before.length > 0 && (
-                        <div>
-                          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Before</p>
-                          <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4 lg:grid-cols-6">
-                            {photos.before.map((photo) => (
-                              <a key={photo.id} href={estimatePhotoUrl(photo.storage_path)} target="_blank" rel="noopener noreferrer">
-                                <img
-                                  src={estimatePhotoUrl(photo.storage_path)}
-                                  alt={`Before photo — ${area.area_name ?? ""}`}
-                                  className="h-16 w-full rounded-md border border-gray-200 object-cover"
-                                />
-                              </a>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {photos.after.length > 0 && (
-                        <div>
-                          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">After</p>
-                          <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4 lg:grid-cols-6">
-                            {photos.after.map((photo) => (
-                              <a key={photo.id} href={estimatePhotoUrl(photo.storage_path)} target="_blank" rel="noopener noreferrer">
-                                <img
-                                  src={estimatePhotoUrl(photo.storage_path)}
-                                  alt={`After photo — ${area.area_name ?? ""}`}
-                                  className="h-16 w-full rounded-md border border-gray-200 object-cover"
-                                />
-                              </a>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {detailRows.length === 0 && area.line_items.length === 0 && photos.before.length === 0 && photos.after.length === 0 && (
-                    <p className="p-4 text-xs text-gray-400">No additional details recorded for this area.</p>
-                  )}
+                <div className={`flex justify-between items-center mt-3 -mx-5 -mb-4 px-5 py-3 text-[13px] font-bold ${
+                  isPaidInFull ? "bg-emerald-700 text-white" : "bg-[#1f2429] text-white"
+                }`}>
+                  <span>Balance Due</span>
+                  <span>{money(totalBalance)}</span>
                 </div>
               );
-            })}
-          </section>
-        )}
+            })()}
+          </div>
 
-        {/* PHOTOS SECTION — same photos the PDF already shows */}
-        {hasAnyPhotos && (
-          <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm space-y-3">
-            <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Photos</h2>
-
-            {(beforePhotos.length > 0 || afterPhotos.length > 0) && (
-              <div className="space-y-2">
-                {beforePhotos.length > 0 && (
-                  <div>
-                    <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Before</p>
-                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
-                      {beforePhotos.map((photo) => (
-                        <a key={photo.id} href={estimatePhotoUrl(photo.storage_path)} target="_blank" rel="noopener noreferrer">
-                          <img
-                            src={estimatePhotoUrl(photo.storage_path)}
-                            alt="Before photo"
-                            className="h-24 w-full rounded-lg border border-gray-200 object-cover"
-                          />
-                        </a>
-                      ))}
+          {/* PHOTOS — same photos the PDF already shows */}
+          {hasAnyPhotos && (
+            <div className="mb-6">
+              <p className={sectionTitle}>Photos</p>
+              {(beforePhotos.length > 0 || afterPhotos.length > 0) && (
+                <div className="space-y-2">
+                  {beforePhotos.length > 0 && (
+                    <div>
+                      <p className={`${rowLabel} border-none pb-0 mb-1.5`}>Before</p>
+                      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+                        {beforePhotos.map((photo) => (
+                          <a key={photo.id} href={estimatePhotoUrl(photo.storage_path)} target="_blank" rel="noopener noreferrer">
+                            <img
+                              src={estimatePhotoUrl(photo.storage_path)}
+                              alt="Before photo"
+                              className="h-24 w-full rounded-sm border border-[#e2e5e8] object-cover"
+                            />
+                          </a>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
-                {afterPhotos.length > 0 && (
-                  <div>
-                    <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">After</p>
-                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
-                      {afterPhotos.map((photo) => (
-                        <a key={photo.id} href={estimatePhotoUrl(photo.storage_path)} target="_blank" rel="noopener noreferrer">
-                          <img
-                            src={estimatePhotoUrl(photo.storage_path)}
-                            alt="After photo"
-                            className="h-24 w-full rounded-lg border border-gray-200 object-cover"
-                          />
-                        </a>
-                      ))}
+                  )}
+                  {afterPhotos.length > 0 && (
+                    <div>
+                      <p className={`${rowLabel} border-none pb-0 mb-1.5`}>After</p>
+                      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+                        {afterPhotos.map((photo) => (
+                          <a key={photo.id} href={estimatePhotoUrl(photo.storage_path)} target="_blank" rel="noopener noreferrer">
+                            <img
+                              src={estimatePhotoUrl(photo.storage_path)}
+                              alt="After photo"
+                              className="h-24 w-full rounded-sm border border-[#e2e5e8] object-cover"
+                            />
+                          </a>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {!hasAreas && areaPhotoGroups.map((group) => (
-              <div key={group.areaName} className="border-t border-gray-100 pt-3">
-                <p className="mb-1.5 text-xs font-semibold text-gray-800">{group.areaName}</p>
-                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
-                  {group.photos.map((photo) => (
-                    <a key={photo.id} href={estimatePhotoUrl(photo.storage_path)} target="_blank" rel="noopener noreferrer" className="relative">
-                      <img
-                        src={estimatePhotoUrl(photo.storage_path)}
-                        alt={`${PHOTO_TYPE_LABEL[photo.photo_type]} photo — ${group.areaName}`}
-                        className="h-24 w-full rounded-lg border border-gray-200 object-cover"
-                      />
-                      <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
-                        {PHOTO_TYPE_LABEL[photo.photo_type]}
-                      </span>
-                    </a>
-                  ))}
+                  )}
                 </div>
-              </div>
-            ))}
-          </section>
-        )}
-
-        {/* CHANGE ORDERS SECTION */}
-        {allChangeOrders.length > 0 && (
-          <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm space-y-2.5">
-            <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Change Orders</h2>
-            <div className="space-y-2">
-              {allChangeOrders.map((co) => (
-                <ChangeOrderApprovalCard key={co.id} token={token ?? ""} changeOrder={co} />
+              )}
+              {!hasAreas && areaPhotoGroups.map((group) => (
+                <div key={group.areaName} className="border-t border-[#eef0f2] pt-3 mt-3">
+                  <p className="mb-1.5 text-[11px] font-semibold text-gray-700">{group.areaName}</p>
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+                    {group.photos.map((photo) => (
+                      <a key={photo.id} href={estimatePhotoUrl(photo.storage_path)} target="_blank" rel="noopener noreferrer" className="relative">
+                        <img
+                          src={estimatePhotoUrl(photo.storage_path)}
+                          alt={`${PHOTO_TYPE_LABEL[photo.photo_type]} photo — ${group.areaName}`}
+                          className="h-24 w-full rounded-sm border border-[#e2e5e8] object-cover"
+                        />
+                        <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                          {PHOTO_TYPE_LABEL[photo.photo_type]}
+                        </span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
-          </section>
-        )}
+          )}
 
-        {/* INVOICES SECTION */}
-        {invoices.length > 0 && (
-          <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm space-y-2.5">
-            <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Invoices</h2>
-            <div className="space-y-2">
-              {invoices.map((inv) => {
-                const pays = inv.payments ?? [];
-                const paid = pays.reduce((s, p) => s + (p.amount ?? 0), 0);
-                const invTotal = inv.total ?? calculateInvoiceTotal(inv.subtotal ?? 0, inv.tax ?? 0);
-                const balance = calculateRemainingBalance(invTotal, paid);
-                const status = deriveInvoiceStatus({
-                  lifecycleStatus: "sent",
-                  total: invTotal,
-                  amountPaid: paid,
-                  dueDate: inv.due_date,
-                  today,
-                });
-                const isPaidInFull = status === "paid";
-                
-                return (
-                  <div key={inv.id} className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2 text-xs">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 truncate">
-                        <span className="font-mono font-bold text-gray-900">
-                          #{inv.invoice_number ?? inv.id.slice(0, 8)}
-                        </span>
-                        <span className="text-[11px] text-gray-500 truncate">
-                          Due: {inv.due_date ?? "—"}
-                        </span>
-                      </div>
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0 ${
-                        isPaidInFull 
-                          ? "bg-emerald-100 text-emerald-700" 
-                          : "bg-amber-100 text-amber-700"
-                      }`}>
-                        {status.replace(/_/g, " ")}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 bg-white px-2.5 py-1.5 rounded border border-gray-200 text-[11px]">
-                      <div className="flex justify-between text-gray-500">
-                        <span>Total:</span>
-                        <span className="font-medium text-gray-900">{money(invTotal)}</span>
-                      </div>
-                      <div className="flex justify-between text-gray-500">
-                        <span>Paid:</span>
-                        <span className="font-medium text-emerald-600">-{money(paid)}</span>
-                      </div>
-                      <div className="flex justify-between font-bold text-gray-900">
-                        <span>Balance:</span>
-                        <span className="text-gray-700">{money(balance)}</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
-        {/* PAYMENT INSTRUCTIONS */}
-        {company.payment_instructions && (
-          <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm space-y-1.5">
-            <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Payment Instructions</h2>
-            <p className="text-xs text-gray-600 whitespace-pre-wrap leading-relaxed bg-gray-50 p-3 rounded-lg border border-gray-200">
-              {company.payment_instructions}
-            </p>
-          </section>
-        )}
-
-        {/* TERMS & CONDITIONS ACCORDION */}
-        {(() => {
-          const terms = getEstimateTermsTemplate(termsPayload?.key ?? null, termsPayload?.override ?? null);
-          return (
-            <details className="group rounded-xl border border-gray-200 bg-white shadow-sm">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 hover:bg-gray-50 rounded-xl">
-                <span>Terms &amp; Conditions</span>
-                <span aria-hidden className="text-gray-400 transition-transform group-open:rotate-180">▾</span>
-              </summary>
-              <div className="space-y-3 border-t border-gray-100 px-4 py-3 text-xs">
-                <TermsBody className="leading-relaxed text-gray-600" body={terms.body} />
-                {company.terms_conditions && (
-                  <div className="border-t border-gray-100 pt-3">
-                    <p className="whitespace-pre-wrap leading-relaxed text-gray-600">{company.terms_conditions}</p>
-                  </div>
-                )}
+          {/* CHANGE ORDERS */}
+          {allChangeOrders.length > 0 && (
+            <div className="mb-6">
+              <p className={sectionTitle}>Change Orders</p>
+              <div>
+                {allChangeOrders.map((co) => (
+                  <ChangeOrderApprovalCard key={co.id} token={token ?? ""} changeOrder={co} />
+                ))}
               </div>
-            </details>
-          );
-        })()}
+            </div>
+          )}
 
-        {/* SIGNATURE / APPROVAL SECTION */}
-        <section className={`rounded-xl border p-4 shadow-sm ${
-          isSigned 
-            ? "border-emerald-300 bg-emerald-50" 
-            : "border-gray-200 bg-white"
-        }`}>
+          {/* INVOICES */}
+          {invoices.length > 0 && (
+            <div className="mb-6">
+              <p className={sectionTitle}>Invoices</p>
+              <div className="space-y-2">
+                {invoices.map((inv) => {
+                  const pays = inv.payments ?? [];
+                  const paid = pays.reduce((s, p) => s + (p.amount ?? 0), 0);
+                  const invTotal = inv.total ?? calculateInvoiceTotal(inv.subtotal ?? 0, inv.tax ?? 0);
+                  const balance = calculateRemainingBalance(invTotal, paid);
+                  const status = deriveInvoiceStatus({
+                    lifecycleStatus: "sent",
+                    total: invTotal,
+                    amountPaid: paid,
+                    dueDate: inv.due_date,
+                    today,
+                  });
+                  const isPaidInFull = status === "paid";
+
+                  return (
+                    <div key={inv.id} className="rounded-md border border-[#e2e5e8] p-3 space-y-2 text-[11px]">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 truncate">
+                          <span className="font-mono font-bold text-[#1f2429]">
+                            #{inv.invoice_number ?? inv.id.slice(0, 8)}
+                          </span>
+                          <span className="text-gray-500 truncate">Due: {inv.due_date ?? "—"}</span>
+                        </div>
+                        <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0 ${
+                          isPaidInFull ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                        }`}>
+                          {status.replace(/_/g, " ")}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 bg-[#f7f8f9] px-2.5 py-1.5 rounded border border-[#e2e5e8]">
+                        <div className="flex justify-between text-gray-500">
+                          <span>Total:</span>
+                          <span className="font-medium text-[#1f2429]">{money(invTotal)}</span>
+                        </div>
+                        <div className="flex justify-between text-gray-500">
+                          <span>Paid:</span>
+                          <span className="font-medium text-emerald-600">-{money(paid)}</span>
+                        </div>
+                        <div className="flex justify-between font-bold text-[#1f2429]">
+                          <span>Balance:</span>
+                          <span className="text-gray-700">{money(balance)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* PAYMENT INSTRUCTIONS */}
+          {company.payment_instructions && (
+            <div className="mb-6">
+              <p className={sectionTitle}>Payment Instructions</p>
+              <p className="text-[11px] text-gray-600 whitespace-pre-wrap leading-relaxed bg-[#f7f8f9] p-3 rounded border border-[#e2e5e8]">
+                {company.payment_instructions}
+              </p>
+            </div>
+          )}
+
+          {/* TERMS & CONDITIONS — collapsible for readability (this is
+              a page, not paper), but the summary row uses the exact
+              same section-title styling as everything else instead of
+              a distinct "card header" look. */}
+          {(() => {
+            const terms = getEstimateTermsTemplate(termsPayload?.key ?? null, termsPayload?.override ?? null);
+            return (
+              <details className="group mb-6">
+                <summary className={`${sectionTitle} cursor-pointer list-none flex items-center justify-between`}>
+                  <span>Terms &amp; Conditions</span>
+                  <span aria-hidden className="text-gray-400 transition-transform group-open:rotate-180">▾</span>
+                </summary>
+                <div className="text-[11px] space-y-3">
+                  <TermsBody className="leading-relaxed text-gray-600" body={terms.body} />
+                  {company.terms_conditions && (
+                    <div className="border-t border-[#eef0f2] pt-3">
+                      <p className="whitespace-pre-wrap leading-relaxed text-gray-600">{company.terms_conditions}</p>
+                    </div>
+                  )}
+                </div>
+              </details>
+            );
+          })()}
+
+          {/* SIGNATURE / APPROVAL — matches the PDF's .signature-box:
+              a plain bordered box, centered content. Green border only
+              once actually signed, same accent this page already used. */}
           <div className="mb-2">
-            <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-500">
-              {isSigned ? "Approval Status" : "Authorize Estimate"}
-            </h2>
+            <p className={sectionTitle}>{isSigned ? "Approval Status" : "Authorize Estimate"}</p>
+            <div className={`rounded-md border p-5 text-center ${isSigned ? "border-emerald-300 bg-emerald-50" : "border-[#e2e5e8]"}`}>
+              <SignEstimateForm
+                token={token ?? ""}
+                signedValue={estimate.signature?.value ?? null}
+                signedDate={estimate.signature?.date ?? null}
+              />
+            </div>
           </div>
-          <SignEstimateForm
-            token={token ?? ""}
-            signedValue={estimate.signature?.value ?? null}
-            signedDate={estimate.signature?.date ?? null}
-          />
-        </section>
 
-        {/* FOOTER */}
-        <footer className="pt-2 text-center text-xs text-gray-500 space-y-0.5">
-          <p className="font-medium text-gray-800">{company.company_name} {company.company_phone ? `· ${company.company_phone}` : ""}</p>
-          {company.footer_message && <p className="text-[11px]">{company.footer_message}</p>}
-        </footer>
+          {/* FOOTER — same shape as the PDF's .footer */}
+          <footer className="mt-10 pt-4 border-t border-[#e2e5e8] text-center text-[10px] text-gray-400 space-y-0.5">
+            <p className="font-medium text-gray-600">{company.company_name} {company.company_phone ? `· ${company.company_phone}` : ""}</p>
+            {company.footer_message && <p>{company.footer_message}</p>}
+          </footer>
 
+        </div>
       </main>
     </div>
   );
