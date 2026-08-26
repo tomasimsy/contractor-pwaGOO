@@ -66,26 +66,3 @@ export function getFromAddress(preferred?: string | null): string {
   }
   return DEV_SANDBOX_FROM_ADDRESS;
 }
-
-/**
- * The verified, intended production From/Reply-To for roofing
- * estimates sent under the One Square Roofing LLC brand specifically
- * (see sendEstimateEmail.ts's scoped override — every other estimate
- * type/profile is unaffected and keeps resolving through
- * getFromAddress above, unchanged). onesquareroof.com's Resend custom
- * domain was confirmed verified in the Resend dashboard before this
- * was wired in (DKIM + rsend MX/SPF, checked against live DNS).
- *
- * These are the DEFAULTS for that one scoped case — EMAIL_FROM_ADDRESS
- * / EMAIL_REPLY_TO still win when explicitly set, so rotating the
- * address later needs an env change, not a code change. */
-export const ONE_SQUARE_ROOFING_FROM_ADDRESS = "One Square Roofing <office@onesquareroof.com>";
-export const ONE_SQUARE_ROOFING_REPLY_TO = "office@onesquareroof.com";
-
-/** Resend sends via SES, not through the office@ mailbox's own SMTP —
- * so nothing lands in that mailbox's "Sent" folder on its own. Bcc'ing
- * the mailbox on every send is the only way to get a copy INTO the
- * mailbox itself (Inbox, not Sent — IMAP has no way to fake that from
- * outside); EMAIL_BCC overrides this default the same way
- * EMAIL_FROM_ADDRESS/EMAIL_REPLY_TO do above. */
-export const ONE_SQUARE_ROOFING_BCC = "office@onesquareroof.com";
