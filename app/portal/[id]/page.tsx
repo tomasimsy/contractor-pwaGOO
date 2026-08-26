@@ -43,6 +43,7 @@ type PortalArea = {
   measurements: string | null; quantity: number | null; quantity_unit: string | null;
   defect: string | null; location: string | null; corrective_action: string | null;
   materials_included: string | null; scope_items: string | null;
+  material_cost: number | null; labor_cost: number | null; tax: number | null;
   line_items: PortalAreaLineItem[];
 };
 
@@ -391,7 +392,7 @@ export default async function CustomerPortalPage({
                     <div key={area.id} className="border border-[#e2e5e8] rounded-md">
                       <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-[#e2e5e8] bg-[#f7f8f9]">
                         <span className="font-bold text-[12px] text-[#1f2429] truncate">{area.area_name || `Area ${area.sequence_number + 1}`}</span>
-                        <span className="font-bold text-[12px] text-[#1f2429] shrink-0">{money(area.estimated_repair_cost ?? 0)}</span>
+                        {/* <span className="font-bold text-[12px] text-[#1f2429] shrink-0">{money(area.estimated_repair_cost ?? 0)}</span> */}
                       </div>
 
                       {(quickFacts.length > 0 || narrativeFields.length > 0) && (
@@ -409,6 +410,29 @@ export default async function CustomerPortalPage({
                           ))}
                         </div>
                       )}
+
+                      {/* Cost breakdown — same 4 figures the PDF shows
+                          per area (statTile row in estimateProposal.ts),
+                          so a customer sees material/labor/tax without
+                          needing to open the attached PDF. */}
+                      <div className="grid grid-cols-2 gap-2 border-t border-[#eef0f2] p-4 text-[11px] sm:grid-cols-4">
+                        <div className="rounded-sm border border-[#e2e5e8] bg-[#f7f8f9] px-2 py-1.5 text-center">
+                          <p className="text-[9px] font-bold uppercase tracking-wide text-gray-500">Material</p>
+                          <p className="font-bold text-[#1f2429]">{money(area.material_cost ?? 0)}</p>
+                        </div>
+                        <div className="rounded-sm border border-[#e2e5e8] bg-[#f7f8f9] px-2 py-1.5 text-center">
+                          <p className="text-[9px] font-bold uppercase tracking-wide text-gray-500">Labor</p>
+                          <p className="font-bold text-[#1f2429]">{money(area.labor_cost ?? 0)}</p>
+                        </div>
+                        <div className="rounded-sm border border-[#e2e5e8] bg-[#f7f8f9] px-2 py-1.5 text-center">
+                          <p className="text-[9px] font-bold uppercase tracking-wide text-gray-500">Tax</p>
+                          <p className="font-bold text-[#1f2429]">{money(area.tax ?? 0)}</p>
+                        </div>
+                        <div className="rounded-sm border border-[#1f2429] bg-[#1f2429] px-2 py-1.5 text-center">
+                          <p className="text-[9px] font-bold uppercase tracking-wide text-white/70">Estimated Repair</p>
+                          <p className="font-bold text-white">{money(area.estimated_repair_cost ?? 0)}</p>
+                        </div>
+                      </div>
 
                       {area.line_items.length > 0 && (
                         <div className="space-y-1 border-t border-[#eef0f2] p-4 text-[11px]">
@@ -475,7 +499,7 @@ export default async function CustomerPortalPage({
               not on the cover page — plain rows with a hairline bottom
               border, same as a PDF table row (td { border-bottom: 1px
               solid #eef0f2 }), no colored pills/accent rails. */}
-          {scopeItemCount > 0 && (
+          {/* {scopeItemCount > 0 && (
             <div className="mb-6">
               <p className={sectionTitle}>Scope Items</p>
               <div className="text-[11.5px] text-gray-700">
@@ -532,11 +556,7 @@ export default async function CustomerPortalPage({
                     <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
                   </div>
                 ))}
-                {/* Change orders — still called out (amber label) since
-                    it's genuinely a different kind of scope (added
-                    after the original quote), just without the heavy
-                    tinted-pill treatment the rest of this page no
-                    longer uses either. */}
+                
                 {approvedChangeOrderItems.map((item) => (
                   <div key={item.id} className="flex justify-between items-start gap-2 py-1.5 border-b border-[#eef0f2]">
                     <span className="break-words text-gray-700">
@@ -547,13 +567,15 @@ export default async function CustomerPortalPage({
                 ))}
               </div>
             </div>
-          )}
+          )} }
 
           {/* FINANCIAL SUMMARY — matches the PDF's .summary-box: light
               gray box, muted rows, a ruled total, and (when there's a
               balance) a dark full-width bar at the bottom — the ONE
               place on this page that still gets a dark background,
               same as the PDF. */}
+              <hr className="border-t border-[#97999d] mb-6" />
+
           <div className="rounded-md border border-[#e2e5e8] bg-[#f7f8f9] px-5 py-4 mb-6 text-[11px] overflow-hidden">
             {hasAdjustments && (
               <div className="flex justify-between py-1 text-gray-600">
