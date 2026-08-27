@@ -60,7 +60,6 @@ import type { EstimateService, Estimate } from "./estimateService";
 import type { InvoiceService, Invoice } from "./invoiceService";
 import type { PaymentService } from "./paymentService";
 import type { ProjectService } from "./projectService";
-
 export interface EstimateWorkflowResult {
   ok: boolean;
   message?: string;

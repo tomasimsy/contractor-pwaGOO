@@ -184,3 +184,49 @@ self.addEventListener("fetch", (event) => {
 
   // Everything else same-origin falls through to the network untouched.
 });
+
+/**
+ * Web Push — displays the notification sent from lib/push/sendPush.ts
+ * (JSON body: { title, body, url? }). Runs even when no tab is open,
+ * which is the entire point of push vs. an in-page toast.
+ */
+self.addEventListener("push", (event) => {
+  let payload = { title: "OSR Pros", body: "" };
+  try {
+    if (event.data) payload = { ...payload, ...event.data.json() };
+  } catch {
+    // Malformed/non-JSON payload — fall back to the generic title above
+    // rather than dropping the notification entirely.
+  }
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      data: { url: payload.url || "/dashboard" },
+    })
+  );
+});
+
+/** Focuses an already-open tab on the target URL if one exists,
+ * otherwise opens a new one — standard "bring the app to front"
+ * behavior for a notification click. */
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url || "/dashboard";
+  event.waitUntil(
+    (async () => {
+      const clientsList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const client of clientsList) {
+        if (client.url.includes(targetUrl) && "focus" in client) {
+          return client.focus();
+        }
+      }
+      if (clientsList.length > 0 && "focus" in clientsList[0]) {
+        clientsList[0].navigate(targetUrl);
+        return clientsList[0].focus();
+      }
+      return self.clients.openWindow(targetUrl);
+    })()
+  );
+});

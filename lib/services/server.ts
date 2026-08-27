@@ -34,6 +34,7 @@ import { createSupabaseEstimateAreaLineItemService } from "./supabase/estimateAr
 import { createSupabaseSubcontractorService } from "./supabase/subcontractorService";
 import { createSupabaseAgentCommissionService } from "./supabase/agentCommissionService";
 import { createSupabaseExpenseService } from "./supabase/expenseService";
+import { createSupabasePushSubscriptionService } from "./supabase/pushSubscriptionService";
 import { createInMemoryServices } from "./testing/inMemoryServices";
 import { createEstimateWorkflow, type EstimateWorkflow } from "./estimateWorkflow";
 import { createChangeOrderWorkflow, type ChangeOrderWorkflow } from "./changeOrderWorkflow";
@@ -48,6 +49,7 @@ import type { AuditService } from "./auditService";
 import type { SubcontractorService } from "./subcontractorService";
 import type { AgentCommissionService } from "./agentCommissionService";
 import type { ExpenseService } from "./expenseService";
+import type { PushSubscriptionService } from "./pushSubscriptionService";
 
 export interface ServerAppServices {
   clientService: ClientService;
@@ -60,6 +62,7 @@ export interface ServerAppServices {
   subcontractorService: SubcontractorService;
   agentCommissionService: AgentCommissionService;
   expenseService: ExpenseService;
+  pushSubscriptionService: PushSubscriptionService;
   estimateWorkflow: EstimateWorkflow;
   changeOrderWorkflow: ChangeOrderWorkflow;
   cpaPackageService: CpaPackageService;
@@ -115,6 +118,7 @@ export function createServerAppServices(
   const subcontractorService = createSupabaseSubcontractorService(supabase, validationService, currentUserId, transactionService);
   const agentCommissionService = createSupabaseAgentCommissionService(supabase, validationService, currentUserId, transactionService, expenseService);
 
+  const pushSubscriptionService = createSupabasePushSubscriptionService(supabase);
   const estimateWorkflow = createEstimateWorkflow({ estimateService, invoiceService, paymentService, projectService });
   const changeOrderWorkflow = createChangeOrderWorkflow({ changeOrderService, estimateService, invoiceService });
   // Cash-basis only — see cpaPackageService.ts's header for why this is
@@ -132,6 +136,7 @@ export function createServerAppServices(
     subcontractorService,
     agentCommissionService,
     expenseService,
+    pushSubscriptionService,
     estimateWorkflow,
     changeOrderWorkflow,
     cpaPackageService,

@@ -26,6 +26,7 @@ import type { EstimateService } from "@/lib/services/estimateService";
 import type { EstimatePhotoService } from "@/lib/services/estimatePhotoService";
 import type { ExpenseReceiptService } from "@/lib/services/expenseReceiptService";
 import type { RoofingAreaService } from "@/lib/services/roofingAreaService";
+import type { PushSubscriptionService } from "@/lib/services/pushSubscriptionService";
 import type { RoofingAreaTemplateService } from "@/lib/services/roofingAreaTemplateService";
 import type { EstimateAreaLineItemService } from "@/lib/services/estimateAreaLineItemService";
 import type { ChangeOrderService } from "@/lib/services/changeOrderService";
@@ -92,6 +93,10 @@ export interface AppServices extends InMemoryServices {
    * header. The matching algorithm itself is untouched. */
   bankReconciliationService: BankReconciliationService;
   auditService: AuditService;
+  /** Staff devices subscribed to Web Push — see lib/push/sendPush.ts
+   * (the "estimate signed" notification) and the enable/disable toggle
+   * wherever notifications are turned on. */
+  pushSubscriptionService: PushSubscriptionService;
   /** The single canonical estimate-signing workflow (sign/unsign) — see
    * lib/services/estimateWorkflow.ts. The portal reaches the exact same
    * function through app/api/portal/sign/route.ts, not a copy of it. */
@@ -158,7 +163,7 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
     const server = createServerAppServices(supabase, currentUserId);
     const {
       auditService, clientService, projectService, estimateService, changeOrderService, invoiceService, paymentService,
-      expenseService, subcontractorService, agentCommissionService, estimateWorkflow, changeOrderWorkflow,
+      expenseService, subcontractorService, agentCommissionService, estimateWorkflow, changeOrderWorkflow, pushSubscriptionService,
     } = server;
 
     const estimatePhotoService = createEstimatePhotoService(supabase);
@@ -229,6 +234,7 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
       companyProfileService,
       cpaPackageService,
       bankReconciliationService,
+      pushSubscriptionService,
       estimateWorkflow,
       changeOrderWorkflow,
     };

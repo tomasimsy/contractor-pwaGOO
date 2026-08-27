@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Building2, FolderLock } from "lucide-react";
+import { Building2, FolderLock, BellRing } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { RequirePermission } from "@/components/layout/RequirePermission";
@@ -33,6 +33,19 @@ export default function SettingsPage() {
               <div className="font-medium text-foreground">Company Documents</div>
               <div className="mt-0.5 text-sm text-muted-foreground">
                 LLC/EIN paperwork, licenses, insurance, tax documents, and other business files — securely stored, categorized, and searchable.
+              </div>
+            </div>
+          </Link>
+
+          <Link
+            href="/settings/notifications"
+            className="flex items-start gap-3 rounded-xl border border-border bg-card p-4 hover:border-primary/40 hover:bg-muted/40"
+          >
+            <BellRing className="mt-0.5 size-5 shrink-0 text-primary" />
+            <div>
+              <div className="font-medium text-foreground">Notifications</div>
+              <div className="mt-0.5 text-sm text-muted-foreground">
+                Get a push notification on this device when a customer signs an estimate.
               </div>
             </div>
           </Link>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { SUPABASE_URL } from "@/lib/supabase/env";
 import { createServerAppServices } from "@/lib/services/server";
+import { sendPushToCompany } from "@/lib/push/sendPush";
 
 /**
  * The ONLY route in this app permitted to construct a service-role
@@ -88,6 +89,23 @@ export async function POST(request: NextRequest) {
 
     if (!result.ok) {
       return NextResponse.json({ ok: false, message: result.message ?? "This estimate could not be signed." }, { status: 200 });
+    }
+
+    // Best-effort staff notification — deliberately done HERE, not inside
+    // estimateWorkflow.ts. That file is shared with the browser (staff
+    // manually signing from EstimateDetail runs the identical function
+    // client-side via ServicesProvider.tsx), and web-push depends on
+    // Node's net/http internals — importing it from anything reachable
+    // by the client bundle breaks the build (confirmed: it did). This
+    // route is real server-only code, so it's the right place for the
+    // one thing that's specific to a CUSTOMER signing (not staff
+    // signing on their behalf) anyway. sendPushToCompany never throws.
+    if (result.estimate) {
+      await sendPushToCompany(services.pushSubscriptionService, result.estimate.companyId, {
+        title: "Estimate signed",
+        body: `${result.estimate.title || "An estimate"} (#${result.estimate.estimateNumber ?? result.estimate.id.slice(0, 8)}) was just signed by the customer.`,
+        url: `/estimates/${result.estimate.id}`,
+      });
     }
 
     return NextResponse.json({ ok: true });
