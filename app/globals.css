@@ -5,6 +5,8 @@
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-muted: var(--muted);
@@ -35,6 +37,12 @@
   --foreground: #171717;
   --card: #ffffff;
   --card-foreground: #171717;
+  /* Same solid-white background as --card — bg-popover was used
+     throughout (UserMenu.tsx, NotificationsMenu.tsx) with no matching
+     token ever defined, so every dropdown rendered with a transparent
+     background, letting page content underneath show through. */
+  --popover: #ffffff;
+  --popover-foreground: #171717;
   --primary: #16794f;
   --primary-foreground: #ffffff;
   --muted: #f4f4f5;
@@ -53,6 +61,8 @@
   --foreground: #ededed;
   --card: #171717;
   --card-foreground: #ededed;
+  --popover: #171717;
+  --popover-foreground: #ededed;
   --primary: #34b579;
   --primary-foreground: #05170f;
   --muted: #27272a;

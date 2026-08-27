@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase/client";
-import type { Role } from "@/lib/services";
+import { ROLES, type Role } from "@/lib/services";
 
 /**
  * The authenticated user's profile — company/role, the scoping
@@ -81,7 +81,10 @@ const LEGACY_ROLE_ALIASES: Record<string, Role> = {
 };
 
 function resolveRole(rawRole: string): Role | null {
-  const ROLES: Role[] = ["admin", "office", "sales", "project_manager", "accountant", "subcontractor", "agent"];
+  // Was a locally-duplicated, out-of-sync copy of this exact list —
+  // missing "field_lead" (and anything else added to permissions.ts
+  // since) would have silently resolved to null here. Importing the
+  // one real list means this can never drift again.
   if ((ROLES as string[]).includes(rawRole)) return rawRole as Role;
   return LEGACY_ROLE_ALIASES[rawRole] ?? null;
 }

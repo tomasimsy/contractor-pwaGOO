@@ -38,9 +38,10 @@ export type Role =
   | "project_manager"
   | "accountant"
   | "subcontractor"
-  | "agent";
+  | "agent"
+  | "field_lead";
 
-export const ROLES: Role[] = ["admin", "office", "sales", "project_manager", "accountant", "subcontractor", "agent"];
+export const ROLES: Role[] = ["admin", "office", "sales", "project_manager", "accountant", "subcontractor", "agent", "field_lead"];
 
 /** Every resource a permission can be scoped to. Kept as a closed
  * union (like SchemaRegistry entity names) so a typo in a resource
@@ -168,6 +169,15 @@ const PERMISSION_MATRIX: Record<Role, Partial<Record<Resource, ResourcePermissio
     agent_payment: { view: true },
     agent_assignment: { view: true },
     project: { view: true },
+  },
+  /** Runs one job on-site — not a full internal team member. This
+   * matrix entry is the ACTION check ("can a field_lead view a
+   * project at all") — row-level scoping ("only the one they're
+   * assigned to") is a separate, later RLS piece, same caveat as
+   * Subcontractor/Agent above. No write access anywhere. */
+  field_lead: {
+    project: { view: true },
+    estimate: { view: true },
   },
 };
 
