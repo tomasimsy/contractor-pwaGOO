@@ -152,7 +152,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       docTitle: `Invoice ${invoice.invoice_number || invoice.id.slice(0, 8)}`,
       bodyHtml: `
         <div class="header">
-          <div>${renderCompanyHeaderBlock(company)}</div>
+          <div>${renderCompanyHeaderBlock(company, request.nextUrl.origin)}</div>
           <div>
             <div class="doc-title">INVOICE</div>
             <div class="doc-meta"><strong>#${invoice.invoice_number || invoice.id.slice(0, 8)}</strong></div>

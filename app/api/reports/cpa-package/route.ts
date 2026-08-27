@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
       const company = await getCompanySettingsByCompanyId(supabase, companyId);
       const html = pdfDocument({
         docTitle: `${company.company_name} — Year-End Financial Package ${taxYear}`,
-        bodyHtml: renderPackageHtml(company, pkg.income, pkg.expenses, pkg.payees, pkg.netProfitLoss, taxYear),
+        bodyHtml: renderPackageHtml(company, pkg.income, pkg.expenses, pkg.payees, pkg.netProfitLoss, taxYear, request.nextUrl.origin),
       });
       return new NextResponse(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
     }
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
       const company = await getCompanySettingsByCompanyId(supabase, companyId);
       const html = pdfDocument({
         docTitle: `${company.company_name} — Profit & Loss ${taxYear}`,
-        bodyHtml: renderProfitAndLossHtml(company, pkg.income, pkg.expenses, pkg.netProfitLoss, taxYear),
+        bodyHtml: renderProfitAndLossHtml(company, pkg.income, pkg.expenses, pkg.netProfitLoss, taxYear, request.nextUrl.origin),
       });
       return new NextResponse(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
     }
@@ -216,11 +216,12 @@ function renderPackageHtml(
   expenses: ExpenseSummary,
   payees: PayeeReport,
   netProfitLoss: number,
-  taxYear: number
+  taxYear: number,
+  origin: string
 ): string {
   return `
     <div class="header">
-      <div>${renderCompanyHeaderBlock(company)}</div>
+      <div>${renderCompanyHeaderBlock(company, origin)}</div>
       <div>
         <div class="doc-title">YEAR-END PACKAGE</div>
         <div class="doc-meta"><strong>Tax Year:</strong> ${taxYear}<br>Prepared ${formatDate(new Date().toISOString())}</div>
@@ -316,11 +317,12 @@ function renderProfitAndLossHtml(
   income: IncomeSummary,
   expenses: ExpenseSummary,
   netProfitLoss: number,
-  taxYear: number
+  taxYear: number,
+  origin: string
 ): string {
   return `
     <div class="header">
-      <div>${renderCompanyHeaderBlock(company)}</div>
+      <div>${renderCompanyHeaderBlock(company, origin)}</div>
       <div>
         <div class="doc-title">PROFIT &amp; LOSS</div>
         <div class="doc-meta"><strong>Tax Year:</strong> ${taxYear}<br>Prepared ${formatDate(new Date().toISOString())}</div>

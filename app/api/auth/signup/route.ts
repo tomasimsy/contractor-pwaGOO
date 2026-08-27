@@ -49,6 +49,35 @@ export async function POST(request: NextRequest) {
     }
     const userId = created.user.id;
 
+    // Case-insensitive duplicate-company guard. Nothing enforced this
+    // before — every signup submission (including a retried/duplicate
+    // one, or someone accidentally re-registering their own business)
+    // silently created a brand-new `companies` row with no check at
+    // all. This is the confirmed root cause of 3 separate company_id
+    // rows all named "One Square Roofing LLC" already sitting in
+    // production. `ilike` with escaped wildcards does the case-fold;
+    // trimmed comparison only (not fuzzy) so this can't false-positive
+    // block two genuinely different companies that just share a
+    // common word.
+    const escapedName = companyName.replace(/[%_\\]/g, (c: string) => `\\${c}`);
+    const { data: existingCompany, error: existingCompanyError } = await supabase
+      .from("companies")
+      .select("id")
+      .ilike("name", escapedName)
+      .limit(1)
+      .maybeSingle();
+    if (existingCompanyError) {
+      await supabase.auth.admin.deleteUser(userId);
+      return NextResponse.json({ error: existingCompanyError.message }, { status: 500 });
+    }
+    if (existingCompany) {
+      await supabase.auth.admin.deleteUser(userId);
+      return NextResponse.json(
+        { error: "A company with this name is already registered. If this is your business, please sign in instead, or contact support if you believe this is a mistake." },
+        { status: 409 }
+      );
+    }
+
     const { data: company, error: companyError } = await supabase
       .from("companies")
       .insert({ name: companyName })

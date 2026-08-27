@@ -10,6 +10,7 @@ import type { CompanyProfile, CompanyProfileService } from "../companyProfileSer
 import type { UUID } from "../types";
 import type { ValidationService } from "../validationService";
 import { validatePortalDomain } from "../../portalDomainValidation";
+import { enforcePermission } from "./enforcePermission";
 
 interface CompanyProfileRow {
   id: string;
@@ -80,9 +81,31 @@ export function createSupabaseCompanyProfileService(
     portalDomain?: string | null;
     emailMessageTemplate?: string | null;
   }): Promise<CompanyProfile> {
+    // Business Profiles aren't their own Resource in PERMISSION_MATRIX
+    // (permissions.ts) — treated as company_settings, same
+    // admin/office-only boundary as the rest of company branding.
+    await enforcePermission(supabase, "company_settings", "create");
     if (!input.companyName.trim()) throw new Error("A business name is required.");
     const domainCheck = validatePortalDomain(input.portalDomain ?? "");
     if (!domainCheck.valid) throw new Error(domainCheck.message ?? "Invalid portal domain.");
+
+    // Case-insensitive duplicate guard, scoped to this company only —
+    // nothing stopped a company from ending up with several near-
+    // identical active profiles (e.g. multiple "One Square Roofing
+    // LLC" rows) before this. `ilike` with escaped wildcards case-
+    // folds without turning into a fuzzy/substring match.
+    const escapedName = input.companyName.trim().replace(/[%_\\]/g, (c) => `\\${c}`);
+    const { data: existingProfile, error: existingProfileError } = await supabase
+      .from("company_profiles")
+      .select("id")
+      .eq("company_id", input.companyId)
+      .is("deleted_at", null)
+      .ilike("company_name", escapedName)
+      .limit(1)
+      .maybeSingle();
+    if (existingProfileError) throw new Error(`Failed to check for an existing business profile: ${existingProfileError.message}`);
+    if (existingProfile) throw new Error("A business profile with this name already exists.");
+
     const actorId = await currentUserId();
     const { data, error } = await supabase
       .from("company_profiles")
@@ -119,8 +142,32 @@ export function createSupabaseCompanyProfileService(
       emailMessageTemplate: string | null;
     }>
   ): Promise<CompanyProfile> {
+    await enforcePermission(supabase, "company_settings", "update");
     if (changes.companyName !== undefined && !changes.companyName.trim()) {
       throw new Error("A business name is required.");
+    }
+    // Same duplicate guard as create() — renaming a profile into a
+    // name that collides with another active profile on the SAME
+    // company is blocked the same way creating a fresh duplicate is.
+    if (changes.companyName !== undefined) {
+      const { data: currentRow, error: currentRowError } = await supabase
+        .from("company_profiles")
+        .select("company_id")
+        .eq("id", profileId)
+        .single();
+      if (currentRowError) throw new Error(`Failed to load this business profile: ${currentRowError.message}`);
+      const escapedName = changes.companyName.trim().replace(/[%_\\]/g, (c) => `\\${c}`);
+      const { data: existingProfile, error: existingProfileError } = await supabase
+        .from("company_profiles")
+        .select("id")
+        .eq("company_id", currentRow.company_id)
+        .is("deleted_at", null)
+        .neq("id", profileId)
+        .ilike("company_name", escapedName)
+        .limit(1)
+        .maybeSingle();
+      if (existingProfileError) throw new Error(`Failed to check for an existing business profile: ${existingProfileError.message}`);
+      if (existingProfile) throw new Error("A business profile with this name already exists.");
     }
     let normalizedPortalDomain: string | null | undefined;
     if (changes.portalDomain !== undefined) {
@@ -146,6 +193,7 @@ export function createSupabaseCompanyProfileService(
   }
 
   async function softDelete(profileId: UUID, reason: string): Promise<void> {
+    await enforcePermission(supabase, "company_settings", "delete");
     const check = validationService.validateDeleteReason(reason);
     if (!check.valid) throw new Error(check.issues[0]?.message ?? "A delete reason is required.");
     const actorId = await currentUserId();
@@ -157,6 +205,7 @@ export function createSupabaseCompanyProfileService(
   }
 
   async function restore(profileId: UUID): Promise<void> {
+    await enforcePermission(supabase, "company_settings", "update");
     const { error } = await supabase
       .from("company_profiles")
       .update({ deleted_at: null, deleted_by: null, delete_reason: null })

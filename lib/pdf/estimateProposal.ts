@@ -36,6 +36,10 @@ export interface EstimateProposalData {
   roofingAreaPhotos: Array<Record<string, any>>;
   estimatePhotosByType: { before: Array<Record<string, any>>; after: Array<Record<string, any>> };
   photoUrl: (storagePath: string) => string;
+  /** Same origin photoUrl is built from — kept here too so
+   * renderCompanyHeaderBlock can turn company.logo_url (a relative
+   * /api/... route) into something Puppeteer can actually load. */
+  origin: string;
   subtotal: number;
   taxAmount: number;
   markupAmount: number;
@@ -186,6 +190,7 @@ export async function loadEstimateProposalData(
     roofingAreaPhotos,
     estimatePhotosByType,
     photoUrl,
+    origin: options.origin,
     subtotal,
     taxAmount,
     markupAmount,
@@ -204,7 +209,7 @@ export async function loadEstimateProposalData(
  * PDF) without a second copy of ~1500 lines of markup. */
 export function renderEstimateProposalHtml(data: EstimateProposalData): { docTitle: string; bodyHtml: string } {
   const {
-    estimate, client, estimateItems, company, roofingAreas, roofingAreaPhotos, estimatePhotosByType, photoUrl,
+    estimate, client, estimateItems, company, roofingAreas, roofingAreaPhotos, estimatePhotosByType, photoUrl, origin,
     subtotal, taxAmount, markupAmount, discountAmount, approvedChangeOrderTotal, total, depositAmount,
     totalMaterialCost, totalLaborCost, totalRoofTax,
   } = data;
@@ -221,7 +226,7 @@ export function renderEstimateProposalHtml(data: EstimateProposalData): { docTit
   const bodyHtml = `
     <!-- Minimal Header -->
     <div class="header" style="border-bottom: 1px solid #e5e7eb; padding-bottom: 16px; margin-bottom: 24px;">
-      <div>${renderCompanyHeaderBlock(company)}</div>
+      <div>${renderCompanyHeaderBlock(company, origin)}</div>
       <div style="text-align: right;">
         <div style="font-size: 15px; font-weight: 700; color: #111827; letter-spacing: 0.05em;">PROPOSAL</div>
         <div style="font-size: 12px; font-weight: 600; color: #4b5563; margin-top: 2px;">

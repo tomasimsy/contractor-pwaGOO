@@ -168,10 +168,32 @@ export function pdfDocument(opts: {
 
 // Renders the company identity block used in the document header — shared
 // so estimate/invoice PDFs (and anything else) show the same company info.
-export function renderCompanyHeaderBlock(company: CompanySettings) {
+//
+// `origin` is needed to turn a stored logo_url into something Puppeteer can
+// actually load: Settings stores it as a RELATIVE route
+// (/api/company-documents/download?path=...; see app/(app)/settings/company/page.tsx),
+// which resolves fine in a browser but is meaningless to a PDF rendered from
+// a raw HTML string server-side — same "must be absolute" requirement
+// estimateProposal.ts's own `photoUrl` helper exists for. A Business
+// Profile's logoUrl can also be a full external URL entered by hand
+// (app/(app)/settings/company/profiles/page.tsx), so this only prefixes
+// `origin` when the stored value looks relative — never double-prefixes an
+// already-absolute one. Omitting `origin` just skips the logo (no crash),
+// so existing callers that haven't been updated yet degrade safely.
+export function renderCompanyHeaderBlock(company: CompanySettings, origin?: string) {
+  const logoUrl = company.logo_url && origin
+    ? (company.logo_url.startsWith("http") ? company.logo_url : `${origin}${company.logo_url}`)
+    : company.logo_url && company.logo_url.startsWith("http")
+      ? company.logo_url
+      : null;
   return `
-    <div class="company-name">${company.company_name}</div>
-    ${company.dba ? `<div class="company-dba" style="font-size:12px;font-weight:400;color:#4b5563;">DBA ${company.dba}</div>` : ""}
+    <div style="display:flex; align-items:center; gap:10px;">
+      ${logoUrl ? `<img src="${logoUrl}" alt="${company.company_name} logo" style="height:40px; width:auto; max-width:120px; object-fit:contain;">` : ""}
+      <div>
+        <div class="company-name">${company.company_name}</div>
+        ${company.dba ? `<div class="company-dba" style="font-size:12px;font-weight:400;color:#4b5563;">DBA ${company.dba}</div>` : ""}
+      </div>
+    </div>
     <div class="company-details">
       ${company.company_address}<br>
       ${company.company_phone} &middot; ${company.company_email}

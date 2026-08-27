@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
     const company = await getCompanySettingsByCompanyId(supabase, companyId);
     const html = pdfDocument({
       docTitle: `${statement.payeeName} — ${statement.isInternalLabor ? "Internal Labor Summary" : "Payment Summary"} ${taxYear}`,
-      bodyHtml: renderStatementHtml(company, statement, taxYear),
+      bodyHtml: renderStatementHtml(company, statement, taxYear, request.nextUrl.origin),
     });
     return new NextResponse(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
   } catch (error) {
@@ -61,12 +61,13 @@ export async function GET(request: NextRequest) {
 function renderStatementHtml(
   company: Awaited<ReturnType<typeof getCompanySettingsByCompanyId>>,
   statement: PayeeStatement,
-  taxYear: number
+  taxYear: number,
+  origin: string
 ): string {
   const docTitle = statement.isInternalLabor ? "INTERNAL LABOR SUMMARY" : "PAYMENT SUMMARY";
   return `
     <div class="header">
-      <div>${renderCompanyHeaderBlock(company)}</div>
+      <div>${renderCompanyHeaderBlock(company, origin)}</div>
       <div>
         <div class="doc-title">${docTitle}</div>
         <div class="doc-meta"><strong>Tax Year:</strong> ${taxYear}<br>Prepared ${formatDate(new Date().toISOString())}</div>

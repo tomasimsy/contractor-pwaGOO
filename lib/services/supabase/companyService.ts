@@ -8,6 +8,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CompanyService } from "../companyService";
 import type { UUID } from "../types";
 import { getCompanySettingsByCompanyId, updateCompanySettings, type CompanySettings } from "../../company";
+import { enforcePermission } from "./enforcePermission";
 
 export function createSupabaseCompanyService(
   supabase: SupabaseClient,
@@ -18,6 +19,7 @@ export function createSupabaseCompanyService(
   }
 
   async function update(companyId: UUID, changes: Partial<CompanySettings>): Promise<CompanySettings> {
+    await enforcePermission(supabase, "company_settings", "update");
     const actorId = await currentUserId();
     return updateCompanySettings(supabase, companyId, changes, actorId);
   }
