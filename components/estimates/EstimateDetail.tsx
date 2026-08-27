@@ -520,8 +520,8 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
           <button
             type="button"
             onClick={handleDownloadPdf}
-            disabled
-            className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+             
+            className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors  "
             title="PDF"
           >
             <Download className="size-3.5" />
