@@ -14,6 +14,12 @@ export type CompanySettings = {
   country: string | null;
   company_phone: string;
   company_email: string;
+  /** Extra BCC recipient for customer emails (estimate sends, payment
+   * receipts) — e.g. an office/accounting inbox. Null = no extra BCC
+   * beyond the existing "bcc the sending address itself" behavior
+   * those send paths already have. Overridable per Business Profile —
+   * see CompanyProfile.bccEmail/mergeProfileOverrides below. */
+  bcc_email: string | null;
   company_website: string;
   /** A second public-facing site — e.g. a dba's own domain alongside
    * the legal entity's (supabase/migrations/
@@ -56,6 +62,7 @@ export const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
   country: null,
   company_phone: "Add your phone number",
   company_email: "Add your email",
+  bcc_email: null,
   company_website: "",
   company_website_2: null,
   logo_url: null,
@@ -101,6 +108,7 @@ export function mergeCompanyDefaults(row: Partial<CompanySettings> | null | unde
     country: row?.country || null,
     company_phone: row?.company_phone || DEFAULT_COMPANY_SETTINGS.company_phone,
     company_email: row?.company_email || DEFAULT_COMPANY_SETTINGS.company_email,
+    bcc_email: row?.bcc_email || null,
     company_website: row?.company_website || "",
     company_website_2: row?.company_website_2 || null,
     logo_url: row?.logo_url || null,
@@ -178,6 +186,9 @@ export type CompanyProfile = {
   logoUrl: string | null;
   companyPhone: string | null;
   companyEmail: string | null;
+  /** This profile's own BCC override — null falls back to the
+   * company-wide bcc_email. See CompanySettings.bcc_email above. */
+  bccEmail: string | null;
   companyWebsite: string | null;
   companyAddress: string | null;
   footerMessage: string | null;
@@ -210,6 +221,7 @@ export function parseCompanyProfileRow(row: Record<string, unknown> | null | und
     logoUrl: (row.logo_url as string) || null,
     companyPhone: (row.company_phone as string) || null,
     companyEmail: (row.company_email as string) || null,
+    bccEmail: (row.bcc_email as string) || null,
     companyWebsite: (row.company_website as string) || null,
     companyAddress: (row.company_address as string) || null,
     footerMessage: (row.footer_message as string) || null,
@@ -248,6 +260,7 @@ export function mergeProfileOverrides(base: CompanySettings, profile: CompanyPro
     logo_url: profile.logoUrl || base.logo_url,
     company_phone: profile.companyPhone || base.company_phone,
     company_email: profile.companyEmail || base.company_email,
+    bcc_email: profile.bccEmail || base.bcc_email,
     company_website: profile.companyWebsite || base.company_website,
     company_address: profile.companyAddress || base.company_address,
     footer_message: profile.footerMessage || base.footer_message,

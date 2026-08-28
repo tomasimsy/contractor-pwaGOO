@@ -19,6 +19,7 @@ interface CompanyProfileRow {
   logo_url: string | null;
   company_phone: string | null;
   company_email: string | null;
+  bcc_email: string | null;
   company_website: string | null;
   company_address: string | null;
   footer_message: string | null;
@@ -41,6 +42,7 @@ function rowToProfile(row: CompanyProfileRow): CompanyProfile {
     logoUrl: row.logo_url,
     companyPhone: row.company_phone,
     companyEmail: row.company_email,
+    bccEmail: row.bcc_email,
     companyWebsite: row.company_website,
     companyAddress: row.company_address,
     footerMessage: row.footer_message,
@@ -75,6 +77,7 @@ export function createSupabaseCompanyProfileService(
     logoUrl?: string | null;
     companyPhone?: string | null;
     companyEmail?: string | null;
+    bccEmail?: string | null;
     companyWebsite?: string | null;
     companyAddress?: string | null;
     footerMessage?: string | null;
@@ -115,6 +118,7 @@ export function createSupabaseCompanyProfileService(
         logo_url: input.logoUrl ?? null,
         company_phone: input.companyPhone ?? null,
         company_email: input.companyEmail ?? null,
+        bcc_email: input.bccEmail ?? null,
         company_website: input.companyWebsite ?? null,
         company_address: input.companyAddress ?? null,
         footer_message: input.footerMessage ?? null,
@@ -135,6 +139,7 @@ export function createSupabaseCompanyProfileService(
       logoUrl: string | null;
       companyPhone: string | null;
       companyEmail: string | null;
+      bccEmail: string | null;
       companyWebsite: string | null;
       companyAddress: string | null;
       footerMessage: string | null;
@@ -181,6 +186,7 @@ export function createSupabaseCompanyProfileService(
     if (changes.logoUrl !== undefined) payload.logo_url = changes.logoUrl;
     if (changes.companyPhone !== undefined) payload.company_phone = changes.companyPhone;
     if (changes.companyEmail !== undefined) payload.company_email = changes.companyEmail;
+    if (changes.bccEmail !== undefined) payload.bcc_email = changes.bccEmail;
     if (changes.companyWebsite !== undefined) payload.company_website = changes.companyWebsite;
     if (changes.companyAddress !== undefined) payload.company_address = changes.companyAddress;
     if (changes.footerMessage !== undefined) payload.footer_message = changes.footerMessage;

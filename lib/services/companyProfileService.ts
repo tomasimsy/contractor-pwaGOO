@@ -19,6 +19,10 @@ export interface CompanyProfile extends AuditedEntity {
   logoUrl: string | null;
   companyPhone: string | null;
   companyEmail: string | null;
+  /** Extra BCC recipient for customer emails sent under this profile
+   * (estimate sends, payment receipts) — null falls back to the
+   * company-wide default. See lib/company.ts's CompanySettings.bcc_email. */
+  bccEmail: string | null;
   companyWebsite: string | null;
   companyAddress: string | null;
   footerMessage: string | null;
@@ -45,6 +49,7 @@ export interface CompanyProfileService {
     logoUrl?: string | null;
     companyPhone?: string | null;
     companyEmail?: string | null;
+    bccEmail?: string | null;
     companyWebsite?: string | null;
     companyAddress?: string | null;
     footerMessage?: string | null;
@@ -61,6 +66,7 @@ export interface CompanyProfileService {
       logoUrl: string | null;
       companyPhone: string | null;
       companyEmail: string | null;
+      bccEmail: string | null;
       companyWebsite: string | null;
       companyAddress: string | null;
       footerMessage: string | null;

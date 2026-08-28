@@ -4,6 +4,29 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { NAV_GROUPS } from "@/lib/navigation";
+import { hasPermission, type Role } from "@/lib/services/permissions";
+
+/** Where to land after signing in — always /dashboard used to be
+ * fine when every real role could see it, but Dashboard is now
+ * admin-only (and future restricted roles like field_lead have even
+ * less), so a hardcoded redirect there would land them straight on
+ * "Access Denied." Reuses the exact same permission check the sidebar
+ * itself filters nav items with, so "can they see it in the sidebar"
+ * and "can they land here after login" never disagree. */
+async function resolveLandingPage(userId: string): Promise<string> {
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", userId).maybeSingle();
+  const role = profile?.role as Role | undefined;
+  if (!role) return "/dashboard";
+  for (const group of NAV_GROUPS) {
+    for (const item of group.items) {
+      if (!item.permission || hasPermission(role, item.permission.resource, item.permission.action)) {
+        return item.href;
+      }
+    }
+  }
+  return "/dashboard";
+}
 
 export default function LoginPage() {
   const router = useRouter();

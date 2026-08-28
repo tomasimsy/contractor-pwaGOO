@@ -51,6 +51,7 @@ const FIELD_LABEL: Record<string, string> = {
   business_type: "Business Type",
   company_phone: "Phone",
   company_email: "Email",
+  bcc_email: "BCC Email",
   company_website: "Website",
   company_website_2: "Second Website",
   company_address: "Address",
@@ -151,6 +152,7 @@ function CompanySettingsContent() {
     const issues: Record<string, string> = {};
     if (!f.company_name.trim()) issues.company_name = "Company name is required.";
     if (f.company_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.company_email)) issues.company_email = "Enter a valid email address.";
+    if (f.bcc_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.bcc_email)) issues.bcc_email = "Enter a valid email address.";
     if (f.brand_color && f.brand_color.trim() && !/^#[0-9a-fA-F]{3,8}$/.test(f.brand_color.trim())) {
       issues.brand_color = "Enter a hex color, e.g. #1E40AF.";
     }
@@ -261,6 +263,11 @@ function CompanySettingsContent() {
             <div>
               <Field name="company_email" value={form.company_email} onChange={setField} type="email" placeholder="you@company.com" />
               {fieldErrors.company_email && <p className="mt-1 text-xs text-danger">{fieldErrors.company_email}</p>}
+            </div>
+            <div>
+              <Field name="bcc_email" value={form.bcc_email ?? ""} onChange={setField} type="email" placeholder="e.g. office@yourcompany.com" />
+              {fieldErrors.bcc_email && <p className="mt-1 text-xs text-danger">{fieldErrors.bcc_email}</p>}
+              <p className="mt-1 text-xs text-muted-foreground">Default BCC on customer emails — overridable per Business Profile.</p>
             </div>
             <Field name="company_website" value={form.company_website} onChange={setField} placeholder="https://…" />
             <Field name="company_website_2" value={form.company_website_2 ?? ""} onChange={setField} placeholder="https://… (optional second site)" />

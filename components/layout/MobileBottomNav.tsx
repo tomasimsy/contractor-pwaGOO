@@ -11,37 +11,52 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hidesMobileBottomNav } from "@/lib/layout/mobileBottomNav";
+import { useCurrentRole } from "@/lib/hooks/usePermission";
+import { hasPermission, type Resource, type PermissionAction } from "@/lib/services/permissions";
 
-const items = [
+const items: { label: string; href: string; icon: typeof LayoutDashboard; permission?: { resource: Resource; action: PermissionAction } }[] = [
   {
     label: "Dashboard",
     href: "/dashboard",
     icon: LayoutDashboard,
+    permission: { resource: "dashboard", action: "view" },
   },
   {
     label: "Estimates",
     href: "/estimates",
     icon: FileText,
+    permission: { resource: "estimate", action: "view" },
   },
   {
     label: "Invoices",
     href: "/invoices",
     icon: Receipt,
+    permission: { resource: "invoice", action: "view" },
   },
   {
     label: "Expenses-v2",
     href: "/expense-v2",
     icon: Wallet,
+    permission: { resource: "expense", action: "view" },
   },
   {
     label: "Settings",
     href: "/settings",
     icon: Settings,
+    permission: { resource: "company_settings", action: "view" },
   },
 ];
 
 export function MobileBottomNav() {
   const pathname = usePathname();
+  // Same permission model the desktop sidebar/drawer already filters
+  // with (useFilteredNavGroups) — this bar was hardcoded and ignored
+  // role entirely, so a restricted role (e.g. field_lead) got tabs
+  // that always landed on "Access Denied." One hook call for the role,
+  // then the pure hasPermission() function per item — not a hook
+  // itself, so calling it inside .filter() is fine.
+  const role = useCurrentRole();
+  const visibleItems = items.filter((item) => !item.permission || (role && hasPermission(role, item.permission.resource, item.permission.action)));
 
   // Edit screens run full-bleed with their own sticky action bar.
   // Returning null (rather than hiding with a class) also drops the
@@ -58,8 +73,8 @@ export function MobileBottomNav() {
         pb-[env(safe-area-inset-bottom)]
       "
     >
-      <div className="grid h-12 grid-cols-5">
-        {items.map((item) => {
+      <div className="grid h-12" style={{ gridTemplateColumns: `repeat(${visibleItems.length}, minmax(0, 1fr))` }}>
+        {visibleItems.map((item) => {
           const Icon = item.icon;
 
           const isActive =

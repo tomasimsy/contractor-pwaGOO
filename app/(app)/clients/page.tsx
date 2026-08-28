@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { ClientForm } from "@/components/clients/ClientForm";
+import { RequirePermission } from "@/components/layout/RequirePermission";
 import type { Client } from "@/lib/services/clientService";
 
 /**
@@ -16,7 +17,7 @@ import type { Client } from "@/lib/services/clientService";
  * database calls from this page; every read/write goes through
  * useServices().clientService, per the architecture requirement.
  */
-export default function ClientsPage() {
+function ClientsContent() {
   const { clientService } = useServices();
   const { profile } = useAuth();
   const [clients, setClients] = useState<Client[]>([]);
@@ -127,5 +128,13 @@ export default function ClientsPage() {
         </div>
       )}
     </PageContainer>
+  );
+}
+
+export default function ClientsPage() {
+  return (
+    <RequirePermission resource="workspace" action="view">
+      <ClientsContent />
+    </RequirePermission>
   );
 }

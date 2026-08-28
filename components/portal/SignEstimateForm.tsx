@@ -21,13 +21,26 @@ export function SignEstimateForm({ token, signedValue, signedDate }: { token: st
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // router.refresh() doesn't resolve when the re-render actually
+  // lands — it's fire-and-forget. Without this, there was a real gap
+  // after a successful save where the modal had already closed but
+  // the page hadn't yet re-fetched `signedValue`, so a customer could
+  // briefly see the "Sign & Approve" button again right after signing
+  // and reasonably wonder if it worked. This shows the confirmed
+  // state immediately, from the same POST response, no round-trip wait.
+  const [justSigned, setJustSigned] = useState(false);
 
-  if (signedValue) {
+  if (signedValue || justSigned) {
+    // `signedValue` only exists once the server round-trip
+    // (router.refresh()) has actually landed — until then, justSigned
+    // alone is true and there's nothing to render a checkmark/image
+    // from yet, so this shows a plain confirmation instead of guessing
+    // at signature content that hasn't arrived.
     return (
       <div className="rounded-xl border border-border bg-card p-4 text-center">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Signed &amp; Approved</p>
-        <p className="mt-2 text-xl font-semibold text-foreground">{signedValue.startsWith("data:image") ? "✓" : signedValue}</p>
-        {signedValue.startsWith("data:image") && (
+        <p className="mt-2 text-xl font-semibold text-foreground">{!signedValue ? "✓" : signedValue.startsWith("data:image") ? "✓" : signedValue}</p>
+        {signedValue?.startsWith("data:image") && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={signedValue} alt="Your signature" className="mx-auto mt-1 max-h-20" />
         )}
@@ -39,7 +52,7 @@ export function SignEstimateForm({ token, signedValue, signedDate }: { token: st
     );
   }
 
-  async function handleSign(signature: { type: "draw" | "type"; value: string; date: string }) {
+  async function handleSign(signature: { type: "draw" | "type"; value: string; date: string }): Promise<{ ok: boolean; message?: string }> {
     setSaving(true);
     setError(null);
     try {
@@ -54,13 +67,21 @@ export function SignEstimateForm({ token, signedValue, signedDate }: { token: st
         // (bad token, already signed, no longer open) without saying
         // which — deliberately, so it can't be used to probe. Reloading
         // shows the true state.
-        setError((result.message ?? "This estimate could not be signed.") + " Refreshing…");
+        const message = result.message ?? "This estimate could not be signed.";
+        setError(`${message} Refreshing…`);
         setTimeout(() => router.refresh(), 1500);
-        return;
+        return { ok: false, message };
       }
+      // Immediate, local confirmation — see justSigned's own comment.
+      // router.refresh() still runs to pull the real persisted
+      // signature/date in behind it.
+      setJustSigned(true);
       router.refresh();
+      return { ok: true };
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save your signature. Please try again.");
+      const message = err instanceof Error ? err.message : "Could not save your signature. Please try again.";
+      setError(message);
+      return { ok: false, message };
     } finally {
       setSaving(false);
     }

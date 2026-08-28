@@ -22,6 +22,7 @@ from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { RequirePermission } from "@/components/layout/RequirePermission";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
 import { StatCard, StatCardSkeleton } from "@/components/dashboard/StatCard";
@@ -33,7 +34,7 @@ import { getActionablePayables, type ActionablePayables } from "@/lib/services/p
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
-export default function DashboardPage() {
+function DashboardContent() {
 const { profile } = useAuth();
 const [preset, setPreset] = useState<DateRangePreset>("this_year");
   const [payables, setPayables] = useState<ActionablePayables | null>(null);
@@ -172,6 +173,14 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
 </Link>
 
     </PageContainer>
-    
+
     );
     }
+
+export default function DashboardPage() {
+  return (
+    <RequirePermission resource="dashboard" action="view">
+      <DashboardContent />
+    </RequirePermission>
+  );
+}

@@ -52,7 +52,18 @@ export type Resource =
   | "subcontractor_assignment" | "subcontractor_payment"
   | "agent_assignment" | "agent_payment"
   | "tax_settings" | "financial_reports" | "user_roles"
-  | "audit_log" | "company_settings";
+  | "audit_log" | "company_settings"
+  /** The company-wide overview page (all projects' revenue/profit,
+   * outstanding balances, etc. aggregated together) — was ungated
+   * (visible to every role) until this was added; admin-only now. */
+  | "dashboard"
+  /** CRM/Leads/Clients/Documents/Calendar — general internal-staff
+   * pages with no dedicated Resource of their own. Also ungated
+   * (visible to every role) until this was added; every INTERNAL role
+   * (admin/office/sales/project_manager/accountant) keeps seeing them
+   * exactly as before — only the external/restricted roles
+   * (subcontractor/agent/field_lead) are newly excluded. */
+  | "workspace";
 
 export type PermissionAction = "view" | "create" | "update" | "delete" | "approve";
 
@@ -98,6 +109,8 @@ type ResourcePermissions = Partial<Record<PermissionAction, boolean>>;
  */
 const PERMISSION_MATRIX: Record<Role, Partial<Record<Resource, ResourcePermissions>>> = {
   admin: {
+    dashboard: { view: true },
+    workspace: { view: true },
     project: { view: true, create: true, update: true, delete: true },
     estimate: { view: true, create: true, update: true, delete: true, approve: true },
     invoice: { view: true, create: true, update: true, delete: true },
@@ -114,6 +127,7 @@ const PERMISSION_MATRIX: Record<Role, Partial<Record<Resource, ResourcePermissio
     company_settings: { view: true, create: true, update: true, delete: true },
   },
   office: {
+    workspace: { view: true },
     project: { view: true, create: true, update: true, delete: true },
     estimate: { view: true, create: true, update: true, delete: true, approve: true },
     invoice: { view: true, create: true, update: true, delete: true },
@@ -126,6 +140,7 @@ const PERMISSION_MATRIX: Record<Role, Partial<Record<Resource, ResourcePermissio
     financial_reports: { view: true },
   },
   sales: {
+    workspace: { view: true },
     project: { view: true, create: true, update: true },
     estimate: { view: true, create: true, update: true, delete: true },
     invoice: { view: true },
@@ -135,6 +150,7 @@ const PERMISSION_MATRIX: Record<Role, Partial<Record<Resource, ResourcePermissio
     agent_assignment: { view: true, create: true, update: true },
   },
   project_manager: {
+    workspace: { view: true },
     project: { view: true, create: true, update: true },
     estimate: { view: true, update: true, approve: true },
     invoice: { view: true },
@@ -147,6 +163,7 @@ const PERMISSION_MATRIX: Record<Role, Partial<Record<Resource, ResourcePermissio
     financial_reports: { view: true },
   },
   accountant: {
+    workspace: { view: true },
     project: { view: true },
     estimate: { view: true },
     invoice: { view: true, create: true, update: true, delete: true },
@@ -170,14 +187,16 @@ const PERMISSION_MATRIX: Record<Role, Partial<Record<Resource, ResourcePermissio
     agent_assignment: { view: true },
     project: { view: true },
   },
-  /** Runs one job on-site — not a full internal team member. This
-   * matrix entry is the ACTION check ("can a field_lead view a
-   * project at all") — row-level scoping ("only the one they're
-   * assigned to") is a separate, later RLS piece, same caveat as
-   * Subcontractor/Agent above. No write access anywhere. */
+  /** Runs one job on-site — not a full internal team member. Sees
+   * ONLY estimates (their assigned job) and can record expenses
+   * against it — nothing else, not even the Projects list/Dashboard.
+   * This matrix entry is the ACTION check ("can a field_lead view an
+   * estimate at all") — row-level scoping ("only the ones they're
+   * assigned to," not every estimate in the company) is a separate,
+   * later RLS piece, same caveat as Subcontractor/Agent above. */
   field_lead: {
-    project: { view: true },
     estimate: { view: true },
+    expense: { view: true, create: true },
   },
 };
 

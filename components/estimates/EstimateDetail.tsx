@@ -343,23 +343,27 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
     }
   }
 
-  async function handleSignature(signature: NonNullable<Estimate["signature"]>) {
-    if (!estimate) return;
+  async function handleSignature(signature: NonNullable<Estimate["signature"]>): Promise<{ ok: boolean; message?: string }> {
+    if (!estimate) return { ok: false, message: "Estimate not loaded." };
     setError(null);
     setNotice(null);
     try {
       const result = await estimateWorkflow.signEstimate(estimate.id, signature);
       if (!result.ok || !result.estimate) {
-        setError(result.message ?? "Failed to save signature.");
-        return;
+        const message = result.message ?? "Failed to save signature.";
+        setError(message);
+        return { ok: false, message };
       }
       if (result.message) setNotice(result.message);
       setEstimate({ ...estimate, ...result.estimate });
       await load();
       await loadFinancials();
       setShowSignatureModal(false);
+      return { ok: true };
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save signature.");
+      const message = err instanceof Error ? err.message : "Failed to save signature.";
+      setError(message);
+      return { ok: false, message };
     }
   }
 
@@ -819,11 +823,14 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
               </div>
             )}
 
-            {/* THE SCOPE & PRICING GROUP — Structured in a high-contrast container */}
-            <div className="overflow-hidden rounded-xl border border-emerald-200 dark:border-emerald-800 bg-white/60 dark:bg-emerald-900/30 space-y-5 p-1">
-
-            {/* Line Items & Totals Content Area */}
-  <div className="p-3 sm:p-4 bg-emerald-100/40 dark:bg-emerald-950/40 rounded-lg">
+            {/* Line Items & Totals — was a card nested inside another
+                card (an outer "scope & pricing group" wrapper around
+                this AND Change Orders, each with their own background/
+                border/padding on top of that) — reported as visually
+                heavy and wasting space. Flattened to a plain divided
+                section, matching how Roof Areas above it already just
+                uses a top border, not its own box. */}
+  <div className="pt-2 border-t border-emerald-200 dark:border-emerald-800/60">
   {/* Header with toggle */}
   <div
     className="flex items-center justify-between cursor-pointer select-none"
@@ -1038,8 +1045,8 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
   </div>
 </div>
 
-            {/* Change Orders — Visually stepped back as a secondary block */}
-<div className="border-t border-emerald-200 dark:border-emerald-800/80 bg-emerald-50/50 dark:bg-emerald-950/20 p-3 sm:p-4 rounded-lg">
+            {/* Change Orders — same flattened treatment as Line Items above. */}
+<div className="pt-2 border-t border-emerald-200 dark:border-emerald-800/60">
   {/* Header – always visible, clickable toggle */}
   <div
     className="flex flex-wrap items-center justify-between gap-2 cursor-pointer select-none"
@@ -1110,9 +1117,6 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
     )}
   </div>
 </div>
-
-            </div>
-            {/* /scope & pricing group */}
 
           </section>
 

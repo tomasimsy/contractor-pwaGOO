@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { SUPABASE_URL } from "@/lib/supabase/env";
 import { createServerAppServices } from "@/lib/services/server";
@@ -99,13 +99,27 @@ export async function POST(request: NextRequest) {
     // by the client bundle breaks the build (confirmed: it did). This
     // route is real server-only code, so it's the right place for the
     // one thing that's specific to a CUSTOMER signing (not staff
-    // signing on their behalf) anyway. sendPushToCompany never throws.
+    // signing on their behalf) anyway.
+    //
+    // Scheduled via after(), NOT awaited — a customer waiting on the
+    // signature to save must never be stuck behind however long it
+    // takes push services (fcm.googleapis.com, web.push.apple.com) to
+    // respond. Awaiting this here was the actual cause of a real,
+    // reported "signing feels slow" bug: on a serverless platform, the
+    // function can also be frozen/killed once a response is sent, so a
+    // bare fire-and-forget (no await, but no after() either) risks the
+    // push silently never completing — after() is the supported way to
+    // keep the function alive for exactly this after the response has
+    // already gone out. sendPushToCompany never throws either way.
     if (result.estimate) {
-      await sendPushToCompany(services.pushSubscriptionService, result.estimate.companyId, {
-        title: "Estimate signed",
-        body: `${result.estimate.title || "An estimate"} (#${result.estimate.estimateNumber ?? result.estimate.id.slice(0, 8)}) was just signed by the customer.`,
-        url: `/estimates/${result.estimate.id}`,
-      });
+      const estimate = result.estimate;
+      after(() =>
+        sendPushToCompany(services.pushSubscriptionService, estimate.companyId, {
+          title: "Estimate signed",
+          body: `${estimate.title || "An estimate"} (#${estimate.estimateNumber ?? estimate.id.slice(0, 8)}) was just signed by the customer.`,
+          url: `/estimates/${estimate.id}`,
+        })
+      );
     }
 
     return NextResponse.json({ ok: true });

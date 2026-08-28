@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { RequirePermission } from "@/components/layout/RequirePermission";
 import type { Client } from "@/lib/services/clientService";
 import type { Project } from "@/lib/services/projectService";
 import type { ProjectStatus } from "@/lib/services";
@@ -34,7 +35,7 @@ const STATUS_TONE: Record<ProjectStatus, "neutral" | "success" | "warning" | "da
  * Client — Projects are the operational hub, Clients are the CRM
  * record that owns them.
  */
-export default function ClientDetailPage() {
+function ClientDetailContent() {
   const params = useParams();
   const clientId = params.id as string;
   const { clientService, projectService } = useServices();
@@ -148,5 +149,13 @@ export default function ClientDetailPage() {
         </div>
       </div>
     </PageContainer>
+  );
+}
+
+export default function ClientDetailPage() {
+  return (
+    <RequirePermission resource="workspace" action="view">
+      <ClientDetailContent />
+    </RequirePermission>
   );
 }

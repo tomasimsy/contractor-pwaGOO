@@ -35,6 +35,7 @@ type ProfileFormState = {
   logoUrl: string;
   companyPhone: string;
   companyEmail: string;
+  bccEmail: string;
   companyWebsite: string;
   companyAddress: string;
   footerMessage: string;
@@ -47,6 +48,7 @@ const EMPTY_FORM: ProfileFormState = {
   logoUrl: "",
   companyPhone: "",
   companyEmail: "",
+  bccEmail: "",
   companyWebsite: "",
   companyAddress: "",
   footerMessage: "",
@@ -60,6 +62,7 @@ function profileToForm(p: CompanyProfile): ProfileFormState {
     logoUrl: p.logoUrl ?? "",
     companyPhone: p.companyPhone ?? "",
     companyEmail: p.companyEmail ?? "",
+    bccEmail: p.bccEmail ?? "",
     companyWebsite: p.companyWebsite ?? "",
     companyAddress: p.companyAddress ?? "",
     footerMessage: p.footerMessage ?? "",
@@ -135,6 +138,7 @@ function BusinessProfilesContent() {
         logoUrl: form.logoUrl.trim() || null,
         companyPhone: form.companyPhone.trim() || null,
         companyEmail: form.companyEmail.trim() || null,
+        bccEmail: form.bccEmail.trim() || null,
         companyWebsite: form.companyWebsite.trim() || null,
         companyAddress: form.companyAddress.trim() || null,
         footerMessage: form.footerMessage.trim() || null,
@@ -271,6 +275,18 @@ function BusinessProfilesContent() {
               <label className={LABEL}>Email</label>
               <input value={form.companyEmail} onChange={(e) => setForm((f) => ({ ...f, companyEmail: e.target.value }))} className={FIELD} />
             </div>
+          </div>
+          <div>
+            <label className={LABEL}>BCC Email</label>
+            <input
+              value={form.bccEmail}
+              onChange={(e) => setForm((f) => ({ ...f, bccEmail: e.target.value }))}
+              placeholder="e.g. office@yourcompany.com"
+              className={FIELD}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Gets a hidden copy of every customer email sent under this profile (estimate sends, payment receipts). Leave blank for none.
+            </p>
           </div>
           <div>
             <label className={LABEL}>Website</label>

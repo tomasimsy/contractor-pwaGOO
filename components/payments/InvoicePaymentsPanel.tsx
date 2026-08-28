@@ -99,6 +99,16 @@ export const InvoicePaymentsPanel = forwardRef<InvoicePaymentsPanelRef, {
         if (!result.valid) {
           return { ok: false, message: result.issues.map((i) => i.message).join("; ") };
         }
+        // Best-effort, fire-and-forget — the route itself recomputes
+        // the balance and only actually sends once it's fully zero, so
+        // this is safe to call after every payment, not just the one
+        // that happens to clear it. Never blocks the success path or
+        // surfaces its own errors; the payment already succeeded.
+        fetch("/api/payments/receipt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ invoiceId }),
+        }).catch(() => {});
       }
       setDialogFor(null);
       await onChanged();

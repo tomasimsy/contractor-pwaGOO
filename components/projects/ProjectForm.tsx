@@ -6,8 +6,11 @@ import { Modal } from "@/components/ui/Modal";
 import { ClientForm } from "@/components/clients/ClientForm";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { supabase } from "@/lib/supabase/client";
 import type { Project } from "@/lib/services/projectService";
 import type { Client } from "@/lib/services/clientService";
+
+type Member = { id: string; email: string | null; role: string | null; fullName: string | null };
 
 /** Shared by the Create and Edit project pages — all data access goes
  * through useServices().projectService/clientService, no direct
@@ -41,6 +44,11 @@ export function ProjectForm({
   const [address, setAddress] = useState(project?.address ?? "");
   const [startDate, setStartDate] = useState(project?.startDate ?? "");
   const [endDate, setEndDate] = useState(project?.endDate ?? "");
+  // Who runs this job — the field the calendar/field_lead scoping
+  // both depend on (Project.assignedUserId), previously never exposed
+  // in this form at all despite existing in the service/DB layer.
+  const [assignedUserId, setAssignedUserId] = useState(project?.assignedUserId ?? "");
+  const [members, setMembers] = useState<Member[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showNewClientModal, setShowNewClientModal] = useState(false);
@@ -49,6 +57,20 @@ export function ProjectForm({
     if (!profile?.companyId) return;
     clientService.list({ companyId: profile.companyId }).then(setClients);
   }, [clientService, profile?.companyId]);
+
+  useEffect(() => {
+    if (!profile?.companyId) return;
+    // Same RPC the Team page reads from — SECURITY DEFINER, returns
+    // every member of the caller's company (a direct `profiles` read
+    // would only ever return the caller's own row, per that page's
+    // own doc comment).
+    supabase.rpc("list_company_members").then(({ data }) => {
+      const rows = ((data ?? []) as Array<{ id: string; email: string | null; role: string | null; full_name?: string | null }>).map(
+        (m): Member => ({ id: m.id, email: m.email, role: m.role, fullName: m.full_name?.trim() || null })
+      );
+      setMembers(rows);
+    });
+  }, [profile?.companyId]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -64,6 +86,7 @@ export function ProjectForm({
           address: address || null,
           startDate: startDate || null,
           endDate: endDate || null,
+          assignedUserId: assignedUserId || null,
         });
         if (onCreated) {
           // The edit-path branch above still ran the update; onCreated
@@ -80,6 +103,7 @@ export function ProjectForm({
           name,
           description: description || undefined,
           address: address || undefined,
+          assignedUserId: assignedUserId || null,
         });
         if (onCreated) {
           onCreated(created);
@@ -154,6 +178,21 @@ export function ProjectForm({
           rows={3}
           className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
         />
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-foreground">Assigned to</label>
+        <select
+          value={assignedUserId ?? ""}
+          onChange={(e) => setAssignedUserId(e.target.value)}
+          className="w-full capitalize rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+        >
+          <option value="">Unassigned</option>
+          {members.map((m) => (
+            <option key={m.id} value={m.id}>{m.fullName || m.email || "Unnamed user"}</option>
+          ))}
+        </select>
+        <p className="text-xs text-muted-foreground">Who runs this job. A Field Lead can only see the job(s) assigned to them here.</p>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

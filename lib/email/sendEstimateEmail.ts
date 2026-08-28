@@ -214,14 +214,20 @@ export async function sendEstimateEmail(input: SendEstimateEmailInput): Promise<
   // that mailbox's own SMTP, so nothing reaches its Sent folder
   // without an explicit Bcc — see resendClient.ts).
   const replyToAddress = resolvedFromEmail;
-  const bccAddress = resolvedFromEmail;
+  // Two DIFFERENT reasons an address ends up on Bcc, kept distinct:
+  // resolvedFromEmail again so a copy lands in the sending mailbox
+  // itself (Resend/SES never touches that mailbox's own SMTP — see
+  // resendClient.ts), and separately, data.company.bcc_email — an
+  // explicitly configured extra recipient (e.g. an office/accounting
+  // inbox) that has nothing to do with where the email was sent from.
+  const bccAddresses = [resolvedFromEmail, data.company.bcc_email].filter((addr): addr is string => !!addr);
 
   try {
     const resend = getResendClient();
     const result = await resend.emails.send({
       from: fromAddress,
       ...(replyToAddress ? { replyTo: replyToAddress } : {}),
-      ...(bccAddress ? { bcc: bccAddress } : {}),
+      ...(bccAddresses.length > 0 ? { bcc: bccAddresses } : {}),
       to: recipient,
       subject: input.subject,
       html: emailHtml,

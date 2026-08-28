@@ -724,8 +724,33 @@ export function createSupabaseEstimateService(
   }
 
   async function recordSignature(estimateId: UUID, signature: Estimate["signature"]): Promise<Estimate> {
-    const { data, error } = await supabase.from("estimates").update({ signature }).eq("id", estimateId).select().single();
-    if (error) throw new Error(`Failed to record signature: ${error.message}`);
+    // SETTING a signature (signature is non-null) is atomically guarded
+    // by `.is("signature", null)` — the request that actually wins the
+    // update is the one whose WHERE clause still matched at write time,
+    // not just whichever request happened to read "unsigned" first.
+    // Two near-simultaneous sign attempts (a genuine risk this route
+    // has: portal/sign/route.ts's own "already signed" check is a
+    // separate SELECT before this write, not atomic with it — a
+    // second request could pass that check before the first request's
+    // write lands) now can't both silently "succeed," one overwriting
+    // the other and each unaware the other happened — the loser gets
+    // zero rows back and a clear error instead.
+    //
+    // CLEARING a signature (unsignEstimate, signature: null) has no
+    // such guard — that's the legitimate un-sign flow, which by
+    // definition runs against a row that currently HAS a signature.
+    let query = supabase.from("estimates").update({ signature }).eq("id", estimateId);
+    if (signature) query = query.is("signature", null);
+    const { data, error } = await query.select().single();
+    if (error) {
+      // PGRST116 = "no rows returned" from .single() — exactly the
+      // shape a lost signature race produces (the row exists, just
+      // didn't match `signature IS NULL` anymore).
+      if (signature && error.code === "PGRST116") {
+        throw new Error("This estimate was already signed — by someone else, or in another tab. Refresh to see the current signature.");
+      }
+      throw new Error(`Failed to record signature: ${error.message}`);
+    }
     return rowToEstimate(data as EstimateRow);
   }
 

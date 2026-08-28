@@ -50,12 +50,19 @@ export function ChangeOrderApprovalCard({ token, changeOrder }: { token: string;
   const [reviewing, setReviewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Same reasoning as SignEstimateForm's justSigned — router.refresh()
+  // doesn't resolve when its re-render actually lands. Without this,
+  // a successful approval closed the signature modal but `reviewing`
+  // was still true, so the card would show the blank "Review &
+  // Approve" form again until the refresh caught up — looking exactly
+  // like nothing had happened.
+  const [justApproved, setJustApproved] = useState(false);
 
-  const status = changeOrder.status ?? "pending";
+  const status = justApproved ? "approved" : changeOrder.status ?? "pending";
   const costImpact = (changeOrder.total_amount ?? 0) + (changeOrder.tax ?? 0);
   const isPending = status === "pending";
 
-  async function handleApprove(signature: { type: "draw" | "type"; value: string; date: string }) {
+  async function handleApprove(signature: { type: "draw" | "type"; value: string; date: string }): Promise<{ ok: boolean; message?: string }> {
     setSaving(true);
     setError(null);
     try {
@@ -66,13 +73,19 @@ export function ChangeOrderApprovalCard({ token, changeOrder }: { token: string;
       });
       const result = await res.json();
       if (!result.ok) {
-        setError((result.message ?? "This change order could not be approved.") + " Refreshing…");
+        const message = result.message ?? "This change order could not be approved.";
+        setError(`${message} Refreshing…`);
         setTimeout(() => router.refresh(), 1500);
-        return;
+        return { ok: false, message };
       }
+      setJustApproved(true);
+      setReviewing(false);
       router.refresh();
+      return { ok: true };
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save your approval. Please try again.");
+      const message = err instanceof Error ? err.message : "Could not save your approval. Please try again.";
+      setError(message);
+      return { ok: false, message };
     } finally {
       setSaving(false);
     }

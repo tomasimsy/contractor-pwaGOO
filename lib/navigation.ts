@@ -54,14 +54,14 @@ export interface NavGroup {
 export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Overview",
-    items: [{ id: "dashboard", label: "Dashboard", href: "/dashboard", icon: LayoutDashboard }],
+    items: [{ id: "dashboard", label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, permission: { resource: "dashboard", action: "view" } }],
   },
   {
     label: "Sales",
     items: [
-      { id: "crm", label: "CRM", href: "/crm", icon: Contact },
-      { id: "leads", label: "Leads", href: "/leads", icon: UserPlus },
-      { id: "clients", label: "Clients", href: "/clients", icon: Users },
+      { id: "crm", label: "CRM", href: "/crm", icon: Contact, permission: { resource: "workspace", action: "view" } },
+      { id: "leads", label: "Leads", href: "/leads", icon: UserPlus, permission: { resource: "workspace", action: "view" } },
+      { id: "clients", label: "Clients", href: "/clients", icon: Users, permission: { resource: "workspace", action: "view" } },
     ],
   },
   {
@@ -100,8 +100,8 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Workspace",
     items: [
-      { id: "documents", label: "Documents", href: "/documents", icon: FolderOpen },
-      { id: "calendar", label: "Calendar", href: "/calendar", icon: CalendarDays },
+      { id: "documents", label: "Documents", href: "/documents", icon: FolderOpen, permission: { resource: "workspace", action: "view" } },
+      { id: "calendar", label: "Calendar", href: "/calendar", icon: CalendarDays, permission: { resource: "workspace", action: "view" } },
       { id: "team", label: "Team", href: "/team", icon: UsersRound, permission: { resource: "user_roles", action: "view" } },
       { id: "audit-logs", label: "Audit Logs", href: "/audit-logs", icon: History, permission: { resource: "audit_log", action: "view" } },
     ],
