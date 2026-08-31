@@ -5,6 +5,7 @@ import { resolvePortalOrigin } from "@/lib/portalDomain";
 import { getCompanySettingsByCompanyId, getCompanyProfileById } from "@/lib/company";
 import { formatCurrency, formatDate } from "@/lib/pdf/pdfLayout";
 import { recordEmailSent } from "@/lib/email/emailTracking";
+import { getEffectiveAutomationSettings } from "@/lib/emailAutomationSettings";
 
 /**
  * "Payment received" receipt email — sent automatically once an
@@ -67,9 +68,12 @@ export async function POST(request: NextRequest) {
     const totalPaid = (payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
     const remainingBalance = Math.max(0, total - totalPaid);
 
-    // Not fully paid (yet) — a normal, expected outcome for most
-    // payments, not an error.
-    if (remainingBalance > 0) {
+    const automationSettings = await getEffectiveAutomationSettings(supabase, invoice.company_id, "payment_receipt", invoice.profile_id);
+    if (!automationSettings.enabled) {
+      return NextResponse.json({ ok: true, sent: false, reason: "automation_disabled" });
+    }
+    const onlyIfPaidInFull = automationSettings.condition?.onlyIfPaidInFull !== false; // default true
+    if (onlyIfPaidInFull && remainingBalance > 0) {
       return NextResponse.json({ ok: true, sent: false, reason: "not_fully_paid" });
     }
 
