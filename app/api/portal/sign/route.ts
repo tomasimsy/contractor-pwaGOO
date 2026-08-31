@@ -5,8 +5,11 @@ import { createServerAppServices } from "@/lib/services/server";
 import { sendPushToCompany } from "@/lib/push/sendPush";
 
 /**
- * The ONLY route in this app permitted to construct a service-role
- * Supabase client. Replaces the old `sign_estimate_via_token` RPC as
+ * One of two routes in this app permitted to construct a service-role
+ * Supabase client (the other is app/api/cron/daily-automations, which
+ * has no user session to run RLS-scoped queries under either — see
+ * its own header for that route's version of this same trust shape).
+ * Replaces the old `sign_estimate_via_token` RPC as
  * the customer-portal's signing entry point — same job (token in,
  * signature written), but now reaches the SAME canonical workflow
  * (lib/services/estimateWorkflow.ts) staff use from EstimateDetail,

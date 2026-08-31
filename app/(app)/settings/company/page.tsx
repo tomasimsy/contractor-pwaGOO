@@ -278,7 +278,8 @@ function CompanySettingsContent() {
             <div>
               <Field name="review_link" value={form.review_link ?? ""} onChange={setField} placeholder="https://g.page/r/…/review" />
               <p className="mt-1 text-xs text-muted-foreground">
-                Sent to clients a week after an invoice is paid in full. Leave blank to skip that email.
+                Included in the Google Review Request email, sent to clients 2 days after an invoice is paid in full (the
+                delay is configurable under Email Automations). Leave blank and that email is skipped entirely.
               </p>
             </div>
           </div>

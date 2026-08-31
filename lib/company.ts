@@ -20,6 +20,12 @@ export type CompanySettings = {
    * those send paths already have. Overridable per Business Profile —
    * see CompanyProfile.bccEmail/mergeProfileOverrides below. */
   bcc_email: string | null;
+  /** Company-wide "leave us a review" URL (Google Business/Yelp/etc.)
+   * — read only by the daily-automations cron's review-request email
+   * (app/api/cron/daily-automations/route.ts). Null = that check
+   * skips sending rather than emailing a broken/missing link. Not a
+   * per-profile field, unlike bcc_email — see the migration's header. */
+  review_link: string | null;
   company_website: string;
   /** A second public-facing site — e.g. a dba's own domain alongside
    * the legal entity's (supabase/migrations/
@@ -63,6 +69,7 @@ export const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
   company_phone: "Add your phone number",
   company_email: "Add your email",
   bcc_email: null,
+  review_link: null,
   company_website: "",
   company_website_2: null,
   logo_url: null,
@@ -109,6 +116,7 @@ export function mergeCompanyDefaults(row: Partial<CompanySettings> | null | unde
     company_phone: row?.company_phone || DEFAULT_COMPANY_SETTINGS.company_phone,
     company_email: row?.company_email || DEFAULT_COMPANY_SETTINGS.company_email,
     bcc_email: row?.bcc_email || null,
+    review_link: row?.review_link || null,
     company_website: row?.company_website || "",
     company_website_2: row?.company_website_2 || null,
     logo_url: row?.logo_url || null,

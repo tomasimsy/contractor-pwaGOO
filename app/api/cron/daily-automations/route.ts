@@ -8,7 +8,14 @@ import { getCompanySettingsByCompanyId } from "@/lib/company";
 import { formatCurrency } from "@/lib/pdf/pdfLayout";
 import { recordEmailSent } from "@/lib/email/emailTracking";
 import { isOutstandingInvoiceStatus } from "@/components/invoices/invoiceStatus";
-import { AUTOMATION_META, AUTOMATION_RUNTIME, computeDueDate, isDue, type AutomationKey } from "@/lib/services/emailAutomationRegistry";
+import {
+  AUTOMATION_BACKFILL_CUTOFF,
+  AUTOMATION_META,
+  AUTOMATION_RUNTIME,
+  computeDueDate,
+  isDue,
+  type AutomationKey,
+} from "@/lib/services/emailAutomationRegistry";
 import { getEffectiveAutomationSettings } from "@/lib/emailAutomationSettings";
 
 /**
@@ -149,19 +156,39 @@ async function runAutomation(
   const now = new Date();
   let sent = 0;
 
+  // The ONE subject value for this run: used for the dedup lookup below
+  // AND handed to sendAutomationEmail, so the subject we check against
+  // `estimate_emails.subject` is provably the exact string that gets
+  // sent and recorded. (Previously the dedup check fell back to
+  // `meta.label` while the send fell back to `renderDefault().subject` —
+  // they never matched, so estimate follow-ups re-sent every day.)
+  // Safe to resolve `renderDefault("")` here without the real company
+  // name: no automation's `subject` interpolates companyName (only
+  // bodies do), so the subject is company-name-independent.
+  const defaultSubject = runtime.renderDefault("").subject;
+  const subject = settings.subjectTemplate?.trim() || defaultSubject;
+
   for (const candidate of candidates) {
+    // Backfill floor — never act on anything anchored before ship time.
+    if (candidate.anchorAt < AUTOMATION_BACKFILL_CUTOFF) continue;
+
     const dueDate = computeDueDate(candidate.anchorAt, settings.delayValue, settings.delayUnit, meta.delayDirection);
     if (!isDue(dueDate, now)) continue;
 
+    // A "before the trigger" reminder (invoice_due_reminder) stops
+    // being correct once the anchor date itself has passed — from that
+    // point on invoice_overdue_reminder is the right automation.
+    if (meta.delayDirection === "before" && now > new Date(candidate.anchorAt)) continue;
+
     const alreadySent =
       meta.entityTable === "estimates"
-        ? await estimateEmailAlreadySent(supabase, candidate.entityId, settings.subjectTemplate?.trim() || meta.label)
+        ? await estimateEmailAlreadySent(supabase, candidate.entityId, subject)
         : await projectOrInvoiceLogAlreadySent(supabase, key, candidate.entityId);
     if (alreadySent) continue;
 
     if (!(await runtime.stillEligible(services, candidate.entityId))) continue;
 
-    const okToSend = await sendAutomationEmail(supabase, services, companyId, key, meta, candidate.entityId, settings);
+    const okToSend = await sendAutomationEmail(supabase, services, companyId, key, meta, candidate.entityId, settings, subject);
     if (okToSend) sent++;
   }
 
@@ -202,11 +229,12 @@ async function estimateEmailAlreadySent(supabase: SupabaseClient, estimateId: st
  * {clientName}/{companyName} substituted), sends via the same
  * from/bcc pattern the rest of this file already uses, and on success
  * records the send — automation_email_log for project/invoice
- * automations, recordEmailSent for estimate automations. When a
- * custom subjectTemplate is set, it's used for both the sent email
- * and (via runAutomation's call to estimateEmailAlreadySent above)
- * the dedup-check subject, so the dedup lookup always matches what
- * was actually sent.
+ * automations, recordEmailSent for estimate automations.
+ *
+ * The `subject` is resolved by the CALLER (runAutomation) and passed
+ * in, never recomputed here — that single value is what the dedup
+ * check queried, what Resend sends, and what gets recorded, so the
+ * three can't drift apart.
  */
 async function sendAutomationEmail(
   supabase: SupabaseClient,
@@ -215,7 +243,8 @@ async function sendAutomationEmail(
   key: AutomationKey,
   meta: (typeof AUTOMATION_META)[number],
   entityId: string,
-  settings: Awaited<ReturnType<typeof getEffectiveAutomationSettings>>
+  settings: Awaited<ReturnType<typeof getEffectiveAutomationSettings>>,
+  subject: string
 ): Promise<boolean> {
   let clientId: string | null = null;
   let profileId: string | null = null;
@@ -237,17 +266,25 @@ async function sendAutomationEmail(
   const clientEmail = (client as { email?: string } | null)?.email?.trim();
   if (!clientEmail) return false;
 
-  const company = await getCompanySettingsByCompanyId(supabase as any, companyId, profileId);
+  const company = await getCompanySettingsByCompanyId(supabase, companyId, profileId);
+
+  // A review request with no link in it is worse than no email at all.
+  // An unset review_link is the normal "not configured yet" state, so
+  // skip silently rather than logging an error every single day.
+  if (key === "google_review" && !company.review_link) return false;
+
   const unlessPlaceholder = (value: string | null | undefined) => (value && !value.startsWith("Add your") ? value : null);
   const fromEmail = getFromAddress(unlessPlaceholder(company.company_email));
   const fromAddress = `${company.company_name} <${fromEmail}>`;
   const bccAddresses = [fromEmail, company.bcc_email].filter((a): a is string => !!a);
 
+  // renderDefault is consulted for the BODY only — `subject` came from
+  // the caller and is deliberately not re-derived here.
   const rendered = AUTOMATION_RUNTIME[key].renderDefault(company.company_name);
-  const subject = settings.subjectTemplate?.trim() || rendered.subject;
   const body = (settings.bodyTemplate?.trim() || rendered.body)
     .replaceAll("{clientName}", (client as { name?: string } | null)?.name ?? "")
-    .replaceAll("{companyName}", company.company_name);
+    .replaceAll("{companyName}", company.company_name)
+    .replaceAll("{reviewLink}", company.review_link ?? "");
 
   const emailHtml = `
     <!DOCTYPE html>
@@ -283,7 +320,7 @@ async function sendAutomationEmail(
     const resendEmailId = result.data?.id;
     if (meta.entityTable === "estimates") {
       if (resendEmailId) {
-        await recordEmailSent(supabase as any, { companyId, estimateId: entityId, resendEmailId, toAddress: clientEmail, subject, createdBy: null });
+        await recordEmailSent(supabase, { companyId, estimateId: entityId, resendEmailId, toAddress: clientEmail, subject, createdBy: null });
       } else {
         // recordEmailSent requires a non-null resendEmailId (estimate_emails.resend_email_id
         // is `not null unique`), so there's no safe row to write here. This gap means the

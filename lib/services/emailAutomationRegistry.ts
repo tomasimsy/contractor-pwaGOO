@@ -7,6 +7,19 @@
  * its own. See docs/superpowers/specs/2026-08-31-email-automations-design.md.
  */
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { ServerAppServices } from "./server";
+import { isOutstandingInvoiceStatus } from "@/components/invoices/invoiceStatus";
+
+/** No candidate whose anchor predates this cutoff is ever considered
+ * due — without this, the first cron run after this feature deploys
+ * would treat every historical completed project / paid invoice /
+ * overdue invoice as newly due and mass-email the company's entire
+ * client history at once. Set once, at ship time, and never moved
+ * forward again (moving it forward would itself cause a backfill
+ * blast for whatever gap it skips). */
+export const AUTOMATION_BACKFILL_CUTOFF = "2026-08-31T00:00:00.000Z";
+
 export type AutomationKey =
   | "payment_receipt"
   | "google_review"
@@ -181,10 +194,6 @@ export function isDue(dueDate: Date, now: Date): boolean {
   return now.getTime() >= dueDate.getTime();
 }
 
-import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ServerAppServices } from "./server";
-import { isOutstandingInvoiceStatus } from "@/components/invoices/invoiceStatus";
-
 export interface AutomationCandidate {
   entityId: string;
   anchorAt: string;
@@ -281,9 +290,14 @@ async function invoiceStillPaid(services: ServerAppServices, invoiceId: string):
 export const AUTOMATION_RUNTIME: Record<AutomationKey, AutomationRuntime> = {
   payment_receipt: {
     // Not polled by findCandidates in normal operation — payment_receipt
-    // is event-triggered from InvoicePaymentsPanel.tsx. This entry
-    // exists so a nonzero configured delay can still be honored by the
-    // cron loop as a fallback path (see Task 7).
+    // is event-triggered from InvoicePaymentsPanel.tsx, and the cron
+    // loop explicitly skips this key.
+    //
+    // KNOWN LIMITATION: a nonzero configured delay is NOT honored.
+    // There is no fallback path that defers this send — payment_receipt
+    // only ever sends immediately, at the moment a payment is recorded.
+    // The Settings modal therefore hides the delay controls for this
+    // one automation rather than offering a setting nothing reads.
     findCandidates: async () => [],
     stillEligible: async () => true,
     renderDefault: (companyName) => ({
@@ -296,7 +310,7 @@ export const AUTOMATION_RUNTIME: Record<AutomationKey, AutomationRuntime> = {
     stillEligible: (services, entityId) => invoiceStillPaid(services, entityId),
     renderDefault: (companyName) => ({
       subject: "We'd love your feedback",
-      body: `Thank you again for choosing ${companyName}. If you have a moment, we'd really appreciate a quick review — it helps us a lot.`,
+      body: `Thank you again for choosing ${companyName}. If you have a moment, we'd really appreciate a quick review — it helps us a lot.\n\n{reviewLink}`,
     }),
   },
   estimate_followup_1: {

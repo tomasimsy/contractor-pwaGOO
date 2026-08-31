@@ -70,6 +70,10 @@ function EmailAutomationsContent() {
             <option key={p.id} value={p.id}>{p.companyName}</option>
           ))}
         </select>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Per-profile overrides currently apply to Payment Receipt only — other automations use the company default
+          regardless of which profile is selected here.
+        </p>
       </div>
 
       {loading || !settings ? (

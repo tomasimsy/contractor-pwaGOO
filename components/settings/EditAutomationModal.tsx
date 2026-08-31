@@ -61,6 +61,13 @@ export function EditAutomationModal({
           <p className="text-xs text-muted-foreground">{meta.description}</p>
         </div>
 
+        {/* payment_receipt is event-triggered at the moment a payment is
+            recorded and no code path defers it, so a configured delay
+            would be silently ignored — show the fixed behavior instead
+            of an editable control nothing reads. */}
+        {automationKey === "payment_receipt" ? (
+          <p className="text-xs text-muted-foreground">Sent immediately when a payment is recorded.</p>
+        ) : (
         <div className="flex items-center gap-2">
           <label className="text-xs font-medium text-foreground">Wait</label>
           <input
@@ -82,6 +89,7 @@ export function EditAutomationModal({
             {meta.delayDirection === "before" ? "before the trigger" : "after the trigger"}
           </span>
         </div>
+        )}
 
         {meta.supportsCondition && (
           <label className="flex items-center gap-2">
