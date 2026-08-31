@@ -128,43 +128,36 @@ export async function upsertAutomationSetting(
     : registryDefault(key);
   const merged = { ...base, ...changes };
 
-  const payload = {
-    company_id: companyId,
-    profile_id: profileId,
-    automation_key: key,
-    enabled: merged.enabled,
-    delay_value: merged.delayValue,
-    delay_unit: merged.delayUnit,
-    condition: merged.condition,
-    subject_template: merged.subjectTemplate,
-    body_template: merged.bodyTemplate,
-    updated_by: updatedBy,
-    updated_at: new Date().toISOString(),
-  };
-
-  // A single atomic upsert, not the old "check if it exists, then
-  // insert or update" — that had a real TOCTOU race: two
-  // near-simultaneous saves for the same (companyId, profileId, key)
-  // (e.g. a double-clicked toggle, or a toggle click landing while an
-  // Edit-modal save is still in flight) could both see "no row exists"
-  // and both attempt an insert, and the second one hit the unique
-  // constraint and threw. `onConflict` targets the exact column set
-  // each case is actually protected by: the plain 3-column unique
-  // constraint for a real profile_id, or the profile_id-IS-NULL
-  // partial unique index (20260908000000 migration) for the company
-  // default — Postgres's plain unique constraint alone does NOT
-  // de-duplicate NULL profile_id rows, which is why that partial
-  // index exists.
+  // A single atomic write via the upsert_email_automation_setting
+  // Postgres function (20260909000000 migration), not the old "check
+  // if it exists, then insert or update" — that had a real TOCTOU
+  // race: two near-simultaneous saves for the same (companyId,
+  // profileId, key) (e.g. a double-clicked toggle, or a toggle click
+  // landing while an Edit-modal save is still in flight) could both
+  // see "no row exists" and both attempt an insert, and the second
+  // one hit the unique constraint and threw.
   //
-  // Trade-off: the JS client's upsert() rewrites every column on
-  // conflict, so `created_by` gets reset to the current editor on
-  // every save, not just the row's original creator — acceptable for
-  // a low-stakes settings audit field, not worth a raw-SQL RPC to
-  // preserve.
-  const { error } = await supabase.from("email_automations").upsert(
-    { ...payload, created_by: updatedBy },
-    { onConflict: profileId === null ? "company_id,automation_key" : "company_id,profile_id,automation_key" }
-  );
+  // This has to be a real SQL function rather than the JS client's
+  // own upsert({onConflict}) — Postgres requires the exact partial
+  // index's WHERE predicate inside the ON CONFLICT clause to target
+  // it (the profile_id-IS-NULL "company default" case,
+  // 20260908000000 migration), and the JS client's upsert() can only
+  // emit a plain `ON CONFLICT (cols) DO UPDATE` with no predicate —
+  // it cannot select a partial index as the arbiter at all. The
+  // function branches between that partial-index target (profileId
+  // null) and the plain 3-column constraint (a real profileId).
+  const { error } = await supabase.rpc("upsert_email_automation_setting", {
+    p_company_id: companyId,
+    p_profile_id: profileId,
+    p_automation_key: key,
+    p_enabled: merged.enabled,
+    p_delay_value: merged.delayValue,
+    p_delay_unit: merged.delayUnit,
+    p_condition: merged.condition,
+    p_subject_template: merged.subjectTemplate,
+    p_body_template: merged.bodyTemplate,
+    p_updated_by: updatedBy,
+  });
   if (error) throw new Error(`Failed to save automation settings: ${error.message}`);
   return merged;
 }
