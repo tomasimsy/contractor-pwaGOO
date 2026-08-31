@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Building2, FolderLock, Upload } from "lucide-react";
+import { Building2, FolderLock, Mail, Upload } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { RequirePermission } from "@/components/layout/RequirePermission";
@@ -52,6 +52,7 @@ const FIELD_LABEL: Record<string, string> = {
   company_phone: "Phone",
   company_email: "Email",
   bcc_email: "BCC Email",
+  review_link: "Review Link",
   company_website: "Website",
   company_website_2: "Second Website",
   company_address: "Address",
@@ -220,6 +221,9 @@ function CompanySettingsContent() {
             <Link href="/settings/company/profiles" className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted">
               <Building2 className="size-3.5" /> Business Profiles
             </Link>
+            <Link href="/settings/company/email-automations" className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted">
+              <Mail className="size-3.5" /> Email Automations
+            </Link>
             <Link href="/settings/company/documents" className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted">
               <FolderLock className="size-3.5" /> Company Documents
             </Link>
@@ -271,6 +275,12 @@ function CompanySettingsContent() {
             </div>
             <Field name="company_website" value={form.company_website} onChange={setField} placeholder="https://…" />
             <Field name="company_website_2" value={form.company_website_2 ?? ""} onChange={setField} placeholder="https://… (optional second site)" />
+            <div>
+              <Field name="review_link" value={form.review_link ?? ""} onChange={setField} placeholder="https://g.page/r/…/review" />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Sent to clients a week after an invoice is paid in full. Leave blank to skip that email.
+              </p>
+            </div>
           </div>
         </section>
 
