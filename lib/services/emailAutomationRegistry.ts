@@ -180,3 +180,195 @@ export function computeDueDate(anchorAt: string, delayValue: number, delayUnit: 
 export function isDue(dueDate: Date, now: Date): boolean {
   return now.getTime() >= dueDate.getTime();
 }
+
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { ServerAppServices } from "./server";
+import { isOutstandingInvoiceStatus } from "@/components/invoices/invoiceStatus";
+
+export interface AutomationCandidate {
+  entityId: string;
+  anchorAt: string;
+}
+
+export interface AutomationRuntime {
+  findCandidates(supabase: SupabaseClient, services: ServerAppServices, companyId: string): Promise<AutomationCandidate[]>;
+  stillEligible(services: ServerAppServices, entityId: string): Promise<boolean>;
+  renderDefault(companyName: string): { subject: string; body: string };
+}
+
+/** Shared by the four project-anchored automations — the identical
+ * audit_logs shape ("every project that transitioned to 'completed'"),
+ * differing only in delay/copy. */
+async function findCompletedProjects(supabase: SupabaseClient, companyId: string): Promise<AutomationCandidate[]> {
+  const { data, error } = await supabase
+    .from("audit_logs")
+    .select("entity_id, occurred_at")
+    .eq("company_id", companyId)
+    .eq("entity_table", "projects")
+    .eq("action", "status_change")
+    .eq("new_values->>status", "completed")
+    .order("occurred_at", { ascending: false });
+  if (error) throw new Error(`Failed to query project completions: ${error.message}`);
+  // One anchor per project — the MOST RECENT completion, in case a
+  // project was reopened and re-completed.
+  const latestByProject = new Map<string, string>();
+  for (const row of data ?? []) {
+    const id = row.entity_id as string;
+    if (!latestByProject.has(id)) latestByProject.set(id, row.occurred_at as string);
+  }
+  return Array.from(latestByProject, ([entityId, anchorAt]) => ({ entityId, anchorAt }));
+}
+
+async function projectStillCompleted(services: ServerAppServices, projectId: string): Promise<boolean> {
+  const project = await services.projectService.getById(projectId);
+  return project?.status === "completed";
+}
+
+async function findSentEstimates(supabase: SupabaseClient, companyId: string): Promise<AutomationCandidate[]> {
+  const { data, error } = await supabase
+    .from("audit_logs")
+    .select("entity_id, occurred_at")
+    .eq("company_id", companyId)
+    .eq("entity_table", "estimates")
+    .eq("action", "status_change")
+    .eq("new_values->>status", "sent")
+    .order("occurred_at", { ascending: false });
+  if (error) throw new Error(`Failed to query estimate sends: ${error.message}`);
+  const latestByEstimate = new Map<string, string>();
+  for (const row of data ?? []) {
+    const id = row.entity_id as string;
+    if (!latestByEstimate.has(id)) latestByEstimate.set(id, row.occurred_at as string);
+  }
+  return Array.from(latestByEstimate, ([entityId, anchorAt]) => ({ entityId, anchorAt }));
+}
+
+async function estimateStillPending(services: ServerAppServices, estimateId: string): Promise<boolean> {
+  const estimate = await services.estimateService.getById(estimateId);
+  if (!estimate) return false;
+  return (estimate.status === "sent" || estimate.status === "viewed") && !estimate.signature;
+}
+
+async function findOutstandingInvoices(supabase: SupabaseClient, services: ServerAppServices, companyId: string): Promise<AutomationCandidate[]> {
+  const invoices = await services.invoiceService.listForCompany({ companyId });
+  return invoices
+    .filter((inv) => isOutstandingInvoiceStatus(inv.status) && inv.dueDate)
+    .map((inv) => ({ entityId: inv.id, anchorAt: `${inv.dueDate}T00:00:00Z` }));
+}
+
+async function invoiceStillOutstanding(services: ServerAppServices, invoiceId: string): Promise<boolean> {
+  const invoice = await services.invoiceService.getById(invoiceId);
+  return !!invoice && isOutstandingInvoiceStatus(invoice.status);
+}
+
+async function findPaidInvoices(services: ServerAppServices, companyId: string): Promise<AutomationCandidate[]> {
+  const invoices = await services.invoiceService.listForCompany({ companyId });
+  const paid = invoices.filter((inv) => inv.status === "paid");
+  const candidates: AutomationCandidate[] = [];
+  for (const inv of paid) {
+    const payments = await services.paymentService.listForInvoice(inv.id);
+    if (payments.length === 0) continue;
+    const lastPaymentDate = payments.reduce((latest, p) => (p.paymentDate > latest ? p.paymentDate : latest), payments[0].paymentDate);
+    candidates.push({ entityId: inv.id, anchorAt: `${lastPaymentDate}T00:00:00Z` });
+  }
+  return candidates;
+}
+
+async function invoiceStillPaid(services: ServerAppServices, invoiceId: string): Promise<boolean> {
+  const invoice = await services.invoiceService.getById(invoiceId);
+  return invoice?.status === "paid";
+}
+
+export const AUTOMATION_RUNTIME: Record<AutomationKey, AutomationRuntime> = {
+  payment_receipt: {
+    // Not polled by findCandidates in normal operation — payment_receipt
+    // is event-triggered from InvoicePaymentsPanel.tsx. This entry
+    // exists so a nonzero configured delay can still be honored by the
+    // cron loop as a fallback path (see Task 7).
+    findCandidates: async () => [],
+    stillEligible: async () => true,
+    renderDefault: (companyName) => ({
+      subject: "Payment received",
+      body: `Thank you for your payment. This confirms we've received it — reach out any time if you have questions.\n\n${companyName}`,
+    }),
+  },
+  google_review: {
+    findCandidates: async (_supabase, services, companyId) => findPaidInvoices(services, companyId),
+    stillEligible: (services, entityId) => invoiceStillPaid(services, entityId),
+    renderDefault: (companyName) => ({
+      subject: "We'd love your feedback",
+      body: `Thank you again for choosing ${companyName}. If you have a moment, we'd really appreciate a quick review — it helps us a lot.`,
+    }),
+  },
+  estimate_followup_1: {
+    findCandidates: (supabase, _services, companyId) => findSentEstimates(supabase, companyId),
+    stillEligible: (services, entityId) => estimateStillPending(services, entityId),
+    renderDefault: (companyName) => ({
+      subject: "Following up on your estimate",
+      body: `Just checking in — your estimate from ${companyName} is ready whenever you'd like to move forward. Let us know if you have any questions.`,
+    }),
+  },
+  estimate_followup_2: {
+    findCandidates: (supabase, _services, companyId) => findSentEstimates(supabase, companyId),
+    stillEligible: (services, entityId) => estimateStillPending(services, entityId),
+    renderDefault: (companyName) => ({
+      subject: "Still interested? Your estimate is waiting",
+      body: `We wanted to follow up again — your estimate from ${companyName} is still available. Happy to answer any questions before you decide.`,
+    }),
+  },
+  estimate_followup_3: {
+    findCandidates: (supabase, _services, companyId) => findSentEstimates(supabase, companyId),
+    stillEligible: (services, entityId) => estimateStillPending(services, entityId),
+    renderDefault: (companyName) => ({
+      subject: "Final follow-up on your estimate",
+      body: `This is our last check-in on the estimate from ${companyName}. If your plans have changed, no worries — just let us know if you'd like us to keep it open.`,
+    }),
+  },
+  invoice_due_reminder: {
+    findCandidates: (supabase, services, companyId) => findOutstandingInvoices(supabase, services, companyId),
+    stillEligible: (services, entityId) => invoiceStillOutstanding(services, entityId),
+    renderDefault: (companyName) => ({
+      subject: "Your invoice is coming due",
+      body: `This is a friendly reminder that your invoice from ${companyName} is coming due soon. Let us know if you have any questions.`,
+    }),
+  },
+  invoice_overdue_reminder: {
+    findCandidates: (supabase, services, companyId) => findOutstandingInvoices(supabase, services, companyId),
+    stillEligible: (services, entityId) => invoiceStillOutstanding(services, entityId),
+    renderDefault: (companyName) => ({
+      subject: "Your invoice is now overdue",
+      body: `Your invoice from ${companyName} is now past its due date. Please reach out if you have any questions or need to arrange payment.`,
+    }),
+  },
+  job_completion_thankyou: {
+    findCandidates: (supabase, _services, companyId) => findCompletedProjects(supabase, companyId),
+    stillEligible: (services, entityId) => projectStillCompleted(services, entityId),
+    renderDefault: (companyName) => ({
+      subject: "Thank you for choosing us",
+      body: `Thank you for trusting ${companyName} with your project — it was a pleasure working with you. Please don't hesitate to reach out if anything comes up.`,
+    }),
+  },
+  post_job_checkin: {
+    findCandidates: (supabase, _services, companyId) => findCompletedProjects(supabase, companyId),
+    stillEligible: (services, entityId) => projectStillCompleted(services, entityId),
+    renderDefault: (companyName) => ({
+      subject: "Checking in on your project",
+      body: `It's been a little while since we finished your project — just checking in to make sure everything's still holding up well. Reach out any time.\n\n${companyName}`,
+    }),
+  },
+  future_project_checkin: {
+    findCandidates: (supabase, _services, companyId) => findCompletedProjects(supabase, companyId),
+    stillEligible: (services, entityId) => projectStillCompleted(services, entityId),
+    renderDefault: (companyName) => ({
+      subject: "Thinking about your next project?",
+      body: `Just a friendly reminder that ${companyName} is here whenever you're ready for your next project. We'd love to work with you again.`,
+    }),
+  },
+  warranty_checkin: {
+    findCandidates: (supabase, _services, companyId) => findCompletedProjects(supabase, companyId),
+    stillEligible: (services, entityId) => projectStillCompleted(services, entityId),
+    renderDefault: (companyName) => ({
+      subject: "Warranty & maintenance check-in",
+      body: `It's been about a year since we completed your project. If you have any warranty or maintenance questions, we're happy to help — just reply to this email.\n\n${companyName}`,
+    }),
+  },
+};
