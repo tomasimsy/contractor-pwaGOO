@@ -25,6 +25,7 @@ interface CompanyProfileRow {
   footer_message: string | null;
   portal_domain: string | null;
   email_message_template: string | null;
+  payment_receipt_message_template: string | null;
   created_by: string | null;
   created_at: string;
   updated_by: string | null;
@@ -48,6 +49,7 @@ function rowToProfile(row: CompanyProfileRow): CompanyProfile {
     footerMessage: row.footer_message,
     portalDomain: row.portal_domain,
     emailMessageTemplate: row.email_message_template,
+    paymentReceiptMessageTemplate: row.payment_receipt_message_template,
     createdBy: row.created_by as UUID | null,
     createdAt: row.created_at,
     updatedBy: row.updated_by as UUID | null,
@@ -83,6 +85,7 @@ export function createSupabaseCompanyProfileService(
     footerMessage?: string | null;
     portalDomain?: string | null;
     emailMessageTemplate?: string | null;
+    paymentReceiptMessageTemplate?: string | null;
   }): Promise<CompanyProfile> {
     // Business Profiles aren't their own Resource in PERMISSION_MATRIX
     // (permissions.ts) — treated as company_settings, same
@@ -124,6 +127,7 @@ export function createSupabaseCompanyProfileService(
         footer_message: input.footerMessage ?? null,
         portal_domain: domainCheck.normalized ?? null,
         email_message_template: input.emailMessageTemplate?.trim() || null,
+        payment_receipt_message_template: input.paymentReceiptMessageTemplate?.trim() || null,
         created_by: actorId,
       })
       .select()
@@ -145,6 +149,7 @@ export function createSupabaseCompanyProfileService(
       footerMessage: string | null;
       portalDomain: string | null;
       emailMessageTemplate: string | null;
+      paymentReceiptMessageTemplate: string | null;
     }>
   ): Promise<CompanyProfile> {
     await enforcePermission(supabase, "company_settings", "update");
@@ -192,6 +197,7 @@ export function createSupabaseCompanyProfileService(
     if (changes.footerMessage !== undefined) payload.footer_message = changes.footerMessage;
     if (normalizedPortalDomain !== undefined) payload.portal_domain = normalizedPortalDomain;
     if (changes.emailMessageTemplate !== undefined) payload.email_message_template = changes.emailMessageTemplate?.trim() || null;
+    if (changes.paymentReceiptMessageTemplate !== undefined) payload.payment_receipt_message_template = changes.paymentReceiptMessageTemplate?.trim() || null;
 
     const { data, error } = await supabase.from("company_profiles").update(payload).eq("id", profileId).select().single();
     if (error) throw new Error(`Failed to update business profile: ${error.message}`);

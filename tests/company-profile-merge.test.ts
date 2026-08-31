@@ -10,6 +10,7 @@ function profile(overrides: Partial<CompanyProfile>): CompanyProfile {
     companyPhone: null,
     companyEmail: null,
     bccEmail: null,
+    paymentReceiptMessageTemplate: null,
     companyWebsite: null,
     companyAddress: null,
     footerMessage: null,
@@ -84,6 +85,7 @@ describe("parseCompanyProfileRow", () => {
       footerMessage: "Thanks for choosing OSRPros!",
       portalDomain: "https://osrpros.com",
       emailMessageTemplate: "Hi {clientName}, thanks!",
+      paymentReceiptMessageTemplate: null,
     });
   });
 });

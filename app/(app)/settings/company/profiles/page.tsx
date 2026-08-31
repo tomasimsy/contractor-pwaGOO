@@ -41,6 +41,7 @@ type ProfileFormState = {
   footerMessage: string;
   portalDomain: string;
   emailMessageTemplate: string;
+  paymentReceiptMessageTemplate: string;
 };
 
 const EMPTY_FORM: ProfileFormState = {
@@ -54,6 +55,7 @@ const EMPTY_FORM: ProfileFormState = {
   footerMessage: "",
   portalDomain: "",
   emailMessageTemplate: "",
+  paymentReceiptMessageTemplate: "",
 };
 
 function profileToForm(p: CompanyProfile): ProfileFormState {
@@ -68,6 +70,7 @@ function profileToForm(p: CompanyProfile): ProfileFormState {
     footerMessage: p.footerMessage ?? "",
     portalDomain: p.portalDomain ?? "",
     emailMessageTemplate: p.emailMessageTemplate ?? "",
+    paymentReceiptMessageTemplate: p.paymentReceiptMessageTemplate ?? "",
   };
 }
 
@@ -144,6 +147,7 @@ function BusinessProfilesContent() {
         footerMessage: form.footerMessage.trim() || null,
         portalDomain: domainCheck.normalized ?? null,
         emailMessageTemplate: form.emailMessageTemplate.trim() || null,
+        paymentReceiptMessageTemplate: form.paymentReceiptMessageTemplate.trim() || null,
       };
       if (editingId) {
         await companyProfileService.update(editingId, payload);
@@ -330,6 +334,19 @@ function BusinessProfilesContent() {
             />
             <p className="mt-1 text-[10.5px] leading-relaxed text-muted-foreground">
               Default message body for &quot;Email Customer&quot; sends using this profile. Use {"{clientName}"} and {"{companyName}"} as placeholders. Leave blank to use the built-in default.
+            </p>
+          </div>
+          <div>
+            <label className={LABEL}>Payment Receipt Message</label>
+            <textarea
+              value={form.paymentReceiptMessageTemplate}
+              onChange={(e) => setForm((f) => ({ ...f, paymentReceiptMessageTemplate: e.target.value }))}
+              placeholder={"A payment of {amount} was received on {paymentDate} for {clientName} {documentNumber}."}
+              rows={4}
+              className={`${FIELD} h-auto py-2 leading-relaxed`}
+            />
+            <p className="mt-1 text-[10.5px] leading-relaxed text-muted-foreground">
+              Sent automatically once an invoice is fully paid. Use {"{clientName}"}, {"{amount}"}, {"{documentNumber}"}, and {"{paymentDate}"} as placeholders. Leave blank to use the built-in default.
             </p>
           </div>
 

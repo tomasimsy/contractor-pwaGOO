@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/Badge";
 import { RequirePermission } from "@/components/layout/RequirePermission";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
-import { INVOICE_STATUS_TONE, formatMoney } from "@/components/invoices/invoiceStatus";
+import { INVOICE_STATUS_TONE, formatMoney, isUnpaidInvoiceStatus, isOutstandingInvoiceStatus } from "@/components/invoices/invoiceStatus";
 import type { Invoice, InvoiceStatus } from "@/lib/services/invoiceService";
 import type { Project } from "@/lib/services/projectService";
 import type { Client } from "@/lib/services/clientService";
@@ -309,6 +309,7 @@ function InvoicesListContent() {
                       "Project",
                       "Client",
                       "Status",
+                      "Payment",
                       "Amount",
                       "Due",
                     ].map((title) => (
@@ -324,13 +325,16 @@ function InvoicesListContent() {
 
                 <tbody className="divide-y divide-emerald-100/60">
                   {sortedFilteredInvoices.map((invoice) => {
+                    const outstanding = isOutstandingInvoiceStatus(invoice.status);
                     const border =
                       invoice.status === "paid"
                         ? "border-l-4 border-l-emerald-500"
-                        : invoice.status === "partially_paid"
-                        ? "border-l-4 border-l-amber-500"
                         : invoice.status === "overdue"
                         ? "border-l-4 border-l-rose-500"
+                        : isUnpaidInvoiceStatus(invoice.status)
+                        ? "border-l-4 border-l-rose-400"
+                        : outstanding
+                        ? "border-l-4 border-l-rose-200"
                         : "border-l-4 border-l-emerald-300";
 
                     const estId = (invoice as any).estimateId;
@@ -380,6 +384,18 @@ function InvoicesListContent() {
                           <Badge tone={INVOICE_STATUS_TONE[invoice.status]}>
                             {invoice.status.replace(/_/g, " ")}
                           </Badge>
+                        </td>
+
+                        <td className="px-4 py-3.5">
+                          {outstanding ? (
+                            <span className="inline-flex items-center rounded-full bg-rose-600 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">
+                              Unpaid
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-emerald-700">
+                              Paid
+                            </span>
+                          )}
                         </td>
 
                         <td className="px-4 py-3.5 text-right font-bold text-emerald-900">
@@ -455,10 +471,15 @@ function InvoicesListContent() {
                         <div className="text-base font-bold text-white">
                           {formatMoney(invoice.total)}
                         </div>
-                        <div className="mt-0.5">
+                        <div className="mt-0.5 flex items-center justify-end gap-1">
                           <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${statusBadge}`}>
                             {statusLabel}
                           </span>
+                          {isOutstandingInvoiceStatus(invoice.status) && (
+                            <span className="rounded-full bg-rose-500 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                              Unpaid
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>

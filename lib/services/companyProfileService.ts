@@ -38,6 +38,11 @@ export interface CompanyProfile extends AuditedEntity {
    * fallback used when this is null. Supports `{clientName}` and
    * `{companyName}` placeholders, substituted when a send is composed. */
   emailMessageTemplate: string | null;
+  /** This profile's own "Payment received" email body — see
+   * app/api/payments/receipt/route.ts's built-in default, used when
+   * this is null. Supports `{clientName}`, `{amount}`,
+   * `{documentNumber}`, `{paymentDate}` placeholders. */
+  paymentReceiptMessageTemplate: string | null;
 }
 
 export interface CompanyProfileService {
@@ -57,6 +62,7 @@ export interface CompanyProfileService {
      * via lib/portalDomainValidation.ts before it's ever written. */
     portalDomain?: string | null;
     emailMessageTemplate?: string | null;
+    paymentReceiptMessageTemplate?: string | null;
   }): Promise<CompanyProfile>;
 
   update(
@@ -72,6 +78,7 @@ export interface CompanyProfileService {
       footerMessage: string | null;
       portalDomain: string | null;
       emailMessageTemplate: string | null;
+      paymentReceiptMessageTemplate: string | null;
     }>
   ): Promise<CompanyProfile>;
 

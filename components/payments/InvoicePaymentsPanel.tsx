@@ -166,38 +166,66 @@ export const InvoicePaymentsPanel = forwardRef<InvoicePaymentsPanelRef, {
         )}
       </div>
 
-      {error && <div className="mb-2 rounded-lg bg-danger/10 px-2.5 py-1.5 text-xs text-danger">{error}</div>}
+     {error && (
+  <div className="mb-2 rounded-lg bg-danger/10 px-2.5 py-1.5 text-xs text-danger">
+    {error}
+  </div>
+)}
 
-      {payments.length === 0 ? (
-        <EmptyState title="No payments recorded" description="Payments received against this invoice will appear here." />
-      ) : (
-        <ul className="max-h-48 divide-y divide-border overflow-y-auto pr-1">
-          {payments.map((p) => (
-            <li key={p.id} className="flex items-start justify-between gap-2 py-1.5 text-xs">
-              <div className="min-w-0">
-                <div className="font-medium text-foreground">{money(p.amount)}</div>
-                <div className="text-[11px] text-muted-foreground">
-                  {p.paymentDate} · {formatPaymentMethod(p.method)}
-                  {p.referenceNumber ? ` · ${p.referenceNumber}` : ""}
-                </div>
-                {p.notes && <div className="mt-0.5 text-[11px] text-muted-foreground">{p.notes}</div>}
-              </div>
-              {canEdit && (
-                <div className="flex shrink-0 gap-0.5">
-                  <button type="button" onClick={() => setDialogFor(p)} aria-label="Edit payment"
-                    className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
-                    <Pencil className="size-3.5" />
-                  </button>
-                  <button type="button" onClick={() => requestDelete(p)} aria-label="Delete payment"
-                    className="rounded-md p-1 text-muted-foreground hover:bg-danger/10 hover:text-danger">
-                    <Trash2 className="size-3.5" />
-                  </button>
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+{payments.length === 0 ? (
+  <div className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5">
+    <div className="text-xs font-medium text-danger">
+      No payments recorded yet
+    </div>
+    <div className="mt-0.5 text-[11px] text-danger/80">
+      Payments received against this invoice will appear here.
+    </div>
+  </div>
+) : (
+  <ul className="max-h-48 divide-y divide-border overflow-y-auto pr-1">
+    {payments.map((p) => (
+      <li
+        key={p.id}
+        className="flex items-start justify-between gap-2 py-1.5 text-xs"
+      >
+        <div className="min-w-0">
+          <div className="font-medium text-foreground">{money(p.amount)}</div>
+          <div className="text-[11px] text-muted-foreground">
+            {p.paymentDate} · {formatPaymentMethod(p.method)}
+            {p.referenceNumber ? ` · ${p.referenceNumber}` : ""}
+          </div>
+          {p.notes && (
+            <div className="mt-0.5 text-[11px] text-muted-foreground">
+              {p.notes}
+            </div>
+          )}
+        </div>
+
+        {canEdit && (
+          <div className="flex shrink-0 gap-0.5">
+            <button
+              type="button"
+              onClick={() => setDialogFor(p)}
+              aria-label="Edit payment"
+              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <Pencil className="size-3.5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => requestDelete(p)}
+              aria-label="Delete payment"
+              className="rounded-md p-1 text-muted-foreground hover:bg-danger/10 hover:text-danger"
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+          </div>
+        )}
+      </li>
+    ))}
+  </ul>
+)}
 
       {dialogFor && (
         <PaymentDialog

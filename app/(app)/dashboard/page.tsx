@@ -14,7 +14,7 @@
 * comment). Date range: a preset picker resolving to the exact
 * DateRange shape getCompanyFinancials already accepts.
 */
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useEffect } from "react";
 import { DollarSign, Wallet, FileWarning, Receipt, TrendingUp, FileText, CheckCircle2, FolderKanban, Plus, HandCoins }
@@ -31,6 +31,7 @@ import { RevenueExpenseChart, RevenueExpenseChartSkeleton } from "@/components/d
 import { RecentActivityFeed } from "@/components/dashboard/RecentActivityFeed";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { getActionablePayables, type ActionablePayables } from "@/lib/services/payablesWorklist";
+import { isOutstandingInvoiceStatus, formatMoney } from "@/components/invoices/invoiceStatus";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
@@ -59,6 +60,24 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
     } = useDashboardData(profile?.companyId, preset);
 
     const isEmpty = !loading && !error && projects.length === 0 && estimates.length === 0 && invoices.length === 0;
+
+    // Same population as the Outstanding Invoices tile above and the
+    // red "Unpaid" pill on the Invoices list itself (isOutstandingInvoiceStatus) —
+    // shown here as an actual list, not just a count, so an unpaid
+    // invoice is visible without leaving the dashboard. Worst-first,
+    // biggest dollar amount on top.
+    const projectsById = useMemo(
+      () => Object.fromEntries(projects.map((p) => [p.id, p])),
+      [projects]
+    );
+    const unpaidInvoices = useMemo(
+      () =>
+        invoices
+          .filter((i) => isOutstandingInvoiceStatus(i.status))
+          .sort((a, b) => b.total - a.total)
+          .slice(0, 5),
+      [invoices]
+    );
 
     return (
     <PageContainer>
@@ -105,10 +124,22 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
               <StatCard label="Revenue" value={money(financials.totalRevenue)} icon={DollarSign} tone="success"
                 size="sm" />
               <StatCard label="Payments Received" value={money(financials.totalPaid)} icon={Wallet} size="sm" />
+              {/* Same "not yet collected" fact the Invoices list badges
+              in red per-row (isUnpaidInvoiceStatus) — counted here from
+              the same invoices array so the two surfaces can never
+              disagree. */}
+              <Link href="/invoices" className="contents">
               <StatCard label="Outstanding Invoices" value={money(financials.totalOutstanding)} icon={FileWarning}
-                tone={financials.totalOutstanding> 0 ? "warning" : "neutral"}
+                tone={financials.totalOutstanding> 0 ? "danger" : "neutral"}
+                hint={(() => {
+                  const outstandingCount = invoices.filter((i) => isOutstandingInvoiceStatus(i.status)).length;
+                  return outstandingCount > 0
+                    ? `${outstandingCount} invoice${outstandingCount === 1 ? "" : "s"} outstanding`
+                    : "All caught up";
+                })()}
                 size="sm"
                 />
+                </Link>
                 <StatCard label="Expenses" value={money(financials.totalExpenses)} icon={Receipt} size="sm" />
                 <StatCard label="Net Profit" value={money(financials.netProfit)} icon={TrendingUp}
                   tone={financials.netProfit>= 0 ? "success" : "danger"}
@@ -147,6 +178,45 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
             </>
             )}
           </div>
+
+          {!loading && unpaidInvoices.length > 0 && (
+          <div className="rounded-lg border border-rose-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-rose-100 px-4 py-3">
+              <h3 className="flex items-center gap-1.5 text-sm font-bold text-rose-700">
+                <FileWarning className="size-4" /> Unpaid Invoices
+              </h3>
+              <Link href="/invoices" className="text-xs font-medium text-emerald-700 hover:underline">
+                View all
+              </Link>
+            </div>
+            <ul className="divide-y divide-rose-50">
+              {unpaidInvoices.map((invoice) => (
+                <li key={invoice.id}>
+                  <Link
+                    href={`/invoices/${invoice.id}`}
+                    className="flex items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-rose-50/60"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-emerald-900">
+                        {invoice.invoiceNumber || invoice.id.slice(0, 8)}
+                      </div>
+                      <div className="truncate text-xs text-emerald-600/60">
+                        {projectsById[invoice.projectId]?.name ?? "—"}
+                        {invoice.dueDate ? ` · Due ${invoice.dueDate}` : ""}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className="text-sm font-bold text-emerald-900">{formatMoney(invoice.total)}</span>
+                      <span className="inline-flex items-center rounded-full bg-rose-600 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white">
+                        Unpaid
+                      </span>
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+          )}
 
           {loading ? (
           <RevenueExpenseChartSkeleton />

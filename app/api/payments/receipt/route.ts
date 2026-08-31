@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getResendClient, getFromAddress } from "@/lib/email/resendClient";
 import { resolvePortalOrigin } from "@/lib/portalDomain";
-import { getCompanySettingsByCompanyId } from "@/lib/company";
+import { getCompanySettingsByCompanyId, getCompanyProfileById } from "@/lib/company";
 import { formatCurrency, formatDate } from "@/lib/pdf/pdfLayout";
 import { recordEmailSent } from "@/lib/email/emailTracking";
 
@@ -124,6 +124,20 @@ export async function POST(request: NextRequest) {
         : null;
 
     const paymentDate = formatDate(new Date().toISOString());
+    // Customizable per Business Profile (Settings > Business Profiles >
+    // Payment Receipt Message) — same "profile-only template, falls
+    // back to a built-in default" shape as email_message_template for
+    // estimate sends. Placeholders substituted here since this send is
+    // fully automatic (no staff review step to fill them in, unlike
+    // the estimate email's EmailCustomerModal).
+    const profile = await getCompanyProfileById(supabase, invoice.profile_id);
+    const messageBody = profile?.paymentReceiptMessageTemplate
+      ? profile.paymentReceiptMessageTemplate
+          .replaceAll("{clientName}", client?.name ?? "")
+          .replaceAll("{amount}", formatCurrency(totalPaid))
+          .replaceAll("{documentNumber}", documentNumber)
+          .replaceAll("{paymentDate}", paymentDate)
+      : `A payment of ${formatCurrency(totalPaid)} was received on ${paymentDate} for ${client?.name ?? ""} ${documentNumber}.`;
     const emailHtml = `
       <!DOCTYPE html>
       <html>
@@ -134,8 +148,8 @@ export async function POST(request: NextRequest) {
             <div style="font-size: 13px; font-weight: 700; color: #111827; letter-spacing: 0.02em; margin-bottom: 24px;">
               ${company.company_name}
             </div>
-            <div style="font-size: 14px; line-height: 1.6; color: #1f2429;">
-              A payment of ${formatCurrency(totalPaid)} was received on ${paymentDate} for ${client?.name ?? ""} ${documentNumber}.
+            <div style="font-size: 14px; line-height: 1.6; color: #1f2429; white-space: pre-wrap;">
+              ${messageBody}
             </div>
             ${
               pdfUrl

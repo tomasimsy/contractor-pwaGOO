@@ -205,6 +205,13 @@ export type CompanyProfile = {
    * reasoning as portalDomain, so mergeProfileOverrides below
    * deliberately does not touch it either. */
   emailMessageTemplate: string | null;
+  /** This profile's own "Payment received" email body — the fallback
+   * used is the built-in default sentence in
+   * app/api/payments/receipt/route.ts when null. Supports
+   * `{clientName}`, `{amount}`, `{documentNumber}`, `{paymentDate}`
+   * placeholders. NOT a branding field, same reasoning as
+   * emailMessageTemplate above. */
+  paymentReceiptMessageTemplate: string | null;
 };
 
 /** Parses the raw snake_case row this table's own SELECT and every
@@ -227,6 +234,7 @@ export function parseCompanyProfileRow(row: Record<string, unknown> | null | und
     footerMessage: (row.footer_message as string) || null,
     portalDomain: (row.portal_domain as string) || null,
     emailMessageTemplate: (row.email_message_template as string) || null,
+    paymentReceiptMessageTemplate: (row.payment_receipt_message_template as string) || null,
   };
 }
 
