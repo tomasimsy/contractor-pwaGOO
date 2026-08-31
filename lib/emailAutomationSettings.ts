@@ -100,9 +100,15 @@ export async function upsertAutomationSetting(
   changes: Partial<AutomationSettingFields>,
   updatedBy: string | null
 ): Promise<AutomationSettingFields> {
+  // Still need the CURRENT values to correctly merge a PARTIAL
+  // `changes` (e.g. just `{enabled: false}` from the row toggle) on
+  // top of them — an upsert has to write every column, so a partial
+  // change can't just be sent alone. This read is fine to be
+  // non-atomic with the write below; it's a merge-base lookup, not
+  // the thing that used to race.
   const existingQuery = supabase
     .from("email_automations")
-    .select("id, enabled, delay_value, delay_unit, condition, subject_template, body_template")
+    .select("enabled, delay_value, delay_unit, condition, subject_template, body_template")
     .eq("company_id", companyId)
     .eq("automation_key", key);
   const { data: existing } =
@@ -136,12 +142,29 @@ export async function upsertAutomationSetting(
     updated_at: new Date().toISOString(),
   };
 
-  if (existing) {
-    const { error } = await supabase.from("email_automations").update(payload).eq("id", existing.id);
-    if (error) throw new Error(`Failed to save automation settings: ${error.message}`);
-  } else {
-    const { error } = await supabase.from("email_automations").insert({ ...payload, created_by: updatedBy });
-    if (error) throw new Error(`Failed to save automation settings: ${error.message}`);
-  }
+  // A single atomic upsert, not the old "check if it exists, then
+  // insert or update" — that had a real TOCTOU race: two
+  // near-simultaneous saves for the same (companyId, profileId, key)
+  // (e.g. a double-clicked toggle, or a toggle click landing while an
+  // Edit-modal save is still in flight) could both see "no row exists"
+  // and both attempt an insert, and the second one hit the unique
+  // constraint and threw. `onConflict` targets the exact column set
+  // each case is actually protected by: the plain 3-column unique
+  // constraint for a real profile_id, or the profile_id-IS-NULL
+  // partial unique index (20260908000000 migration) for the company
+  // default — Postgres's plain unique constraint alone does NOT
+  // de-duplicate NULL profile_id rows, which is why that partial
+  // index exists.
+  //
+  // Trade-off: the JS client's upsert() rewrites every column on
+  // conflict, so `created_by` gets reset to the current editor on
+  // every save, not just the row's original creator — acceptable for
+  // a low-stakes settings audit field, not worth a raw-SQL RPC to
+  // preserve.
+  const { error } = await supabase.from("email_automations").upsert(
+    { ...payload, created_by: updatedBy },
+    { onConflict: profileId === null ? "company_id,automation_key" : "company_id,profile_id,automation_key" }
+  );
+  if (error) throw new Error(`Failed to save automation settings: ${error.message}`);
   return merged;
 }
