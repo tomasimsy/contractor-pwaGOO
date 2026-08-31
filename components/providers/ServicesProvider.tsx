@@ -16,6 +16,7 @@ import { createAccountsReceivableService } from "@/lib/services/accountsReceivab
 import { createAccountsPayableService } from "@/lib/services/accountsPayableService";
 import { createSupabaseCompanyDocumentService } from "@/lib/services/supabase/companyDocumentService";
 import { createSupabaseCompanyProfileService } from "@/lib/services/supabase/companyProfileService";
+import { createSupabaseEmailAutomationService } from "@/lib/services/supabase/emailAutomationService";
 import { createCpaPackageService } from "@/lib/services/cpaPackageService";
 import { createReconciliationCashFlowAdapter } from "@/lib/services/reconciliationCashFlowAdapter";
 import { createBankReconciliationService } from "@/lib/services/bankReconciliationService";
@@ -43,6 +44,7 @@ import type { AccountsReceivableService } from "@/lib/services/accountsReceivabl
 import type { AccountsPayableService } from "@/lib/services/accountsPayableService";
 import type { CompanyDocumentService } from "@/lib/services/companyDocumentService";
 import type { CompanyProfileService } from "@/lib/services/companyProfileService";
+import type { EmailAutomationService } from "@/lib/services/emailAutomationService";
 import type { CpaPackageService } from "@/lib/services/cpaPackageService";
 import type { BankReconciliationService } from "@/lib/services/bankReconciliationService";
 import type { AuditService } from "@/lib/services";
@@ -85,6 +87,7 @@ export interface AppServices extends InMemoryServices {
    * getCompanySettingsByCompanyId. Never duplicates company_id or any
    * financial data. */
   companyProfileService: CompanyProfileService;
+  emailAutomationService: EmailAutomationService;
   /** Cash-basis only — see cpaPackageService.ts's header for why this
    * is never given financialEngine. */
   cpaPackageService: CpaPackageService;
@@ -177,6 +180,7 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
     const accountsReceivableService = createAccountsReceivableService({ invoiceService, paymentService });
     const companyDocumentService = createSupabaseCompanyDocumentService(supabase, inMemory.validationService, currentUserId);
     const companyProfileService = createSupabaseCompanyProfileService(supabase, inMemory.validationService, currentUserId);
+    const emailAutomationService = createSupabaseEmailAutomationService(supabase, currentUserId);
 
     // Rebuilt over the real services rather than reusing
     // inMemory.financialEngine, which was closed over the in-memory
@@ -232,6 +236,7 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
       accountsPayableService,
       companyDocumentService,
       companyProfileService,
+      emailAutomationService,
       cpaPackageService,
       bankReconciliationService,
       pushSubscriptionService,
