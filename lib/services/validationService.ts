@@ -18,7 +18,11 @@ const PROJECT_TRANSITIONS: Record<ProjectStatus, ProjectStatus[]> = {
   active: ["in_progress", "on_hold", "cancelled"],
   in_progress: ["on_hold", "completed", "cancelled"],
   on_hold: ["active", "in_progress", "cancelled"],
-  completed: ["archived"],
+  // "in_progress" added as a target: "Undo Complete" on the Estimate
+  // Detail page — a job marked complete by mistake (or reopened for
+  // more work) needs a way back into the active workflow, not just
+  // forward into archived. See EstimateDetail.tsx's handleUndoComplete.
+  completed: ["archived", "in_progress"],
   cancelled: ["archived"],
   archived: [],
 };

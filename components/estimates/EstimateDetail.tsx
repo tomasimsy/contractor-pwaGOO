@@ -18,7 +18,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Pencil, Trash2, GitPullRequest, Receipt, Wallet,
-  FolderOpen, Camera, History, User, Download, Share2, Home, CheckCircle2, Mail, MessageSquare,
+  FolderOpen, Camera, History, User, Download, Share2, Home, CheckCircle2, Mail, MessageSquare, RotateCcw,
 } from "lucide-react";
 import { EmailCustomerModal } from "@/components/estimates/EmailCustomerModal";
 import { EmailHistoryPanel } from "@/components/estimates/EmailHistoryPanel";
@@ -59,6 +59,7 @@ import type { Client } from "@/lib/services/clientService";
 import type { ChangeOrder } from "@/lib/services/changeOrderService";
 import type { Invoice } from "@/lib/services/invoiceService";
 import type { CustomerPayment } from "@/lib/services/paymentService";
+import { isOutstandingInvoiceStatus } from "@/components/invoices/invoiceStatus";
 import type { RoofingArea } from "@/lib/services/roofingAreaService";
 import type { EstimateAreaLineItem } from "@/lib/services/estimateAreaLineItemService";
 import type { AuditLogEntry, EstimateStatus, ChangeOrderStatus, EstimateFinancials } from "@/lib/services";
@@ -157,6 +158,13 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
   const [completeBusy, setCompleteBusy] = useState(false);
   const [completeError, setCompleteError] = useState<string | null>(null);
+  /** "Undo Complete" — the reverse of Mark Complete, for a job marked
+   * done by mistake or reopened for more work. Same confirm-then-call-
+   * changeStatus shape, its own state so the two confirmations never
+   * fight over one busy/error pair. */
+  const [showUndoConfirm, setShowUndoConfirm] = useState(false);
+  const [undoBusy, setUndoBusy] = useState(false);
+  const [undoError, setUndoError] = useState<string | null>(null);
   /** Signature-specific feedback, rendered INSIDE the signature card.
    * The page-level `error` banner sits at the very top of a long page:
    * refusing to remove a signature put its explanation ~2,600px above
@@ -396,8 +404,30 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
     }
   }
 
+  /** A job cannot be marked complete while money is still owed on it —
+   * "complete" with an unpaid/never-invoiced balance previously slipped
+   * through silently. Reuses the exact same isOutstandingInvoiceStatus
+   * the Invoices list's red "Unpaid" badges and the Dashboard's
+   * Outstanding Invoices tile already use, so this gate can never
+   * disagree with what those surfaces call unpaid. Requires at least
+   * one PAID invoice too — a project with zero invoices has by
+   * definition not had payment collected either. */
+  const unpaidInvoices = invoices.filter((inv) => isOutstandingInvoiceStatus(inv.status));
+  const hasPaidInvoice = invoices.some((inv) => inv.status === "paid");
+  const completeBlockedReason =
+    unpaidInvoices.length > 0
+      ? `${unpaidInvoices.length} invoice${unpaidInvoices.length === 1 ? "" : "s"} still unpaid — collect payment before marking this job complete.`
+      : !hasPaidInvoice
+      ? "No invoice has been paid for this job yet — collect payment before marking it complete."
+      : null;
+  const canMarkComplete = !completeBlockedReason;
+
   async function handleMarkProjectComplete() {
     if (!project) return;
+    if (completeBlockedReason) {
+      setCompleteError(completeBlockedReason);
+      return;
+    }
     setCompleteBusy(true);
     setCompleteError(null);
     try {
@@ -412,6 +442,25 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
       setCompleteError(err instanceof Error ? err.message : "Could not mark this project complete.");
     } finally {
       setCompleteBusy(false);
+    }
+  }
+
+  async function handleUndoComplete() {
+    if (!project) return;
+    setUndoBusy(true);
+    setUndoError(null);
+    try {
+      const result = await projectService.changeStatus(project.id, "in_progress");
+      if (!result.valid) {
+        setUndoError(result.issues.map((i) => i.message).join("; "));
+        return;
+      }
+      if (result.project) setProject(result.project);
+      setShowUndoConfirm(false);
+    } catch (err) {
+      setUndoError(err instanceof Error ? err.message : "Could not undo completion for this project.");
+    } finally {
+      setUndoBusy(false);
     }
   }
 
@@ -604,11 +653,29 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
             <button
               type="button"
               onClick={() => { setCompleteError(null); setShowCompleteConfirm(true); }}
-              className="inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 transition-colors"
-              title="Mark Project Complete"
+              disabled={!canMarkComplete}
+              className="inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-emerald-700 transition-colors"
+              title={completeBlockedReason ?? "Mark Project Complete"}
             >
               <CheckCircle2 className="size-3.5" />
               <span className="hidden sm:inline">Mark Complete</span>
+            </button>
+          )}
+
+          {/* Undo Complete — the one reverse transition off "completed"
+              besides archiving (see PROJECT_TRANSITIONS), for a job
+              marked done by mistake or reopened for more work. No
+              payment gate here — going BACK to in_progress is always
+              safe regardless of invoice status. */}
+          {project?.status === "completed" && (
+            <button
+              type="button"
+              onClick={() => { setUndoError(null); setShowUndoConfirm(true); }}
+              className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-muted transition-colors"
+              title="Undo Complete — move this job back to In Progress"
+            >
+              <RotateCcw className="size-3.5" />
+              <span className="hidden sm:inline">Undo Complete</span>
             </button>
           )}
 
@@ -1456,6 +1523,9 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
             active workflow (Drafts/Sent/Signed/Invoiced). This does not delete anything, and the project can still
             be reviewed later.
           </p>
+          {completeBlockedReason && (
+            <div role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-xs text-danger">{completeBlockedReason}</div>
+          )}
           {completeError && (
             <div role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-xs text-danger">{completeError}</div>
           )}
@@ -1471,10 +1541,40 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
             <button
               type="button"
               onClick={handleMarkProjectComplete}
-              disabled={completeBusy}
+              disabled={completeBusy || !canMarkComplete}
               className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
             >
               {completeBusy ? "Marking Complete…" : "Mark Complete"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={showUndoConfirm} onClose={() => { if (!undoBusy) setShowUndoConfirm(false); }} title="Undo Complete?">
+        <div className="space-y-3 text-sm">
+          <p className="text-foreground">
+            This moves <span className="font-semibold">{project?.name}</span> back to In Progress. Use this if the
+            job was marked complete by mistake, or needs more work before it's really done.
+          </p>
+          {undoError && (
+            <div role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-xs text-danger">{undoError}</div>
+          )}
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => setShowUndoConfirm(false)}
+              disabled={undoBusy}
+              className="rounded-lg border border-input px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleUndoComplete}
+              disabled={undoBusy}
+              className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
+            >
+              {undoBusy ? "Undoing…" : "Undo Complete"}
             </button>
           </div>
         </div>
