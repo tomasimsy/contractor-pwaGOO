@@ -13,6 +13,7 @@
  */
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FileText, Plus, Search, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -82,6 +83,7 @@ function usePageSize(): number {
 }
 
 function EstimatesListContent() {
+  const router = useRouter();
   const { estimateService } = useServices();
   const { profile } = useAuth();
 
@@ -290,10 +292,18 @@ function EstimatesListContent() {
                   )}
                 </td>
                 <td className="px-3 py-2.5 text-emerald-800 font-medium">
-                  {estimate.projectName ?? "—"}
+                  {estimate.projectName ? (
+                    <Link href={`/projects/${estimate.projectId}`} className="hover:text-emerald-950 hover:underline">
+                      {estimate.projectName}
+                    </Link>
+                  ) : "—"}
                 </td>
                 <td className="px-3 py-2.5 text-emerald-600/80">
-                  {estimate.clientName ?? "—"}
+                  {estimate.clientName && estimate.clientId ? (
+                    <Link href={`/clients/${estimate.clientId}`} className="hover:text-emerald-900 hover:underline">
+                      {estimate.clientName}
+                    </Link>
+                  ) : "—"}
                 </td>
                 <td className="px-3 py-2.5 text-emerald-600/80 capitalize">
                   {estimate.estimateType === "roofing" ? "Roofing" : "Standard"}
@@ -340,11 +350,18 @@ function EstimatesListContent() {
               : { badge: "bg-white/90 text-emerald-700", label: "Draft" };
 
           return (
-            <Link
+            // Not a <Link> — Project/Client below are now their own
+            // links, and an <a> cannot legally nest another <a>. A
+            // click anywhere else on the card still navigates to the
+            // estimate, same as before.
+            <div
               key={estimate.id}
-              href={`/estimates/${estimate.id}`}
+              role="link"
+              tabIndex={0}
+              onClick={() => router.push(`/estimates/${estimate.id}`)}
+              onKeyDown={(e) => { if (e.key === "Enter") router.push(`/estimates/${estimate.id}`); }}
               className={`
-                group relative flex flex-col gap-3
+                group relative flex flex-col gap-3 cursor-pointer
                 rounded-xl
                 bg-gradient-to-br from-emerald-600 to-emerald-700
                 border border-emerald-500
@@ -368,9 +385,29 @@ function EstimatesListContent() {
                   </h3>
 
                   <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                    <span className="text-xs text-white/80">
-                      {estimate.projectName ?? "No project"}
-                    </span>
+                    {estimate.projectName ? (
+                      <Link
+                        href={`/projects/${estimate.projectId}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-xs text-white/80 hover:text-white hover:underline"
+                      >
+                        {estimate.projectName}
+                      </Link>
+                    ) : (
+                      <span className="text-xs text-white/80">No project</span>
+                    )}
+                    {estimate.clientName && estimate.clientId && (
+                      <>
+                        <span className="w-1 h-1 rounded-full bg-white/40" />
+                        <Link
+                          href={`/clients/${estimate.clientId}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-xs text-white/80 hover:text-white hover:underline"
+                        >
+                          {estimate.clientName}
+                        </Link>
+                      </>
+                    )}
                     <span className="w-1 h-1 rounded-full bg-white/40" />
                     <span className="text-[10px] uppercase font-semibold text-white/70">
                       {estimate.estimateType === "roofing" ? "Roofing" : "Standard"}
@@ -419,7 +456,7 @@ function EstimatesListContent() {
                   )}
                 </div>
               </div>
-            </Link>
+            </div>
           );
         })}
       </div>

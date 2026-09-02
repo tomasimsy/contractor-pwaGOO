@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Receipt, Plus, Search } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -31,6 +32,7 @@ const STATUS_OPTIONS: InvoiceStatus[] = [
 ];
 
 function InvoicesListContent() {
+  const router = useRouter();
   const { invoiceService, projectService, clientService, estimateService } = useServices();
   const { profile } = useAuth();
 
@@ -370,14 +372,20 @@ function InvoicesListContent() {
                             )
                           )}
                           <div className="text-xs text-emerald-600/60">
-                            {projectsById[invoice.projectId]?.name ?? "—"}
+                            {projectsById[invoice.projectId] ? (
+                              <Link href={`/projects/${invoice.projectId}`} className="hover:text-emerald-800 hover:underline">
+                                {projectsById[invoice.projectId]?.name}
+                              </Link>
+                            ) : "—"}
                           </div>
                         </td>
 
                         <td className="px-4 py-3.5 text-emerald-700/70">
-                          {invoice.clientId
-                            ? clientsById[invoice.clientId]?.name ?? "—"
-                            : "—"}
+                          {invoice.clientId && clientsById[invoice.clientId] ? (
+                            <Link href={`/clients/${invoice.clientId}`} className="hover:text-emerald-900 hover:underline">
+                              {clientsById[invoice.clientId]?.name}
+                            </Link>
+                          ) : "—"}
                         </td>
 
                         <td className="px-4 py-3.5">
@@ -441,10 +449,17 @@ function InvoicesListContent() {
                 }
 
                 return (
-                  <Link
+                  // Not a <Link> — Project/Client below are now their
+                  // own links, and an <a> cannot legally nest another
+                  // <a>. A click anywhere else on the card still
+                  // navigates to the invoice, same as before.
+                  <div
                     key={invoice.id}
-                    href={`/invoices/${invoice.id}`}
-                    className="group relative flex flex-col gap-3 rounded-xl bg-gradient-to-br from-emerald-700 to-emerald-900 border border-emerald-600 px-4 py-3.5 shadow-sm transition-all hover:shadow-md hover:scale-[1.01] hover:from-emerald-800 hover:to-emerald-950"
+                    role="link"
+                    tabIndex={0}
+                    onClick={() => router.push(`/invoices/${invoice.id}`)}
+                    onKeyDown={(e) => { if (e.key === "Enter") router.push(`/invoices/${invoice.id}`); }}
+                    className="group relative flex cursor-pointer flex-col gap-3 rounded-xl bg-gradient-to-br from-emerald-700 to-emerald-900 border border-emerald-600 px-4 py-3.5 shadow-sm transition-all hover:shadow-md hover:scale-[1.01] hover:from-emerald-800 hover:to-emerald-950"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
@@ -453,9 +468,17 @@ function InvoicesListContent() {
                         </h3>
 
                         <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                          <span className="text-xs text-white/80">
-                            {projectName}
-                          </span>
+                          {projectsById[invoice.projectId] ? (
+                            <Link
+                              href={`/projects/${invoice.projectId}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-xs text-white/80 hover:text-white hover:underline"
+                            >
+                              {projectName}
+                            </Link>
+                          ) : (
+                            <span className="text-xs text-white/80">{projectName}</span>
+                          )}
                           {estimateTitle && (
                             <>
                               <span className="w-1 h-1 rounded-full bg-white/40" />
@@ -486,7 +509,15 @@ function InvoicesListContent() {
 
                     <div className="flex items-center justify-between border-t border-white/20 pt-2.5">
                       <div className="text-[10px] text-white/70">
-                        {invoice.clientId ? clientsById[invoice.clientId]?.name ?? "—" : "—"}
+                        {invoice.clientId && clientsById[invoice.clientId] ? (
+                          <Link
+                            href={`/clients/${invoice.clientId}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="hover:text-white hover:underline"
+                          >
+                            {clientsById[invoice.clientId]?.name}
+                          </Link>
+                        ) : "—"}
                       </div>
                       {invoice.dueDate && (
                         <div className="text-[10px] text-white/70">
@@ -494,7 +525,7 @@ function InvoicesListContent() {
                         </div>
                       )}
                     </div>
-                  </Link>
+                  </div>
                 );
               })}
             </div>
