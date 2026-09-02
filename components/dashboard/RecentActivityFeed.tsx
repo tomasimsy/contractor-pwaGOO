@@ -45,7 +45,7 @@ export function RecentActivityFeed({ projects, estimates, invoices, limit = 8 }:
     .slice(0, limit);
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
+    <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
       <h2 className="mb-3 text-sm font-semibold text-foreground">Recent Activity</h2>
       {items.length === 0 ? (
         <EmptyState title="No activity yet" description="Recent project, estimate, and invoice updates will appear here." />

@@ -177,33 +177,47 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
         <EmptyState icon={FolderKanban} title="Nothing to show yet"
           description="Once you have projects, estimates, or invoices, your business summary will appear here." />
         ) : (
+        // The page's one wash of color — a soft emerald gradient behind
+        // every section, fading to transparent toward the bottom. This
+        // is what makes the page read as one designed surface instead
+        // of a stack of disconnected white cards on flat gray;
+        // everything below stays quiet (white cards, neutral borders)
+        // except the two spots that earn a color of their own — the
+        // financial summary (emerald, the brand's own color) and Needs
+        // Your Attention (rose, the app's existing alert color from
+        // the badges built earlier this session).
+        <div className="-mx-4 -mt-2 rounded-b-2xl bg-gradient-to-b from-emerald-50 via-emerald-50/40 to-transparent px-4 pb-8 pt-4 sm:-mx-6 sm:rounded-2xl sm:px-6 sm:pt-6 lg:-mx-8 lg:px-8">
         <div className="space-y-6">
-          {/* Top-line financial numbers — the 5 figures that answer
-              "how's the business doing," full stop. Everything that's
-              a REMINDER rather than a headline number (unpaid invoices,
-              payables, pending change orders, stale drafts, unstaffed
-              jobs, never-invoiced jobs) moved into "Needs Your
-              Attention" below instead of living in this row too —
-              this row is deliberately just the 5 core numbers now. */}
-          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-5 sm:gap-3">
-            {loading || !financials ? (
-            Array.from({ length: 5 }).map((_, i) => (
-            <StatCardSkeleton key={i} />
-            ))
-            ) : (
-            <>
-              <StatCard label="Revenue" value={money(financials.totalRevenue)} icon={DollarSign} tone="success"
-                size="sm" />
-              <StatCard label="Payments Received" value={money(financials.totalPaid)} icon={Wallet} tone="info" size="sm" />
-              <StatCard label="Outstanding Invoices" value={money(financials.totalOutstanding)} icon={FileWarning}
-                tone={financials.totalOutstanding> 0 ? "danger" : "neutral"} size="sm" />
-              <StatCard label="Expenses" value={money(financials.totalExpenses)} icon={Receipt} tone="warning" size="sm" />
-              <StatCard label="Net Profit" value={money(financials.netProfit)} icon={TrendingUp}
-                tone={financials.netProfit>= 0 ? "success" : "danger"}
-                hint={`${financials.profitMargin.toFixed(1)}% margin`}
-                size="sm" />
-            </>
-            )}
+          {/* Financial Summary — grouped in one bordered/tinted panel
+              rather than 5 independently-colored cards, so the row
+              reads as "one cluster of related numbers." Only genuine
+              alert states (Outstanding > 0, Net Profit negative) break
+              from the shared emerald identity into red — color marks
+              meaning, not decoration. */}
+          <div className="rounded-xl border border-emerald-200/70 bg-white/70 p-3 shadow-sm backdrop-blur-sm sm:p-4">
+            <h2 className="mb-2.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-700">
+              <DollarSign className="size-3.5" /> Financial Summary
+            </h2>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-5 sm:gap-3">
+              {loading || !financials ? (
+              Array.from({ length: 5 }).map((_, i) => (
+              <StatCardSkeleton key={i} />
+              ))
+              ) : (
+              <>
+                <StatCard label="Revenue" value={money(financials.totalRevenue)} icon={DollarSign} tone="success"
+                  size="sm" />
+                <StatCard label="Payments Received" value={money(financials.totalPaid)} icon={Wallet} tone="success" size="sm" />
+                <StatCard label="Outstanding Invoices" value={money(financials.totalOutstanding)} icon={FileWarning}
+                  tone={financials.totalOutstanding> 0 ? "danger" : "neutral"} size="sm" />
+                <StatCard label="Expenses" value={money(financials.totalExpenses)} icon={Receipt} tone="neutral" size="sm" />
+                <StatCard label="Net Profit" value={money(financials.netProfit)} icon={TrendingUp}
+                  tone={financials.netProfit>= 0 ? "success" : "danger"}
+                  hint={`${financials.profitMargin.toFixed(1)}% margin`}
+                  size="sm" />
+              </>
+              )}
+            </div>
           </div>
 
           {/* Chart + "Needs Your Attention" side by side on desktop,
@@ -214,13 +228,15 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
               truth its own list-page badge uses, so this panel can
               never disagree with what you'd see by clicking through. */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <div className="lg:col-span-2">
+            <div className="overflow-hidden rounded-xl border border-emerald-200/60 bg-white shadow-sm lg:col-span-2">
               {loading ? <RevenueExpenseChartSkeleton /> : <RevenueExpenseChart data={monthly} />}
             </div>
 
-            <div className="rounded-lg border border-border bg-card">
-              <div className="border-b border-border px-4 py-3">
-                <h3 className="text-sm font-bold text-foreground">Needs Your Attention</h3>
+            <div className="overflow-hidden rounded-xl border border-rose-200/70 bg-white shadow-sm">
+              <div className="border-b border-rose-100 bg-rose-50/60 px-4 py-3">
+                <h3 className="flex items-center gap-1.5 text-sm font-bold text-rose-700">
+                  <FileWarning className="size-3.5" /> Needs Your Attention
+                </h3>
               </div>
               {loading ? (
                 <div className="px-4 py-6 text-center text-xs text-muted-foreground">Loading…</div>
@@ -305,7 +321,7 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
           {/* Recent Estimates + Recent Activity side by side on
               desktop, stacked on mobile. */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <div className="rounded-xl border border-border bg-card p-4">
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
               <h2 className="mb-3 text-sm font-semibold text-foreground">Recent Estimates</h2>
               {recentEstimates.length === 0 ? (
                 <EmptyState title="No estimates yet" description="New estimates will appear here." />
@@ -334,27 +350,30 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
               that used to live in the stat grid, now their own strip
               matching the pipeline framing rather than mixed in with
               cash figures. */}
-          <div className="rounded-lg border border-border bg-card p-4">
-            <h3 className="mb-3 text-sm font-bold text-foreground">Jobs By Stage</h3>
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <h3 className="mb-3 flex items-center gap-1.5 text-sm font-bold text-foreground">
+              <FolderKanban className="size-3.5 text-emerald-600" /> Jobs By Stage
+            </h3>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <div className="rounded-lg bg-muted/40 p-3 text-center">
+              <div className="rounded-lg border-l-2 border-l-emerald-300 bg-muted/40 p-3 text-center">
                 <div className="text-[11px] text-muted-foreground">Pending Estimates</div>
                 <div className="text-lg font-bold text-foreground">{pendingEstimatesCount}</div>
               </div>
-              <div className="rounded-lg bg-muted/40 p-3 text-center">
+              <div className="rounded-lg border-l-2 border-l-emerald-400 bg-muted/40 p-3 text-center">
                 <div className="text-[11px] text-muted-foreground">Signed Estimates</div>
                 <div className="text-lg font-bold text-foreground">{signedEstimatesCount}</div>
               </div>
-              <div className="rounded-lg bg-muted/40 p-3 text-center">
+              <div className="rounded-lg border-l-2 border-l-emerald-500 bg-muted/40 p-3 text-center">
                 <div className="text-[11px] text-muted-foreground">Active Projects</div>
                 <div className="text-lg font-bold text-foreground">{activeProjectsCount}</div>
               </div>
-              <div className="rounded-lg bg-muted/40 p-3 text-center">
+              <div className="rounded-lg border-l-2 border-l-emerald-700 bg-muted/40 p-3 text-center">
                 <div className="text-[11px] text-muted-foreground">Completed</div>
                 <div className="text-lg font-bold text-foreground">{completedProjectsCount}</div>
               </div>
             </div>
           </div>
+        </div>
         </div>
 
         )}
@@ -363,7 +382,7 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
 <Link
   href="/estimates/new"
   aria-label="New Estimate"
-  className="fixed right-4 bottom-16 z-[999999] flex items-center gap-2 rounded-full bg-emerald-800 px-5 py-3.5 text-sm font-semibold text-white shadow-xl"
+  className="fixed right-4 bottom-16 z-[999999] flex items-center gap-2 rounded-full bg-gradient-to-b from-emerald-600 to-emerald-800 px-5 py-3.5 text-sm font-semibold text-white shadow-xl"
 >
   <Plus className="h-5 w-5 shrink-0" />
   <span>New Estimate</span>
