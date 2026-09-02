@@ -17,7 +17,7 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useEffect } from "react";
-import { DollarSign, Wallet, FileWarning, Receipt, TrendingUp, FileText, CheckCircle2, FolderKanban, Plus, HandCoins, GitPullRequest, Clock, UserX, FileX2 }
+import { DollarSign, Wallet, FileWarning, Receipt, TrendingUp, FolderKanban, Plus, ChevronRight }
 from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -125,13 +125,31 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
       [projects, invoiceCountByProject]
     );
 
+    // "Jobs by stage" strip's fourth bucket — the other three
+    // (pending/signed estimates, active projects) already come from
+    // useDashboardData; completed has no equivalent count yet.
+    const completedProjectsCount = useMemo(
+      () => projects.filter((p) => p.status === "completed").length,
+      [projects]
+    );
+
+    // First name only — "Good morning, Tom Smith" reads odd next to a
+    // one-line subtitle. Falls back to "there" for a profile with no
+    // name set yet rather than rendering an empty greeting.
+    const firstName = profile?.fullName?.trim().split(/\s+/)[0] || "there";
+
+    const recentEstimates = useMemo(
+      () => [...estimates].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5),
+      [estimates]
+    );
+
     return (
     <PageContainer>
 
   
 
-      <PageHeader title="Dashboard" description={ <span className="hidden sm:inline">
-        Your business at a glance.
+      <PageHeader title={`Good morning, ${firstName}`} description={ <span className="hidden sm:inline">
+        Here's what's happening with your business.
         </span>
         }
         actions={
@@ -160,9 +178,16 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
           description="Once you have projects, estimates, or invoices, your business summary will appear here." />
         ) : (
         <div className="space-y-6">
-          <div className="grid grid-cols-4 gap-1.5 sm:gap-3">
+          {/* Top-line financial numbers — the 5 figures that answer
+              "how's the business doing," full stop. Everything that's
+              a REMINDER rather than a headline number (unpaid invoices,
+              payables, pending change orders, stale drafts, unstaffed
+              jobs, never-invoiced jobs) moved into "Needs Your
+              Attention" below instead of living in this row too —
+              this row is deliberately just the 5 core numbers now. */}
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-5 sm:gap-3">
             {loading || !financials ? (
-            Array.from({ length: 13 }).map((_, i) => (
+            Array.from({ length: 5 }).map((_, i) => (
             <StatCardSkeleton key={i} />
             ))
             ) : (
@@ -170,89 +195,72 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
               <StatCard label="Revenue" value={money(financials.totalRevenue)} icon={DollarSign} tone="success"
                 size="sm" />
               <StatCard label="Payments Received" value={money(financials.totalPaid)} icon={Wallet} size="sm" />
-              {/* Same "not yet collected" fact the Invoices list badges
-              in red per-row (isUnpaidInvoiceStatus) — counted here from
-              the same invoices array so the two surfaces can never
-              disagree. */}
-              <Link href="/invoices" className="contents">
               <StatCard label="Outstanding Invoices" value={money(financials.totalOutstanding)} icon={FileWarning}
-                tone={financials.totalOutstanding> 0 ? "danger" : "neutral"}
-                hint={(() => {
-                  const outstandingCount = invoices.filter((i) => isOutstandingInvoiceStatus(i.status)).length;
-                  return outstandingCount > 0
-                    ? `${outstandingCount} invoice${outstandingCount === 1 ? "" : "s"} outstanding`
-                    : "All caught up";
-                })()}
-                size="sm"
-                />
-                </Link>
-                <StatCard label="Expenses" value={money(financials.totalExpenses)} icon={Receipt} size="sm" />
-                <StatCard label="Net Profit" value={money(financials.netProfit)} icon={TrendingUp}
-                  tone={financials.netProfit>= 0 ? "success" : "danger"}
-                  hint={`${financials.profitMargin.toFixed(1)}% margin`}
-                  size="sm"
-                  />
-                  {/* All time, not scoped to the date-range picker above —
-                  a "pending estimate" or "active project" count is a
-                  present-tense fact, not a period figure, unlike the
-                  cash tiles. Labeled explicitly so that stays a
-                  deliberate distinction, not something that reads as
-                  a stuck/non-updating card when the date range changes. */}
-                  <StatCard label="Pending Estimates" value={String(pendingEstimatesCount)} icon={FileText}
-                    hint="All time" size="sm" />
-                  <StatCard label="Signed Estimates" value={String(signedEstimatesCount)} icon={CheckCircle2}
-                    tone="success" hint="All time" size="sm" />
-                  <StatCard label="Active Projects" value={String(activeProjectsCount)} icon={FolderKanban}
-                    hint="All time" size="sm" />
-                  {/* Money OUT. Deliberately reads getActionablePayables —
-                  the SAME function /payments Needs Payment uses — so a
-                  tile can never quote a figure the page it links to
-                  disagrees with. Not A/P: that is lifetime and
-                  subcontractor+agent only, which answers a different
-                  question (see payablesWorklist's header). */}
-                  <Link href="/payments" className="contents">
-                  <StatCard label="Owed To People" value={money(payables?.total ?? 0)} icon={HandCoins}
-                    tone={(payables?.total ?? 0)> 0 ? "warning" : "neutral"}
-                    hint={
-                    (payables?.needsAmount ?? 0) > 0
-                    ? `${payables?.needsAmount} need${payables?.needsAmount === 1 ? "s" : ""} an amount`
-                    : "Subs, agents, team, bills"
-                    }
-                    size="sm"
-                    />
-                    </Link>
-                  {/* Same population the Change Orders list badges red
-                  ("Needs Approval") — status "pending" across every
-                  project, fetched once above. */}
-                  <Link href="/change-orders" className="contents">
-                  <StatCard label="Pending Change Orders" value={String(pendingChangeOrdersCount)} icon={GitPullRequest}
-                    tone={pendingChangeOrdersCount > 0 ? "warning" : "neutral"}
-                    hint="Needs approval" size="sm" />
-                    </Link>
-                  {/* Same population the Estimates list badges red
-                  ("Stale") — a draft over STALE_DRAFT_DAYS old. */}
-                  <Link href="/estimates" className="contents">
-                  <StatCard label="Stale Drafts" value={String(staleEstimatesCount)} icon={Clock}
-                    tone={staleEstimatesCount > 0 ? "danger" : "neutral"}
-                    hint="Never sent, 14+ days" size="sm" />
-                    </Link>
-                  {/* Same population the daily-automations cron already
-                  pushes about — see isUnstaffedSoon's own doc comment. */}
-                  <Link href="/projects" className="contents">
-                  <StatCard label="Unstaffed Jobs" value={String(unstaffedSoonCount)} icon={UserX}
-                    tone={unstaffedSoonCount > 0 ? "danger" : "neutral"}
-                    hint="Starting within 3 days" size="sm" />
-                    </Link>
-                  {/* Same population the Projects list badges red
-                  ("Not Invoiced") — in_progress/completed, zero
-                  invoices ever created. */}
-                  <Link href="/projects" className="contents">
-                  <StatCard label="Never Invoiced" value={String(neverInvoicedCount)} icon={FileX2}
-                    tone={neverInvoicedCount > 0 ? "danger" : "neutral"}
-                    hint="Active or done, never billed" size="sm" />
-                    </Link>
+                tone={financials.totalOutstanding> 0 ? "danger" : "neutral"} size="sm" />
+              <StatCard label="Expenses" value={money(financials.totalExpenses)} icon={Receipt} size="sm" />
+              <StatCard label="Net Profit" value={money(financials.netProfit)} icon={TrendingUp}
+                tone={financials.netProfit>= 0 ? "success" : "danger"}
+                hint={`${financials.profitMargin.toFixed(1)}% margin`}
+                size="sm" />
             </>
             )}
+          </div>
+
+          {/* Chart + "Needs Your Attention" side by side on desktop,
+              stacked on mobile — every red-badge reminder this app has
+              (unpaid invoices, owed-to-people, pending change orders,
+              stale drafts, unstaffed jobs, never-invoiced jobs) in one
+              place, each row reading straight from the SAME source of
+              truth its own list-page badge uses, so this panel can
+              never disagree with what you'd see by clicking through. */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              {loading ? <RevenueExpenseChartSkeleton /> : <RevenueExpenseChart data={monthly} />}
+            </div>
+
+            <div className="rounded-lg border border-border bg-card">
+              <div className="border-b border-border px-4 py-3">
+                <h3 className="text-sm font-bold text-foreground">Needs Your Attention</h3>
+              </div>
+              {loading ? (
+                <div className="px-4 py-6 text-center text-xs text-muted-foreground">Loading…</div>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {[
+                    {
+                      href: "/invoices",
+                      label: "Unpaid invoices",
+                      count: invoices.filter((i) => isOutstandingInvoiceStatus(i.status)).length,
+                      extra: (financials?.totalOutstanding ?? 0) > 0 ? money(financials?.totalOutstanding ?? 0) : null,
+                    },
+                    { href: "/payments", label: "Owed to people", count: null, extra: (payables?.total ?? 0) > 0 ? money(payables?.total ?? 0) : null, isPositive: (payables?.total ?? 0) === 0 },
+                    { href: "/change-orders", label: "Change orders pending", count: pendingChangeOrdersCount },
+                    { href: "/estimates", label: "Stale draft estimates", count: staleEstimatesCount },
+                    { href: "/projects", label: "Unstaffed jobs", count: unstaffedSoonCount },
+                    { href: "/projects", label: "Jobs never invoiced", count: neverInvoicedCount },
+                  ].map((row) => {
+                    const isZero = row.count === 0 || (row.count === null && row.isPositive);
+                    return (
+                      <li key={row.label}>
+                        <Link href={row.href} className="flex items-center justify-between gap-2 px-4 py-2.5 text-xs transition-colors hover:bg-muted/60">
+                          <span className="text-muted-foreground">{row.label}</span>
+                          <span className="flex items-center gap-1.5">
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                                isZero ? "bg-success/15 text-success" : "bg-danger/15 text-danger"
+                              }`}
+                            >
+                              {row.extra ? `${row.count !== null ? `${row.count} · ` : ""}${row.extra}` : row.count}
+                            </span>
+                            <ChevronRight className="size-3 text-muted-foreground/50" />
+                          </span>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
           </div>
 
           {!loading && unpaidInvoices.length > 0 && (
@@ -294,18 +302,61 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
           </div>
           )}
 
-          {loading ? (
-          <RevenueExpenseChartSkeleton />
-          ) : (
-          <RevenueExpenseChart data={monthly} />
-          )}
+          {/* Recent Estimates + Recent Activity side by side on
+              desktop, stacked on mobile. */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="rounded-xl border border-border bg-card p-4">
+              <h2 className="mb-3 text-sm font-semibold text-foreground">Recent Estimates</h2>
+              {recentEstimates.length === 0 ? (
+                <EmptyState title="No estimates yet" description="New estimates will appear here." />
+              ) : (
+                <ul className="divide-y divide-border">
+                  {recentEstimates.map((estimate) => (
+                    <li key={estimate.id}>
+                      <Link href={`/estimates/${estimate.id}`} className="flex items-center justify-between gap-2.5 py-2 text-sm hover:text-primary">
+                        <span className="min-w-0 flex-1 truncate">
+                          {estimate.title?.trim() || projectsById[estimate.projectId]?.name || "Untitled"}
+                        </span>
+                        <span className="shrink-0 text-xs font-semibold text-foreground">{money(estimate.total)}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
 
-          {!loading && (
-          <RecentActivityFeed projects={projects} estimates={estimates} invoices={invoices} />
-          )}
-          
+            {!loading && (
+            <RecentActivityFeed projects={projects} estimates={estimates} invoices={invoices} />
+            )}
+          </div>
+
+          {/* Jobs by stage — the estimate/project lifecycle counts
+              that used to live in the stat grid, now their own strip
+              matching the pipeline framing rather than mixed in with
+              cash figures. */}
+          <div className="rounded-lg border border-border bg-card p-4">
+            <h3 className="mb-3 text-sm font-bold text-foreground">Jobs By Stage</h3>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="rounded-lg bg-muted/40 p-3 text-center">
+                <div className="text-[11px] text-muted-foreground">Pending Estimates</div>
+                <div className="text-lg font-bold text-foreground">{pendingEstimatesCount}</div>
+              </div>
+              <div className="rounded-lg bg-muted/40 p-3 text-center">
+                <div className="text-[11px] text-muted-foreground">Signed Estimates</div>
+                <div className="text-lg font-bold text-foreground">{signedEstimatesCount}</div>
+              </div>
+              <div className="rounded-lg bg-muted/40 p-3 text-center">
+                <div className="text-[11px] text-muted-foreground">Active Projects</div>
+                <div className="text-lg font-bold text-foreground">{activeProjectsCount}</div>
+              </div>
+              <div className="rounded-lg bg-muted/40 p-3 text-center">
+                <div className="text-[11px] text-muted-foreground">Completed</div>
+                <div className="text-lg font-bold text-foreground">{completedProjectsCount}</div>
+              </div>
+            </div>
+          </div>
         </div>
-        
+
         )}
 
         {/* Mobile New Estimate FAB — always mounted */}
