@@ -11,7 +11,7 @@
  * most recently," with zero new queries or calculations.
  */
 import Link from "next/link";
-import { FileText, FolderKanban, Receipt } from "lucide-react";
+import { Activity, FileText, FolderKanban, Receipt } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import type { Project } from "@/lib/services/projectService";
 import type { Estimate } from "@/lib/services/estimateService";
@@ -45,19 +45,23 @@ export function RecentActivityFeed({ projects, estimates, invoices, limit = 8 }:
     .slice(0, limit);
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-      <h2 className="mb-3 text-sm font-semibold text-foreground">Recent Activity</h2>
+    <div className="rounded-xl border border-emerald-100 bg-white p-4 shadow-sm">
+      <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+        <Activity className="size-3.5 text-emerald-600" /> Recent Activity
+      </h2>
       {items.length === 0 ? (
         <EmptyState title="No activity yet" description="Recent project, estimate, and invoice updates will appear here." />
       ) : (
-        <ul className="divide-y divide-border">
+        <ul className="divide-y divide-emerald-50">
           {items.map((item) => {
             const Icon = ICONS[item.kind];
             const { label, href } = describe(item);
             return (
               <li key={`${item.kind}-${item.entity.id}`}>
                 <Link href={href} className="flex items-center gap-2.5 py-2 text-sm hover:text-primary">
-                  <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-50">
+                    <Icon className="size-3 text-emerald-600" />
+                  </span>
                   <span className="min-w-0 flex-1 truncate">{label}</span>
                   <span className="shrink-0 text-xs text-muted-foreground">{new Date(item.entity.updatedAt).toLocaleDateString()}</span>
                 </Link>

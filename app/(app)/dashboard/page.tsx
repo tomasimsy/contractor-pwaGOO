@@ -17,7 +17,7 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useEffect } from "react";
-import { DollarSign, Wallet, FileWarning, Receipt, TrendingUp, FolderKanban, Plus, ChevronRight }
+import { DollarSign, Wallet, FileWarning, Receipt, TrendingUp, FolderKanban, Plus, ChevronRight, FileText }
 from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -26,14 +26,17 @@ import { RequirePermission } from "@/components/layout/RequirePermission";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
 import { StatCard, StatCardSkeleton } from "@/components/dashboard/StatCard";
-import { DateRangeFilter, type DateRangePreset } from "@/components/dashboard/DateRangeFilter";
+import { DateRangeFilter, resolveDateRangePreset, type DateRangePreset } from "@/components/dashboard/DateRangeFilter";
 import { RevenueExpenseChart, RevenueExpenseChartSkeleton } from "@/components/dashboard/RevenueExpenseChart";
+import { ExpenseBreakdownDonut } from "@/components/dashboard/ExpenseBreakdownDonut";
 import { RecentActivityFeed } from "@/components/dashboard/RecentActivityFeed";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { getActionablePayables, type ActionablePayables } from "@/lib/services/payablesWorklist";
 import { isOutstandingInvoiceStatus, formatMoney } from "@/components/invoices/invoiceStatus";
 import { isStaleDraft } from "@/components/estimates/estimateStatus";
 import { isNeverInvoiced, isUnstaffedSoon } from "@/components/projects/projectStatus";
+import { calculateExpenseTotals } from "@/lib/services/financialCalculations";
+import type { Expense } from "@/lib/services/expenseService";
 import type { ChangeOrder } from "@/lib/services/changeOrderService";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -47,6 +50,11 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
    * Orders list page itself already does) — fetched here once
    * `projects` is available, same pattern as `payables` above. */
   const [changeOrders, setChangeOrders] = useState<ChangeOrder[]>([]);
+  /** For the "Expense Breakdown" donut — company-wide expenses,
+   * filtered client-side to the same resolved date range `financials`
+   * itself uses, so the donut's "Total Expense" figure and the
+   * Financial Summary's Expenses tile can never disagree. */
+  const [allExpenses, setAllExpenses] = useState<Expense[]>([]);
     const services = useServices();
 
     // Not period-scoped, on purpose: a debt does not stop existing
@@ -78,6 +86,21 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
       .catch(() => { /* the tile is informational; never break the page */ });
     return () => { active = false; };
     }, [services, projects]);
+
+    // Company-wide read, period-filtered below (same shape as every
+    // other extra fetch on this page) — ExpenseService has no
+    // date-scoped list method, so the filter happens client-side
+    // against the SAME resolveDateRangePreset(preset) window
+    // getCompanyFinancials was given.
+    useEffect(() => {
+    const companyId = profile?.companyId;
+    if (!companyId) return;
+    let active = true;
+    services.expenseService.listForCompany(companyId)
+      .then((list) => { if (active) setAllExpenses(list); })
+      .catch(() => { /* the donut is informational; never break the page */ });
+    return () => { active = false; };
+    }, [services, profile?.companyId]);
 
     const isEmpty = !loading && !error && projects.length === 0 && estimates.length === 0 && invoices.length === 0;
 
@@ -143,6 +166,42 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
       [estimates]
     );
 
+    // Real month-over-month % change, computed from the SAME 12-point
+    // `monthly` series the chart plots — the last two entries are
+    // "this month" and "the month before it," regardless of which
+    // date-range preset is selected (the monthly chart is always a
+    // trailing 12 months, per useDashboardData). A null percentChange
+    // (no prior-month data, or the prior month was $0) renders no pill
+    // at all rather than a fabricated/divide-by-zero number.
+    function momChange(key: "revenue" | "expenses"): number | null {
+      if (monthly.length < 2) return null;
+      const prior = monthly[monthly.length - 2][key];
+      const current = monthly[monthly.length - 1][key];
+      if (prior <= 0) return null;
+      return ((current - prior) / prior) * 100;
+    }
+    const revenueMoM = useMemo(() => momChange("revenue"), [monthly]);
+    const expensesMoM = useMemo(() => momChange("expenses"), [monthly]);
+    const netProfitMoM = useMemo(() => {
+      if (monthly.length < 2) return null;
+      const prior = monthly[monthly.length - 2].revenue - monthly[monthly.length - 2].expenses;
+      const current = monthly[monthly.length - 1].revenue - monthly[monthly.length - 1].expenses;
+      if (prior === 0) return null;
+      return ((current - prior) / Math.abs(prior)) * 100;
+    }, [monthly]);
+
+    // Expense Breakdown donut — same resolved window
+    // getCompanyFinancials was given, applied client-side since
+    // ExpenseService has no date-scoped list method.
+    const expenseBreakdown = useMemo(() => {
+      const { start, end } = resolveDateRangePreset(preset);
+      const periodExpenses = allExpenses.filter((e) => {
+        const d = new Date(e.expenseDate);
+        return d >= start && d <= end;
+      });
+      return calculateExpenseTotals(periodExpenses);
+    }, [allExpenses, preset]);
+
     return (
     <PageContainer>
 
@@ -206,14 +265,16 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
               ) : (
               <>
                 <StatCard label="Revenue" value={money(financials.totalRevenue)} icon={DollarSign} tone="success"
-                  size="sm" />
+                  hint="This month vs last" trendPercent={revenueMoM} size="sm" />
                 <StatCard label="Payments Received" value={money(financials.totalPaid)} icon={Wallet} tone="success" size="sm" />
                 <StatCard label="Outstanding Invoices" value={money(financials.totalOutstanding)} icon={FileWarning}
                   tone={financials.totalOutstanding> 0 ? "danger" : "neutral"} size="sm" />
-                <StatCard label="Expenses" value={money(financials.totalExpenses)} icon={Receipt} tone="neutral" size="sm" />
+                <StatCard label="Expenses" value={money(financials.totalExpenses)} icon={Receipt} tone="neutral"
+                  hint="This month vs last" trendPercent={expensesMoM} size="sm" />
                 <StatCard label="Net Profit" value={money(financials.netProfit)} icon={TrendingUp}
                   tone={financials.netProfit>= 0 ? "success" : "danger"}
                   hint={`${financials.profitMargin.toFixed(1)}% margin`}
+                  trendPercent={netProfitMoM}
                   size="sm" />
               </>
               )}
@@ -241,7 +302,7 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
               {loading ? (
                 <div className="px-4 py-6 text-center text-xs text-muted-foreground">Loading…</div>
               ) : (
-                <ul className="divide-y divide-border">
+                <ul className="divide-y divide-rose-50">
                   {[
                     {
                       href: "/invoices",
@@ -275,6 +336,46 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
                     );
                   })}
                 </ul>
+              )}
+            </div>
+          </div>
+
+          {/* Expense Breakdown (real category totals) + Profit Margin
+              (a real gauge, not decoration — financials.profitMargin
+              is the exact figure the Net Profit tile's hint already
+              shows) side by side on desktop. */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div className="rounded-xl border border-emerald-100 bg-white p-4 lg:col-span-2">
+              <h2 className="mb-4 text-sm font-semibold text-foreground">Expense Breakdown</h2>
+              {loading ? (
+                <div className="h-40 animate-pulse rounded-lg bg-muted" />
+              ) : (
+                <ExpenseBreakdownDonut byType={expenseBreakdown.byType} total={expenseBreakdown.total} />
+              )}
+            </div>
+
+            <div className="rounded-xl border border-emerald-100 bg-white p-4">
+              <h3 className="mb-1 text-sm font-semibold text-foreground">Profit Margin</h3>
+              {loading || !financials ? (
+                <div className="h-16 animate-pulse rounded-lg bg-muted" />
+              ) : (
+                <>
+                  <p className="text-[11px] text-muted-foreground">Net profit as a share of revenue</p>
+                  <div className="mt-3 flex items-baseline gap-2">
+                    <span className={`text-2xl font-bold ${financials.profitMargin >= 0 ? "text-emerald-700" : "text-danger"}`}>
+                      {financials.profitMargin.toFixed(1)}%
+                    </span>
+                    <span className="text-xs font-medium text-muted-foreground">
+                      {financials.profitMargin >= 20 ? "Excellent" : financials.profitMargin >= 10 ? "Good" : financials.profitMargin >= 0 ? "Fair" : "Needs attention"}
+                    </span>
+                  </div>
+                  <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={`h-full rounded-full ${financials.profitMargin >= 0 ? "bg-emerald-700" : "bg-danger"}`}
+                      style={{ width: `${Math.min(100, Math.max(4, Math.abs(financials.profitMargin)))}%` }}
+                    />
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -321,15 +422,18 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
           {/* Recent Estimates + Recent Activity side by side on
               desktop, stacked on mobile. */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-              <h2 className="mb-3 text-sm font-semibold text-foreground">Recent Estimates</h2>
+            <div className="rounded-xl border border-emerald-100 bg-white p-4 shadow-sm">
+              <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                <FileText className="size-3.5 text-emerald-600" /> Recent Estimates
+              </h2>
               {recentEstimates.length === 0 ? (
                 <EmptyState title="No estimates yet" description="New estimates will appear here." />
               ) : (
-                <ul className="divide-y divide-border">
+                <ul className="divide-y divide-emerald-50">
                   {recentEstimates.map((estimate) => (
                     <li key={estimate.id}>
-                      <Link href={`/estimates/${estimate.id}`} className="flex items-center justify-between gap-2.5 py-2 text-sm hover:text-primary">
+                      <Link href={`/estimates/${estimate.id}`} className="flex items-center gap-2.5 py-2 text-sm hover:text-primary">
+                        <span className="size-2 shrink-0 rounded-full bg-emerald-400" />
                         <span className="min-w-0 flex-1 truncate">
                           {estimate.title?.trim() || projectsById[estimate.projectId]?.name || "Untitled"}
                         </span>
@@ -350,7 +454,7 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
               that used to live in the stat grid, now their own strip
               matching the pipeline framing rather than mixed in with
               cash figures. */}
-          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+          <div className="rounded-xl border border-emerald-100 bg-white p-4 shadow-sm">
             <h3 className="mb-3 flex items-center gap-1.5 text-sm font-bold text-foreground">
               <FolderKanban className="size-3.5 text-emerald-600" /> Jobs By Stage
             </h3>

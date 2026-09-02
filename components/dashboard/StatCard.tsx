@@ -8,6 +8,7 @@
  * needs action, amber = money out, blue = collected/informational) —
  * not just the value text, which is all the previous version colored.
  */
+import { TrendingUp, TrendingDown } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 const TONE_STYLES: Record<
@@ -28,6 +29,7 @@ export function StatCard({
   tone = "neutral",
   hint,
   size = "sm",
+  trendPercent,
 }: {
   label: string;
   value: string;
@@ -35,28 +37,48 @@ export function StatCard({
   tone?: "neutral" | "success" | "danger" | "warning" | "info";
   hint?: string;
   size?: "sm" | "md";
+  /** Optional period-over-period % change — renders as a small
+   * up/down pill in the corner, matching the label's own tinted-chip
+   * language. Omit entirely (not 0) when there's no real prior-period
+   * figure to compare against; never pass a fabricated number. */
+  trendPercent?: number | null;
 }) {
   const t = TONE_STYLES[tone];
+  const hasTrend = trendPercent !== undefined && trendPercent !== null;
+  const trendUp = hasTrend && trendPercent >= 0;
 
   return (
     <div
       className={`relative flex flex-col justify-between overflow-hidden rounded-md border border-l-4 ${t.border} border-border bg-card p-1 shadow-xs transition-all active:scale-[0.98]`}
     >
-      <div>
-        {/* Header row: tinted icon chip + label */}
-        <div className="flex items-center gap-1 text-[8px] font-semibold uppercase tracking-wider text-muted-foreground">
-          <span className={`inline-flex size-3.5 shrink-0 items-center justify-center rounded-full ${t.iconBg}`}>
-            <Icon className={`size-2 ${t.iconText}`} />
-          </span>
-          <span className="truncate">{label}</span>
+      <div className="flex items-start justify-between gap-1">
+        <div className="min-w-0">
+          {/* Header row: tinted icon chip + label */}
+          <div className="flex items-center gap-1 text-[8px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className={`inline-flex size-3.5 shrink-0 items-center justify-center rounded-full ${t.iconBg}`}>
+              <Icon className={`size-2 ${t.iconText}`} />
+            </span>
+            <span className="truncate">{label}</span>
+          </div>
+
+          {/* Value: Micro font size to prevent breaking into multiple lines */}
+          <div
+            className={`font-extrabold tracking-tight leading-tight mt-0.5 text-[11px] sm:text-base ${t.valueText}`}
+          >
+            {value}
+          </div>
         </div>
 
-        {/* Value: Micro font size to prevent breaking into multiple lines */}
-        <div
-          className={`font-extrabold tracking-tight leading-tight mt-0.5 text-[11px] sm:text-base ${t.valueText}`}
-        >
-          {value}
-        </div>
+        {hasTrend && (
+          <span
+            className={`inline-flex shrink-0 items-center gap-0.5 rounded-full px-1 py-px text-[7px] font-bold sm:px-1.5 sm:text-[10px] ${
+              trendUp ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+            }`}
+          >
+            {trendUp ? <TrendingUp className="size-2 sm:size-2.5" /> : <TrendingDown className="size-2 sm:size-2.5" />}
+            {Math.abs(trendPercent).toFixed(1)}%
+          </span>
+        )}
       </div>
 
       {hint && (
