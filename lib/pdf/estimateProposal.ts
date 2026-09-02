@@ -381,9 +381,11 @@ export function renderEstimateProposalHtml(data: EstimateProposalData): { docTit
           <div class="section">
             <div class="section-title">Additional Items</div>
             ${(() => {
-              type Item = { name?: string; description?: string; quantity?: number; unit?: string | null; unit_price?: number; total?: number; group_name?: string | null };
+              type Item = { name?: string; description?: string; category?: string | null; quantity?: number; unit?: string | null; unit_price?: number; total?: number; group_name?: string | null };
+              const categoryLabel = (c?: string | null) => (c ? c.charAt(0).toUpperCase() + c.slice(1) : "-");
               const itemRow = (item: Item) => `
                 <tr>
+                  <td>${categoryLabel(item.category)}</td>
                   <td>${item.name || "-"}</td>
                   <td>${item.description || "-"}</td>
                   <td>${item.quantity || 0} ${item.unit || ""}</td>
@@ -395,11 +397,12 @@ export function renderEstimateProposalHtml(data: EstimateProposalData): { docTit
                 <table>
                   <thead>
                     <tr>
-                      <th style="width:25%">Item</th>
-                      <th style="width:35%">Description</th>
+                      <th style="width:12%">Category</th>
+                      <th style="width:20%">Item</th>
+                      <th style="width:30%">Description</th>
                       <th style="width:10%">Qty</th>
-                      <th style="width:15%">Unit Price</th>
-                      <th style="width:15%">Total</th>
+                      <th style="width:14%">Unit Price</th>
+                      <th style="width:14%">Total</th>
                     </tr>
                   </thead>
                   <tbody>

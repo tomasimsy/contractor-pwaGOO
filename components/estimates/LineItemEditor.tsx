@@ -221,6 +221,13 @@ function ItemRows({ entries, onUpdate, onRemove }: { entries: Entry[]; onUpdate:
               </button>
             </div>
 
+            <input
+              value={item.description ?? ""}
+              onChange={(e) => onUpdate(index, { description: e.target.value || null })}
+              placeholder="Description (optional — shown on the PDF)"
+              className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
+            />
+
             <div className="grid grid-cols-3 gap-2">
               <label className="block">
                 <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Category</span>
@@ -288,6 +295,7 @@ function ItemRows({ entries, onUpdate, onRemove }: { entries: Entry[]; onUpdate:
             <tr>
               <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Category</th>
               <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Name</th>
+              <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Description</th>
               <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Qty</th>
               <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Unit</th>
               <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Unit Price</th>
@@ -315,6 +323,14 @@ function ItemRows({ entries, onUpdate, onRemove }: { entries: Entry[]; onUpdate:
                     onChange={(e) => onUpdate(index, { name: e.target.value })}
                     placeholder="Item name"
                     className="w-full min-w-[140px] rounded-md border border-input bg-background px-2.5 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
+                  />
+                </td>
+                <td className="px-3 py-2">
+                  <input
+                    value={item.description ?? ""}
+                    onChange={(e) => onUpdate(index, { description: e.target.value || null })}
+                    placeholder="Optional — shown on the PDF"
+                    className="w-full min-w-[160px] rounded-md border border-input bg-background px-2.5 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
                   />
                 </td>
                 <td className="px-3 py-2">
