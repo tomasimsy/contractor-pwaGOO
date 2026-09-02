@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { SUPABASE_URL } from "@/lib/supabase/env";
 import { createServerAppServices } from "@/lib/services/server";
+import { sendPushToCompany } from "@/lib/push/sendPush";
 
 /**
  * Customer-portal Change Order approval — follows the EXACT security
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // estimate -> that estimate's customer_token, all in one check.
     const { data: changeOrderRow, error: lookupError } = await supabase
       .from("change_orders")
-      .select("id, estimate_id, status, estimates!inner(customer_token, deleted_at)")
+      .select("id, estimate_id, status, company_id, change_order_number, title, total_amount, tax, estimates!inner(customer_token, deleted_at)")
       .eq("id", changeOrderId)
       .is("deleted_at", null)
       .maybeSingle();
@@ -82,6 +83,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!result.ok) {
       return NextResponse.json({ ok: false, message: result.message ?? "This change order could not be approved." }, { status: 200 });
     }
+
+    // Same fire-and-forget pattern as /api/portal/sign — scheduled via
+    // after(), not awaited, so the customer's approval response never
+    // waits on a push send (and, per sendPushToCompany's own contract,
+    // never fails even if push is unconfigured). See that route's own
+    // comment for why after() specifically, not a bare unawaited call.
+    const costImpact = (changeOrderRow.total_amount ?? 0) + (changeOrderRow.tax ?? 0);
+    after(() =>
+      sendPushToCompany(services.pushSubscriptionService, changeOrderRow.company_id, {
+        title: "Change order approved",
+        body: `${changeOrderRow.change_order_number ?? "A change order"}${changeOrderRow.title ? ` — ${changeOrderRow.title}` : ""} (${costImpact.toLocaleString("en-US", { style: "currency", currency: "USD" })}) was just approved by the customer.`,
+        url: `/change-orders/${changeOrderRow.id}`,
+      })
+    );
 
     return NextResponse.json({ ok: true });
   } catch (error) {
