@@ -194,10 +194,10 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
             <>
               <StatCard label="Revenue" value={money(financials.totalRevenue)} icon={DollarSign} tone="success"
                 size="sm" />
-              <StatCard label="Payments Received" value={money(financials.totalPaid)} icon={Wallet} size="sm" />
+              <StatCard label="Payments Received" value={money(financials.totalPaid)} icon={Wallet} tone="info" size="sm" />
               <StatCard label="Outstanding Invoices" value={money(financials.totalOutstanding)} icon={FileWarning}
                 tone={financials.totalOutstanding> 0 ? "danger" : "neutral"} size="sm" />
-              <StatCard label="Expenses" value={money(financials.totalExpenses)} icon={Receipt} size="sm" />
+              <StatCard label="Expenses" value={money(financials.totalExpenses)} icon={Receipt} tone="warning" size="sm" />
               <StatCard label="Net Profit" value={money(financials.netProfit)} icon={TrendingUp}
                 tone={financials.netProfit>= 0 ? "success" : "danger"}
                 hint={`${financials.profitMargin.toFixed(1)}% margin`}
