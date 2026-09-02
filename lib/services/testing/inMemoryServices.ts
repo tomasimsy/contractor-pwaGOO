@@ -1025,7 +1025,7 @@ function createInvoiceService(store: InMemoryStore, transactionService: Transact
   async function createFromEstimate(estimateId: UUID, input: { issueDate: string; dueDate: string }) {
     const estimate = store.estimates.get(estimateId);
     if (!estimate) throw new Error("Estimate not found");
-    const lineItems: InvoiceLineItem[] = estimate.lineItems.map((li) => ({ id: id(), name: li.name, description: li.description, quantity: li.quantity, unitPrice: li.unitPrice, total: li.total }));
+    const lineItems: InvoiceLineItem[] = estimate.lineItems.map((li) => ({ id: id(), category: li.category, name: li.name, description: li.description, quantity: li.quantity, unitPrice: li.unitPrice, total: li.total }));
     // Reuses calculateDocumentTotal's own `taxedBase`/`tax` output
     // directly, rather than back-deriving the flat tax dollar amount
     // by subtracting from estimate.total (found during the post-

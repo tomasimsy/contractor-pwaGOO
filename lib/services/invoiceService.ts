@@ -34,6 +34,11 @@ export type InvoiceStatus = InvoiceLifecycleStatus | "partially_paid" | "paid" |
 
 export interface InvoiceLineItem {
   id: UUID;
+  /** invoice_items.category has always existed in the DB but was never
+   * modeled here — the PDF's Category column always rendered "-" as a
+   * result. Null/undefined for legacy rows and for lines that never
+   * had a meaningful category (e.g. a Change Order carry-over line). */
+  category?: "material" | "labor" | "other" | null;
   name: string;
   description: string | null;
   quantity: number;

@@ -101,6 +101,7 @@ interface InvoiceItemRow {
   invoice_id: string;
   name: string;
   description: string | null;
+  category: string | null;
   quantity: number;
   unit_price: number;
   total: number;
@@ -158,6 +159,7 @@ function toLifecycleStatus(raw: string | null): InvoiceLifecycleStatus {
 function itemRowToLineItem(row: InvoiceItemRow): InvoiceLineItem {
   return {
     id: row.id,
+    category: (row.category as InvoiceLineItem["category"]) ?? null,
     name: row.name,
     description: row.description,
     quantity: row.quantity,
@@ -482,6 +484,7 @@ export function createSupabaseInvoiceService(
               company_id: input.companyId,
               name: li.name,
               description: li.description,
+              category: li.category ?? null,
               quantity: li.quantity,
               unit_price: li.unitPrice,
               total: li.total,
@@ -532,6 +535,7 @@ export function createSupabaseInvoiceService(
     const estimateLines: Omit<InvoiceLineItem, "id" | "total">[] = (
       await estimateService.getScopeLines(estimateId)
     ).map((line) => ({
+      category: line.category,
       name: line.name,
       description: line.description,
       quantity: line.quantity,
@@ -642,6 +646,7 @@ export function createSupabaseInvoiceService(
           company_id: current.company_id,
           name: li.name,
           description: li.description,
+          category: li.category ?? null,
           quantity: li.quantity,
           unit_price: li.unitPrice,
           total: calculateLineItemTotal(li),

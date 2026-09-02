@@ -77,7 +77,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         : Promise.resolve({ data: null }),
     ]);
 
-    const lineItems = (items ?? []) as { name?: string; description?: string; quantity?: number; unit_price?: number; total?: number }[];
+    const lineItems = (items ?? []) as { name?: string; description?: string; category?: string | null; quantity?: number; unit_price?: number; total?: number }[];
     const paymentRows = (payments ?? []) as { amount?: number; payment_date?: string; method?: string; reference_number?: string }[];
     const changeOrders = (changeOrderRows ?? []) as { change_order_number?: string; title?: string; total_amount?: number; tax?: number; approved_at?: string }[];
     // profile_id (copied from the source estimate at invoice creation
@@ -188,8 +188,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             <table>
               <thead>
                 <tr>
-                  <th style="width:30%">Item</th>
-                  <th style="width:35%">Description</th>
+                  <th style="width:12%">Category</th>
+                  <th style="width:20%">Item</th>
+                  <th style="width:33%">Description</th>
                   <th style="width:10%">Qty</th>
                   <th style="width:12%">Unit Price</th>
                   <th style="width:13%">Total</th>
@@ -198,6 +199,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
               <tbody>
                 ${lineItems.map((item) => `
                   <tr>
+                    <td>${item.category ? item.category.charAt(0).toUpperCase() + item.category.slice(1) : "-"}</td>
                     <td>${item.name || "-"}</td>
                     <td>${item.description || "-"}</td>
                     <td>${item.quantity ?? 0}</td>

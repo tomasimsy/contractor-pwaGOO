@@ -46,7 +46,7 @@ export function InvoiceBuilder({ invoice, lineItems: initialLineItems }: { invoi
     () => invoice?.dueDate ?? new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
   );
   const [items, setItems] = useState<DraftItem[]>(
-    initialLineItems?.map((li) => ({ name: li.name, description: li.description, quantity: li.quantity, unitPrice: li.unitPrice })) ?? []
+    initialLineItems?.map((li) => ({ category: li.category ?? null, name: li.name, description: li.description, quantity: li.quantity, unitPrice: li.unitPrice })) ?? []
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -181,7 +181,9 @@ export function InvoiceBuilder({ invoice, lineItems: initialLineItems }: { invoi
             <table className="w-full text-sm">
               <thead className="bg-muted/50">
                 <tr>
+                  <th className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Category</th>
                   <th className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Name</th>
+                  <th className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Description</th>
                   <th className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Qty</th>
                   <th className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Unit Price</th>
                   <th className="px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total</th>
@@ -192,7 +194,18 @@ export function InvoiceBuilder({ invoice, lineItems: initialLineItems }: { invoi
                 {items.map((item, i) => (
                   <tr key={i}>
                     <td className="px-2 py-1.5">
+                      <select value={item.category ?? ""} onChange={(e) => updateItem(i, { category: (e.target.value || null) as DraftItem["category"] })} className="w-full min-w-[110px] rounded-md border border-input bg-background px-2 py-1 text-xs capitalize outline-none focus-visible:border-ring">
+                        <option value="">—</option>
+                        <option value="material">Material</option>
+                        <option value="labor">Labor</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </td>
+                    <td className="px-2 py-1.5">
                       <input value={item.name} onChange={(e) => updateItem(i, { name: e.target.value })} placeholder="Item name" className="w-full min-w-[140px] rounded-md border border-input bg-background px-2 py-1 text-xs outline-none focus-visible:border-ring" />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input value={item.description ?? ""} onChange={(e) => updateItem(i, { description: e.target.value || null })} placeholder="Optional — shown on the PDF" className="w-full min-w-[160px] rounded-md border border-input bg-background px-2 py-1 text-xs outline-none focus-visible:border-ring" />
                     </td>
                     <td className="px-2 py-1.5">
                       <input type="number" min="0" step="any" value={item.quantity} onChange={(e) => updateItem(i, { quantity: parseFloat(e.target.value) || 0 })} className="w-20 rounded-md border border-input bg-background px-2 py-1 text-xs outline-none focus-visible:border-ring" />
@@ -211,13 +224,13 @@ export function InvoiceBuilder({ invoice, lineItems: initialLineItems }: { invoi
                   </tr>
                 ))}
                 {items.length === 0 && (
-                  <tr><td colSpan={5} className="px-2 py-4 text-center text-xs text-muted-foreground">No line items yet.</td></tr>
+                  <tr><td colSpan={7} className="px-2 py-4 text-center text-xs text-muted-foreground">No line items yet.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
           <div className="flex items-center justify-between">
-            <button type="button" onClick={() => setItems([...items, { name: "", description: null, quantity: 1, unitPrice: 0 }])} className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted">
+            <button type="button" onClick={() => setItems([...items, { category: null, name: "", description: null, quantity: 1, unitPrice: 0 }])} className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted">
               <Plus className="size-3.5" /> Add line item
             </button>
             <div className="text-sm text-muted-foreground">
