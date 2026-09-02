@@ -20,8 +20,6 @@ import { useEffect } from "react";
 import { DollarSign, Wallet, FileWarning, Receipt, TrendingUp, FolderKanban, Plus, ChevronRight, FileText }
 from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { RequirePermission } from "@/components/layout/RequirePermission";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
@@ -204,48 +202,45 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
 
     return (
     <PageContainer>
-
-  
-
-      <PageHeader title={`Good morning, ${firstName}`} description={ <span className="hidden sm:inline">
-        Here's what's happening with your business.
-        </span>
-        }
-        actions={
-        <div className="flex items-center gap-2">
-          {/* Entry point for the expense flow that asks who fronted the
-          money before opening the form (/expense-v2). */}
-          {/* <Link href="/expense-v2"
-            className="inline-flex items-center gap-1 rounded-lg bg-emerald-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 sm:text-sm">
-          <Plus className="size-4" /> Expense
-          </Link> */}
-          <DateRangeFilter value={preset} onChange={setPreset} />
+      {/* One dark forest-green canvas for the ENTIRE page — header
+          included — not a light header sitting above a colored
+          content area. Every child below reads its palette from this
+          same system (emerald surfaces, warm off-white text, rose for
+          alerts, amber as the one deliberate contrasting accent) so
+          nothing on this page looks like a light component dropped
+          onto a dark background. */}
+      <div className="-mx-4 -my-6 rounded-b-2xl bg-gradient-to-b from-emerald-950 via-[#0a1f16] to-[#050d09] px-4 pb-24 pt-4 sm:-mx-6 sm:-my-6 sm:rounded-2xl sm:px-6 sm:py-6 lg:-mx-8 lg:px-8">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3 sm:mb-6">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-emerald-50">
+              Good morning, {firstName}
+            </h1>
+            <p className="mt-1 hidden text-sm text-emerald-300/60 sm:block">
+              Here&apos;s what&apos;s happening with your business.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <DateRangeFilter value={preset} onChange={setPreset} dark />
+          </div>
         </div>
-        }
-        />
 
         {error && (
         <div
-          className="mb-4 flex items-center justify-between gap-2 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
+          className="mb-4 flex items-center justify-between gap-2 rounded-lg border border-rose-800/40 bg-rose-950/40 px-3 py-2 text-sm text-rose-300">
           <span>{error}</span>
-          <button type="button" onClick={()=> refresh()} className="font-medium underline">Retry</button>
+          <button type="button" onClick={()=> refresh()} className="font-medium text-rose-200 underline">Retry</button>
         </div>
         )}
 
         {isEmpty ? (
-        <EmptyState icon={FolderKanban} title="Nothing to show yet"
-          description="Once you have projects, estimates, or invoices, your business summary will appear here." />
+        <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-emerald-800/50 px-6 py-16 text-center">
+          <div className="mb-2 flex size-12 items-center justify-center rounded-full bg-emerald-400/15">
+            <FolderKanban className="size-6 text-emerald-400" aria-hidden="true" />
+          </div>
+          <p className="text-sm font-semibold text-emerald-50">Nothing to show yet</p>
+          <p className="max-w-sm text-sm text-emerald-300/60">Once you have projects, estimates, or invoices, your business summary will appear here.</p>
+        </div>
         ) : (
-        // The page's one wash of color — a soft emerald gradient behind
-        // every section, fading to transparent toward the bottom. This
-        // is what makes the page read as one designed surface instead
-        // of a stack of disconnected white cards on flat gray;
-        // everything below stays quiet (white cards, neutral borders)
-        // except the two spots that earn a color of their own — the
-        // financial summary (emerald, the brand's own color) and Needs
-        // Your Attention (rose, the app's existing alert color from
-        // the badges built earlier this session).
-        <div className="-mx-4 -mt-2 rounded-b-2xl bg-gradient-to-b from-emerald-50 via-emerald-50/40 to-transparent px-4 pb-8 pt-4 sm:-mx-6 sm:rounded-2xl sm:px-6 sm:pt-6 lg:-mx-8 lg:px-8">
         <div className="space-y-6">
           {/* Financial Summary — grouped in one bordered/tinted panel
               rather than 5 independently-colored cards, so the row
@@ -253,29 +248,29 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
               alert states (Outstanding > 0, Net Profit negative) break
               from the shared emerald identity into red — color marks
               meaning, not decoration. */}
-          <div className="rounded-xl border border-emerald-200/70 bg-white/70 p-3 shadow-sm backdrop-blur-sm sm:p-4">
-            <h2 className="mb-2.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-700">
+          <div className="rounded-xl border border-emerald-700/40 bg-emerald-900/30 p-3 sm:p-4">
+            <h2 className="mb-2.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-300">
               <DollarSign className="size-3.5" /> Financial Summary
             </h2>
             <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-5 sm:gap-3">
               {loading || !financials ? (
               Array.from({ length: 5 }).map((_, i) => (
-              <StatCardSkeleton key={i} />
+              <StatCardSkeleton key={i} dark />
               ))
               ) : (
               <>
                 <StatCard label="Revenue" value={money(financials.totalRevenue)} icon={DollarSign} tone="success"
-                  hint="This month vs last" trendPercent={revenueMoM} size="sm" />
-                <StatCard label="Payments Received" value={money(financials.totalPaid)} icon={Wallet} tone="success" size="sm" />
+                  hint="This month vs last" trendPercent={revenueMoM} size="sm" dark />
+                <StatCard label="Payments Received" value={money(financials.totalPaid)} icon={Wallet} tone="success" size="sm" dark />
                 <StatCard label="Outstanding Invoices" value={money(financials.totalOutstanding)} icon={FileWarning}
-                  tone={financials.totalOutstanding> 0 ? "danger" : "neutral"} size="sm" />
+                  tone={financials.totalOutstanding> 0 ? "danger" : "neutral"} size="sm" dark />
                 <StatCard label="Expenses" value={money(financials.totalExpenses)} icon={Receipt} tone="neutral"
-                  hint="This month vs last" trendPercent={expensesMoM} size="sm" />
+                  hint="This month vs last" trendPercent={expensesMoM} size="sm" dark />
                 <StatCard label="Net Profit" value={money(financials.netProfit)} icon={TrendingUp}
                   tone={financials.netProfit>= 0 ? "success" : "danger"}
                   hint={`${financials.profitMargin.toFixed(1)}% margin`}
                   trendPercent={netProfitMoM}
-                  size="sm" />
+                  size="sm" dark />
               </>
               )}
             </div>
@@ -289,20 +284,20 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
               truth its own list-page badge uses, so this panel can
               never disagree with what you'd see by clicking through. */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <div className="overflow-hidden rounded-xl border border-emerald-200/60 bg-white shadow-sm lg:col-span-2">
+            <div className="overflow-hidden rounded-xl border border-emerald-800/40 bg-emerald-950/40 lg:col-span-2">
               {loading ? <RevenueExpenseChartSkeleton /> : <RevenueExpenseChart data={monthly} />}
             </div>
 
-            <div className="overflow-hidden rounded-xl border border-rose-200/70 bg-white shadow-sm">
-              <div className="border-b border-rose-100 bg-rose-50/60 px-4 py-3">
-                <h3 className="flex items-center gap-1.5 text-sm font-bold text-rose-700">
+            <div className="overflow-hidden rounded-xl border border-rose-800/40 bg-emerald-950/40">
+              <div className="border-b border-rose-800/30 bg-rose-950/40 px-4 py-3">
+                <h3 className="flex items-center gap-1.5 text-sm font-bold text-rose-300">
                   <FileWarning className="size-3.5" /> Needs Your Attention
                 </h3>
               </div>
               {loading ? (
-                <div className="px-4 py-6 text-center text-xs text-muted-foreground">Loading…</div>
+                <div className="px-4 py-6 text-center text-xs text-emerald-300/50">Loading…</div>
               ) : (
-                <ul className="divide-y divide-rose-50">
+                <ul className="divide-y divide-white/5">
                   {[
                     {
                       href: "/invoices",
@@ -319,17 +314,17 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
                     const isZero = row.count === 0 || (row.count === null && row.isPositive);
                     return (
                       <li key={row.label}>
-                        <Link href={row.href} className="flex items-center justify-between gap-2 px-4 py-2.5 text-xs transition-colors hover:bg-muted/60">
-                          <span className="text-muted-foreground">{row.label}</span>
+                        <Link href={row.href} className="flex items-center justify-between gap-2 px-4 py-2.5 text-xs transition-colors hover:bg-white/5">
+                          <span className="text-emerald-200/70">{row.label}</span>
                           <span className="flex items-center gap-1.5">
                             <span
                               className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                                isZero ? "bg-success/15 text-success" : "bg-danger/15 text-danger"
+                                isZero ? "bg-emerald-400/15 text-emerald-300" : "bg-rose-400/15 text-rose-300"
                               }`}
                             >
                               {row.extra ? `${row.count !== null ? `${row.count} · ` : ""}${row.extra}` : row.count}
                             </span>
-                            <ChevronRight className="size-3 text-muted-foreground/50" />
+                            <ChevronRight className="size-3 text-emerald-300/40" />
                           </span>
                         </Link>
                       </li>
@@ -345,33 +340,33 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
               is the exact figure the Net Profit tile's hint already
               shows) side by side on desktop. */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <div className="rounded-xl border border-emerald-100 bg-white p-4 lg:col-span-2">
-              <h2 className="mb-4 text-sm font-semibold text-foreground">Expense Breakdown</h2>
+            <div className="rounded-xl border border-emerald-800/40 bg-emerald-950/40 p-4 lg:col-span-2">
+              <h2 className="mb-4 text-sm font-semibold text-emerald-50">Expense Breakdown</h2>
               {loading ? (
-                <div className="h-40 animate-pulse rounded-lg bg-muted" />
+                <div className="h-40 animate-pulse rounded-lg bg-white/5" />
               ) : (
                 <ExpenseBreakdownDonut byType={expenseBreakdown.byType} total={expenseBreakdown.total} />
               )}
             </div>
 
-            <div className="rounded-xl border border-emerald-100 bg-white p-4">
-              <h3 className="mb-1 text-sm font-semibold text-foreground">Profit Margin</h3>
+            <div className="rounded-xl border border-emerald-800/40 bg-emerald-950/40 p-4">
+              <h3 className="mb-1 text-sm font-semibold text-emerald-50">Profit Margin</h3>
               {loading || !financials ? (
-                <div className="h-16 animate-pulse rounded-lg bg-muted" />
+                <div className="h-16 animate-pulse rounded-lg bg-white/5" />
               ) : (
                 <>
-                  <p className="text-[11px] text-muted-foreground">Net profit as a share of revenue</p>
+                  <p className="text-[11px] text-emerald-300/50">Net profit as a share of revenue</p>
                   <div className="mt-3 flex items-baseline gap-2">
-                    <span className={`text-2xl font-bold ${financials.profitMargin >= 0 ? "text-emerald-700" : "text-danger"}`}>
+                    <span className={`text-2xl font-bold ${financials.profitMargin >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
                       {financials.profitMargin.toFixed(1)}%
                     </span>
-                    <span className="text-xs font-medium text-muted-foreground">
+                    <span className="text-xs font-medium text-emerald-300/60">
                       {financials.profitMargin >= 20 ? "Excellent" : financials.profitMargin >= 10 ? "Good" : financials.profitMargin >= 0 ? "Fair" : "Needs attention"}
                     </span>
                   </div>
-                  <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-white/5">
                     <div
-                      className={`h-full rounded-full ${financials.profitMargin >= 0 ? "bg-emerald-700" : "bg-danger"}`}
+                      className={`h-full rounded-full ${financials.profitMargin >= 0 ? "bg-emerald-400" : "bg-rose-400"}`}
                       style={{ width: `${Math.min(100, Math.max(4, Math.abs(financials.profitMargin)))}%` }}
                     />
                   </div>
@@ -381,34 +376,34 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
           </div>
 
           {!loading && unpaidInvoices.length > 0 && (
-          <div className="rounded-lg border border-rose-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-rose-100 px-4 py-3">
-              <h3 className="flex items-center gap-1.5 text-sm font-bold text-rose-700">
+          <div className="rounded-lg border border-rose-800/40 bg-emerald-950/40">
+            <div className="flex items-center justify-between border-b border-rose-800/30 bg-rose-950/40 px-4 py-3">
+              <h3 className="flex items-center gap-1.5 text-sm font-bold text-rose-300">
                 <FileWarning className="size-4" /> Unpaid Invoices
               </h3>
-              <Link href="/invoices" className="text-xs font-medium text-emerald-700 hover:underline">
+              <Link href="/invoices" className="text-xs font-medium text-emerald-300 hover:underline">
                 View all
               </Link>
             </div>
-            <ul className="divide-y divide-rose-50">
+            <ul className="divide-y divide-white/5">
               {unpaidInvoices.map((invoice) => (
                 <li key={invoice.id}>
                   <Link
                     href={`/invoices/${invoice.id}`}
-                    className="flex items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-rose-50/60"
+                    className="flex items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-white/5"
                   >
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold text-emerald-900">
+                      <div className="truncate text-sm font-semibold text-emerald-50">
                         {invoice.invoiceNumber || invoice.id.slice(0, 8)}
                       </div>
-                      <div className="truncate text-xs text-emerald-600/60">
+                      <div className="truncate text-xs text-emerald-300/50">
                         {projectsById[invoice.projectId]?.name ?? "—"}
                         {invoice.dueDate ? ` · Due ${invoice.dueDate}` : ""}
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      <span className="text-sm font-bold text-emerald-900">{formatMoney(invoice.total)}</span>
-                      <span className="inline-flex items-center rounded-full bg-rose-600 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white">
+                      <span className="text-sm font-bold text-emerald-50">{formatMoney(invoice.total)}</span>
+                      <span className="inline-flex items-center rounded-full bg-rose-400/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-rose-300">
                         Unpaid
                       </span>
                     </div>
@@ -422,22 +417,25 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
           {/* Recent Estimates + Recent Activity side by side on
               desktop, stacked on mobile. */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <div className="rounded-xl border border-emerald-100 bg-white p-4 shadow-sm">
-              <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-foreground">
-                <FileText className="size-3.5 text-emerald-600" /> Recent Estimates
+            <div className="rounded-xl border border-emerald-800/40 bg-emerald-950/40 p-4">
+              <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-emerald-50">
+                <FileText className="size-3.5 text-emerald-400" /> Recent Estimates
               </h2>
               {recentEstimates.length === 0 ? (
-                <EmptyState title="No estimates yet" description="New estimates will appear here." />
+                <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-emerald-800/50 px-6 py-10 text-center">
+                  <p className="text-sm font-semibold text-emerald-100">No estimates yet</p>
+                  <p className="max-w-sm text-xs text-emerald-300/60">New estimates will appear here.</p>
+                </div>
               ) : (
-                <ul className="divide-y divide-emerald-50">
+                <ul className="divide-y divide-white/5">
                   {recentEstimates.map((estimate) => (
                     <li key={estimate.id}>
-                      <Link href={`/estimates/${estimate.id}`} className="flex items-center gap-2.5 py-2 text-sm hover:text-primary">
+                      <Link href={`/estimates/${estimate.id}`} className="flex items-center gap-2.5 py-2 text-sm text-emerald-100 hover:text-emerald-300">
                         <span className="size-2 shrink-0 rounded-full bg-emerald-400" />
                         <span className="min-w-0 flex-1 truncate">
                           {estimate.title?.trim() || projectsById[estimate.projectId]?.name || "Untitled"}
                         </span>
-                        <span className="shrink-0 text-xs font-semibold text-foreground">{money(estimate.total)}</span>
+                        <span className="shrink-0 text-xs font-semibold text-emerald-50">{money(estimate.total)}</span>
                       </Link>
                     </li>
                   ))}
@@ -454,35 +452,35 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
               that used to live in the stat grid, now their own strip
               matching the pipeline framing rather than mixed in with
               cash figures. */}
-          <div className="rounded-xl border border-emerald-100 bg-white p-4 shadow-sm">
-            <h3 className="mb-3 flex items-center gap-1.5 text-sm font-bold text-foreground">
-              <FolderKanban className="size-3.5 text-emerald-600" /> Jobs By Stage
+          <div className="rounded-xl border border-emerald-800/40 bg-emerald-950/40 p-4">
+            <h3 className="mb-3 flex items-center gap-1.5 text-sm font-bold text-emerald-50">
+              <FolderKanban className="size-3.5 text-emerald-400" /> Jobs By Stage
             </h3>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <div className="rounded-lg border-l-2 border-l-emerald-300 bg-muted/40 p-3 text-center">
-                <div className="text-[11px] text-muted-foreground">Pending Estimates</div>
-                <div className="text-lg font-bold text-foreground">{pendingEstimatesCount}</div>
+              <div className="rounded-lg border-l-2 border-l-emerald-600 bg-white/5 p-3 text-center">
+                <div className="text-[11px] text-emerald-300/60">Pending Estimates</div>
+                <div className="text-lg font-bold text-emerald-50">{pendingEstimatesCount}</div>
               </div>
-              <div className="rounded-lg border-l-2 border-l-emerald-400 bg-muted/40 p-3 text-center">
-                <div className="text-[11px] text-muted-foreground">Signed Estimates</div>
-                <div className="text-lg font-bold text-foreground">{signedEstimatesCount}</div>
+              <div className="rounded-lg border-l-2 border-l-emerald-500 bg-white/5 p-3 text-center">
+                <div className="text-[11px] text-emerald-300/60">Signed Estimates</div>
+                <div className="text-lg font-bold text-emerald-50">{signedEstimatesCount}</div>
               </div>
-              <div className="rounded-lg border-l-2 border-l-emerald-500 bg-muted/40 p-3 text-center">
-                <div className="text-[11px] text-muted-foreground">Active Projects</div>
-                <div className="text-lg font-bold text-foreground">{activeProjectsCount}</div>
+              <div className="rounded-lg border-l-2 border-l-emerald-400 bg-white/5 p-3 text-center">
+                <div className="text-[11px] text-emerald-300/60">Active Projects</div>
+                <div className="text-lg font-bold text-emerald-50">{activeProjectsCount}</div>
               </div>
-              <div className="rounded-lg border-l-2 border-l-emerald-700 bg-muted/40 p-3 text-center">
-                <div className="text-[11px] text-muted-foreground">Completed</div>
-                <div className="text-lg font-bold text-foreground">{completedProjectsCount}</div>
+              <div className="rounded-lg border-l-2 border-l-emerald-300 bg-white/5 p-3 text-center">
+                <div className="text-[11px] text-emerald-300/60">Completed</div>
+                <div className="text-lg font-bold text-emerald-50">{completedProjectsCount}</div>
               </div>
             </div>
           </div>
         </div>
-        </div>
 
         )}
+      </div>
 
-        {/* Mobile New Estimate FAB — always mounted */}
+      {/* Mobile New Estimate FAB — always mounted */}
 <Link
   href="/estimates/new"
   aria-label="New Estimate"

@@ -9,15 +9,19 @@
  * existing "no recharts/d3 dependency" convention
  * (see RevenueExpenseChart.tsx's own header).
  *
+ * Dark forest-green surface — the ring track and segment colors are
+ * chosen for contrast against a dark green field (light emerald/gray
+ * tones), not the light-card palette the first version used.
+ *
  * Capped at the top 3 categories by spend + one "Other" bucket for
  * everything else, so the ring and legend never get needlessly long.
- * Deliberately a restrained 2-color ramp (emerald shades + gray for
+ * Deliberately a restrained ramp (emerald shades + warm gray for
  * Other) rather than one hue per category — color marks rank, not an
  * arbitrary category identity.
  */
 import { EXPENSE_TYPE_LABEL, type ExpenseType } from "@/lib/services/expenseService";
 
-const SEGMENT_COLORS = ["#065f46", "#10b981", "#6ee7b7", "#d1d5db"];
+const SEGMENT_COLORS = ["#6ee7b7", "#34d399", "#0d9488", "#94a3b8"];
 
 export interface ExpenseBreakdownDonutProps {
   byType: Record<string, number>;
@@ -39,7 +43,7 @@ export function ExpenseBreakdownDonut({ byType, total }: ExpenseBreakdownDonutPr
 
   if (total === 0 || segments.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-8 text-center text-xs text-muted-foreground">
+      <div className="flex flex-col items-center justify-center py-8 text-center text-xs text-emerald-300/50">
         No expenses recorded for this period.
       </div>
     );
@@ -53,7 +57,7 @@ export function ExpenseBreakdownDonut({ byType, total }: ExpenseBreakdownDonutPr
   return (
     <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-center sm:gap-6">
       <svg viewBox="0 0 180 180" className="size-40 shrink-0 -rotate-90">
-        <circle cx="90" cy="90" r={radius} fill="none" stroke="#f1f5f4" strokeWidth="18" />
+        <circle cx="90" cy="90" r={radius} fill="none" stroke="#ffffff0f" strokeWidth="18" />
         {segments.map((seg, i) => {
           const fraction = seg.amount / total;
           const dash = fraction * circumference;
@@ -78,8 +82,8 @@ export function ExpenseBreakdownDonut({ byType, total }: ExpenseBreakdownDonutPr
 
       <div className="w-full min-w-0">
         <div className="mb-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Total Expense</div>
-          <div className="text-xl font-bold text-foreground">{money(total)}</div>
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-emerald-300/60">Total Expense</div>
+          <div className="text-xl font-bold text-emerald-50">{money(total)}</div>
         </div>
         <ul className="space-y-2">
           {segments.map((seg, i) => (
@@ -89,10 +93,10 @@ export function ExpenseBreakdownDonut({ byType, total }: ExpenseBreakdownDonutPr
                   className="size-2.5 shrink-0 rounded-full"
                   style={{ backgroundColor: SEGMENT_COLORS[i] ?? SEGMENT_COLORS[SEGMENT_COLORS.length - 1] }}
                 />
-                <span className="truncate font-medium text-foreground">{seg.label}</span>
-                <span className="shrink-0 text-muted-foreground">{money(seg.amount)}</span>
+                <span className="truncate font-medium text-emerald-50">{seg.label}</span>
+                <span className="shrink-0 text-emerald-300/50">{money(seg.amount)}</span>
               </span>
-              <span className="shrink-0 font-semibold text-foreground">{Math.round((seg.amount / total) * 100)}%</span>
+              <span className="shrink-0 font-semibold text-emerald-100">{Math.round((seg.amount / total) * 100)}%</span>
             </li>
           ))}
         </ul>

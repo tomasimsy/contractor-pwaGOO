@@ -9,6 +9,11 @@
  * FinancialEngine.getCompanyFinancials' own totalRevenue/totalExpenses
  * for that month; nothing computed here beyond curve/path geometry (a
  * rendering concern, not a financial calculation).
+ *
+ * Dark forest-green surface, built for THIS page specifically — not a
+ * light chart with dark paint over it. Revenue stays emerald (the
+ * brand); Expenses uses a warm amber so the two lines read apart
+ * against a dark green field, where two shades of green would not.
  */
 export interface MonthlyPoint {
   label: string; // e.g. "Jan 2026"
@@ -54,14 +59,18 @@ export function RevenueExpenseChart({ data }: { data: MonthlyPoint[] }) {
   const revenueLine = smoothPath(revenuePoints);
   const expenseLine = smoothPath(expensePoints);
   const revenueArea = `${revenueLine} L ${WIDTH} ${HEIGHT} L 0 ${HEIGHT} Z`;
+  // 4 horizontal gridlines, evenly spaced — a dark-theme chart needs
+  // its own faint scale reference since there's no light card edge to
+  // anchor the eye against.
+  const gridLines = [0.25, 0.5, 0.75, 1].map((f) => HEIGHT - PAD_Y - f * (HEIGHT - PAD_Y * 2));
 
   return (
-    <div className="rounded-xl border border-emerald-100 bg-white p-4">
+    <div className="rounded-xl border border-emerald-800/40 bg-emerald-950/40 p-4">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-foreground">Monthly Revenue &amp; Expenses</h2>
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <h2 className="text-sm font-semibold text-emerald-50">Monthly Revenue &amp; Expenses</h2>
+        <div className="flex items-center gap-3 text-xs text-emerald-300/70">
           <span className="flex items-center gap-1"><span className="size-2.5 rounded-full bg-emerald-400" /> Revenue</span>
-          <span className="flex items-center gap-1"><span className="size-2.5 rounded-full bg-emerald-900" /> Expenses</span>
+          <span className="flex items-center gap-1"><span className="size-2.5 rounded-full bg-amber-400" /> Expenses</span>
         </div>
       </div>
 
@@ -72,22 +81,25 @@ export function RevenueExpenseChart({ data }: { data: MonthlyPoint[] }) {
             <stop offset="100%" stopColor="#34d399" stopOpacity="0" />
           </linearGradient>
         </defs>
+        {gridLines.map((y) => (
+          <line key={y} x1="0" y1={y} x2={WIDTH} y2={y} stroke="#10b981" strokeOpacity="0.12" strokeWidth="1" />
+        ))}
         <path d={revenueArea} fill="url(#revenueFill)" />
         <path d={revenueLine} fill="none" stroke="#34d399" strokeWidth="2.5" strokeLinecap="round" />
-        <path d={expenseLine} fill="none" stroke="#064e3b" strokeWidth="2.5" strokeLinecap="round" />
+        <path d={expenseLine} fill="none" stroke="#fbbf24" strokeWidth="2.5" strokeLinecap="round" />
         {revenuePoints.map((p, i) => (
           <circle key={`r-${data[i].label}`} cx={p.x} cy={p.y} r="3" fill="#34d399">
             <title>{`Revenue (${data[i].label}): ${money(data[i].revenue)}`}</title>
           </circle>
         ))}
         {expensePoints.map((p, i) => (
-          <circle key={`e-${data[i].label}`} cx={p.x} cy={p.y} r="3" fill="#064e3b">
+          <circle key={`e-${data[i].label}`} cx={p.x} cy={p.y} r="3" fill="#fbbf24">
             <title>{`Expenses (${data[i].label}): ${money(data[i].expenses)}`}</title>
           </circle>
         ))}
       </svg>
 
-      <div className="mt-1 flex justify-between overflow-x-auto text-[10px] text-muted-foreground">
+      <div className="mt-1 flex justify-between overflow-x-auto text-[10px] text-emerald-300/50">
         {data.map((d) => (
           <span key={d.label} className="whitespace-nowrap px-0.5">{d.label}</span>
         ))}
@@ -98,9 +110,9 @@ export function RevenueExpenseChart({ data }: { data: MonthlyPoint[] }) {
 
 export function RevenueExpenseChartSkeleton() {
   return (
-    <div className="animate-pulse rounded-xl border border-border bg-card p-4">
-      <div className="mb-4 h-4 w-40 rounded bg-muted" />
-      <div className="h-44 w-full rounded bg-muted" />
+    <div className="animate-pulse rounded-xl border border-emerald-800/40 bg-emerald-950/40 p-4">
+      <div className="mb-4 h-4 w-40 rounded bg-white/10" />
+      <div className="h-44 w-full rounded bg-white/5" />
     </div>
   );
 }

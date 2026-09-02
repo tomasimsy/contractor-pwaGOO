@@ -78,15 +78,24 @@ export function resolveDateRangePreset(
 export function DateRangeFilter({
   value,
   onChange,
+  dark = false,
 }: {
   value: DateRangePreset;
   onChange: (preset: DateRangePreset) => void;
+  /** Opt into the Dashboard's dark forest-green palette — default
+   * false so the Accounting page's own (light) usage of this same
+   * component is unaffected. */
+  dark?: boolean;
 }) {
   return (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value as DateRangePreset)}
-      className="h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+      className={
+        dark
+          ? "h-9 rounded-lg border border-emerald-700/40 bg-emerald-900/60 px-3 text-sm text-emerald-100 outline-none focus-visible:border-emerald-400 focus-visible:ring-3 focus-visible:ring-emerald-400/30"
+          : "h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+      }
       aria-label="Date range"
     >
       {DATE_RANGE_PRESETS.map((p) => (

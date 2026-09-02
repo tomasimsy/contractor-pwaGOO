@@ -12,7 +12,6 @@
  */
 import Link from "next/link";
 import { Activity, FileText, FolderKanban, Receipt } from "lucide-react";
-import { EmptyState } from "@/components/ui/EmptyState";
 import type { Project } from "@/lib/services/projectService";
 import type { Estimate } from "@/lib/services/estimateService";
 import type { Invoice } from "@/lib/services/invoiceService";
@@ -45,25 +44,28 @@ export function RecentActivityFeed({ projects, estimates, invoices, limit = 8 }:
     .slice(0, limit);
 
   return (
-    <div className="rounded-xl border border-emerald-100 bg-white p-4 shadow-sm">
-      <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-foreground">
-        <Activity className="size-3.5 text-emerald-600" /> Recent Activity
+    <div className="rounded-xl border border-emerald-800/40 bg-emerald-950/40 p-4">
+      <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-emerald-50">
+        <Activity className="size-3.5 text-emerald-400" /> Recent Activity
       </h2>
       {items.length === 0 ? (
-        <EmptyState title="No activity yet" description="Recent project, estimate, and invoice updates will appear here." />
+        <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-emerald-800/50 px-6 py-10 text-center">
+          <p className="text-sm font-semibold text-emerald-100">No activity yet</p>
+          <p className="max-w-sm text-xs text-emerald-300/60">Recent project, estimate, and invoice updates will appear here.</p>
+        </div>
       ) : (
-        <ul className="divide-y divide-emerald-50">
+        <ul className="divide-y divide-white/5">
           {items.map((item) => {
             const Icon = ICONS[item.kind];
             const { label, href } = describe(item);
             return (
               <li key={`${item.kind}-${item.entity.id}`}>
-                <Link href={href} className="flex items-center gap-2.5 py-2 text-sm hover:text-primary">
-                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-50">
-                    <Icon className="size-3 text-emerald-600" />
+                <Link href={href} className="flex items-center gap-2.5 py-2 text-sm text-emerald-100 hover:text-emerald-300">
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-400/15">
+                    <Icon className="size-3 text-emerald-400" />
                   </span>
                   <span className="min-w-0 flex-1 truncate">{label}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground">{new Date(item.entity.updatedAt).toLocaleDateString()}</span>
+                  <span className="shrink-0 text-xs text-emerald-300/50">{new Date(item.entity.updatedAt).toLocaleDateString()}</span>
                 </Link>
               </li>
             );
