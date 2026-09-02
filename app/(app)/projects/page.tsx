@@ -16,6 +16,7 @@ import type { Client } from "@/lib/services/clientService";
 import type { Estimate } from "@/lib/services/estimateService";
 import type { Invoice } from "@/lib/services/invoiceService";
 import type { ProjectStatus } from "@/lib/services";
+import { isNeverInvoiced } from "@/components/projects/projectStatus";
 
 const formatMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
@@ -203,7 +204,14 @@ function ProjectsListContent() {
                     </td>
                     <td className="px-3 py-2.5 text-muted-foreground">{project.clientId ? clientsById[project.clientId]?.name ?? "—" : "—"}</td>
                     <td className="px-3 py-2.5">
-                      <Badge tone={STATUS_TONE[project.status]}>{project.status.replace("_", " ")}</Badge>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Badge tone={STATUS_TONE[project.status]}>{project.status.replace("_", " ")}</Badge>
+                        {isNeverInvoiced(project.status, projectInvoices.length) && (
+                          <span className="inline-flex items-center rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                            Not Invoiced
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="hidden px-3 py-2.5 text-xs text-muted-foreground md:table-cell">
                       {new Date(project.createdAt).toLocaleDateString()}
@@ -237,7 +245,14 @@ function ProjectsListContent() {
               <Link key={project.id} href={`/projects/${project.id}`} className="block rounded-xl border border-border bg-card p-3 hover:border-primary/40">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-medium text-foreground">{project.name}</span>
-                  <Badge tone={STATUS_TONE[project.status]}>{project.status.replace("_", " ")}</Badge>
+                  <div className="flex items-center gap-1.5">
+                    <Badge tone={STATUS_TONE[project.status]}>{project.status.replace("_", " ")}</Badge>
+                    {isNeverInvoiced(project.status, (invoicesByProject[project.id] ?? []).length) && (
+                      <span className="inline-flex items-center rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                        Not Invoiced
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">{project.clientId ? clientsById[project.clientId]?.name ?? "—" : "No client"}</div>
                 <div className="mt-0.5 text-xs text-muted-foreground">Updated {new Date(project.updatedAt).toLocaleDateString()}</div>

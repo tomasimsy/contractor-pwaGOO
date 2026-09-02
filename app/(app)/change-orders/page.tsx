@@ -172,7 +172,14 @@ function ChangeOrdersListContent() {
                     {/* <td className="px-3 py-2.5 text-muted-foreground">{projectsById[co.projectId]?.name ?? "—"}</td> */}
                     <td className="px-3 py-2.5 text-muted-foreground">{estimatesById[co.estimateId]?.title ?? "—"}</td>
                     <td className="px-3 py-2.5">
-                      <Badge tone={STATUS_TONE[co.status]}>{co.status}</Badge>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Badge tone={STATUS_TONE[co.status]}>{co.status}</Badge>
+                        {co.status === "pending" && (
+                          <span className="inline-flex items-center rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                            Needs Approval
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-2.5 text-right font-medium text-foreground">{formatMoney(calculateChangeOrderRevenue(co.totalAmount, co.tax))}</td>
                     <td className="hidden px-3 py-2.5 text-xs text-muted-foreground md:table-cell">{new Date(co.createdAt).toLocaleDateString()}</td>
@@ -187,7 +194,14 @@ function ChangeOrdersListContent() {
               <Link key={co.id} href={`/change-orders/${co.id}`} className="block rounded-xl border border-border bg-card p-3 hover:border-primary/40">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-medium text-foreground">{co.changeOrderNumber}</span>
-                  <Badge tone={STATUS_TONE[co.status]}>{co.status}</Badge>
+                  <div className="flex items-center gap-1.5">
+                    <Badge tone={STATUS_TONE[co.status]}>{co.status}</Badge>
+                    {co.status === "pending" && (
+                      <span className="inline-flex items-center rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                        Needs Approval
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">{projectsById[co.projectId]?.name ?? "—"} · {estimatesById[co.estimateId]?.estimateNumber ?? "—"}</div>
                 <div className="mt-1 text-sm font-semibold text-foreground">{formatMoney(calculateChangeOrderRevenue(co.totalAmount, co.tax))}</div>

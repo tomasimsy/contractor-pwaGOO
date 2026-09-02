@@ -17,7 +17,7 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useEffect } from "react";
-import { DollarSign, Wallet, FileWarning, Receipt, TrendingUp, FileText, CheckCircle2, FolderKanban, Plus, HandCoins }
+import { DollarSign, Wallet, FileWarning, Receipt, TrendingUp, FileText, CheckCircle2, FolderKanban, Plus, HandCoins, GitPullRequest, Clock, UserX, FileX2 }
 from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -32,6 +32,9 @@ import { RecentActivityFeed } from "@/components/dashboard/RecentActivityFeed";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { getActionablePayables, type ActionablePayables } from "@/lib/services/payablesWorklist";
 import { isOutstandingInvoiceStatus, formatMoney } from "@/components/invoices/invoiceStatus";
+import { isStaleDraft } from "@/components/estimates/estimateStatus";
+import { isNeverInvoiced, isUnstaffedSoon } from "@/components/projects/projectStatus";
+import type { ChangeOrder } from "@/lib/services/changeOrderService";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
@@ -39,6 +42,11 @@ function DashboardContent() {
 const { profile } = useAuth();
 const [preset, setPreset] = useState<DateRangePreset>("this_year");
   const [payables, setPayables] = useState<ActionablePayables | null>(null);
+  /** Not exposed as a company-wide list anywhere (ChangeOrderService
+   * only has listForProject, same per-project fan-out the Change
+   * Orders list page itself already does) — fetched here once
+   * `projects` is available, same pattern as `payables` above. */
+  const [changeOrders, setChangeOrders] = useState<ChangeOrder[]>([]);
     const services = useServices();
 
     // Not period-scoped, on purpose: a debt does not stop existing
@@ -59,6 +67,18 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
     pendingEstimatesCount, signedEstimatesCount, activeProjectsCount,
     } = useDashboardData(profile?.companyId, preset);
 
+    // Not period-scoped, same reasoning as payables above — a pending
+    // change order doesn't stop needing approval because the date
+    // filter moved.
+    useEffect(() => {
+    if (projects.length === 0) { setChangeOrders([]); return; }
+    let active = true;
+    Promise.all(projects.map((p) => services.changeOrderService.listForProject(p.id)))
+      .then((perProject) => { if (active) setChangeOrders(perProject.flat()); })
+      .catch(() => { /* the tile is informational; never break the page */ });
+    return () => { active = false; };
+    }, [services, projects]);
+
     const isEmpty = !loading && !error && projects.length === 0 && estimates.length === 0 && invoices.length === 0;
 
     // Same population as the Outstanding Invoices tile above and the
@@ -77,6 +97,32 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
           .sort((a, b) => b.total - a.total)
           .slice(0, 5),
       [invoices]
+    );
+
+    const invoiceCountByProject = useMemo(() => {
+      const counts: Record<string, number> = {};
+      for (const inv of invoices) counts[inv.projectId] = (counts[inv.projectId] ?? 0) + 1;
+      return counts;
+    }, [invoices]);
+
+    const pendingChangeOrdersCount = useMemo(
+      () => changeOrders.filter((co) => co.status === "pending").length,
+      [changeOrders]
+    );
+    // Same shape as isUnstaffedSoon/isNeverInvoiced/isStaleDraft — reused
+    // verbatim from the list pages so a count here can never disagree
+    // with what those pages badge.
+    const staleEstimatesCount = useMemo(
+      () => estimates.filter((e) => isStaleDraft(e.status, e.createdAt)).length,
+      [estimates]
+    );
+    const unstaffedSoonCount = useMemo(
+      () => projects.filter((p) => isUnstaffedSoon(p.startDate, p.assignedUserId)).length,
+      [projects]
+    );
+    const neverInvoicedCount = useMemo(
+      () => projects.filter((p) => isNeverInvoiced(p.status, invoiceCountByProject[p.id] ?? 0)).length,
+      [projects, invoiceCountByProject]
     );
 
     return (
@@ -116,7 +162,7 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
         <div className="space-y-6">
           <div className="grid grid-cols-4 gap-1.5 sm:gap-3">
             {loading || !financials ? (
-            Array.from({ length: 8 }).map((_, i) => (
+            Array.from({ length: 13 }).map((_, i) => (
             <StatCardSkeleton key={i} />
             ))
             ) : (
@@ -174,6 +220,36 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
                     }
                     size="sm"
                     />
+                    </Link>
+                  {/* Same population the Change Orders list badges red
+                  ("Needs Approval") — status "pending" across every
+                  project, fetched once above. */}
+                  <Link href="/change-orders" className="contents">
+                  <StatCard label="Pending Change Orders" value={String(pendingChangeOrdersCount)} icon={GitPullRequest}
+                    tone={pendingChangeOrdersCount > 0 ? "warning" : "neutral"}
+                    hint="Needs approval" size="sm" />
+                    </Link>
+                  {/* Same population the Estimates list badges red
+                  ("Stale") — a draft over STALE_DRAFT_DAYS old. */}
+                  <Link href="/estimates" className="contents">
+                  <StatCard label="Stale Drafts" value={String(staleEstimatesCount)} icon={Clock}
+                    tone={staleEstimatesCount > 0 ? "danger" : "neutral"}
+                    hint="Never sent, 14+ days" size="sm" />
+                    </Link>
+                  {/* Same population the daily-automations cron already
+                  pushes about — see isUnstaffedSoon's own doc comment. */}
+                  <Link href="/projects" className="contents">
+                  <StatCard label="Unstaffed Jobs" value={String(unstaffedSoonCount)} icon={UserX}
+                    tone={unstaffedSoonCount > 0 ? "danger" : "neutral"}
+                    hint="Starting within 3 days" size="sm" />
+                    </Link>
+                  {/* Same population the Projects list badges red
+                  ("Not Invoiced") — in_progress/completed, zero
+                  invoices ever created. */}
+                  <Link href="/projects" className="contents">
+                  <StatCard label="Never Invoiced" value={String(neverInvoicedCount)} icon={FileX2}
+                    tone={neverInvoicedCount > 0 ? "danger" : "neutral"}
+                    hint="Active or done, never billed" size="sm" />
                     </Link>
             </>
             )}

@@ -23,6 +23,7 @@ import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
 import type { EstimateStatus } from "@/lib/services";
 import { supabase } from "@/lib/supabase/client";
+import { isStaleDraft } from "@/components/estimates/estimateStatus";
 import {
   getEmailStatusesForEstimates,
   EMAIL_STATUS_DOT_COLOR,
@@ -298,7 +299,14 @@ function EstimatesListContent() {
                   {estimate.estimateType === "roofing" ? "Roofing" : "Standard"}
                 </td>
                 <td className="px-3 py-2.5">
-                  <Badge tone={STATUS_TONE[estimate.status]}>{estimate.status.replace(/_/g, " ")}</Badge>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Badge tone={STATUS_TONE[estimate.status]}>{estimate.status.replace(/_/g, " ")}</Badge>
+                    {isStaleDraft(estimate.status, estimate.createdAt) && (
+                      <span className="inline-flex items-center rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white normal-case">
+                        Stale
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-3 py-2.5 text-right font-bold text-emerald-700">
                   {formatMoney(estimate.total)}
@@ -404,6 +412,11 @@ function EstimatesListContent() {
                   >
                     {status.label}
                   </span>
+                  {isStaleDraft(estimate.status, estimate.createdAt) && (
+                    <span className="rounded-full bg-rose-500 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                      Stale
+                    </span>
+                  )}
                 </div>
               </div>
             </Link>
