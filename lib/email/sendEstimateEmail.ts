@@ -28,7 +28,7 @@ export interface SendEstimateEmailInput {
 }
 
 export type SendEstimateEmailResult =
-  | { ok: true; emailId: string | null }
+  | { ok: true; emailId: string | null; message?: string }
   | { ok: false; error: string };
 
 /** Simple, safe-enough HTML escaping for the one thing we interpolate
@@ -56,6 +56,13 @@ function formatPhoneDisplay(raw: string): string {
   return `(${tenDigit.slice(0, 3)}) ${tenDigit.slice(3, 6)}-${tenDigit.slice(6)}`;
 }
 
+/** Resend rejects the whole request over ~40MB (subject/body/headers +
+ * every attachment, base64-encoded). Base64 inflates raw bytes by
+ * ~4/3, so a PDF has to stay under roughly 30MB on disk to survive
+ * encoding — this threshold leaves headroom for the HTML body/headers
+ * too, rather than cutting it exactly at the theoretical max. */
+const MAX_ATTACHMENT_BYTES = 28 * 1024 * 1024;
+
 function buildEmailHtml(opts: {
   companyName: string;
   companyDba: string | null;
@@ -68,6 +75,11 @@ function buildEmailHtml(opts: {
   portalUrl: string;
   estimateNumber: string;
   footerMessage: string;
+  /** When the generated PDF is too large for Resend's request-size
+   * limit, the attachment is skipped entirely (see sendEstimateEmail)
+   * — this swaps the "also attached" line for one that doesn't lie
+   * about a file that was never actually sent. */
+  attachmentSkipped: boolean;
 }): string {
   const messageHtml = escapeHtml(opts.message).replace(/\n/g, "<br>");
   const displayName = opts.companyDba
@@ -109,7 +121,11 @@ function buildEmailHtml(opts: {
             </a>
           </div>
           <div style="font-size: 12px; color: #6b7280; line-height: 1.6;">
-            The full proposal (#${opts.estimateNumber}) is also attached to this email as a PDF.
+            ${
+              opts.attachmentSkipped
+                ? `Proposal #${opts.estimateNumber} is too large to attach to this email — view or download the full PDF using the button above.`
+                : `The full proposal (#${opts.estimateNumber}) is also attached to this email as a PDF.`
+            }
           </div>
           <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280; line-height: 1.6;">
             <div style="font-weight: 600; color: #374151;">${opts.companyName}</div>
@@ -183,6 +199,12 @@ export async function sendEstimateEmail(input: SendEstimateEmailInput): Promise<
   const companyEmail = unlessPlaceholder(data.company.company_email);
   const companyWebsite = unlessPlaceholder(data.company.company_website);
   const companyWebsite2 = unlessPlaceholder(data.company.company_website_2);
+  // Skip the attachment rather than let Resend reject the whole send —
+  // a customer who never receives an email at all is a worse outcome
+  // than one whose email has no attachment but still has the portal
+  // link (which shows/downloads the identical PDF). See
+  // MAX_ATTACHMENT_BYTES' own comment for where 28MB comes from.
+  const attachmentSkipped = pdfBuffer.length > MAX_ATTACHMENT_BYTES;
   const emailHtml = buildEmailHtml({
     companyName: data.company.company_name,
     companyDba: data.company.dba,
@@ -195,6 +217,7 @@ export async function sendEstimateEmail(input: SendEstimateEmailInput): Promise<
     portalUrl,
     estimateNumber,
     footerMessage: data.company.footer_message,
+    attachmentSkipped,
   });
 
   // Whatever address is actually configured wins — no brand is
@@ -231,12 +254,16 @@ export async function sendEstimateEmail(input: SendEstimateEmailInput): Promise<
       to: recipient,
       subject: input.subject,
       html: emailHtml,
-      attachments: [
-        {
-          filename: `Proposal-${estimateNumber}.pdf`,
-          content: pdfBuffer,
-        },
-      ],
+      ...(attachmentSkipped
+        ? {}
+        : {
+            attachments: [
+              {
+                filename: `Proposal-${estimateNumber}.pdf`,
+                content: pdfBuffer,
+              },
+            ],
+          }),
     });
 
     if (result.error) {
@@ -256,7 +283,13 @@ export async function sendEstimateEmail(input: SendEstimateEmailInput): Promise<
       });
     }
 
-    return { ok: true, emailId: resendEmailId };
+    return {
+      ok: true,
+      emailId: resendEmailId,
+      ...(attachmentSkipped
+        ? { message: "Sent, but the PDF was too large to attach (over Resend's 40MB limit) — the email links to the portal instead." }
+        : {}),
+    };
   } catch (error) {
     console.error("Failed to send estimate email:", error);
     const message = error instanceof Error ? error.message : "Unknown error while sending.";

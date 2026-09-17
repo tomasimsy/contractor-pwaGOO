@@ -63,7 +63,11 @@ function buildDefaultMessage(clientName: string, companyName: string, messageTem
   return `Hi ${name},\n\nThank you for the opportunity to work with you. Please find your proposal attached, and you can also view it online using the button in this email.\n\nIf you have any questions or would like to move forward, just sign the proposal by clicking the link.\n\nBest regards,\n${companyName}`;
 }
 
-type SendState = { status: "idle" } | { status: "sending" } | { status: "success" } | { status: "error"; message: string };
+type SendState =
+  | { status: "idle" }
+  | { status: "sending" }
+  | { status: "success"; note?: string }
+  | { status: "error"; message: string };
 
 export function EmailCustomerModal({
   open,
@@ -111,7 +115,7 @@ export function EmailCustomerModal({
         setState({ status: "error", message: data.error || "Failed to send the email." });
         return;
       }
-      setState({ status: "success" });
+      setState({ status: "success", note: typeof data.message === "string" ? data.message : undefined });
       onSent?.();
     } catch {
       setState({ status: "error", message: "Network error — the email was not sent. Check your connection and try again." });
@@ -198,9 +202,12 @@ export function EmailCustomerModal({
             </div>
           )}
           {state.status === "success" && (
-            <div className="flex items-center gap-2 rounded-lg border border-green-300 bg-green-50 p-3 text-xs text-green-800">
-              <CheckCircle2 className="size-3.5 shrink-0" />
-              Email sent to {to}.
+            <div className="flex items-start gap-2 rounded-lg border border-green-300 bg-green-50 p-3 text-xs text-green-800">
+              <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" />
+              <div>
+                Email sent to {to}.
+                {state.note && <div className="mt-1 text-amber-700">{state.note}</div>}
+              </div>
             </div>
           )}
         </div>

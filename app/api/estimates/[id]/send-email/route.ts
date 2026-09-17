@@ -52,7 +52,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!result.ok) {
       return NextResponse.json({ ok: false, error: result.error }, { status: 422 });
     }
-    return NextResponse.json({ ok: true, emailId: result.emailId });
+    return NextResponse.json({ ok: true, emailId: result.emailId, message: result.message });
   } catch (error) {
     console.error("send-email route failed:", error);
     return NextResponse.json({ ok: false, error: "Unexpected server error while sending the email." }, { status: 500 });
