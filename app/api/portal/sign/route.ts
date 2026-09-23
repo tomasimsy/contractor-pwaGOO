@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { SUPABASE_URL } from "@/lib/supabase/env";
 import { createServerAppServices } from "@/lib/services/server";
 import { sendPushToCompany } from "@/lib/push/sendPush";
+import { sendEstimateSignedNotification } from "@/lib/email/sendEstimateSignedNotification";
 
 /**
  * One of two routes in this app permitted to construct a service-role
@@ -123,6 +124,12 @@ export async function POST(request: NextRequest) {
           url: `/estimates/${estimate.id}`,
         })
       );
+      // Backup channel to the push above — an email to the company's
+      // own address, so a signature is never missed just because no
+      // device had notifications enabled. Same after() reasoning:
+      // never makes the customer wait on it.
+      const appOrigin = request.nextUrl.origin;
+      after(() => sendEstimateSignedNotification(supabase, estimate, appOrigin));
     }
 
     return NextResponse.json({ ok: true });
