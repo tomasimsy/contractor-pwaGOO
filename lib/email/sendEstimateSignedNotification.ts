@@ -23,7 +23,11 @@ function escapeHtml(text: string): string {
 export async function sendEstimateSignedNotification(
   supabase: SupabaseClient,
   estimate: Estimate,
-  appOrigin: string
+  appOrigin: string,
+  /** Set only when signing succeeded but the auto-invoice did not (see
+   * estimateWorkflow.signEstimate's partial-success message). Called out
+   * in the email so a missing invoice is never silent. */
+  invoiceProblem?: string
 ): Promise<void> {
   try {
     const company = await getCompanySettingsByCompanyId(supabase, estimate.companyId, estimate.profileId);
@@ -46,7 +50,7 @@ export async function sendEstimateSignedNotification(
     const label = estimate.title || "An estimate";
     const number = estimate.estimateNumber ?? estimate.id.slice(0, 8);
     const link = `${appOrigin}/estimates/${estimate.id}`;
-    const subject = `Estimate signed: ${label} (#${number})`;
+    const subject = `${invoiceProblem ? "Action needed — " : ""}Estimate signed: ${label} (#${number})`;
 
     const html = `
       <!DOCTYPE html>
@@ -60,6 +64,11 @@ export async function sendEstimateSignedNotification(
               <strong>${escapeHtml(clientName)}</strong> just signed <strong>${escapeHtml(label)}</strong> (#${escapeHtml(String(number))}).
             </div>
             <div style="margin-top: 12px; font-size: 14px; color: #1f2429;">Total: <strong>${formatCurrency(estimate.total)}</strong></div>
+            ${
+              invoiceProblem
+                ? `<div style="margin-top: 16px; padding: 12px; border: 1px solid #fca5a5; background: #fef2f2; border-radius: 8px; font-size: 13px; color: #991b1b; line-height: 1.5;"><strong>Action needed:</strong> the invoice was NOT created automatically. ${escapeHtml(invoiceProblem)}</div>`
+                : ""
+            }
             <div style="margin: 24px 0 0;">
               <a href="${link}" style="display: inline-block; background:#111827; color:#ffffff; text-decoration:none; font-weight:600; font-size:13px; padding: 12px 22px; border-radius: 8px;">Open estimate</a>
             </div>

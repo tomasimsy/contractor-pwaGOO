@@ -117,10 +117,15 @@ export async function POST(request: NextRequest) {
     // already gone out. sendPushToCompany never throws either way.
     if (result.estimate) {
       const estimate = result.estimate;
+      // signEstimate returns ok:true WITH a message only when the
+      // signature was saved but the auto-invoice failed. That was being
+      // dropped here, so a signed estimate could silently have no invoice.
+      const invoiceProblem = result.message;
+      if (invoiceProblem) console.error(`Estimate ${estimate.id} signed but invoice not created:`, invoiceProblem);
       after(() =>
         sendPushToCompany(services.pushSubscriptionService, estimate.companyId, {
           title: "Estimate signed",
-          body: `${estimate.title || "An estimate"} (#${estimate.estimateNumber ?? estimate.id.slice(0, 8)}) was just signed by the customer.`,
+          body: `${estimate.title || "An estimate"} (#${estimate.estimateNumber ?? estimate.id.slice(0, 8)}) was just signed by the customer.${invoiceProblem ? " The invoice was NOT created automatically — open it to fix." : ""}`,
           url: `/estimates/${estimate.id}`,
         })
       );
@@ -129,7 +134,7 @@ export async function POST(request: NextRequest) {
       // device had notifications enabled. Same after() reasoning:
       // never makes the customer wait on it.
       const appOrigin = request.nextUrl.origin;
-      after(() => sendEstimateSignedNotification(supabase, estimate, appOrigin));
+      after(() => sendEstimateSignedNotification(supabase, estimate, appOrigin, invoiceProblem));
     }
 
     return NextResponse.json({ ok: true });
