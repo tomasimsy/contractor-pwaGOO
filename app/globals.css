@@ -36,6 +36,9 @@
  */
 :root,
 :root[data-theme="light"] {
+  /* Estimate page faces (components/ui/docFonts.ts). Both use the root layout's Geist. */
+  --font-doc-display: var(--font-geist-sans);
+  --font-doc-body: var(--font-geist-sans);
   --background: #ffffff;
   --foreground: #171717;
   --card: #ffffff;
