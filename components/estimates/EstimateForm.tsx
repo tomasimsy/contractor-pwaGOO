@@ -18,7 +18,15 @@
  * functions EstimateService itself delegates to), never computed
  * ad hoc here.
  */
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { buttonClass } from "@/components/ui/Button";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { ROOFING_AREA_QUANTITY_UNITS } from "@/lib/services/roofingAreaService";
+import type { RoofingAreaTemplate } from "@/lib/services/roofingAreaTemplateService";
+import type { DraftAreaLineItem } from "@/components/estimates/RoofingAreaLineItemEditor";
+
+/** "flat" makes every Section a heading with a divider instead of a bordered card. */
+const SectionStyleContext = createContext<"card" | "flat" | "document">("card");
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { hidesMobileBottomNav } from "@/lib/layout/mobileBottomNav";
 import { Building2, FileText, Home, ListChecks, Calculator, Camera } from "lucide-react";
@@ -27,9 +35,13 @@ import { useAuth } from "@/components/providers/AuthProvider";
 import { LineItemEditor, type DraftLineItem } from "./LineItemEditor";
 import { RoofingAreasEditorV2, type RoofingAreasEditorV2Ref } from "./RoofingAreasEditorV2";
 import { EstimatePhotosEditor } from "./EstimatePhotosEditor";
+import { ROOFING_LINE_ITEMS_ENABLED } from "@/lib/featureFlags";
 import { Modal } from "@/components/ui/Modal";
 import { ProjectForm } from "@/components/projects/ProjectForm";
+import { PropertyForm } from "@/components/properties/PropertyForm";
+import { formatPropertyAddress, type Property } from "@/lib/services/propertyService";
 import { ClientForm } from "@/components/clients/ClientForm";
+import { useConfirmDialog } from "@/components/ui/useConfirmDialog";
 import { calculateSubtotal, calculateLineItemTotal, calculateDocumentTotal, calculateAreaRepairCost } from "@/lib/services/financialCalculations";
 import { createEstimateForClient } from "@/lib/services/estimateCreationWorkflow";
 import { EMERGENCY_ROOF_RESPONSE_TEMPLATE, EMERGENCY_ROOF_AREA_TEMPLATE } from "@/lib/estimateQuickTemplates";
@@ -129,6 +141,34 @@ function Section({
   flush?: boolean;
   children: ReactNode;
 }) {
+  const style = useContext(SectionStyleContext);
+  if (style === "document") {
+    // Estimate design: a white card with a serif heading.
+    return (
+      <section className="rounded-xl border border-[#E2E5E0] bg-white p-4">
+        <header className="mb-2.5 flex items-center gap-2">
+          <Icon className="size-4 shrink-0 text-[#5B6675]" />
+          <h2 className="font-[family-name:var(--font-doc-display)] text-[15px] font-semibold text-[#1B2430]">{title}</h2>
+          {hint && <span className="ml-1 hidden text-[13px] text-[#8A93A0] sm:block">{hint}</span>}
+          {headerRight && <span className="ml-auto">{headerRight}</span>}
+        </header>
+        <div className="space-y-3">{children}</div>
+      </section>
+    );
+  }
+  if (style === "flat") {
+    return (
+      <section className="space-y-4 border-t border-border pt-5 first:border-t-0 first:pt-0">
+        <header className="flex items-baseline gap-2">
+          <Icon className="size-4 shrink-0 translate-y-0.5 text-muted-foreground" />
+          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+          {hint && <span className="ml-auto hidden text-[11px] text-muted-foreground sm:block">{hint}</span>}
+          {headerRight && <span className={hint ? "" : "ml-auto"}>{headerRight}</span>}
+        </header>
+        <div>{children}</div>
+      </section>
+    );
+  }
   return (
     <section
       className={`overflow-hidden rounded-xl border shadow-xs ${
@@ -159,13 +199,34 @@ function Section({
   );
 }
 
+const STEP_LABELS = ["Client", "Job and roof areas", "Pricing"];
+
+/** The area that holds item and labour rows which are not roof work. */
+const GENERAL_AREA_NAME = "General items";
+
+// Document-style tables (the cost-estimate layout).
+const DOC_TABLE = "w-full border-collapse text-[13px]";
+const DOC_BAND = "bg-[#F8F9F7] text-[#5B6675]";
+const DOC_BODY = "border border-[#E2E5E0] bg-white";
+const DOC_ROW = "border-t border-[#E2E5E0]";
+const DOC_LABEL = "w-28 bg-[#F8F9F7] px-3 py-1 text-[#5B6675]";
+const DOC_VALUE = "px-3 py-1";
+const DOC_FIELD = "w-full rounded-lg border border-[#D0D5CD] bg-white px-2 py-1 text-[#1B2430]";
+// Inputs in the item, labour, and totals tables look like plain text until hovered or focused.
+const DOC_CELL_INPUT = "w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-[#1B2430] outline-none hover:border-[#D0D5CD] focus:border-[#0E7C7B]";
+
+const FORM_CONTROL = "h-9 rounded-lg border border-[#D0D5CD] bg-white px-2.5 text-[13px] text-[#1B2430] focus:border-[#0E7C7B] focus:outline-none";
+
 export function EstimateForm({
   estimate,
   lineItems: initialLineItems,
   roofV2 = false,
   basePath = "/estimates",
+  layout = "classic",
 }: {
   estimate?: Estimate;
+  /** "steps" shows one part at a time; "flat" shows everything on one page with fewer boxes; "classic" is the default. */
+  layout?: "classic" | "steps" | "flat" | "document";
   lineItems?: EstimateLineItem[];
   /**
    * Estimate Roof V2 only. When true: estimate type is locked to
@@ -190,13 +251,52 @@ export function EstimateForm({
   // route it is on or it floats above (or under) the wrong thing.
   const navHidden = hidesMobileBottomNav(usePathname());
   const searchParams = useSearchParams();
-  const { estimateService, projectService, clientService, roofingAreaService, roofingAreaTemplateService, estimatePhotoService, companyProfileService } = useServices();
+  const { estimateService, projectService, clientService, propertyService, roofingAreaService, roofingAreaTemplateService, estimatePhotoService, companyProfileService } = useServices();
   const { profile } = useAuth();
 
   // Collapsible sections — the form is long and dense, so let users hide what they don't need to see.
   const [detailsOpen, setDetailsOpen] = useState(true);
   const [photosOpen, setPhotosOpen] = useState(true);
 const [pricingOpen, setPricingOpen] = useState(true);
+  const [step, setStep] = useState(1);
+  const showStep = (n: number) => layout !== "steps" || step === n;
+  const patchArea = (id: string, patch: Partial<RoofingArea>) =>
+    setRoofingAreas((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+  const removeAreaRow = (id: string) => setRoofingAreas((prev) => prev.filter((a) => a.id !== id));
+  const seededRef = useRef(false);
+  // Each roof area's line items as the editor shows them (document layout tables).
+  const [areaLineItems, setAreaLineItems] = useState<Record<string, DraftAreaLineItem[]>>({});
+  // Saved roof-area templates for the top-of-form dropdown (document layout only).
+  const [savedAreaTemplates, setSavedAreaTemplates] = useState<RoofingAreaTemplate[]>([]);
+  useEffect(() => {
+    if (layout !== "document" || !profile?.companyId) return;
+    roofingAreaTemplateService
+      .listForCompany(profile.companyId)
+      .then(setSavedAreaTemplates)
+      .catch(() => setSavedAreaTemplates([]));
+  }, [layout, profile?.companyId, roofingAreaTemplateService]);
+  const addAreaRow = (name?: string) =>
+    setRoofingAreas((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        estimateId: estimate?.id ?? "",
+        areaName: name ?? `Item ${prev.length + 1}`,
+        sequenceNumber: prev.length,
+        scopeItems: "",
+        areaTotal: 0,
+        quantity: 1,
+        quantityUnit: "EA",
+        defect: null,
+        location: null,
+        correctiveAction: null,
+        materialsIncluded: null,
+        materialCost: 0,
+        laborCost: 0,
+        tax: 0,
+        estimatedRepairCost: 0,
+      } as unknown as RoofingArea,
+    ]);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState(estimate?.projectId ?? searchParams.get("projectId") ?? "");
@@ -210,6 +310,14 @@ const [pricingOpen, setPricingOpen] = useState(true);
   // carry clientId independently of their project — see handleSubmit).
   const [manualClientId, setManualClientId] = useState(estimate?.clientId ?? "");
   const [showNewClientModal, setShowNewClientModal] = useState(false);
+  // Property for an estimate that is on Auto (no project picked). Lists the
+  // chosen client's properties; the choice decides which job the estimate
+  // goes to, so an estimate for one house never lands on another house's job.
+  const [clientProperties, setClientProperties] = useState<Property[]>([]);
+  const [propertyId, setPropertyId] = useState("");
+  const [showNewPropertyModal, setShowNewPropertyModal] = useState(false);
+  // Read-only label when a project is picked and that project has a property.
+  const [pickedProjectProperty, setPickedProjectProperty] = useState<Property | null>(null);
   const [title, setTitle] = useState(estimate?.title ?? "");
   const [description, setDescription] = useState(estimate?.description ?? "");
   // A ref (not just the onChange resize) so the "Load Emergency
@@ -240,6 +348,13 @@ const [pricingOpen, setPricingOpen] = useState(true);
     initialLineItems?.map((li) => ({ category: li.category, name: li.name, description: li.description, quantity: li.quantity, unitPrice: li.unitPrice, unit: li.unit ?? null, taxable: li.taxable, groupName: li.groupName ?? null })) ?? []
   );
   const [roofingAreas, setRoofingAreas] = useState<RoofingArea[]>([]);
+  // A new document-style estimate starts with the general area that holds non-roof items.
+  useEffect(() => {
+    if (layout !== "document" || estimate || estimateType !== "roofing" || seededRef.current) return;
+    seededRef.current = true;
+    if (!roofingAreas.some((a) => a.areaName === GENERAL_AREA_NAME)) addAreaRow(GENERAL_AREA_NAME);
+  }, [layout, estimate, estimateType, roofingAreas.length]);
+  const { ask, dialog } = useConfirmDialog();
   const [estimatePhotos, setEstimatePhotos] = useState<{ before: EstimatePhoto[]; after: EstimatePhoto[] }>({ before: [], after: [] });
   const [markup, setMarkup] = useState(estimate?.markup ?? 0);
   const [discount, setDiscount] = useState(estimate?.discount ?? 0);
@@ -269,6 +384,40 @@ const [pricingOpen, setPricingOpen] = useState(true);
     if (!profile?.companyId) return;
     clientService.list({ companyId: profile.companyId }).then(setClients);
   }, [clientService, profile?.companyId]);
+
+  // Auto path (no project picked): list the chosen client's properties.
+  // One property is picked for the office; several means the office must choose.
+  useEffect(() => {
+    if (!profile?.companyId || projectId || !manualClientId) {
+      setClientProperties([]);
+      setPropertyId("");
+      return;
+    }
+    propertyService
+      .list({ companyId: profile.companyId, clientId: manualClientId })
+      .then((list) => {
+        setClientProperties(list);
+        setPropertyId(list.length === 1 ? list[0].id : "");
+      })
+      .catch(() => {
+        // Properties are additive: without them the estimate saves as before.
+        setClientProperties([]);
+        setPropertyId("");
+      });
+  }, [propertyService, profile?.companyId, projectId, manualClientId]);
+
+  // A picked project's property, shown read-only on the form.
+  const pickedProjectPropertyId = projects.find((p) => p.id === projectId)?.propertyId ?? null;
+  useEffect(() => {
+    if (!pickedProjectPropertyId) {
+      setPickedProjectProperty(null);
+      return;
+    }
+    propertyService
+      .getById(pickedProjectPropertyId, true)
+      .then(setPickedProjectProperty)
+      .catch(() => setPickedProjectProperty(null));
+  }, [propertyService, pickedProjectPropertyId]);
 
   useEffect(() => {
     if (!profile?.companyId) return;
@@ -398,8 +547,22 @@ const [pricingOpen, setPricingOpen] = useState(true);
   // estimate fell through to summing `lineItems`, i.e. its dead
   // estimate_items rows, and previewed "Total: $9.00" against a real
   // total of $24.
+  // Roofing subtotal from the live form state, so it moves as the user types.
+  // Same rule as the server (getScopeLines): every area line item, plus each
+  // area's repair cost (material + labor + tax).
+  // Estimate-level line items (the lineItems state) count too, as the saved
+  // total does.
+  const roofingLiveSubtotal =
+    lineItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0) +
+    roofingAreas.reduce(
+      (sum, area) =>
+        sum +
+        (areaLineItems[area.id] ?? []).reduce((s, item) => s + item.quantity * item.unitPrice, 0) +
+        calculateAreaRepairCost(area.materialCost ?? 0, area.laborCost ?? 0, area.tax ?? 0),
+      0
+    );
   const subtotal = estimateType === "roofing"
-    ? (roofingTotals?.subtotal ?? 0)
+    ? roofingLiveSubtotal
     : calculateSubtotal(lineItems.map((li) => ({ total: calculateLineItemTotal(li) })));
   const total = calculateDocumentTotal(subtotal, markup, discount, taxRate).total;
 
@@ -411,6 +574,10 @@ const [pricingOpen, setPricingOpen] = useState(true);
     if (!profile?.companyId || (!projectId && !manualClientId)) return;
     if (!title.trim()) {
       setError("An estimate needs a title.");
+      return;
+    }
+    if (!estimate && !projectId && manualClientId && clientProperties.length > 1 && !propertyId) {
+      setError("This client has more than one property. Choose which one this estimate is for.");
       return;
     }
     // Which brand this estimate presents as is asked right before the
@@ -477,6 +644,8 @@ const [pricingOpen, setPricingOpen] = useState(true);
             projectId: projectId || null,
             clientId,
             clientName: clients.find((c) => c.id === clientId)?.name ?? null,
+            // Only meaningful on Auto: with a project picked, that project already has its property.
+            property: projectId ? null : (clientProperties.find((p) => p.id === propertyId) ?? null),
             title: title.trim(),
             description: description || undefined,
             lineItems,
@@ -521,10 +690,63 @@ const [pricingOpen, setPricingOpen] = useState(true);
   }
 
   return (
+    <SectionStyleContext.Provider value={layout === "document" ? "document" : layout === "flat" ? "flat" : "card"}>
     <>
     {/* Trailing padding clears the sticky action bar, plus the bottom
         nav when it's there — 65px less to reserve when it isn't. */}
-    <form onSubmit={handleSubmit} className={`mx-auto max-w-6xl space-y-4 lg:pb-28 ${navHidden ? "pb-24" : "pb-40"}`}>
+    <form
+      onSubmit={handleSubmit}
+      className={`${layout === "document" ? "w-full" : "mx-auto max-w-6xl"} lg:pb-28 ${navHidden ? "pb-24" : "pb-40"} ${
+        layout === "document"
+          ? "w-full lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start lg:gap-5"
+          : "space-y-4"
+      }`}
+    >
+      {layout === "document" && (
+        <div className="col-span-full mb-3 flex flex-wrap items-center gap-3 border-b border-[#E2E5E0] pb-3 lg:col-span-2">
+          <Link href={basePath} className="shrink-0 text-xs font-medium text-[#5B6675] hover:text-[#1B2430]">
+            ← Estimates
+          </Link>
+          <span aria-hidden="true" className="h-5 w-px shrink-0 bg-[#E2E5E0]" />
+          <span className="font-[family-name:var(--font-doc-display)] text-lg font-semibold text-[#8A93A0]">
+            {title.trim() || "Untitled estimate"}
+          </span>
+          <div role="radiogroup" aria-label="Estimate type" className="ml-auto flex gap-0.5 rounded-[10px] bg-[#EEF0EC] p-[3px] text-[13px]">
+            {(["roofing", "standard"] as const).map((t) => {
+              const active = estimateType === t;
+              return (
+                <label
+                  key={t}
+                  className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-3.5 py-1.5 ${
+                    active ? "bg-white font-semibold text-[#1B2430] shadow-sm" : "text-[#5B6675]"
+                  } ${typeLocked ? "cursor-not-allowed opacity-70" : ""}`}
+                >
+                  <input type="radio" name="estimate-type" value={t} checked={active} disabled={typeLocked} onChange={() => setEstimateType(t)} className="sr-only" />
+                  {t === "roofing" ? "Roofing" : "Standard"}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+
+      {layout === "steps" && (
+        <nav aria-label="Estimate steps" className="flex flex-wrap items-center gap-2 text-sm">
+          {STEP_LABELS.map((label, i) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => setStep(i + 1)}
+              aria-current={step === i + 1 ? "step" : undefined}
+              className={`rounded-full px-3 py-1 ${step === i + 1 ? "bg-foreground text-background" : "border border-border text-muted-foreground"}`}
+            >
+              {i + 1}. {label}
+            </button>
+          ))}
+        </nav>
+      )}
+
       {error && (
         <div role="alert" className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm font-medium text-danger">
           {error}
@@ -535,9 +757,126 @@ const [pricingOpen, setPricingOpen] = useState(true);
           document metadata, not the workspace, so they run full-width
           above the two-column split rather than competing with Line
           Items for the wide left column. */}
-      <div className="space-y-4">
+      <div className={layout === "document" ? "space-y-3 lg:col-start-1 lg:row-start-2" : "space-y-4"}>
 
+      {layout === "document" && estimateType === "roofing" && (
+        <div className="col-span-full flex flex-wrap items-center gap-2 lg:col-span-2">
+          <button
+            type="button"
+            onClick={() => roofAreasRef.current?.addEmergencyArea()}
+            className={buttonClass("secondary", "h-8")}
+          >
+            + {EMERGENCY_ROOF_AREA_TEMPLATE.label}
+          </button>
+          {savedAreaTemplates.length > 0 && (
+            <select
+              value=""
+              aria-label="Load a saved template"
+              onChange={(e) => {
+                const t = savedAreaTemplates.find((x) => x.id === e.target.value);
+                if (t) roofAreasRef.current?.addFromTemplate(t);
+              }}
+              className="h-[34px] rounded-lg border border-[#D0D5CD] bg-white px-2 text-[13px] text-[#1B2430]"
+            >
+              <option value="">Load a saved template…</option>
+              {savedAreaTemplates.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
+
+
+
+
+
+      {layout === "document" && (() => {
+        const selectedClient = clients.find((c) => c.id === manualClientId);
+        return (
+          <div className="space-y-3">
+            <section id="client" className="rounded-xl border border-[#E2E5E0] bg-white p-4">
+              <div className="mb-2.5 flex flex-wrap items-baseline gap-2">
+                <h2 className="font-[family-name:var(--font-doc-display)] text-[15px] font-semibold text-[#1B2430]">Client</h2>
+                <span className="text-[13px] text-[#8A93A0]">Who is this estimate for?</span>
+                <button type="button" onClick={() => setShowNewClientModal(true)} className="ml-auto text-[13px] font-medium text-[#0E7C7B] hover:underline">
+                  + New client
+                </button>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="flex flex-col gap-1.5 text-xs font-medium text-[#5B6675]">
+                  Client
+                  <select value={manualClientId} onChange={(e) => setManualClientId(e.target.value)} aria-label="Client" className={FORM_CONTROL}>
+                    <option value="">No client</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1.5 text-xs font-medium text-[#5B6675]">
+                  Property
+                  <span className="flex items-center gap-2">
+                    <select value={propertyId} onChange={(e) => setPropertyId(e.target.value)} aria-label="Property" className={`${FORM_CONTROL} min-w-0 flex-1`}>
+                      <option value="">{clientProperties.length > 1 ? "Choose a property…" : "No property"}</option>
+                      {clientProperties.map((p) => (
+                        <option key={p.id} value={p.id}>{p.nickname || formatPropertyAddress(p)}</option>
+                      ))}
+                    </select>
+                    {manualClientId && (
+                      <button type="button" onClick={() => setShowNewPropertyModal(true)} className="shrink-0 text-xs font-medium text-[#0E7C7B] hover:underline">+ New</button>
+                    )}
+                  </span>
+                </label>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-4 text-[13px] text-[#5B6675]">
+                <span>Phone <b className="font-medium text-[#1B2430]">{selectedClient?.phone || "—"}</b></span>
+                <span>Email <b className="font-medium text-[#1B2430]">{selectedClient?.email || "—"}</b></span>
+              </div>
+            </section>
+
+            <section id="project" className="rounded-xl border border-[#E2E5E0] bg-white p-4">
+              <div className="mb-2.5 flex flex-wrap items-baseline gap-2">
+                <h2 className="font-[family-name:var(--font-doc-display)] text-[15px] font-semibold text-[#1B2430]">Project</h2>
+                <span className="text-[13px] text-[#8A93A0]">Leave the project on Auto to use the client’s job</span>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <label className="flex flex-col gap-1.5 text-xs font-medium text-[#5B6675]">
+                  Title *
+                  <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="For example, Front slope repair" aria-label="Title" className={FORM_CONTROL} />
+                </label>
+                <label className="flex flex-col gap-1.5 text-xs font-medium text-[#5B6675]">
+                  Project
+                  <span className="flex items-center gap-2">
+                    <select value={projectId} onChange={(e) => setProjectId(e.target.value)} aria-label="Project" className={`${FORM_CONTROL} min-w-0 flex-1`}>
+                      <option value="">Auto — use the client’s project</option>
+                      {projects.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                    <button type="button" onClick={() => setShowNewProjectModal(true)} className="shrink-0 text-xs font-medium text-[#0E7C7B] hover:underline">+ New</button>
+                  </span>
+                </label>
+                <label className="flex flex-col gap-1.5 text-xs font-medium text-[#5B6675]">
+                  Terms
+                  <select value={termsTemplate} onChange={(e) => setTermsTemplate(e.target.value as EstimateTermsTemplateKey)} aria-label="Terms and conditions" className={FORM_CONTROL}>
+                    {ESTIMATE_TERMS_TEMPLATE_OPTIONS.map((t) => (
+                      <option key={t.key} value={t.key}>{t.label}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <label className="mt-3 flex flex-col gap-1.5 text-xs font-medium text-[#5B6675]">
+                Scope overview, shown on the PDF
+                <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="Describe the work in a sentence or two" aria-label="Scope" className="rounded-lg border border-[#D0D5CD] bg-white px-2.5 py-2 text-sm text-[#1B2430] focus:border-[#0E7C7B] focus:outline-none" />
+              </label>
+            </section>
+          </div>
+        );
+      })()}
+
+            {layout !== "document" && (<>
       {/* ---------- 1. CLIENT & PROJECT ---------- */}
+{showStep(1) && (
   <Section
     icon={Building2}
     title="Client & Project"
@@ -643,6 +982,34 @@ const [pricingOpen, setPricingOpen] = useState(true);
               </div>
             </>
           )}
+
+          {!projectId && manualClientId && (
+            <div className="space-y-1.5 pt-1">
+              <label className={LABEL}>Property</label>
+              <select value={propertyId} onChange={(e) => setPropertyId(e.target.value)} className={FIELD}>
+                <option value="">{clientProperties.length > 1 ? "Choose a property…" : "No property"}</option>
+                {clientProperties.map((p) => (
+                  <option key={p.id} value={p.id}>{p.nickname || formatPropertyAddress(p)}</option>
+                ))}
+              </select>
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-[11px] text-muted-foreground">
+                  The estimate goes to the job for this house, or a new job is created for it.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowNewPropertyModal(true)}
+                  className="shrink-0 text-xs font-semibold text-primary hover:underline"
+                >
+                  + New Property
+                </button>
+              </div>
+            </div>
+          )}
+
+          {projectId && pickedProjectProperty && (
+            <p className="text-[11px] text-muted-foreground">Property: {formatPropertyAddress(pickedProjectProperty)}</p>
+          )}
         </div>
       </div>
 
@@ -653,8 +1020,11 @@ const [pricingOpen, setPricingOpen] = useState(true);
       )}
     </div>
   </Section>
+)}
+</>)}
 
       {/* ---------- 2. ESTIMATE DETAILS ---------- */}
+{layout !== "document" && showStep(2) && (
 <Section icon={FileText} title="Estimate Details" accent>
   {/* Toggle button – stays above the fields */}
   <div className="flex justify-end -mt-1 mb-2">
@@ -747,6 +1117,7 @@ const [pricingOpen, setPricingOpen] = useState(true);
     </div>
   </div>
 </Section>
+)}
 
       </div>
       {/* End compact metadata. Below: the two-column workspace — Line
@@ -754,14 +1125,14 @@ const [pricingOpen, setPricingOpen] = useState(true);
           Areas/Photos) as the primary ~70% column, Pricing & Totals as
           a sticky ~30% sidebar. Collapses to a single stacked column
           below `lg`, in the same top-to-bottom order as before. */}
-      <div className="lg:grid lg:grid-cols-[1fr_320px] lg:items-start lg:gap-5">
-      <div className="space-y-4 lg:min-w-0">
+      <div className={layout === "document" ? "contents" : "lg:grid lg:grid-cols-[1fr_320px] lg:items-start lg:gap-5"}>
+      <div className={layout === "document" ? "space-y-3 lg:col-start-1 lg:row-start-3" : "space-y-4 lg:min-w-0"}>
 
       {/* ---------- 5. ATTACHMENTS (estimate-level) ----------
           Retitled from a bare "Photos": the roof-area cards below have
           their OWN photo uploads, and two identically-labelled sections
           on one page is exactly why the per-area one was unfindable. */}
-{estimate && (
+{showStep(2) && estimate && (
   <Section icon={Camera} title="Estimate Photos" hint="Apply to the whole estimate" accent>
     {/* Toggle button – placed inside the Section so it appears on the right */}
     <div className="flex justify-end -mt-1 mb-2">
@@ -818,11 +1189,31 @@ const [pricingOpen, setPricingOpen] = useState(true);
   </Section>
 )}
 
-{estimateType === "roofing" && (
+{showStep(2) && estimateType === "roofing" && (
   <>
+      {ROOFING_LINE_ITEMS_ENABLED && layout === "document" && estimateType === "roofing" && (() => {
+        const generalId = roofingAreas.find((a) => a.areaName === GENERAL_AREA_NAME)?.id;
+        return (
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" disabled={!generalId} onClick={() => generalId && roofAreasRef.current?.addLineItem(generalId, "material")} className={buttonClass("secondary", "h-8")}>
+              + Add item
+            </button>
+            <button type="button" disabled={!generalId} onClick={() => generalId && roofAreasRef.current?.addLineItem(generalId, "labor")} className={buttonClass("secondary", "h-8")}>
+              + Add labor
+            </button>
+          </div>
+        );
+      })()}
+
+    <details open className={layout === "document" ? (estimateType === "roofing" ? "rounded-xl border border-[#E2E5E0] bg-white p-4" : "hidden") : "contents"}>
+      <summary className={layout === "document" ? "mb-2.5 cursor-pointer font-[family-name:var(--font-doc-display)] text-[15px] font-semibold text-[#1B2430]" : "hidden"}>
+        Area details: defects, photos, notes and templates
+      </summary>
     {profile?.companyId ? (
       <RoofingAreasEditorV2
         ref={roofAreasRef}
+        variant={layout === "document" ? "document" : "default"}
+        onLineItemsChange={(areaId, items) => setAreaLineItems((prev) => ({ ...prev, [areaId]: items }))}
         // Empty until the estimate itself is first created — every
         // drafted area's own estimateId is patched to the real one at
         // that point (see performSubmit's saveAll(createdEstimate.id)
@@ -866,6 +1257,26 @@ const [pricingOpen, setPricingOpen] = useState(true);
     ) : (
       <p className="text-sm text-muted-foreground">Loading company details…</p>
     )}
+    </details>
+
+      {layout === "document" && estimateType === "roofing" && !estimate && (
+        <section id="photos" className="rounded-xl border border-[#E2E5E0] bg-white p-4">
+          <div className="mb-2.5 flex flex-wrap items-baseline gap-2">
+            <h2 className="font-[family-name:var(--font-doc-display)] text-[15px] font-semibold text-[#1B2430]">Photos</h2>
+            <span className="text-[13px] text-[#8A93A0]">Before and after, per area</span>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              disabled
+              className="h-[84px] w-[120px] rounded-[10px] border border-dashed border-[#C4CAC0] bg-white text-[13px] font-medium text-[#5B6675] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              + Add photo
+            </button>
+          </div>
+          <p className="mt-3 text-xs text-[#8A93A0]">Photos are added to each area once the estimate is saved.</p>
+        </section>
+      )}
   </>
 )}
 
@@ -877,28 +1288,9 @@ const [pricingOpen, setPricingOpen] = useState(true);
           line from $10 to $9, saw it save, and the total never moved.
           EstimateService now refuses such a write outright; this stops
           the UI offering it in the first place. */}
-      {estimateType !== "roofing" && (
+      {showStep(2) && estimateType !== "roofing" && (
         <Section icon={ListChecks} title="Scope — Line Items">
-          <div className="flex justify-end -mt-1 mb-2">
-            <button
-              type="button"
-              onClick={() => {
-                if (
-                  lineItems.length > 0 &&
-                  !window.confirm("Load the Emergency Roof Response template? This replaces the current line items.")
-                ) {
-                  return;
-                }
-                setLineItems(EMERGENCY_ROOF_RESPONSE_TEMPLATE.items);
-                setTitle((prev) => prev || EMERGENCY_ROOF_RESPONSE_TEMPLATE.suggestedTitle);
-                setDescription((prev) => prev || EMERGENCY_ROOF_RESPONSE_TEMPLATE.suggestedDescription);
-              }}
-              className="text-xs font-medium text-primary hover:underline"
-            >
-              Load Emergency Response Template
-            </button>
-          </div>
-          <LineItemEditor items={lineItems} onChange={setLineItems} />
+          <LineItemEditor items={lineItems} onChange={setLineItems} cards />
         </Section>
       )}
 
@@ -910,7 +1302,8 @@ const [pricingOpen, setPricingOpen] = useState(true);
           yet, so nothing else constrains its width) — the exact range
           that read as "taking excessive space." Unconstrained again at
           `lg`, where the 320px sidebar column already does that job. */}
-      <div className="mt-4 sm:max-w-sm lg:sticky lg:top-4 lg:mt-0 lg:max-w-none">
+      {showStep(3) && (
+      <div className={layout === "document" ? "lg:col-start-2 lg:row-start-2 lg:row-span-2 lg:sticky lg:top-6 lg:self-start" : "mt-4 sm:max-w-sm lg:sticky lg:top-4 lg:mt-0 lg:max-w-none"}>
 <Section icon={Calculator} title="Pricing & Totals">
   <div className="flex justify-end -mt-1">
     <button
@@ -936,6 +1329,66 @@ const [pricingOpen, setPricingOpen] = useState(true);
     }`}
   >
     <div className="space-y-2 pt-1">
+      {layout === "document" ? (() => {
+        const itemLines = estimateType === "roofing" ? roofingAreas.flatMap((area) => areaLineItems[area.id] ?? []) : lineItems;
+        const sumOf = (category: "material" | "labor") =>
+          itemLines.filter((item) => (category === "labor") === (item.category === "labor")).reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+        // Roofing costs are entered on each area (Material / Labor / Tax) as well as
+        // in its line items, so the breakdown adds both sources.
+        const areaSum = (key: "materialCost" | "laborCost" | "tax") =>
+          estimateType === "roofing" ? roofingAreas.reduce((sum, area) => sum + (Number(area[key]) || 0), 0) : 0;
+        const itemsSum = sumOf("material") + areaSum("materialCost");
+        const laborSum = sumOf("labor") + areaSum("laborCost");
+        const taxSum = areaSum("tax");
+        const hasClient = !!manualClientId;
+        const hasTitle = !!title.trim();
+        const field = (label: string, value: number, set: (n: number) => void, suffix?: string) => (
+          <div className="flex items-center justify-between gap-3">
+            <span>{label}</span>
+            <span className="flex items-center gap-1">
+              <input
+                type="number"
+                step="any"
+                value={value}
+                onChange={(e) => set(parseFloat(e.target.value) || 0)}
+                aria-label={label}
+                className="h-[30px] w-20 rounded-md border border-[#D0D5CD] bg-white px-2 text-right text-[13px] text-[#1B2430] focus:border-[#0E7C7B] focus:outline-none"
+              />
+              {suffix && <span className="text-[13px] text-[#8A93A0]">{suffix}</span>}
+            </span>
+          </div>
+        );
+        return (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-[#E2E5E0] bg-white p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-[#5B6675]">Estimate total</div>
+              <div className="mt-1 font-[family-name:var(--font-doc-display)] text-[30px] font-semibold leading-none text-[#1B2430]">{formatMoney(total)}</div>
+              <div className="mt-3 space-y-2 border-t border-[#E2E5E0] pt-3 text-[13px] text-[#5B6675]">
+                <div className="flex justify-between"><span>Items</span><span className="text-[#1B2430]">{formatMoney(itemsSum)}</span></div>
+                <div className="flex justify-between"><span>Labor</span><span className="text-[#1B2430]">{formatMoney(laborSum)}</span></div>
+                {taxSum > 0 && <div className="flex justify-between"><span>Area tax</span><span className="text-[#1B2430]">{formatMoney(taxSum)}</span></div>}
+                {field("Markup", markup, setMarkup, "%")}
+                {field("Discount", discount, setDiscount)}
+                {field("Tax", taxRate, setTaxRate, "%")}
+                {field("Deposit", depositAmount, setDepositAmount)}
+              </div>
+              <div className="mt-3 flex justify-between rounded-[10px] bg-[#E7F3F2] p-2.5 text-sm font-semibold text-[#0B5F5E]">
+                <span>Balance after deposit</span>
+                <span>{formatMoney(Math.max(0, total - depositAmount))}</span>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-[#E2E5E0] bg-white p-4 text-[13px]">
+              <div className="mb-2 font-semibold text-[#1B2430]">Before you create</div>
+              <div className="flex flex-col gap-2">
+                <span className={hasClient ? "text-[#0E7C7B]" : "text-[#B45309]"}>{hasClient ? "✓ Client chosen" : "○ Choose a client"}</span>
+                <span className={hasTitle ? "text-[#0E7C7B]" : "text-[#B45309]"}>{hasTitle ? "✓ Title added" : "○ Add a title"}</span>
+              </div>
+            </div>
+          </div>
+        );
+      })() : (
+      <>
       {/* Four fields in a tight grid */}
       <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
         <div className="space-y-0.5">
@@ -985,10 +1438,13 @@ const [pricingOpen, setPricingOpen] = useState(true);
         <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Total</span>
         <span className="text-lg font-bold text-foreground">{formatMoney(total)}</span>
       </div>
+      </>
+      )}
     </div>
   </div>
 </Section>
       </div>
+      )}
       </div>
 
       {/* ---------- STICKY ACTIONS ----------
@@ -996,7 +1452,17 @@ const [pricingOpen, setPricingOpen] = useState(true);
           never hidden behind it; flush to the viewport from lg up,
           where that nav isn't rendered. Carries the total too, so the
           number stays visible however far down the form you are. */}
-<div className="sticky bottom-0 z-30 -mx-4 border-t border-border bg-background/95 px-3 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-6 sm:px-4">
+{layout === "steps" && (
+  <div className="flex items-center justify-between gap-2">
+    <button type="button" disabled={step === 1} onClick={() => setStep((n) => Math.max(1, n - 1))} className="rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-40">
+      Back
+    </button>
+    <button type="button" disabled={step === STEP_LABELS.length} onClick={() => setStep((n) => Math.min(STEP_LABELS.length, n + 1))} className="rounded-lg bg-foreground px-3 py-1.5 text-sm font-medium text-background disabled:opacity-40">
+      {step < STEP_LABELS.length ? `Next: ${STEP_LABELS[step]}` : "Last step"}
+    </button>
+  </div>
+)}
+<div className={`sticky bottom-0 z-30 border-t border-border bg-background/95 px-3 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-4 ${layout === "document" ? "lg:col-span-2" : "-mx-4 sm:-mx-6"}`}>
   <div className="mx-auto flex max-w-6xl items-center justify-between gap-2">
     <div className="min-w-0">
       <div className="text-[8px] font-bold uppercase tracking-wider text-muted-foreground">Total</div>
@@ -1006,14 +1472,14 @@ const [pricingOpen, setPricingOpen] = useState(true);
       <button
         type="button"
         onClick={() => router.back()}
-        className="rounded-lg border border-input px-2.5 py-1 text-xs font-semibold text-foreground transition-colors hover:bg-muted sm:px-3 sm:py-1.5 sm:text-sm"
+        className={buttonClass("secondary")}
       >
         Cancel
       </button>
       <button
         type="submit"
         disabled={saving || !title.trim() || (!projectId && !manualClientId)}
-        className="rounded-lg bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50 sm:px-4 sm:py-1.5 sm:text-sm"
+        className="inline-flex h-[34px] items-center rounded-lg bg-[#0E7C7B] px-4 text-[13px] font-semibold text-white transition-colors hover:bg-[#0B6666] disabled:opacity-50"
       >
         {saving ? "Saving…" : estimate ? "Save Changes" : "Create"}
       </button>
@@ -1022,6 +1488,19 @@ const [pricingOpen, setPricingOpen] = useState(true);
 </div>
     </form>
 
+    <Modal open={showNewPropertyModal} onClose={() => setShowNewPropertyModal(false)} title="New Property">
+      {showNewPropertyModal && manualClientId && (
+        <PropertyForm
+          clientId={manualClientId}
+          onCancel={() => setShowNewPropertyModal(false)}
+          onSaved={(created) => {
+            setClientProperties((prev) => [...prev, created]);
+            setPropertyId(created.id);
+            setShowNewPropertyModal(false);
+          }}
+        />
+      )}
+    </Modal>
     <Modal open={showNewProjectModal} onClose={() => setShowNewProjectModal(false)} title="New Project">
       <ProjectForm
         onCreated={(created) => {
@@ -1094,6 +1573,8 @@ const [pricingOpen, setPricingOpen] = useState(true);
         </div>
       </div>
     </Modal>
+    {dialog}
     </>
+    </SectionStyleContext.Provider>
   );
 }

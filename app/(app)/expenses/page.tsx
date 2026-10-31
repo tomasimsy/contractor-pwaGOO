@@ -16,6 +16,7 @@ import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RequirePermission } from "@/components/layout/RequirePermission";
+import { useConfirmDialog } from "@/components/ui/useConfirmDialog";
 import { usePermission } from "@/lib/hooks/usePermission";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
@@ -73,8 +74,10 @@ function ExpensesContent() {
     }
   }, [expenseService, estimateService, expenseReceiptService, companyId]);
 
+  const { ask, dialog } = useConfirmDialog();
+
   async function handleDelete(expense: Expense) {
-    const reason = window.prompt("Why are you deleting this expense?");
+    const reason = await ask({ title: "Delete this expense?", confirmLabel: "Delete", destructive: true, reasonLabel: "Why are you deleting this expense?" });
     if (!reason) return;
     setDeletingId(expense.id);
     setError(null);
@@ -301,6 +304,7 @@ function ExpensesContent() {
           </div>
         </div>
       )}
+      {dialog}
     </PageContainer>
   );
 }

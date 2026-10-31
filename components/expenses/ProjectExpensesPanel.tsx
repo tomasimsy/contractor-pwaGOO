@@ -29,9 +29,11 @@
  * mutation, so profit updates in the same interaction as the expense.
  */
  
+import Link from "next/link";
+import { buttonClass } from "@/components/ui/Button";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from "react";
 // import { Plus, Pencil, Trash2, Receipt, RotateCcw, HardHat, Briefcase, FileText } from "lucide-react";
-import { Plus, Pencil, Trash2, Receipt, RotateCcw, HardHat, Briefcase, FileText, Image as ImageIcon } from "lucide-react";
+import { Plus, Pencil, Trash2, Receipt, HardHat, Briefcase, FileText, Image as ImageIcon } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
 import { ExpenseDialog } from "./ExpenseDialog";
@@ -48,7 +50,7 @@ const money = (n: number) => n.toLocaleString("en-US", { style: "currency", curr
  * since the three are deliberately NOT the same kind of record. */
 const SOURCE_META: Record<CostEntrySource, { label: string; icon: typeof Receipt; className: string }> = {
   expense: { label: "Expense", icon: Receipt, className: "bg-muted text-muted-foreground" },
-  subcontractor: { label: "Subcontractor", icon: HardHat, className: "bg-primary/10 text-primary" },
+  subcontractor: { label: "Subcontractor", icon: HardHat, className: "bg-[#E7F3F2] text-[#0B5F5E]" },
   agent: { label: "Agent", icon: Briefcase, className: "bg-success/15 text-success" },
 };
 
@@ -78,7 +80,7 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
   onChanged,
   compact = false,
 }, ref) {{
-  const { expenses, totals, loading, error, create, update, remove, markReimbursed, refresh } = useExpenses(companyId, projectId, estimateId);
+  const { expenses, totals, loading, error, create, update, remove, refresh } = useExpenses(companyId, projectId, estimateId);
   const { financialEngine, expenseReceiptService } = useServices();
   const [dialogFor, setDialogFor] = useState<Expense | "new" | null>(null);
   const [entries, setEntries] = useState<CostEntry[]>([]);
@@ -196,18 +198,12 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
     }
   }
 
-  async function handleReimburse(expense: Expense) {
-    setActionError(null);
-    setBusyId(expense.id);
-    try {
-      await markReimbursed(expense.id);
-      await loadEntries();
-      await onChanged?.();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Could not mark this reimbursed.");
-    } finally {
-      setBusyId(null);
-    }
+  /** Who to open in Payroll to pay this reimbursement back. */
+  function payrollLinkFor(expense: Expense): string {
+    const id = expense.paidById ?? expense.paidByAgentId;
+    if (!id) return "/payroll";
+    const key = expense.paidByType === "agent" ? `agent:${id}` : expense.paidByType === "subcontractor" ? `sub:${id}` : `team:${id}`;
+    return `/payroll?person=${encodeURIComponent(key)}`;
   }
 
   return (
@@ -215,7 +211,7 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
       <div className="mb-2 flex items-center justify-between gap-2">
         {!compact && (
           <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            <Receipt className="size-3.5 text-primary" /> Costs
+            <Receipt className="size-3.5 text-[#0B5F5E]" /> Costs
           </h3>
         )}
         {compact && <span />}
@@ -223,7 +219,7 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
           <button
             type="button"
             onClick={() => setDialogFor("new")}
-            className="inline-flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/90"
+            className={buttonClass("success", "h-7 px-2.5 text-xs")}
           >
             <Plus className="size-3" /> Record
           </button>
@@ -310,7 +306,7 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
                       href={receiptsByExpense[expense.id][0].receiptFileUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="mt-1 inline-flex items-center gap-1 rounded-md text-[11px] font-medium text-primary hover:underline"
+                      className="mt-1 inline-flex items-center gap-1 rounded-md text-[11px] font-medium text-[#0B5F5E] hover:underline"
                     >
                       <ImageIcon className="size-3" /> View receipt
                     </a>
@@ -320,16 +316,14 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
                 {canEdit && expense && (
                   <div className="flex shrink-0 gap-0.5">
                     {expense.reimbursable && expense.reimbursementStatus === "pending" && (
-                      <button
-                        type="button"
-                        onClick={() => handleReimburse(expense)}
-                        disabled={busyId === expense.id}
-                        aria-label="Mark reimbursed"
-                        title="Mark reimbursed"
-                        className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+                      // People are paid back in Payroll only, so the payment gets a date and check #.
+                      <Link
+                        href={payrollLinkFor(expense)}
+                        title="Pay back in Payroll"
+                        className="rounded-md px-1.5 py-1 text-[11px] font-medium text-primary hover:bg-muted"
                       >
-                        <RotateCcw className="size-3.5" />
-                      </button>
+                        Pay in Payroll →
+                      </Link>
                     )}
                     <button type="button" onClick={() => setDialogFor(expense)}
                       disabled={busyId === expense.id}
@@ -352,7 +346,7 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
   title={expense.dueDate ? "Bill attached — edit" : "Attach vendor invoice"}
   className={`rounded-md p-1 disabled:opacity-50 ${
     expense.dueDate
-      ? "text-primary hover:bg-primary/10"
+      ? "text-[#0B5F5E] hover:bg-[#E7F3F2]"
       : "text-muted-foreground hover:bg-muted hover:text-foreground"
   }`}
 >
@@ -361,8 +355,8 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
                     <button type="button" onClick={() => requestDelete(expense, meta.label)}
                       disabled={busyId === expense.id}
                       aria-label={`Delete ${meta.label} cost`} title={`Delete ${meta.label} cost`}
-                      className="rounded-md p-1 text-muted-foreground hover:bg-danger/10 hover:text-danger disabled:opacity-50">
-                      <Trash2 className="size-3.5" />
+                      className="rounded-md p-1 text-gray-600 hover:bg-danger/10 hover:text-danger disabled:opacity-50">
+                      <Trash2 className="size-4" />
                     </button>
                   </div>
                 )}
@@ -417,7 +411,7 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
                 type="button"
                 onClick={() => setDeleteTarget(null)}
                 disabled={busyId !== null}
-                className="rounded-lg border border-input px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                className={buttonClass("secondary", "h-8")}
               >
                 Cancel
               </button>
@@ -425,7 +419,7 @@ export const ProjectExpensesPanel = forwardRef<ProjectExpensesPanelRef, {
                 type="button"
                 onClick={handleDelete}
                 disabled={busyId !== null}
-                className="rounded-lg bg-danger px-3 py-1.5 text-xs font-semibold text-danger-foreground hover:bg-danger/90 disabled:opacity-50"
+                className={buttonClass("danger", "h-8")}
               >
                 {busyId !== null ? "Deleting…" : "Delete"}
               </button>

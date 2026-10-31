@@ -31,6 +31,7 @@ import type {
   Subcontractor,
   SubcontractorAssignment,
   SubcontractorPayment,
+  SubcontractorProfile,
   SubcontractorService,
 } from "../subcontractorService";
 import type { UUID, QueryScope } from "../types";
@@ -45,6 +46,16 @@ interface SubcontractorRow {
   phone: string | null;
   contact_person: string | null;
   is_active: boolean;
+  company_name?: string | null;
+  email?: string | null;
+  address?: string | null;
+  notes?: string | null;
+  entity_type?: string | null;
+  tax_id_last4?: string | null;
+  license_number?: string | null;
+  license_state?: string | null;
+  payment_method?: string | null;
+  pay_to_name?: string | null;
   created_by: string | null;
   created_at: string;
   updated_by: string | null;
@@ -99,6 +110,16 @@ function rowToSubcontractor(row: SubcontractorRow): Subcontractor {
     phone: row.phone,
     contactPerson: row.contact_person,
     isActive: row.is_active,
+    companyName: row.company_name ?? null,
+    email: row.email ?? null,
+    address: row.address ?? null,
+    notes: row.notes ?? null,
+    entityType: (row.entity_type ?? null) as Subcontractor["entityType"],
+    taxIdLast4: row.tax_id_last4 ?? null,
+    licenseNumber: row.license_number ?? null,
+    licenseState: row.license_state ?? null,
+    paymentMethod: row.payment_method ?? null,
+    payToName: row.pay_to_name ?? null,
     createdBy: row.created_by as UUID | null,
     createdAt: row.created_at,
     updatedBy: row.updated_by as UUID | null,
@@ -107,6 +128,33 @@ function rowToSubcontractor(row: SubcontractorRow): Subcontractor {
     deletedAt: row.deleted_at,
     deleteReason: row.delete_reason,
   };
+}
+
+/** Profile field -> column. Only the keys present in `changes` are written. */
+const PROFILE_COLUMN: Record<keyof SubcontractorProfile, string> = {
+  name: "name",
+  trade: "trade",
+  phone: "phone",
+  contactPerson: "contact_person",
+  isActive: "is_active",
+  companyName: "company_name",
+  email: "email",
+  address: "address",
+  notes: "notes",
+  entityType: "entity_type",
+  taxIdLast4: "tax_id_last4",
+  licenseNumber: "license_number",
+  licenseState: "license_state",
+  paymentMethod: "payment_method",
+  payToName: "pay_to_name",
+};
+
+function profileColumns(changes: Partial<SubcontractorProfile>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, column] of Object.entries(PROFILE_COLUMN) as Array<[keyof SubcontractorProfile, string]>) {
+    if (changes[key] !== undefined) out[column] = changes[key];
+  }
+  return out;
 }
 
 function rowToAssignment(row: AssignmentRow): SubcontractorAssignment {
@@ -167,39 +215,21 @@ export function createSupabaseSubcontractorService(
     return (data as SubcontractorRow[]).map(rowToSubcontractor);
   }
 
-  async function createSubcontractor(input: {
-    companyId: UUID; name: string; trade?: string | null; phone?: string | null; contactPerson?: string | null; isActive?: boolean;
-  }): Promise<Subcontractor> {
+  async function createSubcontractor(
+    input: { companyId: UUID; name: string } & Partial<Omit<SubcontractorProfile, "name">>
+  ): Promise<Subcontractor> {
     const actorId = await currentUserId();
     const { data, error } = await supabase
       .from("subcontractors")
-      .insert({
-        company_id: input.companyId,
-        name: input.name,
-        trade: input.trade ?? null,
-        phone: input.phone ?? null,
-        contact_person: input.contactPerson ?? null,
-        is_active: input.isActive ?? true,
-        created_by: actorId,
-      })
+      .insert({ company_id: input.companyId, is_active: true, ...profileColumns(input), created_by: actorId })
       .select()
       .single();
     if (error) throw new Error(`Failed to create subcontractor: ${error.message}`);
     return rowToSubcontractor(data as SubcontractorRow);
   }
 
-  async function updateSubcontractor(
-    subcontractorId: UUID,
-    changes: Partial<{ name: string; trade: string | null; phone: string | null; contactPerson: string | null; isActive: boolean }>
-  ): Promise<Subcontractor> {
-    const payload: Record<string, unknown> = {};
-    if (changes.name !== undefined) payload.name = changes.name;
-    if (changes.trade !== undefined) payload.trade = changes.trade;
-    if (changes.phone !== undefined) payload.phone = changes.phone;
-    if (changes.contactPerson !== undefined) payload.contact_person = changes.contactPerson;
-    if (changes.isActive !== undefined) payload.is_active = changes.isActive;
-    payload.updated_by = await currentUserId();
-
+  async function updateSubcontractor(subcontractorId: UUID, changes: Partial<SubcontractorProfile>): Promise<Subcontractor> {
+    const payload: Record<string, unknown> = { ...profileColumns(changes), updated_by: await currentUserId() };
     const { data, error } = await supabase.from("subcontractors").update(payload).eq("id", subcontractorId).select().single();
     if (error) throw new Error(`Failed to update subcontractor: ${error.message}`);
     return rowToSubcontractor(data as SubcontractorRow);

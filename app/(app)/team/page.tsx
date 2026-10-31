@@ -55,6 +55,8 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { StatCard, StatCardSkeleton } from "@/components/dashboard/StatCard";
 import { RequirePermission } from "@/components/layout/RequirePermission";
+import { useConfirmDialog } from "@/components/ui/useConfirmDialog";
+import { useToast } from "@/components/ui/useToast";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { supabase } from "@/lib/supabase/client";
@@ -210,7 +212,7 @@ function TeamContent() {
         if (!res.ok || !json.ok) throw new Error(json.error || "Failed to update role.");
         setRows((prev) => prev.map((r) => (r.id === userId ? { ...r, role } : r)));
       } catch (err) {
-        alert(err instanceof Error ? err.message : "Failed to update role.");
+        notify(err instanceof Error ? err.message : "Failed to update role.");
       } finally {
         setUpdatingId(null);
       }
@@ -218,9 +220,20 @@ function TeamContent() {
     []
   );
 
+  const { ask, dialog } = useConfirmDialog();
+  const { notify, toast } = useToast();
+
   const handleToggleDisabled = useCallback(
     async (userId: string, disable: boolean) => {
-      if (disable && !confirm("Disable this user? They'll lose access immediately — this doesn't delete their account or history.")) return;
+      if (disable) {
+        const confirmed = await ask({
+          title: "Disable this user?",
+          message: "They'll lose access immediately. This doesn't delete their account or history.",
+          confirmLabel: "Disable",
+          destructive: true,
+        });
+        if (confirmed === null) return;
+      }
       setUpdatingId(userId);
       try {
         const res = await fetch(`/api/team/${userId}`, {
@@ -232,12 +245,12 @@ function TeamContent() {
         if (!res.ok || !json.ok) throw new Error(json.error || "Failed to update this user.");
         setRows((prev) => prev.map((r) => (r.id === userId ? { ...r, disabledAt: disable ? new Date().toISOString() : null } : r)));
       } catch (err) {
-        alert(err instanceof Error ? err.message : "Failed to update this user.");
+        setError(err instanceof Error ? err.message : "Failed to update this user.");
       } finally {
         setUpdatingId(null);
       }
     },
-    []
+    [ask]
   );
 
   return (
@@ -442,6 +455,8 @@ function TeamContent() {
           </div>
         </div>
       )}
+      {dialog}
+      {toast}
     </PageContainer>
   );
 }

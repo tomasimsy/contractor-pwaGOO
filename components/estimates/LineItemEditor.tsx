@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useConfirmDialog } from "@/components/ui/useConfirmDialog";
 import { Plus, Trash2, ChevronDown, FolderPlus, Pencil } from "lucide-react";
 import type { EstimateLineItem } from "@/lib/services/estimateService";
 import { calculateLineItemTotal, calculateSubtotal } from "@/lib/services/financialCalculations";
@@ -8,6 +9,9 @@ import { calculateLineItemTotal, calculateSubtotal } from "@/lib/services/financ
 export type DraftLineItem = Omit<EstimateLineItem, "id" | "total">;
 
 const CATEGORIES: DraftLineItem["category"][] = ["material", "labor", "other"];
+/** Categories offered for new and edited lines. "other" is kept only for legacy lines that already use it. */
+const CHOICE_CATEGORIES: DraftLineItem["category"][] = ["material", "labor"];
+const categoryChoices = (current: DraftLineItem["category"]) => (current === "other" ? CATEGORIES : CHOICE_CATEGORIES);
 const UNITS: NonNullable<DraftLineItem["unit"]>[] = ["EA", "SF", "SQFT", "SQ", "LF", "FT", "HR", "DAY", "LS"];
 
 const formatMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -37,7 +41,7 @@ function blankItem(groupName: string | null = null): DraftLineItem {
  * grouping is purely how this component chooses to render and edit
  * that array, not a different data structure.
  */
-export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; onChange: (items: DraftLineItem[]) => void }) {
+export function LineItemEditor({ items, onChange, cards = false }: { items: DraftLineItem[]; onChange: (items: DraftLineItem[]) => void; /** Always the card layout, for narrow columns. */ cards?: boolean }) {
   const [collapsed, setCollapsed] = useState<Record<number, boolean>>({});
 
   function updateItem(index: number, changes: Partial<DraftLineItem>) {
@@ -67,12 +71,20 @@ export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; on
     onChange([...items, blankItem(groupName)]);
   }
 
+  const { ask, dialog } = useConfirmDialog();
+
   function renameGroup(oldName: string, newName: string) {
     onChange(items.map((item) => (item.groupName === oldName ? { ...item, groupName: newName } : item)));
   }
 
-  function removeGroup(groupName: string, count: number) {
-    if (!window.confirm(`Remove project "${groupName}" and its ${count} item${count === 1 ? "" : "s"}?`)) return;
+  async function removeGroup(groupName: string, count: number) {
+    const confirmed = await ask({
+      title: `Remove project "${groupName}"?`,
+      message: `This removes its ${count} item${count === 1 ? "" : "s"}.`,
+      confirmLabel: "Remove",
+      destructive: true,
+    });
+    if (confirmed === null) return;
     onChange(items.filter((item) => item.groupName !== groupName));
   }
 
@@ -103,7 +115,7 @@ export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; on
         </div>
       )}
 
-      {ungrouped.length > 0 && <ItemRows entries={ungrouped} onUpdate={updateItem} onRemove={removeItem} />}
+      {ungrouped.length > 0 && <ItemRows entries={ungrouped} onUpdate={updateItem} onRemove={removeItem} cards={cards} />}
 
       {groups.map((group, groupIndex) => {
         const groupTotal = calculateSubtotal(group.entries.map((e) => ({ total: calculateLineItemTotal(e.item) })));
@@ -153,7 +165,7 @@ export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; on
 
             {!isCollapsed && (
               <div className="space-y-2 border-t border-border/60 px-2 pb-2 pt-2">
-                {group.entries.length > 0 && <ItemRows entries={group.entries} onUpdate={updateItem} onRemove={removeItem} />}
+                {group.entries.length > 0 && <ItemRows entries={group.entries} onUpdate={updateItem} onRemove={removeItem} cards={cards} />}
                 <button
                   type="button"
                   onClick={() => addItemToGroup(group.name)}
@@ -182,6 +194,7 @@ export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; on
           <span className="font-semibold text-foreground text-sm">{formatMoney(subtotal)}</span>
         </div>
       </div>
+      {dialog}
     </div>
   );
 }
@@ -192,7 +205,7 @@ export function LineItemEditor({ items, onChange }: { items: DraftLineItem[]; on
  * ORIGINAL index into the full flat array, so update/remove always
  * operate on the same single source of truth regardless of which
  * group (or no group) an item is currently rendered under. */
-function ItemRows({ entries, onUpdate, onRemove }: { entries: Entry[]; onUpdate: (index: number, changes: Partial<DraftLineItem>) => void; onRemove: (index: number) => void }) {
+function ItemRows({ entries, onUpdate, onRemove, cards = false }: { entries: Entry[]; onUpdate: (index: number, changes: Partial<DraftLineItem>) => void; onRemove: (index: number) => void; cards?: boolean }) {
   return (
     <>
       {/* ---------- MOBILE: one card per line item ----------
@@ -201,100 +214,85 @@ function ItemRows({ entries, onUpdate, onRemove }: { entries: Entry[]; onUpdate:
           phone and force sideways scrolling. Below `sm` the same fields
           stack full-width; from `sm` up the table renders unchanged.
           Same state, same handlers — only the arrangement differs. */}
-      <div className="space-y-2 sm:hidden">
+      <div className={cards ? "space-y-2" : "space-y-2 sm:hidden"}>
+        {cards && (
+          <div className="hidden text-[10px] font-semibold uppercase tracking-wide text-muted-foreground sm:grid sm:grid-cols-[110px_minmax(0,2fr)_64px_84px_96px_96px_32px] sm:gap-2 sm:px-2">
+            <span>Category</span>
+            <span>Description</span>
+            <span>Qty</span>
+            <span>Unit</span>
+            <span>Unit price</span>
+            <span className="text-right">Total</span>
+            <span />
+          </div>
+        )}
         {entries.map(({ item, index }) => (
-          <div key={index} className="space-y-2 rounded-lg border border-border/80 bg-background p-2.5 shadow-2xs">
-            <div className="flex items-start gap-2">
-              <input
-                value={item.name}
-                onChange={(e) => onUpdate(index, { name: e.target.value })}
-                placeholder="Item name"
-                className="w-full min-w-0 rounded-md border border-input bg-background px-2.5 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
-              />
-              <button
-                type="button"
-                onClick={() => onRemove(index)}
-                aria-label="Remove line item"
-                className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger"
-              >
-                <Trash2 className="size-4" />
-              </button>
-            </div>
-
+          <div key={index} className="grid grid-cols-6 items-end gap-2 sm:grid-cols-[110px_minmax(0,2fr)_64px_84px_96px_96px_32px] rounded-lg border border-border/80 bg-background p-2 shadow-2xs">
+            <select
+              value={item.category}
+              onChange={(e) => onUpdate(index, { category: e.target.value as DraftLineItem["category"] })}
+              aria-label="Category"
+              className="col-span-2 w-full min-w-0 rounded-md border border-input bg-background px-2 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 capitalize sm:col-span-1"
+            >
+              {categoryChoices(item.category).map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
             <input
-              value={item.description ?? ""}
-              onChange={(e) => onUpdate(index, { description: e.target.value || null })}
-              placeholder="Description (optional — shown on the PDF)"
-              className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
+              value={item.name}
+              onChange={(e) => onUpdate(index, { name: e.target.value })}
+              placeholder="Description"
+              aria-label="Description"
+              className="col-span-3 w-full min-w-0 rounded-md border border-input bg-background px-2 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 sm:col-span-1"
             />
-
-            <div className="grid grid-cols-3 gap-2">
-              <label className="block">
-                <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Category</span>
-                <select
-                  value={item.category}
-                  onChange={(e) => onUpdate(index, { category: e.target.value as DraftLineItem["category"] })}
-                  className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs font-medium capitalize outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
-                >
-                  {CATEGORIES.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Qty</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={item.quantity}
-                  onChange={(e) => onUpdate(index, { quantity: parseFloat(e.target.value) || 0 })}
-                  className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
-                />
-              </label>
-              <label className="block">
-                <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Unit</span>
-                <select
-                  value={item.unit ?? ""}
-                  onChange={(e) => onUpdate(index, { unit: (e.target.value || null) as DraftLineItem["unit"] })}
-                  className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
-                >
-                  <option value="">—</option>
-                  {UNITS.map((u) => (
-                    <option key={u} value={u}>{u}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <div className="grid grid-cols-2 items-end gap-2">
-              <label className="block">
-                <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Unit Price</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={item.unitPrice}
-                  onChange={(e) => onUpdate(index, { unitPrice: parseFloat(e.target.value) || 0 })}
-                  className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
-                />
-              </label>
-              <div className="text-right">
-                <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Total</span>
-                <span className="block py-1.5 text-xs font-semibold text-foreground">{formatMoney(calculateLineItemTotal(item))}</span>
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={() => onRemove(index)}
+              aria-label="Remove line item"
+              className="col-span-1 flex items-center justify-center rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger sm:order-last"
+            >
+              <Trash2 className="size-4" />
+            </button>
+            <input
+              type="number"
+              min="0"
+              step="any"
+              value={item.quantity}
+              onChange={(e) => onUpdate(index, { quantity: parseFloat(e.target.value) || 0 })}
+              aria-label="Qty"
+              className="col-span-1 w-full min-w-0 rounded-md border border-input bg-background px-2 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
+            />
+            <select
+              value={item.unit ?? ""}
+              onChange={(e) => onUpdate(index, { unit: (e.target.value || null) as DraftLineItem["unit"] })}
+              aria-label="Unit"
+              className="col-span-1 w-full min-w-0 rounded-md border border-input bg-background px-2 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
+            >
+              <option value="">—</option>
+              {UNITS.map((u) => (
+                <option key={u} value={u}>{u}</option>
+              ))}
+            </select>
+            <input
+              type="number"
+              min="0"
+              step="any"
+              value={item.unitPrice}
+              onChange={(e) => onUpdate(index, { unitPrice: parseFloat(e.target.value) || 0 })}
+              aria-label="Unit price"
+              className="col-span-1 w-full min-w-0 rounded-md border border-input bg-background px-2 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
+            />
+            <span className="col-span-1 py-1.5 text-right text-xs font-semibold text-foreground">{formatMoney(calculateLineItemTotal(item))}</span>
           </div>
         ))}
       </div>
 
-      {/* Table Container with clear separation */}
-      <div className="hidden overflow-x-auto rounded-lg border border-border/80 bg-background shadow-2xs sm:block">
+      <div className={cards ? "hidden" : "hidden overflow-x-auto rounded-lg border border-border/80 bg-background shadow-2xs sm:block"}>
         <table className="w-full text-sm">
           <thead className="bg-muted/60 border-b border-border/80">
             <tr>
               <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Category</th>
-              <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Name</th>
+              <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Description</th>
               <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Description</th>
               <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Qty</th>
               <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Unit</th>
@@ -312,7 +310,7 @@ function ItemRows({ entries, onUpdate, onRemove }: { entries: Entry[]; onUpdate:
                     onChange={(e) => onUpdate(index, { category: e.target.value as DraftLineItem["category"] })}
                     className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs font-medium capitalize outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
                   >
-                    {CATEGORIES.map((c) => (
+                    {categoryChoices(item.category).map((c) => (
                       <option key={c} value={c}>{c}</option>
                     ))}
                   </select>
@@ -321,7 +319,7 @@ function ItemRows({ entries, onUpdate, onRemove }: { entries: Entry[]; onUpdate:
                   <input
                     value={item.name}
                     onChange={(e) => onUpdate(index, { name: e.target.value })}
-                    placeholder="Item name"
+                    placeholder="Description"
                     className="w-full min-w-[140px] rounded-md border border-input bg-background px-2.5 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
                   />
                 </td>

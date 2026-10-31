@@ -12,13 +12,45 @@
  */
 import type { UUID, AuditedEntity, QueryScope } from "./types";
 
+export const SUB_ENTITY_TYPES = ["sole_prop", "llc", "s_corp", "c_corp", "partnership", "other"] as const;
+export type SubEntityType = (typeof SUB_ENTITY_TYPES)[number];
+export const SUB_ENTITY_TYPE_LABEL: Record<SubEntityType, string> = {
+  sole_prop: "Sole proprietor",
+  llc: "LLC",
+  s_corp: "S-corp",
+  c_corp: "C-corp",
+  partnership: "Partnership",
+  other: "Other",
+};
+
 export interface Subcontractor extends AuditedEntity {
   name: string;
   trade: string | null;
   phone: string | null;
   contactPerson: string | null;
   isActive: boolean;
+  // Profile fields — optional so older fixtures that build a roster row
+  // by hand stay valid; the services always fill them (null when blank).
+  /** Legal business name (the existing `company_name` column). */
+  companyName?: string | null;
+  email?: string | null;
+  address?: string | null;
+  notes?: string | null;
+  entityType?: SubEntityType | null;
+  /** Last four of the EIN/SSN only — the full number stays on the W-9 file. */
+  taxIdLast4?: string | null;
+  licenseNumber?: string | null;
+  licenseState?: string | null;
+  paymentMethod?: string | null;
+  payToName?: string | null;
 }
+
+/** Everything about a sub that can be edited from the roster. */
+export type SubcontractorProfile = Pick<
+  Subcontractor,
+  | "name" | "trade" | "phone" | "contactPerson" | "isActive" | "companyName" | "email" | "address" | "notes"
+  | "entityType" | "taxIdLast4" | "licenseNumber" | "licenseState" | "paymentMethod" | "payToName"
+>;
 
 export interface SubcontractorAssignment extends AuditedEntity {
   projectId: UUID;
@@ -51,19 +83,9 @@ export interface SubcontractorService {
   /** Adds a subcontractor to the company's roster. Not an assignment —
    * see assignToProject for putting a roster subcontractor onto a
    * project. */
-  createSubcontractor(input: {
-    companyId: UUID;
-    name: string;
-    trade?: string | null;
-    phone?: string | null;
-    contactPerson?: string | null;
-    isActive?: boolean;
-  }): Promise<Subcontractor>;
+  createSubcontractor(input: { companyId: UUID; name: string } & Partial<Omit<SubcontractorProfile, "name">>): Promise<Subcontractor>;
 
-  updateSubcontractor(
-    subcontractorId: UUID,
-    changes: Partial<{ name: string; trade: string | null; phone: string | null; contactPerson: string | null; isActive: boolean }>
-  ): Promise<Subcontractor>;
+  updateSubcontractor(subcontractorId: UUID, changes: Partial<SubcontractorProfile>): Promise<Subcontractor>;
 
   /** Removing a subcontractor from the roster — distinct from
    * softDelete/restore below, which operate on PAYMENT rows. Does not

@@ -117,15 +117,15 @@ export async function POST(request: NextRequest) {
     // already gone out. sendPushToCompany never throws either way.
     if (result.estimate) {
       const estimate = result.estimate;
-      // signEstimate returns ok:true WITH a message only when the
-      // signature was saved but the auto-invoice failed. That was being
-      // dropped here, so a signed estimate could silently have no invoice.
+      // signEstimate returns ok:true WITH a message when the signature was
+      // saved but a follow-up step (approval or the auto-invoice) failed.
+      // Staff must be told, so the message is passed on rather than dropped.
       const invoiceProblem = result.message;
-      if (invoiceProblem) console.error(`Estimate ${estimate.id} signed but invoice not created:`, invoiceProblem);
+      if (invoiceProblem) console.error(`Estimate ${estimate.id} signed with a follow-up problem:`, invoiceProblem);
       after(() =>
         sendPushToCompany(services.pushSubscriptionService, estimate.companyId, {
           title: "Estimate signed",
-          body: `${estimate.title || "An estimate"} (#${estimate.estimateNumber ?? estimate.id.slice(0, 8)}) was just signed by the customer.${invoiceProblem ? " The invoice was NOT created automatically — open it to fix." : ""}`,
+          body: `${estimate.title || "An estimate"} (#${estimate.estimateNumber ?? estimate.id.slice(0, 8)}) was just signed by the customer.${invoiceProblem ? " A follow-up step did not finish automatically — open the estimate to check." : ""}`,
           url: `/estimates/${estimate.id}`,
         })
       );

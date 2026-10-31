@@ -259,6 +259,24 @@ export default async function CustomerPortalPage({
   const sectionTitle = "text-[11px] font-bold uppercase tracking-wider text-[#1f2429] border-b border-[#e2e5e8] pb-1.5 mb-2.5";
   const rowLabel = "text-[10px] font-bold uppercase tracking-wider text-gray-500";
 
+  // One line item, laid out like the estimate page's table: item (with
+  // its category and description), qty, unit, price, total.
+  const lineRow = (item: { id: string; name?: string; category?: string | null; description?: string; quantity?: number; unit?: string | null; unit_price?: number; total?: number }) => (
+    <tr key={item.id} className="align-top">
+      <td className="px-2 py-1.5">
+        <div className="flex flex-wrap items-center gap-1.5 font-semibold text-[#1f2429]">
+          {item.name}
+          {item.category && <span className="rounded-full bg-[#EEF0EC] px-1.5 py-px text-[10px] font-medium capitalize text-[#5B6675]">{item.category}</span>}
+        </div>
+        {item.description && <div className="text-[10.5px] text-[#5B6675]">{item.description}</div>}
+      </td>
+      <td className="px-2 py-1.5 text-center text-[#1f2429]">{item.quantity ?? 0}</td>
+      <td className="px-2 py-1.5 text-center text-[#1f2429]">{item.unit ?? "—"}</td>
+      <td className="px-2 py-1.5 text-right text-[#1f2429]">{money(item.unit_price ?? 0)}</td>
+      <td className="px-2 py-1.5 text-right font-semibold text-[#1f2429]">{money(item.total ?? 0)}</td>
+    </tr>
+  );
+
   return (
     // #eef0f2 page backdrop + a single bordered white "document" —
     // the exact two-tone the PDF route itself renders in a browser
@@ -268,11 +286,12 @@ export default async function CustomerPortalPage({
     <div className="min-h-screen bg-[#eef0f2] pb-16">
       {!isSigned && (
         <div className="bg-amber-500 px-4 py-3 text-center text-xs font-bold uppercase tracking-wider text-amber-950">
-          Review required — signature needed below
+          Your approval is needed
         </div>
       )}
 
-      <main className="mx-auto max-w-xl px-3 py-6 sm:max-w-2xl sm:px-6 sm:py-8 lg:max-w-4xl">
+      <main className="mx-auto max-w-xl px-3 py-6 sm:max-w-2xl sm:px-6 sm:py-8 lg:max-w-6xl">
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start lg:gap-6">
         <div className="border border-[#e2e5e8] bg-white p-5 shadow-sm sm:p-8 lg:p-12">
 
           {/* HEADER — company on the left, doc title + estimate # on
@@ -313,6 +332,8 @@ export default async function CustomerPortalPage({
             </Link>
           </div>
 
+          {/* THE CONTRACT: customer, scope, items and price, inside one thin border */}
+          <div className="mb-6 rounded-lg border border-[#cfd6cc] p-4 sm:p-5">
           {/* PREPARED FOR / PROJECT SCOPE — the PDF's own two-column
               info-grid: fixed-width label, value beside it. */}
           <div className="flex flex-col gap-6 text-[11.5px] text-gray-700 sm:flex-row mb-6">
@@ -499,75 +520,64 @@ export default async function CustomerPortalPage({
               not on the cover page — plain rows with a hairline bottom
               border, same as a PDF table row (td { border-bottom: 1px
               solid #eef0f2 }), no colored pills/accent rails. */}
-          {/* {scopeItemCount > 0 && (
-            <div className="mb-6">
-              <p className={sectionTitle}>Scope Items</p>
-              <div className="text-[11.5px] text-gray-700">
-                {hasAreas && portalAreas.map((area) => (
-                  <div key={area.id} className="flex justify-between items-start gap-2 py-1.5 border-b border-[#eef0f2]">
-                    <span className="break-words font-bold text-[#1f2429]">{area.area_name || `Area ${area.sequence_number + 1}`}</span>
-                    <span className="font-semibold shrink-0 text-[#1f2429]">{money(area.estimated_repair_cost ?? 0)}</span>
-                  </div>
-                ))}
-                {!hasAreas && !lineItemsAreAuthoritative && (
-                  <div className="flex justify-between items-center py-1.5 border-b border-[#eef0f2]">
-                    <span>Quoted work as specified</span>
-                    <span className="font-medium">{money(storedSubtotal)}</span>
-                  </div>
+          {/* LINE ITEMS — the estimate page's columns (item, qty, unit, price, total), then any approved change orders. Roofing estimates show their areas above instead. */}
+          {!hasAreas && scopeItemCount > 0 && (
+            <div className="mb-6 overflow-x-auto">
+              <p className={sectionTitle}>Line Items</p>
+              <table className="w-full text-[11.5px] text-[#1f2429]">
+                <thead className="bg-[#F8F9F7] border-b border-[#E2E5E0]">
+                  <tr className="text-[10px] font-bold uppercase tracking-wider text-gray-600">
+                    <th className="px-2 py-1.5 text-left">Item</th>
+                    <th className="px-2 py-1.5 text-center">Qty</th>
+                    <th className="px-2 py-1.5 text-center">Unit</th>
+                    <th className="px-2 py-1.5 text-right">Price</th>
+                    <th className="px-2 py-1.5 text-right">Total</th>
+                  </tr>
+                </thead>
+                {!lineItemsAreAuthoritative && (
+                  <tbody className="divide-y divide-[#E2E5E0]">
+                    <tr>
+                      <td colSpan={4} className="px-2 py-1.5">Quoted work as specified</td>
+                      <td className="px-2 py-1.5 text-right font-medium">{money(storedSubtotal)}</td>
+                    </tr>
+                  </tbody>
                 )}
                 {lineItemsAreAuthoritative && hasProjectGroups && projectGroups.map((group) => (
-                  <div key={group.name} className="py-1.5 border-b border-[#eef0f2]">
-                    <p className="font-bold text-[#1f2429] text-[11px] uppercase tracking-wide mb-1">{group.name}</p>
-                    {group.items.map((item) => (
-                      <div key={item.id} className="flex justify-between items-start gap-2 py-0.5 pl-2 text-gray-600">
-                        <span className="break-words">
-                          {item.name} {(item.quantity ?? 0) > 1 && <span className="text-gray-400">× {item.quantity}</span>}
-                        </span>
-                        <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
-                      </div>
+                  <tbody key={group.name} className="divide-y divide-[#E2E5E0] border-t border-[#E2E5E0]">
+                    <tr className="bg-[#F8F9F7]">
+                      <td colSpan={4} className="px-2 py-1.5 text-[11px] font-bold">{group.name}</td>
+                      <td className="px-2 py-1.5 text-right text-[11px] font-semibold">{money(group.subtotal)}</td>
+                    </tr>
+                    {group.items.map(lineRow)}
+                  </tbody>
+                ))}
+                {lineItemsAreAuthoritative && (
+                  <tbody className="divide-y divide-[#E2E5E0]">
+                    {(hasProjectGroups ? ungroupedItems : lineItems).map(lineRow)}
+                  </tbody>
+                )}
+                {approvedChangeOrderItems.length > 0 && (
+                  <tbody className="divide-y divide-[#E2E5E0] border-t border-[#E2E5E0]">
+                    {approvedChangeOrderItems.map((item) => (
+                      <tr key={item.id} className="align-top">
+                        <td className="px-2 py-1.5">
+                          <div className="flex flex-wrap items-center gap-1.5 font-semibold text-[#1f2429]">
+                            {item.name}
+                            <span className="rounded-full bg-amber-100 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-amber-800">Change order</span>
+                          </div>
+                          {item.description && <div className="text-[10.5px] text-[#5B6675]">{item.description}</div>}
+                        </td>
+                        <td className="px-2 py-1.5 text-center text-[#1f2429]">1</td>
+                        <td className="px-2 py-1.5 text-center text-[#1f2429]">—</td>
+                        <td className="px-2 py-1.5 text-right text-[#1f2429]">{money(item.total)}</td>
+                        <td className="px-2 py-1.5 text-right font-semibold text-[#1f2429]">{money(item.total)}</td>
+                      </tr>
                     ))}
-                    <div className="flex justify-between items-center pt-1 pl-2 text-[#1f2429] font-semibold">
-                      <span>Project Total</span>
-                      <span>{money(group.subtotal)}</span>
-                    </div>
-                  </div>
-                ))}
-                {lineItemsAreAuthoritative && hasProjectGroups && ungroupedItems.map((item) => (
-                  <div key={item.id} className="flex justify-between items-start gap-2 py-1.5 border-b border-[#eef0f2]">
-                    <span className="break-words">
-                      {item.name} {(item.quantity ?? 0) > 1 && <span className="text-gray-400">× {item.quantity}</span>}
-                    </span>
-                    <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
-                  </div>
-                ))}
-                {flatScopeItems.map((item) => (
-                  <div key={item.id} className="flex justify-between items-start gap-2 py-1.5 border-b border-[#eef0f2]">
-                    <span className="break-words">
-                      {item.name} {(item.quantity ?? 0) > 1 && <span className="text-gray-400">× {item.quantity}</span>}
-                    </span>
-                    <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
-                  </div>
-                ))}
-                {lineItemsAreAuthoritative && !hasProjectGroups && scopeGroups.flatMap(g => g.items).map((item) => (
-                  <div key={item.id} className="flex justify-between items-start gap-2 py-1.5 border-b border-[#eef0f2]">
-                    <span className="break-words">
-                      {item.name} {(item.quantity ?? 0) > 1 && <span className="text-gray-400">× {item.quantity}</span>}
-                    </span>
-                    <span className="font-medium shrink-0">{money(item.total ?? 0)}</span>
-                  </div>
-                ))}
-                
-                {approvedChangeOrderItems.map((item) => (
-                  <div key={item.id} className="flex justify-between items-start gap-2 py-1.5 border-b border-[#eef0f2]">
-                    <span className="break-words text-gray-700">
-                      {item.name} <span className="text-amber-700 font-semibold text-[10px] uppercase tracking-wide">Change Order</span>
-                    </span>
-                    <span className="font-semibold shrink-0 text-[#1f2429]">{money(item.total)}</span>
-                  </div>
-                ))}
-              </div>
+                  </tbody>
+                )}
+              </table>
             </div>
-          )} }
+          )}
 
           {/* FINANCIAL SUMMARY — matches the PDF's .summary-box: light
               gray box, muted rows, a ruled total, and (when there's a
@@ -609,13 +619,15 @@ export default async function CustomerPortalPage({
 
               return (
                 <div className={`flex justify-between items-center mt-3 -mx-5 -mb-4 px-5 py-3 text-[13px] font-bold ${
-                  isPaidInFull ? "bg-emerald-700 text-white" : "bg-[#1f2429] text-white"
+                  isPaidInFull ? "bg-emerald-700 text-white" : "bg-[#16794f] text-white"
                 }`}>
                   <span>Balance Due</span>
                   <span>{money(totalBalance)}</span>
                 </div>
               );
             })()}
+          </div>
+
           </div>
 
           {/* PHOTOS — same photos the PDF already shows */}
@@ -781,6 +793,10 @@ export default async function CustomerPortalPage({
             );
           })()}
 
+        </div>
+
+        {/* SIGNATURE / APPROVAL — a sticky panel beside the document on desktop, below it on phones. */}
+        <aside className="mt-6 lg:sticky lg:top-6 lg:mt-0">
           {/* SIGNATURE / APPROVAL — matches the PDF's .signature-box:
               a plain bordered box, centered content. Green border only
               once actually signed, same accent this page already used. */}
@@ -795,13 +811,14 @@ export default async function CustomerPortalPage({
             </div>
           </div>
 
-          {/* FOOTER — same shape as the PDF's .footer */}
+        </aside>
+      </div>
+
+      {/* FOOTER — same shape as the PDF's .footer */}
           <footer className="mt-10 pt-4 border-t border-[#e2e5e8] text-center text-[10px] text-gray-400 space-y-0.5">
             <p className="font-medium text-gray-600">{company.company_name} {company.company_phone ? `· ${company.company_phone}` : ""}</p>
             {company.footer_message && <p>{company.footer_message}</p>}
           </footer>
-
-        </div>
       </main>
     </div>
   );

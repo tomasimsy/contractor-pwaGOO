@@ -16,6 +16,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { RequirePermission } from "@/components/layout/RequirePermission";
+import { useConfirmDialog } from "@/components/ui/useConfirmDialog";
+import { useToast } from "@/components/ui/useToast";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { EMERGENCY_ROOF_AREA_TEMPLATE } from "@/lib/estimateQuickTemplates";
@@ -50,15 +52,19 @@ function RoofTemplatesContent() {
     load();
   }, [load]);
 
+  const { ask, dialog } = useConfirmDialog();
+  const { notify, toast } = useToast();
+
   const handleDelete = useCallback(
     async (template: RoofingAreaTemplate) => {
-      if (!confirm(`Delete the "${template.name}" template? This can't be undone.`)) return;
+      const confirmed = await ask({ title: `Delete the "${template.name}" template?`, message: "This can't be undone.", confirmLabel: "Delete", destructive: true });
+      if (confirmed === null) return;
       setDeletingIds((prev) => new Set([...prev, template.id]));
       try {
         await roofingAreaTemplateService.softDelete(template.id, "Deleted by user");
         setTemplates((prev) => prev.filter((t) => t.id !== template.id));
       } catch (err) {
-        alert(err instanceof Error ? err.message : "Failed to delete template.");
+        notify(err instanceof Error ? err.message : "Failed to delete template.");
       } finally {
         setDeletingIds((prev) => {
           const next = new Set(prev);
@@ -67,7 +73,7 @@ function RoofTemplatesContent() {
         });
       }
     },
-    [roofingAreaTemplateService]
+    [roofingAreaTemplateService, ask]
   );
 
   return (
@@ -157,6 +163,8 @@ function RoofTemplatesContent() {
           )}
         </div>
       )}
+      {dialog}
+      {toast}
     </PageContainer>
   );
 }

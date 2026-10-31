@@ -47,6 +47,7 @@ import type {
   MileageTrip,
   PaidByType,
   PayeeType,
+  ReimbursementPayment,
 } from "../expenseService";
 import { EXPENSE_TYPES } from "../expenseService";
 import type { UUID } from "../types";
@@ -79,6 +80,12 @@ interface ExpenseRow {
   receipt_url: string | null;
   due_date: string | null;
   bill_number: string | null;
+  paid_on?: string | null;
+  paid_reference?: string | null;
+  reimbursed_on?: string | null;
+  reimbursed_method?: string | null;
+  reimbursed_reference?: string | null;
+  reimbursed_check?: string | null;
   created_by: string | null;
   created_at: string;
   updated_by: string | null;
@@ -158,6 +165,12 @@ function rowToExpense(row: ExpenseRow): Expense {
     receiptUrl: row.receipt_url,
     dueDate: row.due_date,
     billNumber: row.bill_number,
+    paidOn: row.paid_on ?? null,
+    paidReference: row.paid_reference ?? null,
+    reimbursedOn: row.reimbursed_on ?? null,
+    reimbursedMethod: row.reimbursed_method ?? null,
+    reimbursedReference: row.reimbursed_reference ?? null,
+    reimbursedCheck: row.reimbursed_check ?? null,
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedBy: row.updated_by,
@@ -281,6 +294,8 @@ export function createSupabaseExpenseService(
     // without creating a second cost.
     set("dueDate", "due_date");
     set("billNumber", "bill_number");
+    set("paidOn", "paid_on");
+    set("paidReference", "paid_reference");
 
     if (input.paidByType !== undefined || input.paidById !== undefined) {
       const paidByType = input.paidByType ?? existing?.paidByType ?? "company";
@@ -398,19 +413,50 @@ export function createSupabaseExpenseService(
     if (error) throw new Error(`Failed to restore expense: ${error.message}`);
   }
 
-  async function markReimbursed(expenseId: UUID): Promise<Expense> {
+  async function markReimbursed(expenseId: UUID, payment?: ReimbursementPayment): Promise<Expense> {
     const existing = await getById(expenseId);
     if (!existing) throw new Error("Expense not found");
     if (!existing.reimbursable) throw new Error("This expense is not reimbursable.");
 
     const actorId = await currentUserId();
-    const { data, error } = await supabase
-      .from("estimate_expenses")
-      .update({ reimbursement_status: "reimbursed", updated_by: actorId, updated_at: new Date().toISOString() })
-      .eq("id", expenseId)
-      .select(SELECT)
-      .single();
+    // The payment details are written only when given (and only once the
+    // reimbursement migration has run); without them it is the old mark.
+    const paymentColumns = payment
+      ? {
+          reimbursed_on: payment.paidOn,
+          reimbursed_method: payment.method,
+          reimbursed_reference: payment.reference ?? null,
+          reimbursed_check: payment.checkId ?? null,
+        }
+      : {};
+    const write = (extra: Record<string, unknown>) =>
+      supabase
+        .from("estimate_expenses")
+        .update({ reimbursement_status: "reimbursed", ...extra, updated_by: actorId, updated_at: new Date().toISOString() })
+        .eq("id", expenseId)
+        .select(SELECT)
+        .single();
+    let { data, error } = await write(paymentColumns);
+    // Before migration 20261029090000 the payment columns don't exist yet:
+    // still mark it reimbursed (its date then comes from the update time).
+    if (error?.code === "42703") ({ data, error } = await write({}));
     if (error) throw new Error(`Failed to mark expense reimbursed: ${error.message}`);
+    return rowToExpense(data as ExpenseRow);
+  }
+
+  async function unmarkReimbursed(expenseId: UUID): Promise<Expense> {
+    const actorId = await currentUserId();
+    const write = (extra: Record<string, unknown>) =>
+      supabase
+        .from("estimate_expenses")
+        .update({ reimbursement_status: "pending", ...extra, updated_by: actorId, updated_at: new Date().toISOString() })
+        .eq("id", expenseId)
+        .eq("reimbursement_status", "reimbursed")
+        .select(SELECT)
+        .single();
+    let { data, error } = await write({ reimbursed_on: null, reimbursed_method: null, reimbursed_reference: null, reimbursed_check: null });
+    if (error?.code === "42703") ({ data, error } = await write({}));
+    if (error) throw new Error(`Failed to undo the reimbursement: ${error.message}`);
     return rowToExpense(data as ExpenseRow);
   }
 
@@ -512,6 +558,7 @@ export function createSupabaseExpenseService(
     softDelete,
     restore,
     markReimbursed,
+    unmarkReimbursed,
     listPendingReimbursements,
     listBills,
     listKnownVendors,

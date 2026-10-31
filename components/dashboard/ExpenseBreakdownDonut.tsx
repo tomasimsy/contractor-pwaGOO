@@ -28,6 +28,13 @@ export interface ExpenseBreakdownDonutProps {
   total: number;
 }
 
+/** Expense rows use their own labels; crew labor and mileage come from the engine. */
+function categoryLabel(type: string): string {
+  if (type === "time_labor") return "Employee wages";
+  if (type === "mileage") return "Mileage";
+  return EXPENSE_TYPE_LABEL[type as ExpenseType] ?? type;
+}
+
 export function ExpenseBreakdownDonut({ byType, total }: ExpenseBreakdownDonutProps) {
   const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
@@ -37,7 +44,7 @@ export function ExpenseBreakdownDonut({ byType, total }: ExpenseBreakdownDonutPr
   const top = sorted.slice(0, 3);
   const otherAmount = sorted.slice(3).reduce((sum, [, amount]) => sum + amount, 0);
   const segments = [
-    ...top.map(([type, amount]) => ({ label: EXPENSE_TYPE_LABEL[type as ExpenseType] ?? type, amount })),
+    ...top.map(([type, amount]) => ({ label: categoryLabel(type), amount })),
     ...(otherAmount > 0 ? [{ label: "Other", amount: otherAmount }] : []),
   ];
 

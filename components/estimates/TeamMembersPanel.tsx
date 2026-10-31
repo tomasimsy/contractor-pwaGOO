@@ -45,9 +45,11 @@
  * reads of expense rows rather than stored balances. No redesign, no
  * schema change.
  */
+import { buttonClass } from "@/components/ui/Button";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from "react";
 import { UsersRound, Plus, Trash2, Lock } from "lucide-react";
 import { CreateOrSelect, type DirectoryOption } from "@/components/shared/CreateOrSelect";
+import { useConfirmDialog } from "@/components/ui/useConfirmDialog";
 import { createCompanyUserDirectory } from "@/components/expenses/directories";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useServices } from "@/components/providers/ServicesProvider";
@@ -175,6 +177,8 @@ export const TeamMembersPanel = forwardRef<
     }
   }
 
+  const { ask, dialog } = useConfirmDialog();
+
   async function handleRemove(card: MemberCard) {
     if (card.labourPaid > 0) {
       setError(
@@ -183,7 +187,13 @@ export const TeamMembersPanel = forwardRef<
       );
       return;
     }
-    if (!window.confirm(`Remove ${card.memberName} from this estimate? Their recorded expenses are not affected.`)) return;
+    const confirmed = await ask({
+      title: `Remove ${card.memberName} from this estimate?`,
+      message: "Their recorded expenses are not affected.",
+      confirmLabel: "Remove",
+      destructive: true,
+    });
+    if (confirmed === null) return;
     setBusyId(card.id);
     setError(null);
     try {
@@ -203,7 +213,7 @@ export const TeamMembersPanel = forwardRef<
       <div className="flex items-center justify-between mb-2">
         {!compact ? (
           <h2 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gray-600">
-            <UsersRound className="size-3.5 text-emerald-500" /> Team Members
+            <UsersRound className="size-3.5 text-[#0B5F5E]" /> Team Members
           </h2>
         ) : (
           <span />
@@ -233,7 +243,7 @@ export const TeamMembersPanel = forwardRef<
 
       {/* Assign Form - Compact */}
       {adding && (
-        <div className="mb-2 space-y-1.5 rounded border border-emerald-200/50 bg-emerald-50/30 p-2">
+        <div className="mb-2 space-y-1.5 rounded border border-[#E2E5E0] bg-[#F8F9F7] p-2">
           <CreateOrSelect
             adapter={memberDir}
             value={memberId}
@@ -254,13 +264,13 @@ export const TeamMembersPanel = forwardRef<
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="$"
-              className="h-7 w-20 rounded border border-gray-200 bg-gray-50 px-1.5 text-xs text-gray-700 focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400/30"
+              className="h-7 w-20 rounded border border-gray-200 bg-gray-50 px-1.5 text-xs text-gray-700 focus:border-[#0E7C7B] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0E7C7B]"
             />
             <input
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Notes"
-              className="h-7 flex-1 min-w-[80px] rounded border border-gray-200 bg-gray-50 px-1.5 text-xs text-gray-700 focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400/30"
+              className="h-7 flex-1 min-w-[80px] rounded border border-gray-200 bg-gray-50 px-1.5 text-xs text-gray-700 focus:border-[#0E7C7B] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0E7C7B]"
             />
             <button
               type="button"
@@ -276,7 +286,7 @@ export const TeamMembersPanel = forwardRef<
               type="button"
               onClick={handleAssign}
               disabled={saving}
-              className="inline-flex h-6 items-center rounded bg-emerald-600 px-2.5 text-[10px] font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+              className={buttonClass("primary", "h-7 px-2.5 text-xs")}
             >
               {saving ? "…" : "Assign"}
             </button>
@@ -314,9 +324,9 @@ export const TeamMembersPanel = forwardRef<
                     type="button"
                     onClick={() => handleRemove(c)}
                     disabled={busyId === c.id}
-                    className="rounded p-0.5 text-gray-300 hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
+                    title="Remove" aria-label="Remove" className="rounded p-1 text-gray-600 hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
                   >
-                    <Trash2 className="size-3" />
+                    <Trash2 className="size-4" />
                   </button>
                 )}
               </div>
@@ -339,7 +349,7 @@ export const TeamMembersPanel = forwardRef<
                   <div className="text-[9px] font-medium uppercase tracking-wider text-gray-400">
                     Reimbursed
                   </div>
-                  <div className="text-xs font-semibold text-emerald-600">{money(c.reimbursed)}</div>
+                  <div className="text-xs font-semibold text-[#0B5F5E]">{money(c.reimbursed)}</div>
                 </div>
                 <div>
                   <div className="text-[9px] font-medium uppercase tracking-wider text-gray-400">
@@ -354,6 +364,7 @@ export const TeamMembersPanel = forwardRef<
           ))}
         </div>
       )}
+      {dialog}
     </div>
   );
 });

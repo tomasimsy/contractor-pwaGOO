@@ -7,47 +7,121 @@ import { Receipt, Plus, Search } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Badge } from "@/components/ui/Badge";
 import { RequirePermission } from "@/components/layout/RequirePermission";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
-import { INVOICE_STATUS_TONE, formatMoney, isUnpaidInvoiceStatus, isOutstandingInvoiceStatus } from "@/components/invoices/invoiceStatus";
+import { usePermission } from "@/lib/hooks/usePermission";
+import { RecordPaymentButton } from "@/components/payments/RecordPaymentButton";
+import { formatMoney, isUnpaidInvoiceStatus, isOutstandingInvoiceStatus } from "@/components/invoices/invoiceStatus";
+import { isBilledInvoice } from "@/lib/services/financialEngine";
 import type { Invoice, InvoiceStatus } from "@/lib/services/invoiceService";
 import type { Project } from "@/lib/services/projectService";
 import type { Client } from "@/lib/services/clientService";
 import type { Estimate } from "@/lib/services/estimateService";
 
 type SortKey = "createdAt" | "dueDate" | "total";
-type StatusFilter = InvoiceStatus | "all";
+/** "open" groups the statuses that still need collecting; "cancelled" and "void" sit behind More. */
+type TabFilter = "open" | "draft" | "paid" | "all" | "cancelled" | "void";
 
-const STATUS_OPTIONS: InvoiceStatus[] = [
-  "draft",
-  "sent",
-  "viewed",
-  "partially_paid",
-  "paid",
-  "overdue",
-  "cancelled",
-  "void",
+const TABS: { key: TabFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "open", label: "Open" },
+  { key: "draft", label: "Drafts" },
+  { key: "paid", label: "Paid" },
 ];
+const MORE_TABS: { key: TabFilter; label: string }[] = [
+  { key: "cancelled", label: "Cancelled" },
+  { key: "void", label: "Void" },
+];
+
+interface PaymentSummary {
+  totalPaid: number;
+  remainingBalance: number;
+}
+
+function matchesTab(invoice: Invoice, tab: TabFilter): boolean {
+  switch (tab) {
+    case "open":
+      return isUnpaidInvoiceStatus(invoice.status);
+    case "draft":
+      return invoice.status === "draft";
+    case "paid":
+      return invoice.status === "paid";
+    case "all":
+      return true;
+    default:
+      return invoice.status === tab;
+  }
+}
+
+/** Whole days between a YYYY-MM-DD due date and today, never negative. */
+function daysLate(dueDate: string): number {
+  const [year, month, day] = dueDate.split("-").map(Number);
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.max(0, Math.round((today - Date.UTC(year, month - 1, day)) / 86_400_000));
+}
+
+/** The one status a row shows. Replaces the old separate Status and Payment columns. */
+function statusView(invoice: Invoice, summary: PaymentSummary | undefined): { label: string; detail: string | null; tone: "danger" | "success" | "muted" | "default" } {
+  const status: InvoiceStatus = invoice.status;
+  if (status === "cancelled") return { label: "Cancelled", detail: null, tone: "muted" };
+  if (status === "void") return { label: "Void", detail: null, tone: "muted" };
+  if (invoice.total <= 0) return { label: "No charge", detail: null, tone: "muted" };
+  switch (status) {
+    case "draft":
+      return { label: "Draft", detail: "Not sent", tone: "muted" };
+    case "sent":
+      return { label: "Sent", detail: null, tone: "default" };
+    case "viewed":
+      return { label: "Viewed", detail: null, tone: "default" };
+    case "partially_paid":
+      return { label: "Partially paid", detail: `${formatMoney(summary?.totalPaid ?? 0)} paid`, tone: "default" };
+    case "overdue":
+      return {
+        label: "Overdue",
+        detail: invoice.dueDate ? `${daysLate(invoice.dueDate)} days late` : null,
+        tone: "danger",
+      };
+    case "paid":
+      return { label: "Paid", detail: null, tone: "success" };
+  }
+}
+
+const STATUS_TEXT: Record<"danger" | "success" | "muted" | "default", string> = {
+  danger: "text-danger",
+  success: "text-success",
+  muted: "text-muted-foreground",
+  default: "text-foreground",
+};
 
 function InvoicesListContent() {
   const router = useRouter();
-  const { invoiceService, projectService, clientService, estimateService } = useServices();
+  const { invoiceService, projectService, clientService, estimateService, paymentService } = useServices();
   const { profile } = useAuth();
+  const canRecordPayment = usePermission("payment", "create");
 
   const [estimatesById, setEstimatesById] = useState<Record<string, Estimate>>({});
 
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [summaries, setSummaries] = useState<Record<string, PaymentSummary>>({});
   const [projectsById, setProjectsById] = useState<Record<string, Project>>({});
   const [clientsById, setClientsById] = useState<Record<string, Client>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [tab, setTab] = useState<TabFilter>("open");
   const [sortKey, setSortKey] = useState<SortKey>("createdAt");
 
+  /** Amount paid and still owed for each invoice, from the same payment rows the Dashboard reads. */
+  const loadSummaries = useCallback(
+    async (list: Invoice[]) => {
+      const result = await paymentService.getSummariesForInvoices(list.map((i) => ({ id: i.id, total: i.total })));
+      setSummaries(result);
+    },
+    [paymentService]
+  );
 
   const load = useCallback(async () => {
     if (!profile?.companyId) return;
@@ -56,75 +130,79 @@ function InvoicesListContent() {
     setError(null);
 
     try {
-      const [
-        invoiceList,
-        projectList,
-        clientList,
-        estimateList,
-      ] = await Promise.all([
-        invoiceService.listForCompany({
-          companyId: profile.companyId,
-        }),
-        projectService.list({
-          companyId: profile.companyId,
-        }),
-        clientService.list({
-          companyId: profile.companyId,
-        }),
-        estimateService.list({
-          companyId: profile.companyId,
-        }),
+      const [invoiceList, projectList, clientList, estimateList] = await Promise.all([
+        invoiceService.listForCompany({ companyId: profile.companyId }),
+        projectService.list({ companyId: profile.companyId }),
+        clientService.list({ companyId: profile.companyId }),
+        estimateService.list({ companyId: profile.companyId }),
       ]);
 
       setInvoices(invoiceList);
-      setEstimatesById(
-        Object.fromEntries(
-          estimateList.map((e) => [e.id, e])
-        )
-      );
-
-      setProjectsById(
-        Object.fromEntries(
-          projectList.map((p) => [p.id, p])
-        )
-      );
-
-      setClientsById(
-        Object.fromEntries(
-          clientList.map((c) => [c.id, c])
-        )
-      );
-
+      await loadSummaries(invoiceList);
+      setEstimatesById(Object.fromEntries(estimateList.map((e) => [e.id, e])));
+      setProjectsById(Object.fromEntries(projectList.map((p) => [p.id, p])));
+      setClientsById(Object.fromEntries(clientList.map((c) => [c.id, c])));
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to load invoices."
-      );
+      setError(err instanceof Error ? err.message : "Failed to load invoices.");
     } finally {
       setLoading(false);
     }
-
-  }, [
-    invoiceService,
-    projectService,
-    clientService,
-    estimateService,
-    profile,
-  ]);
+  }, [invoiceService, projectService, clientService, estimateService, loadSummaries, profile]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const filtered = useMemo(() => {
-    let rows = invoices;
-
-    if (statusFilter !== "all") {
-      rows = rows.filter(
-        (i) => i.status === statusFilter
-      );
+  /** Re-reads just the invoices and their balances after a payment is recorded from a row. Deliberately not `load()`, which blanks the whole table while it reloads. */
+  const refreshInvoices = useCallback(async () => {
+    if (!profile?.companyId) return;
+    try {
+      const list = await invoiceService.listForCompany({ companyId: profile.companyId });
+      setInvoices(list);
+      await loadSummaries(list);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Payment saved, but the list could not refresh.");
     }
+  }, [invoiceService, loadSummaries, profile]);
+
+  /** Receive Payment is only offered where a balance is still owed, and only to users allowed to record payments. */
+  const showReceivePayment = (invoice: Invoice) => canRecordPayment && isOutstandingInvoiceStatus(invoice.status);
+
+  /** What is still owed on an invoice. Drafts and dead invoices owe nothing yet. */
+  const balanceOf = (invoice: Invoice): number | null => {
+    if (!isBilledInvoice(invoice) || !isOutstandingInvoiceStatus(invoice.status)) return null;
+    return summaries[invoice.id]?.remainingBalance ?? invoice.total;
+  };
+
+  const counts = useMemo(() => {
+    const count = (tab: TabFilter) => invoices.filter((i) => matchesTab(i, tab)).length;
+    return {
+      open: count("open"),
+      draft: count("draft"),
+      paid: count("paid"),
+      all: invoices.length,
+      cancelled: count("cancelled"),
+      void: count("void"),
+    };
+  }, [invoices]);
+
+  /** Company-wide figures for the strip. They ignore the tab and search, so they always show the whole picture. */
+  const totals = useMemo(() => {
+    const billedOpen = invoices.filter((i) => isBilledInvoice(i) && isOutstandingInvoiceStatus(i.status) && i.total > 0);
+    const overdue = invoices.filter((i) => i.status === "overdue");
+    const drafts = invoices.filter((i) => i.status === "draft");
+    const paid = invoices.filter((i) => i.status === "paid");
+    const sum = (rows: Invoice[], pick: (i: Invoice) => number) => rows.reduce((total, i) => total + pick(i), 0);
+    return {
+      outstanding: { amount: sum(billedOpen, (i) => summaries[i.id]?.remainingBalance ?? i.total), count: billedOpen.length },
+      overdue: { amount: sum(overdue, (i) => summaries[i.id]?.remainingBalance ?? i.total), count: overdue.length },
+      drafts: { amount: sum(drafts, (i) => i.total), count: drafts.length },
+      paid: { amount: sum(paid, (i) => i.total), count: paid.length },
+    };
+  }, [invoices, summaries]);
+
+  const filtered = useMemo(() => {
+    let rows = invoices.filter((i) => matchesTab(i, tab));
 
     if (search.trim()) {
       const q = search.trim().toLowerCase();
@@ -132,8 +210,7 @@ function InvoicesListContent() {
       rows = rows.filter((i) => {
         const project = projectsById[i.projectId];
         const client = i.clientId ? clientsById[i.clientId] : undefined;
-        const estId = (i as any).estimateId;
-        const estimate = estId ? estimatesById[estId] : undefined;
+        const estimate = i.estimateId ? estimatesById[i.estimateId] : undefined;
 
         return (
           i.invoiceNumber.toLowerCase().includes(q) ||
@@ -144,394 +221,274 @@ function InvoicesListContent() {
       });
     }
 
-    return [...rows].sort((a,b) => {
-      if(sortKey === "total")
-        return b.total - a.total;
-      if(sortKey === "dueDate")
-        return (a.dueDate ?? "").localeCompare(b.dueDate ?? "");
+    const sorted = [...rows].sort((a, b) => {
+      if (sortKey === "total") return b.total - a.total;
+      if (sortKey === "dueDate") return (a.dueDate ?? "").localeCompare(b.dueDate ?? "");
       return b.createdAt.localeCompare(a.createdAt);
     });
-  }, [
-    invoices,
-    statusFilter,
-    search,
-    sortKey,
-    projectsById,
-    clientsById,
-    estimatesById,
-  ]);
 
-  const sortedFilteredInvoices = useMemo(() => {
-    return [...filtered].sort((a, b) => {
-      const aPaid = a.status === "paid" ? 1 : 0;
-      const bPaid = b.status === "paid" ? 1 : 0;
-      return aPaid - bPaid;
-    });
-  }, [filtered]);
+    // Paid invoices sink to the bottom, so what still needs action stays at the top.
+    return sorted.sort((a, b) => Number(a.status === "paid") - Number(b.status === "paid"));
+  }, [invoices, tab, search, sortKey, projectsById, clientsById, estimatesById]);
+
+  const moreSelected = MORE_TABS.some((m) => m.key === tab);
 
   return (
-      <PageContainer>
-        <PageHeader
-          title="Invoices"
-          description="Bill clients and track what's owed."
-          actions={
-            <Link
-              href="/invoices/new"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-emerald-600/40 hover:shadow-xl hover:shadow-emerald-600/50 hover:scale-105 transition-all duration-300"
-            >
-              <Plus className="size-4" />
-              New Invoice
-            </Link>
-          }
-        />
+    <PageContainer>
+      <PageHeader
+        title="Invoices"
+        description="Bill clients and track what's owed."
+        actions={
+          <Link
+            href="/invoices/new"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            <Plus className="size-4" /> New Invoice
+          </Link>
+        }
+      />
 
-        {error && (
-          <div className="mb-4 rounded-lg bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-700">
-            {error}
-          </div>
-        )}
+      {error && <div className="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</div>}
 
-        {/* Filters */}
-        <div className="mb-6 space-y-3 p-3 sm:p-4 rounded-lg bg-white border border-emerald-200/60 shadow-sm">
-          <div className="flex flex-nowrap items-center gap-1.5 sm:flex-wrap sm:gap-3">
-            <div className="relative min-w-0 flex-1 sm:max-w-sm">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-emerald-500 sm:left-3 sm:size-4" />
-              <input
-                type="search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search…"
-                className="
-                  h-9
-                  sm:h-10
-                  w-full
-                  rounded-lg
-                  bg-white/80
-                  border
-                  border-emerald-200
-                  pl-8
-                  sm:pl-9
-                  pr-2
-                  sm:pr-3
-                  text-xs
-                  sm:text-sm
-                  text-emerald-900
-                  placeholder:text-emerald-400
-                  focus:border-emerald-400
-                  focus:ring-2
-                  focus:ring-emerald-400/30
-                  focus:bg-white
-                  transition-all
-                "
-              />
-            </div>
+      {!loading && invoices.length > 0 && (
+        <div className="mb-5 grid grid-cols-4 border-y border-border">
+          <Figure label="Outstanding" amount={totals.outstanding.amount} count={totals.outstanding.count} />
+          <Figure
+            label="Overdue"
+            amount={totals.overdue.amount}
+            count={totals.overdue.count}
+            tone={totals.overdue.count > 0 ? "danger" : undefined}
+          />
+          <Figure label="Drafts, not sent" amount={totals.drafts.amount} count={totals.drafts.count} />
+          <Figure label="Paid in full" amount={totals.paid.amount} count={totals.paid.count} />
+        </div>
+      )}
 
-            {/* Status — a compact select on mobile so it doesn't eat a
-                whole row of pills; the full pill row below takes over
-                at sm+ where there's room for it. */}
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-              className="h-9 shrink-0 rounded-lg bg-white/80 border border-emerald-200 px-1.5 text-[11px] text-emerald-900 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30 focus:bg-white transition-all sm:hidden"
-            >
-              <option value="all">All statuses</option>
-              {STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>
-                  {s.replace(/_/g, " ")}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={sortKey}
-              onChange={(e) => setSortKey(e.target.value as SortKey)}
-              className="h-9 shrink-0 rounded-lg bg-white/80 border border-emerald-200 px-1.5 text-[11px] text-emerald-900 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30 focus:bg-white transition-all sm:h-10 sm:px-3 sm:text-sm"
-            >
-              <option value="createdAt">Newest</option>
-              <option value="dueDate">Due date</option>
-              <option value="total">Total (high-low)</option>
-            </select>
-          </div>
-
-          {/* Quick status filters — pills instead of a dropdown, so
-              switching status is a single click/tap, matching the
-              lifecycle-tab pattern already used on the Estimates list.
-              Hidden on mobile (the select above covers it there) since
-              a full row of pills ate half the screen on small phones. */}
-          <div className="hidden flex-wrap gap-1.5 sm:flex">
-            <button
-              type="button"
-              onClick={() => setStatusFilter("all")}
-              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                statusFilter === "all" ? "bg-emerald-600 text-white shadow-sm" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-              }`}
-            >
-              All
-            </button>
-            {STATUS_OPTIONS.map((s) => (
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-2 sm:flex-none">
+          <div className="flex min-w-0 flex-1 overflow-x-auto rounded-lg border border-border bg-card text-[13px] [scrollbar-width:none] sm:flex-none">
+            {TABS.map((t) => (
               <button
-                key={s}
+                key={t.key}
                 type="button"
-                onClick={() => setStatusFilter(s)}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${
-                  statusFilter === s ? "bg-emerald-600 text-white shadow-sm" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                onClick={() => setTab(t.key)}
+                className={`flex-1 whitespace-nowrap px-2 py-1.5 first:rounded-l-lg last:rounded-r-lg sm:flex-none sm:px-3 ${
+                  tab === t.key ? "bg-primary font-semibold text-primary-foreground" : "text-foreground hover:bg-muted"
                 }`}
               >
-                {s.replace(/_/g, " ")}
+                {t.label} <span className={tab === t.key ? "opacity-80" : "text-muted-foreground"}>{counts[t.key]}</span>
               </button>
             ))}
           </div>
+          <select
+            value={moreSelected ? tab : ""}
+            onChange={(e) => e.target.value && setTab(e.target.value as TabFilter)}
+            aria-label="Other statuses"
+            className={`h-[34px] shrink-0 rounded-lg border border-border bg-card px-2 text-[13px] ${moreSelected ? "font-semibold text-primary" : "text-muted-foreground"}`}
+          >
+            <option value="">More</option>
+            {MORE_TABS.map((m) => (
+              <option key={m.key} value={m.key}>
+                {m.label} ({counts[m.key]})
+              </option>
+            ))}
+          </select>
         </div>
 
-        {loading ? (
-          <div className="py-12 text-center text-sm text-emerald-600/60">
-            Loading...
-          </div>
-        ) : sortedFilteredInvoices.length === 0 ? (
-          <div className="rounded-lg bg-white border border-emerald-200/60 p-8 shadow-sm">
-            <EmptyState
-              icon={Receipt}
-              title={
-                invoices.length === 0
-                  ? "No invoices yet"
-                  : "No invoices match your filters"
-              }
-              description="Create an invoice from an approved estimate."
+        <div className="flex items-center gap-2">
+          <div className="relative min-w-0 flex-1 sm:w-64 sm:flex-none">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search invoices, clients, projects"
+              className="h-[34px] w-full rounded-lg border border-border bg-card pl-8 pr-3 text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           </div>
-        ) : (
-          <>
-            {/* Desktop table */}
-            <div className="hidden overflow-x-auto rounded-lg bg-white border border-emerald-200/60 shadow-sm sm:block">
-              <table className="w-full text-sm">
-                <thead className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white">
-                  <tr>
-                    {[
-                      "Invoice #",
-                      "Project",
-                      "Client",
-                      "Status",
-                      "Payment",
-                      "Amount",
-                      "Due",
-                    ].map((title) => (
-                      <th
-                        key={title}
-                        className="px-4 py-3.5 text-left text-xs font-bold uppercase tracking-wider"
-                      >
-                        {title}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
+          <select
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value as SortKey)}
+            aria-label="Sort invoices"
+            className="h-[34px] shrink-0 rounded-lg border border-border bg-card px-2 text-[13px] text-foreground"
+          >
+            <option value="createdAt">Newest</option>
+            <option value="dueDate">Due date</option>
+            <option value="total">Total (high-low)</option>
+          </select>
+        </div>
+      </div>
 
-                <tbody className="divide-y divide-emerald-100/60">
-                  {sortedFilteredInvoices.map((invoice) => {
-                    const outstanding = isOutstandingInvoiceStatus(invoice.status);
-                    const border =
-                      invoice.status === "paid"
-                        ? "border-l-4 border-l-emerald-500"
-                        : invoice.status === "overdue"
-                        ? "border-l-4 border-l-rose-500"
-                        : isUnpaidInvoiceStatus(invoice.status)
-                        ? "border-l-4 border-l-rose-400"
-                        : outstanding
-                        ? "border-l-4 border-l-rose-200"
-                        : "border-l-4 border-l-emerald-300";
+      {loading ? (
+        <div className="py-12 text-center text-[13px] text-muted-foreground">Loading…</div>
+      ) : filtered.length === 0 ? (
+        <div className="rounded-xl border border-border bg-card p-4 sm:p-5">
+          <EmptyState
+            icon={Receipt}
+            title={invoices.length === 0 ? "No invoices yet" : "No invoices match your filters"}
+            description="Create an invoice from an approved estimate."
+          />
+        </div>
+      ) : (
+        <>
+          {/* Desktop table */}
+          <div className="hidden overflow-hidden rounded-xl border border-border bg-card sm:block">
+            <table className="w-full text-left text-[13px]">
+              <thead className="bg-primary/10 text-[11px] uppercase tracking-wide text-primary [&_th]:px-4 [&_th]:py-2 [&_th]:font-semibold">
+                <tr>
+                  <th>Invoice</th>
+                  <th>Client · project</th>
+                  <th>Status</th>
+                  <th>Due</th>
+                  <th className="text-right">Total</th>
+                  <th className="text-right">Balance</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filtered.map((invoice) => {
+                  const view = statusView(invoice, summaries[invoice.id]);
+                  const balance = balanceOf(invoice);
+                  const overdue = invoice.status === "overdue";
+                  const project = projectsById[invoice.projectId];
+                  const client = invoice.clientId ? clientsById[invoice.clientId] : undefined;
 
-                    const estId = (invoice as any).estimateId;
-                    const estimateTitle = estId ? estimatesById[estId]?.title : null;
-
-                    return (
-                      <tr
-                        key={invoice.id}
-                        className={`${border} transition-colors hover:bg-emerald-50/80`}
-                      >
-                        <td className="px-4 py-3.5">
-                          <Link
-                            href={`/invoices/${invoice.id}`}
-                            className="font-semibold text-emerald-900 hover:text-emerald-600 transition-colors"
-                          >
-                            {invoice.invoiceNumber || invoice.id.slice(0, 8)}
-                          </Link>
-                        </td>
-
-                        <td className="px-4 py-3.5">
-                          {estId ? (
-                            <Link
-                              href={`/estimates/${estId}`}
-                              className="text-sm font-medium text-emerald-800 hover:text-emerald-600 hover:underline transition-colors"
-                            >
-                              {estimateTitle ?? "Estimate"}
-                            </Link>
-                          ) : (
-                            estimateTitle && (
-                              <div className="text-sm font-medium text-emerald-800">
-                                {estimateTitle}
-                              </div>
-                            )
-                          )}
-                          <div className="text-xs text-emerald-600/60">
-                            {projectsById[invoice.projectId] ? (
-                              <Link href={`/projects/${invoice.projectId}`} className="hover:text-emerald-800 hover:underline">
-                                {projectsById[invoice.projectId]?.name}
-                              </Link>
-                            ) : "—"}
-                          </div>
-                        </td>
-
-                        <td className="px-4 py-3.5 text-emerald-700/70">
-                          {invoice.clientId && clientsById[invoice.clientId] ? (
-                            <Link href={`/clients/${invoice.clientId}`} className="hover:text-emerald-900 hover:underline">
-                              {clientsById[invoice.clientId]?.name}
-                            </Link>
-                          ) : "—"}
-                        </td>
-
-                        <td className="px-4 py-3.5">
-                          <Badge tone={INVOICE_STATUS_TONE[invoice.status]}>
-                            {invoice.status.replace(/_/g, " ")}
-                          </Badge>
-                        </td>
-
-                        <td className="px-4 py-3.5">
-                          {outstanding ? (
-                            <span className="inline-flex items-center rounded-full bg-rose-600 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">
-                              Unpaid
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-emerald-700">
-                              Paid
-                            </span>
-                          )}
-                        </td>
-
-                        <td className="px-4 py-3.5 text-right font-bold text-emerald-900">
-                          {formatMoney(invoice.total)}
-                        </td>
-
-                        <td className="px-4 py-3.5 text-xs text-emerald-600/60">
-                          {invoice.dueDate ?? "—"}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile cards — solid dark emerald, same treatment the
-                Estimates list mobile cards use, so the two lists read as
-                one design language instead of two different apps. No
-                per-render randomness: color is driven by invoice
-                STATUS (a real fact), never Math.random(). */}
-            <div className="space-y-3 sm:hidden">
-              {sortedFilteredInvoices.map((invoice) => {
-                const estId = (invoice as any).estimateId;
-                const estimateTitle = estId ? estimatesById[estId]?.title : null;
-                const projectName = projectsById[invoice.projectId]?.name ?? "—";
-
-                let statusBadge = "bg-white/90 text-slate-700";
-                let statusLabel = "Draft";
-
-                if (invoice.status === "paid") {
-                  statusBadge = "bg-emerald-100 text-emerald-800";
-                  statusLabel = "Paid";
-                } else if (invoice.status === "partially_paid") {
-                  statusBadge = "bg-amber-100 text-amber-800";
-                  statusLabel = "Partial";
-                } else if (invoice.status === "overdue") {
-                  statusBadge = "bg-rose-100 text-rose-800";
-                  statusLabel = "Overdue";
-                } else if (invoice.status === "sent") {
-                  statusBadge = "bg-blue-100 text-blue-800";
-                  statusLabel = "Sent";
-                }
-
-                return (
-                  // Not a <Link> — Project/Client below are now their
-                  // own links, and an <a> cannot legally nest another
-                  // <a>. A click anywhere else on the card still
-                  // navigates to the invoice, same as before.
-                  <div
-                    key={invoice.id}
-                    role="link"
-                    tabIndex={0}
-                    onClick={() => router.push(`/invoices/${invoice.id}`)}
-                    onKeyDown={(e) => { if (e.key === "Enter") router.push(`/invoices/${invoice.id}`); }}
-                    className="group relative flex cursor-pointer flex-col gap-3 rounded-xl bg-gradient-to-br from-emerald-700 to-emerald-900 border border-emerald-600 px-4 py-3.5 shadow-sm transition-all hover:shadow-md hover:scale-[1.01] hover:from-emerald-800 hover:to-emerald-950"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <h3 className="truncate text-sm font-bold text-white">
+                  return (
+                    <tr key={invoice.id} className="align-top hover:bg-muted/30">
+                      <td className={`px-4 py-2.5 ${overdue ? "shadow-[inset_3px_0_0_0_var(--color-danger)]" : ""}`}>
+                        <Link href={`/invoices/${invoice.id}`} className="font-semibold text-foreground hover:text-primary hover:underline">
                           {invoice.invoiceNumber || invoice.id.slice(0, 8)}
-                        </h3>
+                        </Link>
+                        <div className="text-[12px] text-muted-foreground">{invoice.issueDate ?? "—"}</div>
+                      </td>
 
-                        <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                          {projectsById[invoice.projectId] ? (
-                            <Link
-                              href={`/projects/${invoice.projectId}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="text-xs text-white/80 hover:text-white hover:underline"
-                            >
-                              {projectName}
+                      <td className="px-4 py-2.5">
+                        {client ? (
+                          <Link href={`/clients/${client.id}`} className="text-foreground hover:text-primary hover:underline">
+                            {client.name}
+                          </Link>
+                        ) : (
+                          <span className="text-muted-foreground">No client</span>
+                        )}
+                        <div className="text-[12px] text-muted-foreground">
+                          {project ? (
+                            <Link href={`/projects/${project.id}`} className="hover:text-foreground hover:underline">
+                              {project.name}
                             </Link>
                           ) : (
-                            <span className="text-xs text-white/80">{projectName}</span>
-                          )}
-                          {estimateTitle && (
-                            <>
-                              <span className="w-1 h-1 rounded-full bg-white/40" />
-                              <span className="text-xs text-white/70">
-                                {estimateTitle}
-                              </span>
-                            </>
+                            "No project"
                           )}
                         </div>
-                      </div>
+                      </td>
 
-                      <div className="shrink-0 text-right">
-                        <div className="text-base font-bold text-white">
-                          {formatMoney(invoice.total)}
-                        </div>
-                        <div className="mt-0.5 flex items-center justify-end gap-1">
-                          <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${statusBadge}`}>
-                            {statusLabel}
-                          </span>
-                          {isOutstandingInvoiceStatus(invoice.status) && (
-                            <span className="rounded-full bg-rose-500 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-                              Unpaid
-                            </span>
-                          )}
-                        </div>
+                      <td className="px-4 py-2.5">
+                        <div className={`font-semibold ${STATUS_TEXT[view.tone]}`}>{view.label}</div>
+                        {view.detail && <div className={`text-[12px] ${view.tone === "danger" ? "text-danger" : "text-muted-foreground"}`}>{view.detail}</div>}
+                      </td>
+
+                      <td className={`px-4 py-2.5 tabular-nums ${overdue ? "text-danger" : "text-muted-foreground"}`}>{invoice.dueDate ?? "—"}</td>
+
+                      <td className="px-4 py-2.5 text-right tabular-nums text-foreground">{formatMoney(invoice.total)}</td>
+
+                      <td className={`px-4 py-2.5 text-right font-semibold tabular-nums ${overdue ? "text-danger" : "text-foreground"}`}>
+                        {balance !== null && balance > 0 ? formatMoney(balance) : <span className="font-normal text-muted-foreground">—</span>}
+                      </td>
+
+                      <td className="px-4 py-2.5 text-right">
+                        {showReceivePayment(invoice) && (
+                          <RecordPaymentButton
+                            variant="link"
+                            invoiceId={invoice.id}
+                            companyId={invoice.companyId}
+                            invoiceTotal={invoice.total}
+                            onRecorded={refreshInvoices}
+                          />
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-border bg-card sm:hidden">
+            {filtered.map((invoice) => {
+              const view = statusView(invoice, summaries[invoice.id]);
+              const balance = balanceOf(invoice);
+              const overdue = invoice.status === "overdue";
+              const client = invoice.clientId ? clientsById[invoice.clientId] : undefined;
+              const project = projectsById[invoice.projectId];
+
+              return (
+                // Not a <Link>: the client and the payment button inside are their own interactive elements.
+                <div
+                  key={invoice.id}
+                  role="link"
+                  tabIndex={0}
+                  onClick={() => router.push(`/invoices/${invoice.id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") router.push(`/invoices/${invoice.id}`);
+                  }}
+                  className={`cursor-pointer border-b border-border px-4 py-3 last:border-b-0 hover:bg-muted/30 ${overdue ? "shadow-[inset_3px_0_0_0_var(--color-danger)]" : ""}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-foreground">{invoice.invoiceNumber || invoice.id.slice(0, 8)}</div>
+                      <div className="truncate text-[12px] text-muted-foreground">
+                        {client?.name ?? "No client"}
+                        {project ? ` · ${project.name}` : ""}
                       </div>
                     </div>
-
-                    <div className="flex items-center justify-between border-t border-white/20 pt-2.5">
-                      <div className="text-[10px] text-white/70">
-                        {invoice.clientId && clientsById[invoice.clientId] ? (
-                          <Link
-                            href={`/clients/${invoice.clientId}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="hover:text-white hover:underline"
-                          >
-                            {clientsById[invoice.clientId]?.name}
-                          </Link>
-                        ) : "—"}
+                    <div className="shrink-0 text-right">
+                      <div className={`font-semibold tabular-nums ${overdue ? "text-danger" : "text-foreground"}`}>
+                        {balance !== null && balance > 0 ? formatMoney(balance) : formatMoney(invoice.total)}
                       </div>
-                      {invoice.dueDate && (
-                        <div className="text-[10px] text-white/70">
-                          Due: <span className="font-medium text-white">{invoice.dueDate}</span>
-                        </div>
-                      )}
+                      {balance !== null && balance > 0 && <div className="text-[11px] text-muted-foreground">of {formatMoney(invoice.total)}</div>}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </>
-        )}
-      </PageContainer>
+
+                  <div className="mt-2 flex items-center justify-between gap-3 text-[12px]">
+                    <div className="min-w-0">
+                      <span className={`font-semibold ${STATUS_TEXT[view.tone]}`}>{view.label}</span>
+                      {view.detail && <span className={`ml-1.5 ${view.tone === "danger" ? "text-danger" : "text-muted-foreground"}`}>{view.detail}</span>}
+                      {invoice.dueDate && view.tone !== "muted" && (
+                        <span className="ml-1.5 text-muted-foreground">· due {invoice.dueDate}</span>
+                      )}
+                    </div>
+                    {showReceivePayment(invoice) && (
+                      <RecordPaymentButton
+                        variant="link"
+                        invoiceId={invoice.id}
+                        companyId={invoice.companyId}
+                        invoiceTotal={invoice.total}
+                        onRecorded={refreshInvoices}
+                      />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 text-[12px] text-muted-foreground">
+            Showing {filtered.length} of {invoices.length}
+          </div>
+        </>
+      )}
+    </PageContainer>
+  );
+}
+
+function Figure({ label, amount, count, tone }: { label: string; amount: number; count: number; tone?: "danger" }) {
+  return (
+    <div className="min-w-0 border-l border-border px-1.5 py-3 first:border-l-0 first:pl-0 sm:px-5 sm:py-4 sm:first:pl-0">
+      <div className={`text-[11px] leading-tight sm:text-[12px] ${tone === "danger" ? "text-danger" : "text-muted-foreground"}`}>{label}</div>
+      <div className={`mt-0.5 whitespace-nowrap text-[13px] font-bold tabular-nums sm:text-2xl ${tone === "danger" ? "text-danger" : "text-foreground"}`}>{formatMoney(amount)}</div>
+      <div className="text-[11px] text-muted-foreground sm:text-[12px]">
+        {count} {count === 1 ? "invoice" : "invoices"}
+      </div>
+    </div>
   );
 }
 

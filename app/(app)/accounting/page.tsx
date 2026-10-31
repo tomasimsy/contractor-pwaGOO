@@ -62,12 +62,15 @@ import type { CustomerPayment } from "@/lib/services/paymentService";
 import type { Invoice } from "@/lib/services/invoiceService";
 import type { Client } from "@/lib/services/clientService";
 import type { Project } from "@/lib/services/projectService";
+import type { PayeeRow } from "@/lib/services/payeeOwed";
+import { createSupabasePayeePaymentService } from "@/lib/services/supabase/payeePaymentService";
+import { supabase } from "@/lib/supabase/client";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 type TxFilter =
   | "all" | "income" | "expenses" | "customer_payments"
-  | "subcontractors" | "vendors" | "agents" | "team_members";
+  | "subcontractors" | "vendors" | "agents" | "team_members" | "payroll";
 
 const TX_FILTERS: { id: TxFilter; label: string }[] = [
   { id: "all", label: "All" },
@@ -78,6 +81,7 @@ const TX_FILTERS: { id: TxFilter; label: string }[] = [
   { id: "vendors", label: "Vendors" },
   { id: "agents", label: "Agents" },
   { id: "team_members", label: "Team Members" },
+  { id: "payroll", label: "Payroll" },
 ];
 
 /** A register line. Built from an existing payment or expense row — no
@@ -91,6 +95,8 @@ type Tx = {
   out: number;
   href: string | null;
   kinds: TxFilter[];
+  /** When the record was entered. Orders rows that share a date. */
+  enteredAt: string;
   /** True when the money has actually moved. Payments always have;
    * an expense has only when `isPaid`. */
   settled: boolean;
@@ -112,6 +118,7 @@ function AccountingContent() {
   const {
     financialEngine, accountsReceivableService, accountsPayableService,
     paymentService, expenseService, invoiceService, clientService, projectService,
+    employeeService, timeEntryService, estimateService,
   } = useServices();
   const { profile } = useAuth();
   const companyId = profile?.companyId ?? null;
@@ -122,12 +129,16 @@ function AccountingContent() {
   const [ap, setAp] = useState<APReport | null>(null);
   const [payments, setPayments] = useState<CustomerPayment[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  // Payroll: payments to employees and team members, with their reimbursements.
+  const [payroll, setPayroll] = useState<PayeeRow[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [txFilter, setTxFilter] = useState<TxFilter>("all");
+  const [txSort, setTxSort] = useState<"newest" | "oldest">("newest");
+  const [txPage, setTxPage] = useState(1);
 
   const dateRange = useMemo(() => resolveDateRangePreset(preset), [preset]);
 
@@ -137,7 +148,12 @@ function AccountingContent() {
     setError(null);
     try {
       const scope = { companyId };
-      const [fin, arReport, apReport, pays, exps, invs, cls, projs] = await Promise.all([
+      const payService = createSupabasePayeePaymentService(
+        supabase,
+        { employeeService, timeEntryService, estimateService, projectService, expenseService },
+        companyId
+      );
+      const [fin, arReport, apReport, pays, exps, invs, cls, projs, payrollRows] = await Promise.all([
         financialEngine.getCompanyFinancials({ companyId, dateRange }),
         accountsReceivableService.getAgingReport(scope),
         accountsPayableService.getPayablesReport(scope),
@@ -146,7 +162,9 @@ function AccountingContent() {
         invoiceService.listForCompany(scope),
         clientService.list(scope),
         projectService.list(scope),
+        payService.load(),
       ]);
+      setPayroll(payrollRows);
       setFinancials(fin);
       setAr(arReport);
       setAp(apReport);
@@ -161,7 +179,7 @@ function AccountingContent() {
       setLoading(false);
     }
   }, [companyId, dateRange, financialEngine, accountsReceivableService, accountsPayableService,
-      paymentService, expenseService, invoiceService, clientService, projectService]);
+      paymentService, expenseService, invoiceService, clientService, projectService, employeeService, timeEntryService, estimateService]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -190,6 +208,7 @@ function AccountingContent() {
           out: 0,
           href: inv ? `/invoices/${inv.id}` : null,
           kinds: ["all", "income", "customer_payments"],
+          enteredAt: p.createdAt,
           settled: true,
         };
       });
@@ -216,28 +235,75 @@ function AccountingContent() {
             ? `/projects/${e.projectId}`
             : null,
           kinds,
+          enteredAt: e.createdAt,
           settled: e.isPaid,
         };
       });
 
-    return [...inRows, ...outRows].sort((a, b) => b.date.localeCompare(a.date));
-  }, [payments, expenses, invoiceById, clientName, dateRange]);
+    // Payroll: cash paid to people. Corrections are left out (they change what is owed, not
+    // cash), and team payments are left out because each already appears above as a labor expense.
+    // A full payment covering several jobs keeps its job parts in
+    // `allocations`, each with the labor expense it created — those parts
+    // are already listed above, so only what is left (a reimbursement,
+    // unassigned money) is listed here.
+    const notAlreadyAnExpense = (p: (typeof payroll)[number]["payments"][number]) => {
+      if (p.payeeKind === "team" && p.paymentKind === "pay" && p.expenseId) return 0;
+      const asExpense = (p.allocations ?? [])
+        .filter((a) => a.kind === "job" && a.expenseIds.length > 0)
+        .reduce((s, a) => s + a.amount, 0);
+      return Math.round((p.amount - asExpense) * 100) / 100;
+    };
+    const payrollTx: Tx[] = payroll.flatMap((r) =>
+      r.payments
+        .filter((p) => p.paidOn >= from && p.paidOn <= to)
+        // A reversed check moved no money.
+        .filter((p) => !p.reversedAt && p.paymentKind !== "adjustment")
+        .filter((p) => notAlreadyAnExpense(p) > 0.005)
+        .map((p) => {
+          const isReimbursement = p.paymentKind === "reimbursement";
+          const job = p.estimateId ? r.lines.find((l) => l.estimateId === p.estimateId)?.label : null;
+          return {
+            id: `pr:${p.id}`,
+            date: p.paidOn,
+            description: `${r.name}${job ? ` · ${job}` : ""}${p.reference ? ` · #${p.reference}` : ""}`,
+            type: isReimbursement ? "Reimbursement" : r.kind === "employee" ? "Employee Pay" : "Team Payment",
+            in: 0,
+            out: notAlreadyAnExpense(p),
+            href: p.estimateId ? `/estimates/${p.estimateId}` : null,
+            kinds: isReimbursement ? ["all", "payroll", "team_members"] : ["all", "payroll"],
+            enteredAt: `${p.paidOn}T00:00:00`,
+            settled: true,
+          } as Tx;
+        })
+    );
 
-  const visibleTx = useMemo(
-    () => transactions.filter((t) => t.kinds.includes(txFilter)),
-    [transactions, txFilter]
-  );
+    return [...inRows, ...outRows, ...payrollTx];
+  }, [payments, expenses, payroll, invoiceById, clientName, dateRange]);
+
+  // Date first, then when the record was entered, so records from the same day stay in order.
+  const visibleTx = useMemo(() => {
+    const direction = txSort === "newest" ? 1 : -1;
+    return transactions
+      .filter((t) => t.kinds.includes(txFilter))
+      .sort((a, b) => direction * (b.date.localeCompare(a.date) || b.enteredAt.localeCompare(a.enteredAt)));
+  }, [transactions, txFilter, txSort]);
+  const TX_PAGE_SIZE = 50;
+  const txPageCount = Math.max(1, Math.ceil(visibleTx.length / TX_PAGE_SIZE));
+  // Clamped, so a shorter list never leaves the page past its last page.
+  const currentTxPage = Math.min(txPage, txPageCount);
+  const pageTx = visibleTx.slice((currentTxPage - 1) * TX_PAGE_SIZE, currentTxPage * TX_PAGE_SIZE);
   const txIn = useMemo(() => visibleTx.reduce((s, t) => s + t.in, 0), [visibleTx]);
   /** Split the way FinancialEngine splits it, so this register ties back
    * to the Expenses card above instead of quietly disagreeing with it.
    *
-   * getCompanyFinancials.totalExpenses is CASH BASIS — it filters
-   * `e.isPaid && withinRange(...) && inScope(projectId)`. The register
-   * lists all activity, including bills that are recorded but not yet
-   * paid. Those are real obligations and belong on the register; they
-   * are simply not cash that has left the account, which is why the two
-   * figures differ. Showing them separately makes that legible rather
-   * than looking like a bug. */
+   * getCompanyFinancials.totalExpenses is cash basis: paid expenses in
+   * the range plus employee wages paid. A bill recorded but not yet paid
+   * is listed here as not yet settled and is not in the Expenses card.
+   *
+   * Team payments appear above as labor expenses, so only what is not
+   * already an expense row (employee pay, reimbursements) is listed from
+   * Payroll. A reimbursement pays back an expense already listed, so
+   * "Paid out" can be higher than the Expenses card by that amount. */
   const txPaidOut = useMemo(
     () => visibleTx.reduce((s, t) => s + (t.settled ? t.out : 0), 0),
     [visibleTx]
@@ -303,11 +369,11 @@ function AccountingContent() {
   ];
 
   return (
-    <PageContainer>
+    <PageContainer className="sm:px-0 sm:py-0 lg:px-0">
       <PageHeader
         title="Accounting"
         description="Income, expenses, receivables and payables."
-        actions={<DateRangeFilter value={preset} onChange={setPreset} />}
+        actions={<DateRangeFilter value={preset} onChange={(p) => { setPreset(p); setTxPage(1); }} />}
       />
 
       {error && (
@@ -351,7 +417,7 @@ function AccountingContent() {
             <button
               key={f.id}
               type="button"
-              onClick={() => setTxFilter(f.id)}
+              onClick={() => { setTxFilter(f.id); setTxPage(1); }}
               aria-pressed={txFilter === f.id}
               className={`rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
                 txFilter === f.id
@@ -362,6 +428,15 @@ function AccountingContent() {
               {f.label}
             </button>
           ))}
+          <select
+            value={txSort}
+            onChange={(e) => { setTxSort(e.target.value as "newest" | "oldest"); setTxPage(1); }}
+            aria-label="Sort transactions"
+            className="ml-auto rounded-md border border-border bg-card px-2 py-1 text-[11px] font-medium text-foreground"
+          >
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+          </select>
         </div>
 
         {loading ? (
@@ -376,7 +451,7 @@ function AccountingContent() {
               <span className="text-right">Money In</span><span className="text-right">Money Out</span>
             </div>
             <div className="divide-y divide-border/60">
-              {visibleTx.slice(0, 200).map((t) => {
+              {pageTx.map((t) => {
                 const body = (
                   <>
                     <span className="text-[11px] tabular-nums text-muted-foreground">{t.date}</span>
@@ -406,10 +481,30 @@ function AccountingContent() {
                 );
               })}
             </div>
-            {visibleTx.length > 200 && (
-              <p className="border-t border-border/60 px-3 py-1.5 text-[11px] text-muted-foreground">
-                Showing the 200 most recent of {visibleTx.length}. Narrow the date range to see more.
-              </p>
+            {visibleTx.length > TX_PAGE_SIZE && (
+              <div className="flex items-center justify-between gap-2 border-t border-border/60 px-3 py-1.5 text-[11px] text-muted-foreground">
+                <span>
+                  {(currentTxPage - 1) * TX_PAGE_SIZE + 1}–{Math.min(currentTxPage * TX_PAGE_SIZE, visibleTx.length)} of {visibleTx.length}
+                </span>
+                <span className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setTxPage(currentTxPage - 1)}
+                    disabled={currentTxPage <= 1}
+                    className="rounded-md border border-border bg-card px-2 py-1 font-medium text-foreground disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTxPage(currentTxPage + 1)}
+                    disabled={currentTxPage >= txPageCount}
+                    className="rounded-md border border-border bg-card px-2 py-1 font-medium text-foreground disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </span>
+              </div>
             )}
           </div>
         )}
@@ -460,8 +555,8 @@ function AccountingContent() {
       <Section
         title="Accounts Payable"
         action={
-          <Link href="/payments" className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline">
-            Pay <ArrowRight className="size-3" />
+          <Link href="/payroll" className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline">
+            Pay in Payroll <ArrowRight className="size-3" />
           </Link>
         }
       >
@@ -500,16 +595,11 @@ function AccountingContent() {
         )}
       </Section>
 
-      {/* A/P and the Needs Payment list answer different questions and
-          will show different numbers. Said out loud here so the gap
-          reads as design rather than drift — measured live at $695.20
-          vs $2,708.33, entirely scope. */}
       <p className="-mt-2 mb-4 text-[11px] text-muted-foreground">
         A/P is <span className="font-medium text-foreground">lifetime</span> and covers
-        subcontractors and agents only, so it ignores the date filter above.{" "}
-        <Link href="/payments" className="text-primary hover:underline">Needs Payment</Link>{" "}
-        shows a different total: it adds team labour, vendor bills and reimbursements, and hides
-        assignments on jobs that aren&apos;t finished yet.
+        subcontractors and agents only, so it ignores the date filter above. Team pay and
+        reimbursements are in <Link href="/payroll" className="text-primary hover:underline">Payroll</Link>,
+        and supplier invoices in <Link href="/bills" className="text-primary hover:underline">Vendor bills</Link>.
       </p>
 
       {/* ---------- 5. RECONCILIATION ----------

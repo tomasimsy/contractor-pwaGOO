@@ -11,11 +11,13 @@
  * to the running total" — that incremental pattern is what this
  * codebase has been removing throughout.
  */
+import { buttonClass } from "@/components/ui/Button";
 import { forwardRef, useImperativeHandle, useState } from "react";
 import { Plus, Pencil, Trash2, Wallet } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
 import { PaymentDialog } from "./PaymentDialog";
+import { recordInvoicePayment } from "./recordInvoicePayment";
 import { formatPaymentMethod } from "./paymentMethods";
 import { useServices } from "@/components/providers/ServicesProvider";
 import type { CustomerPayment } from "@/lib/services/paymentService";
@@ -84,7 +86,7 @@ export const InvoicePaymentsPanel = forwardRef<InvoicePaymentsPanelRef, {
           notes: input.notes ?? null,
         });
       } else {
-        const result = await paymentService.record({
+        const result = await recordInvoicePayment(paymentService, {
           companyId,
           invoiceId,
           amount: input.amount,
@@ -94,21 +96,7 @@ export const InvoicePaymentsPanel = forwardRef<InvoicePaymentsPanelRef, {
           notes: input.notes,
           allowOverpayment: input.allowOverpayment,
         });
-        // record() returns a ValidationResult — an overpayment without
-        // acknowledgement comes back invalid rather than throwing.
-        if (!result.valid) {
-          return { ok: false, message: result.issues.map((i) => i.message).join("; ") };
-        }
-        // Best-effort, fire-and-forget — the route itself recomputes
-        // the balance and only actually sends once it's fully zero, so
-        // this is safe to call after every payment, not just the one
-        // that happens to clear it. Never blocks the success path or
-        // surfaces its own errors; the payment already succeeded.
-        fetch("/api/payments/receipt", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ invoiceId }),
-        }).catch(() => {});
+        if (!result.ok) return result;
       }
       setDialogFor(null);
       await onChanged();
@@ -151,7 +139,7 @@ export const InvoicePaymentsPanel = forwardRef<InvoicePaymentsPanelRef, {
       <div className="mb-2 flex items-center justify-between gap-2">
         {!compact && (
           <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            <Wallet className="size-3.5 text-primary" /> Payments
+            <Wallet className="size-3.5 text-[#0B5F5E]" /> Payments
           </h3>
         )}
         {compact && <span />}
@@ -159,7 +147,7 @@ export const InvoicePaymentsPanel = forwardRef<InvoicePaymentsPanelRef, {
           <button
             type="button"
             onClick={() => setDialogFor("new")}
-            className="inline-flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/90"
+            className={buttonClass("success", "h-7 px-2.5 text-xs")}
           >
             <Plus className="size-3" /> Record
           </button>
@@ -260,7 +248,7 @@ export const InvoicePaymentsPanel = forwardRef<InvoicePaymentsPanelRef, {
                 type="button"
                 onClick={() => setDeleteTarget(null)}
                 disabled={deleteBusy}
-                className="rounded-lg border border-input px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                className={buttonClass("secondary", "h-8")}
               >
                 Cancel
               </button>
@@ -268,7 +256,7 @@ export const InvoicePaymentsPanel = forwardRef<InvoicePaymentsPanelRef, {
                 type="button"
                 onClick={handleDelete}
                 disabled={deleteBusy || !deleteReason.trim()}
-                className="rounded-lg bg-danger px-3 py-1.5 text-xs font-semibold text-danger-foreground hover:bg-danger/90 disabled:opacity-50"
+                className={buttonClass("danger", "h-8")}
               >
                 {deleteBusy ? "Deleting…" : "Delete"}
               </button>

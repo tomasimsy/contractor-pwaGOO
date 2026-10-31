@@ -320,7 +320,7 @@ describe("Every surface agrees", () => {
     expect(profit.netProfit).toBe(engine.netProfit);
   });
 
-  test("company financials count only settled expenses inside the period", async () => {
+  test("company financials and tax both count PAID expenses inside the period (cash basis)", async () => {
     const { project } = await seedProject(10000);
     await spend(project.id, 250, { expenseDate: "2026-03-10", isPaid: true });
     await spend(project.id, 900, { expenseDate: "2026-09-01", isPaid: true }); // outside the range
@@ -332,9 +332,11 @@ describe("Every surface agrees", () => {
     };
     const company = await services.financialEngine.getCompanyFinancials(scope);
 
-    // Cash-basis and period-scoped: only the settled March expense.
+    // Cash basis, like revenue: only the March row that was paid. The unpaid
+    // March bill counts the day it is paid.
     expect(company.expenseItems).toBe(250);
 
+    // Tax summary uses the same rule, so the two agree.
     const tax = await services.financialEngine.getTaxSummary(scope);
     expect(tax.deductibleExpenses).toBe(250);
   });

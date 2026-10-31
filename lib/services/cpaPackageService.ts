@@ -18,13 +18,14 @@
  * contract this file implements column-for-column. Do not change the
  * rules here without updating that document first.
  */
+import type { ListEmployeeWages } from "./payeePaymentService";
 import type { UUID } from "./types";
 import type { ExpenseService, Expense, ExpenseType } from "./expenseService";
 import type { PaymentService, CustomerPayment } from "./paymentService";
 import type { InvoiceService, Invoice } from "./invoiceService";
 import type { ProjectService } from "./projectService";
 import type { ClientService } from "./clientService";
-import { isRevenueInvoice } from "./financialEngine";
+import { isBilledInvoice, isRevenueInvoice } from "./financialEngine";
 
 export interface CpaPackageDeps {
   expenseService: ExpenseService;
@@ -32,6 +33,48 @@ export interface CpaPackageDeps {
   invoiceService: InvoiceService;
   projectService: ProjectService;
   clientService: ClientService;
+  /** Employee wages paid through Payroll. They are not expense rows, so
+   * without this the package would leave W-2 wages out of expenses and
+   * profit entirely. Optional so existing callers keep working. */
+  listEmployeeWages?: ListEmployeeWages;
+}
+
+/** Every cost row the package reports on: the expense rows, plus one paid
+ * "labor" row per employee wage payment (payee = the employee). Every
+ * report below reads THIS, so categories, payees, statements, the ledger
+ * and net profit all include wages and still reconcile with each other. */
+async function costRows(deps: CpaPackageDeps, companyId: UUID): Promise<Expense[]> {
+  const [expenses, wages] = await Promise.all([
+    deps.expenseService.listForCompany(companyId),
+    deps.listEmployeeWages ? deps.listEmployeeWages(companyId) : Promise.resolve([]),
+  ]);
+  const wageRows = wages.map(
+    (w, i) =>
+      ({
+        id: `wage:${w.employeeId}:${w.paidOn}:${i}`,
+        companyId,
+        projectId: null,
+        estimateId: w.estimateId,
+        expenseType: "labor",
+        amount: w.amount,
+        expenseDate: w.paidOn,
+        description: "Wages",
+        vendor: w.employeeName,
+        payeeType: "employee",
+        payeeId: w.employeeId,
+        paidByType: "company",
+        paidById: null,
+        paymentMethod: null,
+        isPaid: true,
+        reimbursable: false,
+        reimbursementStatus: "not_applicable",
+        notes: null,
+        dueDate: null,
+        billNumber: null,
+        deletedAt: null,
+      }) as unknown as Expense
+  );
+  return [...expenses, ...wageRows];
 }
 
 /** Inclusive `[YYYY-01-01, YYYY-12-31]` string comparison — same
@@ -79,7 +122,8 @@ async function getIncomeSummary(deps: CpaPackageDeps, companyId: UUID, taxYear: 
     deps.paymentService.listForCompany({ companyId }),
   ]);
 
-  const revenueInvoices = invoices.filter(isRevenueInvoice);
+  // Billed invoices only: an unsent draft is neither invoiced nor owed.
+  const revenueInvoices = invoices.filter(isBilledInvoice);
   const totalInvoiced = money(
     revenueInvoices
       .filter((inv) => inTaxYear(inv.issueDate ?? inv.createdAt, taxYear))
@@ -135,7 +179,7 @@ function paidExpensesInYear(expenses: Expense[], taxYear: number): Expense[] {
 }
 
 async function getExpenseSummary(deps: CpaPackageDeps, companyId: UUID, taxYear: number): Promise<ExpenseSummary> {
-  const expenses = await deps.expenseService.listForCompany(companyId);
+  const expenses = await costRows(deps, companyId);
   const paid = paidExpensesInYear(expenses, taxYear);
 
   const byType = new Map<ExpenseType, { total: number; count: number }>();
@@ -236,7 +280,7 @@ function payeeGroupIdentityFor(e: Expense): PayeeGroupIdentity {
 }
 
 async function getPayeeReport(deps: CpaPackageDeps, companyId: UUID, taxYear: number): Promise<PayeeReport> {
-  const expenses = await deps.expenseService.listForCompany(companyId);
+  const expenses = await costRows(deps, companyId);
   const paid = paidExpensesInYear(expenses, taxYear);
 
   const groups = new Map<string, { name: string; type: PayeeReportGroup; payeeId: UUID | null; total: number; count: number }>();
@@ -304,7 +348,7 @@ async function getPayeeStatement(
 ): Promise<PayeeStatement | null> {
   if (groupKey === "unspecified") return null; // see groupKey's own doc comment
   const [expenses, projects] = await Promise.all([
-    deps.expenseService.listForCompany(companyId),
+    costRows(deps, companyId),
     deps.projectService.list({ companyId }),
   ]);
   const projectById = new Map(projects.map((p) => [p.id, p.name]));
@@ -378,7 +422,7 @@ async function getDetailedTransactionReport(deps: CpaPackageDeps, companyId: UUI
   const [invoices, payments, expenses, projects, clients] = await Promise.all([
     deps.invoiceService.listForCompany({ companyId }),
     deps.paymentService.listForCompany({ companyId }),
-    deps.expenseService.listForCompany(companyId),
+    costRows(deps, companyId),
     deps.projectService.list({ companyId }),
     deps.clientService.list({ companyId }),
   ]);

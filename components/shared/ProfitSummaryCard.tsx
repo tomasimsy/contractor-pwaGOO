@@ -20,6 +20,8 @@
  */
 import { TrendingUp } from "lucide-react";
 import type { ProjectFinancials } from "@/lib/services";
+import type { LaborLine } from "@/lib/services/laborBreakdown";
+import { LaborByPerson } from "@/components/shared/EstimateProfitSummaryCard";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
@@ -33,7 +35,7 @@ function Row({ label, value, tone, strong }: { label: string; value: number; ton
   );
 }
 
-export function ProfitSummaryCard({ financials }: { financials: ProjectFinancials | null }) {
+export function ProfitSummaryCard({ financials, laborLines = [] }: { financials: ProjectFinancials | null; laborLines?: LaborLine[] }) {
   if (!financials) return null;
 
   const f = financials;
@@ -65,6 +67,8 @@ export function ProfitSummaryCard({ financials }: { financials: ProjectFinancial
         </div>
 
         <div className="py-2">
+          <Row label="Labor (approved time)" value={f.laborCost} />
+          <LaborByPerson lines={laborLines} />
           <Row label="Total expenses" value={f.totalExpenses} />
           {f.outstandingTotal > 0 && (
             <Row label="Still owed to agents/subs" value={f.outstandingTotal} tone="bad" />

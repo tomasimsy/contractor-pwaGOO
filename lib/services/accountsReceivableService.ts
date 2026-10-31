@@ -8,7 +8,7 @@
 import type { UUID, QueryScope } from "./types";
 import type { InvoiceService } from "./invoiceService";
 import type { PaymentService } from "./paymentService";
-import { isRevenueInvoice } from "./financialEngine";
+import { isBilledInvoice, isRevenueInvoice } from "./financialEngine";
 
 export interface ARAgingLine {
   invoiceId: UUID;
@@ -65,6 +65,8 @@ export function createAccountsReceivableService(deps: {
       // method had only the remainingBalance>0 check below, which a
       // voided invoice with zero payments still passes).
       if (!isRevenueInvoice(invoice)) continue;
+      // An unsent draft is not owed yet (isBilledInvoice).
+      if (!isBilledInvoice(invoice)) continue;
       const summary = summaries[invoice.id];
       if (!summary || summary.remainingBalance <= 0) continue; // paid/overpaid invoices carry no receivable
 

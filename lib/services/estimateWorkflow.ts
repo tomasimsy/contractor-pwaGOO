@@ -149,19 +149,50 @@ export async function signEstimate(
   const before = await estimateService.getById(estimateId);
   if (!before) return { ok: false, message: "Estimate not found." };
 
+  // The signature is the only step that has to succeed. Once it is saved it
+  // is never rolled back, and anything that fails after it is reported as a
+  // follow-up message with ok:true, so the customer is not told their
+  // signature failed when it was saved.
   let estimate = await estimateService.recordSignature(estimateId, signature);
 
   if (estimate.status === "draft" || estimate.status === "sent" || estimate.status === "viewed") {
-    const result = await estimateService.changeStatus(estimateId, "approved");
-    if (!result.valid || !result.estimate) {
-      return { ok: false, message: result.issues?.[0]?.message ?? "Could not approve this estimate." };
+    try {
+      const result = await estimateService.changeStatus(estimateId, "approved");
+      if (result.valid && result.estimate) {
+        estimate = result.estimate;
+      } else {
+        return {
+          ok: true,
+          estimate,
+          message: `Signed, but the estimate could not be marked approved: ${result.issues?.[0]?.message ?? "unknown issue"}. Open the estimate to fix it.`,
+        };
+      }
+    } catch (err) {
+      return {
+        ok: true,
+        estimate,
+        message: `Signed, but the estimate could not be marked approved: ${err instanceof Error ? err.message : "unknown error"}. Open the estimate to fix it.`,
+      };
     }
-    estimate = result.estimate;
   }
 
-  await advanceProjectTowardInProgress(projectService, estimate.projectId);
-
-  const activeInvoices = await findActiveInvoicesForEstimate(deps, estimate);
+  // The project nudge and the invoice lookup don't depend on each other, so
+  // run them together rather than one after the other.
+  let activeInvoices: Invoice[];
+  try {
+    [, activeInvoices] = await Promise.all([
+      advanceProjectTowardInProgress(projectService, estimate.projectId),
+      findActiveInvoicesForEstimate(deps, estimate),
+    ]);
+  } catch (err) {
+    return {
+      ok: true,
+      estimate,
+      message: `Signed and approved, but the invoice status could not be checked: ${
+        err instanceof Error ? err.message : "unknown error"
+      }. Open the estimate to check whether an invoice exists.`,
+    };
+  }
   if (activeInvoices.length === 0) {
     const today = new Date();
     const dueDate = new Date(today);
@@ -186,13 +217,18 @@ export async function signEstimate(
         estimate,
         message: `Signed and approved, but the invoice could not be generated automatically: ${
           err instanceof Error ? err.message : "unknown error"
-        }. Fix the issue and re-open this estimate to retry — signing again will attempt to create the invoice once more.`,
+        }. Fix the issue, then check the estimate's invoice.`,
       };
     }
 
-    const result = await estimateService.changeStatus(estimateId, "converted_to_invoice");
-    if (result.valid && result.estimate) {
-      estimate = result.estimate;
+    try {
+      const result = await estimateService.changeStatus(estimateId, "converted_to_invoice");
+      if (result.valid && result.estimate) {
+        estimate = result.estimate;
+      }
+    } catch {
+      // The invoice exists; only the status label failed to update. Ignored
+      // here so the signature still reports success.
     }
     // If this particular transition is somehow invalid (e.g. a
     // concurrent change), the invoice still exists and the signature

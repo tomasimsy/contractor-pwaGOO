@@ -15,6 +15,7 @@
  */
 import { TrendingUp, TrendingDown } from "lucide-react";
 import type { EstimateFinancials } from "@/lib/services";
+import type { LaborLine } from "@/lib/services/laborBreakdown";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
@@ -28,7 +29,29 @@ function Row({ label, value, tone, strong }: { label: string; value: number; ton
   );
 }
 
-export function EstimateProfitSummaryCard({ financials }: { financials: EstimateFinancials | null }) {
+/** Labor cost split by person, shown under the Labor line. */
+export function LaborByPerson({ lines }: { lines: LaborLine[] }) {
+  if (lines.length === 0) return null;
+  return (
+    <ul className="mb-1 space-y-1 border-l-2 border-border pl-3 text-xs text-muted-foreground">
+      {lines.map((l) => (
+        <li key={l.employeeId} className="flex items-start justify-between gap-2">
+          <span className="min-w-0">
+            {l.name} · {l.hours.toFixed(2)} h
+            {l.jobPay > 0 && (
+              <span className="block text-[11px]">
+                Job pay {money(l.jobPay)} · {l.jobPayEarned ? "earned" : "counts when complete"}
+              </span>
+            )}
+          </span>
+          <span className="shrink-0">{money(l.total)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function EstimateProfitSummaryCard({ financials, laborLines = [] }: { financials: EstimateFinancials | null; laborLines?: LaborLine[] }) {
   if (!financials) return null;
   const f = financials;
   const isProfit = f.netProfit >= 0;
@@ -46,8 +69,8 @@ export function EstimateProfitSummaryCard({ financials }: { financials: Estimate
 
       <div className="divide-y divide-border">
         {/* Money Earned Section */}
-        <div className="pb-2 bg-emerald-500/5 -mx-4 px-4 py-2 rounded-lg transition-colors">
-          <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Revenue & Earnings</div>
+        <div className="pb-2 bg-[#F8F9F7] -mx-4 px-4 py-2 rounded-lg transition-colors">
+          <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-[#0B5F5E]">Revenue & Earnings</div>
           <Row label="Estimate total" value={f.estimateTotal} />
           <Row label="Approved change orders" value={f.approvedChangeOrderTotal} />
           <Row label="Revised contract total" value={f.revisedTotal} strong />
@@ -65,6 +88,8 @@ export function EstimateProfitSummaryCard({ financials }: { financials: Estimate
           <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">Costs & Expenses</div>
           <Row label="Subcontractor costs" value={f.subcontractorCosts} />
           <Row label="Agent commissions" value={f.agentCommissionCosts} />
+          <Row label="Labor (approved time)" value={f.laborCost} />
+          <LaborByPerson lines={laborLines} />
           <Row label="Total expenses" value={f.totalExpenses} />
           <Row label="Total job cost" value={f.totalExpenses} strong />
         </div>

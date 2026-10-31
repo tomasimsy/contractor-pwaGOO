@@ -514,7 +514,13 @@ export function createSupabaseInvoiceService(
    * than a join at read time.
    */
   async function createFromEstimate(estimateId: UUID, input: { issueDate: string; dueDate: string }): Promise<Invoice> {
-    const estimate = await estimateService.getById(estimateId);
+    // The estimate, its scope lines and its change orders are independent
+    // reads, so fetch them together.
+    const [estimate, scopeLines, changeOrders] = await Promise.all([
+      estimateService.getById(estimateId),
+      estimateService.getScopeLines(estimateId),
+      changeOrderService.listForEstimate(estimateId),
+    ]);
     if (!estimate) throw new Error("Estimate not found.");
 
     // The estimate's own markup/discount/tax collapse into the
@@ -532,9 +538,7 @@ export function createSupabaseInvoiceService(
     // for every roofing estimate — and it then had to be patched AGAIN
     // when the repair-cost half was found missing, because the same
     // rule lived in two files. It now lives in one.
-    const estimateLines: Omit<InvoiceLineItem, "id" | "total">[] = (
-      await estimateService.getScopeLines(estimateId)
-    ).map((line) => ({
+    const estimateLines: Omit<InvoiceLineItem, "id" | "total">[] = scopeLines.map((line) => ({
       category: line.category,
       name: line.name,
       description: line.description,
@@ -546,7 +550,6 @@ export function createSupabaseInvoiceService(
     // pending/rejected/deleted ones are excluded by listForEstimate
     // (deleted) plus the approved filter, the same rule every other
     // surface applies.
-    const changeOrders = await changeOrderService.listForEstimate(estimateId);
     const approved = changeOrders.filter((co) => co.status === "approved");
     const changeOrderLines: Omit<InvoiceLineItem, "id" | "total">[] = approved.map((co) => ({
       name: `Change Order ${co.changeOrderNumber}`,

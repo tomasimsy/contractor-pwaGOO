@@ -11,6 +11,7 @@
  * means and why "completed"/"archived" read the estimate's PROJECT
  * status rather than a duplicated flag on the estimate itself).
  */
+import { buttonClass } from "@/components/ui/Button";
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -172,10 +173,10 @@ function EstimatesListContent() {
     description="Every proposal, across every project."
     actions={
       <div className="flex items-center gap-1.5 sm:gap-2">
-        <Link href="/estimates/trash" className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-white px-2.5 py-1.5 text-xs sm:text-sm font-medium text-emerald-700 hover:bg-emerald-50 transition-colors">
+        <Link href="/estimates/trash" className={buttonClass("secondary")}>
           <Trash2 className="size-3.5" /> <span className="hidden xs:inline">Deleted</span>
         </Link>
-        <Link href="/estimates/new" className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs sm:text-sm font-medium text-white hover:bg-emerald-700 shadow-sm shadow-emerald-200 transition-all hover:shadow-md">
+        <Link href="/estimates/new" className={buttonClass("primary")}>
           <Plus className="size-4" /> New Estimate
         </Link>
       </div>

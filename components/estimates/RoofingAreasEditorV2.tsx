@@ -26,7 +26,11 @@
  */
 import { useState, useCallback, useRef, useEffect, useImperativeHandle, forwardRef } from "react";
 import { Plus, Trash2, Upload, Camera, ChevronDown } from "lucide-react";
+import { useConfirmDialog } from "@/components/ui/useConfirmDialog";
+import { useToast } from "@/components/ui/useToast";
 import { useServices } from "@/components/providers/ServicesProvider";
+import type { DraftAreaLineItem } from "./RoofingAreaLineItemEditor";
+import { ROOFING_LINE_ITEMS_ENABLED } from "@/lib/featureFlags";
 import { RoofingAreaLineItemEditor, type RoofingAreaLineItemEditorHandle } from "./RoofingAreaLineItemEditor";
 import { calculateAreaRepairCost } from "@/lib/services/financialCalculations";
 import { ROOFING_AREA_QUANTITY_UNITS, type RoofingAreaQuantityUnit } from "@/lib/services/roofingAreaService";
@@ -60,7 +64,21 @@ export interface RoofingAreaSaveInput {
   tax: number;
 }
 
+/* Field styles for the area editor. "document" rows read as a table: a tan label cell beside the input. */
+const LABEL_DEFAULT = "block text-[10px] font-medium text-foreground mb-0.5";
+const LABEL_DOC = "self-stretch bg-[#F8F9F7] px-2.5 py-2 text-[13px] font-medium text-[#1B2430]";
+const INPUT_DEFAULT = "w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none";
+const INPUT_DOC = "w-full border-0 bg-white px-2.5 py-2 text-[15px] font-medium text-[#1B2430] tabular-nums outline-none focus:bg-[#EEF6F5]";
+const TEXTAREA_DEFAULT = "w-full resize-none overflow-hidden rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none";
+const TEXTAREA_DOC = "w-full resize-none overflow-hidden border-0 bg-white px-2 py-1.5 text-sm text-[#1B2430] outline-none focus:bg-[#F8F9F7]";
+const ROW_DOC = "grid grid-cols-[120px_minmax(0,1fr)] border-t border-[#E2E5E0]";
+const GRID_DOC = "grid grid-cols-1 border-b border-[#E2E5E0] sm:grid-cols-2";
+
 export interface RoofingAreasEditorV2Props {
+  /** Reports each area's line items as they change (document layout tables). */
+  onLineItemsChange?: (areaId: UUID, items: DraftAreaLineItem[]) => void;
+  /** "document" uses the cost-estimate palette (tan headers, cream panels). */
+  variant?: "default" | "document";
   estimateId: UUID;
   /** Needed to save/load the technician-created roof-area templates
    * below (company-scoped) — optional only because a couple of test/
@@ -95,6 +113,12 @@ export interface RoofingAreasEditorV2Props {
  * form-level "Save changes" would persist the estimate and silently
  * drop every roof-area edit. Same pattern as ProjectExpensesPanelRef. */
 export interface RoofingAreasEditorV2Ref {
+  /** Adds the emergency roof-area template (same as the editor's own button). */
+  addEmergencyArea: () => void;
+  /** Adds a saved roof-area template as a new area. */
+  addFromTemplate: (template: RoofingAreaTemplate) => void;
+  /** Adds an empty line item of the given category to one area. */
+  addLineItem: (areaId: UUID, category: DraftAreaLineItem["category"]) => void;
   /** `estimateIdOverride` — pass the estimate's real id when this is
    * being called right after the PARENT estimate itself was just
    * created in the same submit (a brand-new estimate has no id yet
@@ -106,9 +130,10 @@ export interface RoofingAreasEditorV2Ref {
 }
 
 function RoofingAreasEditorV2Inner(
-  { estimateId, companyId, areas, onChange, onSave, onDelete, onAreaLineItemsSaved }: RoofingAreasEditorV2Props,
+  { variant = "default", estimateId, companyId, areas, onChange, onSave, onDelete, onAreaLineItemsSaved, onLineItemsChange }: RoofingAreasEditorV2Props,
   ref: React.ForwardedRef<RoofingAreasEditorV2Ref>
 ) {
+  const doc = variant === "document";
   const { roofingAreaService, roofingAreaTemplateService } = useServices();
   const [savingAreaIds, setSavingAreaIds] = useState<Set<UUID>>(new Set());
   const [deletingAreaIds, setDeletingAreaIds] = useState<Set<UUID>>(new Set());
@@ -186,11 +211,19 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
    * estimates — a snapshot at the moment of saving, never a live link
    * back to this area (editing the area later never touches the
    * template, and vice versa). */
+  const { ask, dialog } = useConfirmDialog();
+  const { notify, toast } = useToast();
+
   const handleSaveAreaAsTemplate = useCallback(
     async (area: RoofingArea) => {
       if (!companyId) return;
-      const name = window.prompt("Save this area as a template. Template name:", area.areaName || "");
-      if (!name || !name.trim()) return;
+      const name = await ask({
+        title: "Save this area as a template",
+        confirmLabel: "Save template",
+        reasonLabel: "Template name",
+        reasonDefault: area.areaName || "",
+      });
+      if (!name) return;
       setSavingTemplateAreaIds((prev) => new Set([...prev, area.id]));
       try {
         const created = await roofingAreaTemplateService.create({
@@ -211,7 +244,7 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
         setAreaTemplates((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
       } catch (err) {
         console.error("Failed to save area template:", err);
-        alert("Failed to save template. Please try again.");
+        notify("Failed to save template. Please try again.");
       } finally {
         setSavingTemplateAreaIds((prev) => {
           const next = new Set(prev);
@@ -227,7 +260,7 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
     async (areaId: UUID, photoType: "before" | "after", file: File) => {
       const area = areas.find((a) => a.id === areaId);
       if (!area?.companyId) {
-        alert("Please save the roof area first before uploading photos.");
+        notify("Please save the roof area first before uploading photos.");
         return;
       }
 
@@ -250,7 +283,7 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
         setAreaPhotos((prev) => ({ ...prev, [areaId]: updatedPhotos }));
       } catch (error) {
         console.error("Photo upload error:", error);
-        alert(`Failed to upload photo: ${error instanceof Error ? error.message : "Unknown error"}`);
+        notify(`Failed to upload photo: ${error instanceof Error ? error.message : "Unknown error"}`);
       } finally {
         setUploading((prev) => ({ ...prev, [uploadKey]: false }));
       }
@@ -260,7 +293,7 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
 
   const handleDeletePhoto = useCallback(
     async (areaId: UUID, photoId: UUID) => {
-      if (!confirm("Delete this photo?")) return;
+      if ((await ask({ title: "Delete this photo?", confirmLabel: "Delete", destructive: true })) === null) return;
       try {
         await roofingAreaService.deletePhoto(photoId, "Deleted by user");
         setAreaPhotos((prev) => ({
@@ -272,7 +305,7 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
         }));
       } catch (error) {
         console.error("Failed to delete photo:", error);
-        alert("Failed to delete photo. Please try again.");
+        notify("Failed to delete photo. Please try again.");
       }
     },
     [roofingAreaService]
@@ -399,6 +432,15 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
   useImperativeHandle(
     ref,
     () => ({
+      addEmergencyArea() {
+        handleAddEmergencyTemplateArea();
+      },
+      addFromTemplate(template: RoofingAreaTemplate) {
+        handleAddFromTemplate(template);
+      },
+      addLineItem(areaId: UUID, category: DraftAreaLineItem["category"]) {
+        lineItemEditorRefs.current[areaId]?.addItem(category);
+      },
       async saveAll(estimateIdOverride?: UUID) {
         // SEQUENTIAL, not parallel: every area save recalculates the
         // same estimate's totals, and concurrent recalculation races.
@@ -411,13 +453,13 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
         if (areas.length > 0) onAreaLineItemsSaved?.();
       },
     }),
-    [areas, saveOneArea, onAreaLineItemsSaved]
+    [areas, saveOneArea, onAreaLineItemsSaved, handleAddEmergencyTemplateArea, handleAddFromTemplate]
   );
 
   const handleSaveArea = useCallback(
     async (area: RoofingArea) => {
       if (!area.areaName.trim()) {
-        alert("Area name is required.");
+        notify("Area name is required.");
         return;
       }
       setSavingAreaIds((prev) => new Set([...prev, area.id]));
@@ -474,7 +516,7 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
         // the line item editor already shows this inline too, but the
         // area-level alert should say the same thing, not a generic
         // "try again" that hides what actually needs fixing.
-        alert(error instanceof Error ? error.message : "Failed to save roof area. Please try again.");
+        notify(error instanceof Error ? error.message : "Failed to save roof area. Please try again.");
       } finally {
         setSavingAreaIds((prev) => {
           const next = new Set(prev);
@@ -488,14 +530,14 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
 
   const handleDeleteArea = useCallback(
     async (areaId: UUID) => {
-      if (!confirm("Delete this roof area?")) return;
+      if ((await ask({ title: "Delete this roof area?", confirmLabel: "Delete", destructive: true })) === null) return;
       setDeletingAreaIds((prev) => new Set([...prev, areaId]));
       try {
         await onDelete(areaId);
         onChange(areas.filter((a) => a.id !== areaId));
       } catch (error) {
         console.error("Failed to delete area:", areaId, error);
-        alert("Failed to delete roof area. Please try again.");
+        notify("Failed to delete roof area. Please try again.");
       } finally {
         setDeletingAreaIds((prev) => {
           const next = new Set(prev);
@@ -560,19 +602,19 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
            the numbered header makes "which area am I in" readable at a
            glance while scrolling. Tokens only — no `dark:` variants,
            which key off the OS rather than this app's data-theme. */
-        <div key={area.id} className="overflow-hidden rounded-xl border border-primary  shadow-sm">
+        <div key={area.id} className={doc ? "overflow-hidden border border-[#E2E5E0] bg-white" : "overflow-hidden rounded-xl border border-primary  shadow-sm"}>
           <div
-            className="flex items-center justify-between gap-3 bg-primary px-3 py-2.5 sm:px-4 cursor-pointer select-none"
+            className={`flex items-center justify-between gap-3 px-3 py-2.5 sm:px-4 cursor-pointer select-none ${doc ? "bg-[#F8F9F7]" : "bg-primary"}`}
             onClick={() => setCollapsedAreas((prev) => ({ ...prev, [area.id]: !prev[area.id] }))}
           >
-            <h3 className="flex min-w-0 items-center gap-2 font-semibold text-primary-foreground">
-              <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-foreground/20 text-xs font-bold">
+            <h3 className={`flex min-w-0 items-center gap-2 font-semibold ${doc ? "text-[#1B2430]" : "text-primary-foreground"}`}>
+              <span className={`inline-flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${doc ? "bg-[#E7F3F2] text-[#0B5F5E]" : "bg-primary-foreground/20"}`}>
                 {idx + 1}
               </span>
               <span className="min-w-0 truncate break-words">{area.areaName || `Area ${idx + 1}`}</span>
             </h3>
             <div className="flex shrink-0 items-center gap-2">
-              <span className="text-xs font-semibold text-primary-foreground/90 tabular-nums">
+              <span className={`text-xs font-semibold tabular-nums ${doc ? "text-[#1B2430]" : "text-primary-foreground/90"}`}>
                 {formatMoney(calculateAreaRepairCost(area.materialCost ?? 0, area.laborCost ?? 0, area.tax ?? 0))}
               </span>
               {companyId && (
@@ -658,7 +700,7 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
   {/* ---- Repair Item (collapsible, open by default) ---- */}
   <details
     open
-    className="rounded-lg border border-border bg-card/50 p-2"
+    className={doc ? "border border-[#E2E5E0] bg-[#F8F9F7] p-2" : "rounded-lg border border-border bg-card/50 p-2"}
     // Still re-measure on open: a textarea's ref callback fires while
     // display:none if this is ever collapsed and reopened (or starts
     // collapsed for an area whose data was loaded some other way) —
@@ -673,9 +715,9 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
       Repair Item
     </summary>
     <div className="mt-2 space-y-2">
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <div>
-          <label className="block text-[10px] font-medium text-foreground mb-0.5">Defect</label>
+      <div className={doc ? GRID_DOC : "grid grid-cols-1 gap-2 sm:grid-cols-2"}>
+        <div className={doc ? ROW_DOC : undefined}>
+          <label className={doc ? LABEL_DOC : LABEL_DEFAULT}>Defect</label>
           <textarea
             ref={autoResizeTextarea}
             value={area.defect ?? ""}
@@ -683,26 +725,26 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
               handleUpdateArea(area.id, { defect: e.target.value });
               autoResizeTextarea(e.target);
             }}
-            className="w-full resize-none overflow-hidden rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+            className={doc ? TEXTAREA_DOC : TEXTAREA_DEFAULT}
             placeholder="Describe the defect"
             rows={3}
           />
         </div>
-        <div>
-          <label className="block text-[10px] font-medium text-foreground mb-0.5">Location</label>
+        <div className={doc ? ROW_DOC : undefined}>
+          <label className={doc ? LABEL_DOC : LABEL_DEFAULT}>Location</label>
           <input
             type="text"
             value={area.location ?? ""}
             onChange={(e) => handleUpdateArea(area.id, { location: e.target.value })}
-            className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+            className={doc ? INPUT_DOC : INPUT_DEFAULT}
             placeholder="e.g., NE corner"
           />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <div>
-          <label className="block text-[10px] font-medium text-foreground mb-0.5">Corrective Action</label>
+      <div className={doc ? GRID_DOC : "grid grid-cols-1 gap-2 sm:grid-cols-2"}>
+        <div className={doc ? ROW_DOC : undefined}>
+          <label className={doc ? LABEL_DOC : LABEL_DEFAULT}>Corrective Action</label>
           <textarea
             ref={autoResizeTextarea}
             value={area.correctiveAction ?? ""}
@@ -710,13 +752,13 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
               handleUpdateArea(area.id, { correctiveAction: e.target.value });
               autoResizeTextarea(e.target);
             }}
-            className="w-full resize-none overflow-hidden rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+            className={doc ? TEXTAREA_DOC : TEXTAREA_DEFAULT}
             placeholder="Planned repair"
             rows={3}
           />
         </div>
-        <div>
-          <label className="block text-[10px] font-medium text-foreground mb-0.5">Materials Included</label>
+        <div className={doc ? ROW_DOC : undefined}>
+          <label className={doc ? LABEL_DOC : LABEL_DEFAULT}>Materials Included</label>
           <textarea
             ref={autoResizeTextarea}
             value={area.materialsIncluded ?? ""}
@@ -724,7 +766,7 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
               handleUpdateArea(area.id, { materialsIncluded: e.target.value });
               autoResizeTextarea(e.target);
             }}
-            className="w-full resize-none overflow-hidden rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+            className={doc ? TEXTAREA_DOC : TEXTAREA_DEFAULT}
             placeholder="Materials included"
             rows={3}
           />
@@ -732,23 +774,23 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-        <div>
-          <label className="block text-[10px] font-medium text-foreground mb-0.5">Qty</label>
+        <div className={doc ? ROW_DOC : undefined}>
+          <label className={doc ? LABEL_DOC : LABEL_DEFAULT}>Qty</label>
           <input
             type="number"
             min="0"
             step="any"
             value={area.quantity ?? 1}
             onChange={(e) => handleUpdateArea(area.id, { quantity: parseFloat(e.target.value) || 0 })}
-            className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+            className={doc ? INPUT_DOC : INPUT_DEFAULT}
           />
         </div>
-        <div>
-          <label className="block text-[10px] font-medium text-foreground mb-0.5">Unit</label>
+        <div className={doc ? ROW_DOC : undefined}>
+          <label className={doc ? LABEL_DOC : LABEL_DEFAULT}>Unit</label>
           <select
             value={area.quantityUnit ?? ""}
             onChange={(e) => handleUpdateArea(area.id, { quantityUnit: (e.target.value || null) as RoofingAreaQuantityUnit | null })}
-            className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+            className={doc ? INPUT_DOC : INPUT_DEFAULT}
           >
             <option value="">—</option>
             {ROOFING_AREA_QUANTITY_UNITS.map((u) => (
@@ -756,37 +798,37 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
             ))}
           </select>
         </div>
-        <div>
-          <label className="block text-[10px] font-medium text-foreground mb-0.5">Material $</label>
+        <div className={doc ? ROW_DOC : undefined}>
+          <label className={doc ? LABEL_DOC : LABEL_DEFAULT}>Material $</label>
           <input
             type="number"
             min="0"
             step="any"
             value={area.materialCost ?? 0}
             onChange={(e) => handleUpdateArea(area.id, { materialCost: parseFloat(e.target.value) || 0 })}
-            className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+            className={doc ? INPUT_DOC : INPUT_DEFAULT}
           />
         </div>
-        <div>
-          <label className="block text-[10px] font-medium text-foreground mb-0.5">Labor $</label>
+        <div className={doc ? ROW_DOC : undefined}>
+          <label className={doc ? LABEL_DOC : LABEL_DEFAULT}>Labor $</label>
           <input
             type="number"
             min="0"
             step="any"
             value={area.laborCost ?? 0}
             onChange={(e) => handleUpdateArea(area.id, { laborCost: parseFloat(e.target.value) || 0 })}
-            className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+            className={doc ? INPUT_DOC : INPUT_DEFAULT}
           />
         </div>
-        <div>
-          <label className="block text-[10px] font-medium text-foreground mb-0.5">Tax $</label>
+        <div className={doc ? ROW_DOC : undefined}>
+          <label className={doc ? LABEL_DOC : LABEL_DEFAULT}>Tax $</label>
           <input
             type="number"
             min="0"
             step="any"
             value={area.tax ?? 0}
             onChange={(e) => handleUpdateArea(area.id, { tax: parseFloat(e.target.value) || 0 })}
-            className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none"
+            className={doc ? INPUT_DOC : INPUT_DEFAULT}
           />
         </div>
       </div>
@@ -801,20 +843,25 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
   </details>
 
   {/* ---- Line Items ---- */}
-  <div>
-    <label className="block text-[10px] font-medium text-foreground mb-0.5">Line Items</label>
+  {/* Kept mounted when hidden: the editor also loads the area items the pricing total uses. */}
+  <div className={ROOFING_LINE_ITEMS_ENABLED ? undefined : "hidden"}>
+  <div className={doc ? "space-y-1.5" : undefined}>
+    <label className={doc ? "block text-[13px] font-semibold text-[#1B2430]" : LABEL_DEFAULT}>{doc ? (area.areaName === "General items" ? "General items" : `Area #${areas.filter((x) => x.areaName !== "General items").indexOf(area) + 1}`) : "Line Items"}</label>
     <RoofingAreaLineItemEditor
       ref={(el) => {
         lineItemEditorRefs.current[area.id] = el;
       }}
       areaId={area.id}
       companyId={area.companyId || null}
+      addLabel={doc ? `Add Line Item · Area #${idx + 1}` : undefined}
+      onItemsChange={(items) => onLineItemsChange?.(area.id, items)}
     />
+  </div>
   </div>
 
   {/* ---- Photos (collapsible) ---- */}
 {/* Photo section – custom collapsible with chevron */}
-<div className="rounded-lg border border-primary/25 bg-primary/5 p-2">
+<div className={doc ? "border border-[#E2E5E0] bg-[#F8F9F7] p-2" : "rounded-lg border border-primary/25 bg-primary/5 p-2"}>
   {/* Header – clickable to toggle */}
   <div
     className="flex items-center justify-between cursor-pointer select-none"
@@ -870,7 +917,7 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
               // yet. Tell the user why up front instead of attempting
               // a save that's guaranteed to fail.
               if (!estimateId) {
-                alert("Save the estimate first, then you can add photos for this area.");
+                notify("Save the estimate first, then you can add photos for this area.");
                 return;
               }
               if (!area.companyId) {
@@ -878,7 +925,7 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
                 try {
                   await ensureAreaSaved(area);
                 } catch (err) {
-                  alert(err instanceof Error ? err.message : "Failed to save this area. Please try again.");
+                  notify(err instanceof Error ? err.message : "Failed to save this area. Please try again.");
                   return;
                 } finally {
                   setSavingAreaIds((prev) => {
@@ -941,6 +988,7 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
         >
           <Plus className="inline size-4 mr-1" /> Add Another Area
         </button>
+        {!doc && (
         <button
           type="button"
           onClick={handleAddEmergencyTemplateArea}
@@ -949,7 +997,8 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
         >
           <Plus className="inline size-4 mr-1" /> {EMERGENCY_ROOF_AREA_TEMPLATE.label}
         </button>
-        {areaTemplates.length > 0 && (
+        )}
+        {!doc && areaTemplates.length > 0 && (
           <select
             value=""
             onChange={(e) => {
@@ -965,6 +1014,8 @@ const [photoOpen, setPhotoOpen] = useState<Record<string, boolean>>({});
           </select>
         )}
       </div>
+      {dialog}
+      {toast}
     </div>
   );
 }

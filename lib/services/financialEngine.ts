@@ -55,9 +55,10 @@
  * in contractor-pwa and stays correct here — see each method's doc):
  *  - Project-level: committed cost = max(assigned, paid) per assignment.
  *    An assignment is a real cost the moment it's made, not when paid.
- *  - Company-level/period: cash-basis — actual money paid within the
- *    date range, by the transaction's own date. A period P&L must not
- *    count a cost that hasn't been paid yet just because it's "assigned."
+ *  - Company-level/period: CASH BASIS, like revenue — an expense counts
+ *    once paid, dated within the range; employee wages count when Payroll
+ *    pays them. Same rule as the tax summary and the year-end package.
+ *    Unpaid bills are listed as Unpaid and count the day they are paid.
  * Collapsing these into one model would itself reintroduce a bug — which
  * is why they're not just two code paths that happen to differ, but two
  * distinct branded types (CommittedCost, RealizedCost — see types.ts).
@@ -84,6 +85,7 @@
  * none of them write their own filtering logic, exactly as none of
  * them write their own profit formula.
  */
+import type { ListEmployeeWages } from "./payeePaymentService";
 import type {
   UUID,
   QueryScope,
@@ -136,6 +138,10 @@ import type { TransactionService } from "./transactionService";
 import { EXPENSE_TYPE_LABEL, type Expense, type ExpenseService } from "./expenseService";
 import type { FilteringService } from "./filteringService";
 import type { TeamAssignmentService } from "./teamAssignmentService";
+import type { TimeEntryService } from "./timeEntryService";
+import { entryLaborCosts } from "./timeEntryService";
+import { applyJobPay } from "./jobPay";
+import type { EmployeeService } from "./employeeService";
 
 export interface FinancialEngine {
   /** Composes ChangeOrderService (approved change orders), InvoiceService
@@ -327,6 +333,18 @@ export interface FinancialEngineDeps {
    * every existing construction of the engine keeps working untouched.
    * Without it that role simply returns no assignment-backed rows. */
   teamAssignmentService?: TeamAssignmentService;
+  /** Approved time entries → labor cost (hours × rate). Optional: without it
+   * labor is zero, so every existing caller behaves exactly as before. */
+  timeEntryService?: TimeEntryService;
+  /** Job pay (a fixed amount per employee per estimate). Optional: without it, labor is hourly only. */
+  employeeService?: EmployeeService;
+  /** Employee wages actually paid (Payroll). When given, COMPANY-WIDE
+   * profit and the tax summary count wages when paid — the same cash
+   * basis as revenue and every other expense, and the same figure the
+   * year-end package uses. Without it, company labor falls back to
+   * approved hours. Job costing (project/estimate financials) always uses
+   * hours worked, which is the right measure for one job. */
+  listEmployeeWages?: ListEmployeeWages;
 }
 
 /** Inclusive date-range test on a plain YYYY-MM-DD string. Expense dates
@@ -353,6 +371,14 @@ function withinRange(date: string, range: DateRange): boolean {
  * assembled, not duplicated into every page that lists invoices. */
 export function isRevenueInvoice(invoice: { lifecycleStatus: string }): boolean {
   return invoice.lifecycleStatus !== "void" && invoice.lifecycleStatus !== "cancelled";
+}
+
+/** An invoice that is money OWED to the company: a revenue invoice that
+ * has actually been billed. A draft that was never sent is not a
+ * receivable yet. A draft the customer has already paid on is no longer
+ * "draft" — its derived status is partially_paid/paid — so it counts. */
+export function isBilledInvoice(invoice: { lifecycleStatus: string; status: string }): boolean {
+  return isRevenueInvoice(invoice) && invoice.status !== "draft";
 }
 
 /**
@@ -459,6 +485,50 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     if (!filter) return null;
     const projects = await filteringService.execute<{ id: UUID }>("projects", scope, filter);
     return new Set(projects.map((p) => p.id));
+  }
+
+  /** Approved time-entry labor (hours × rate) for every estimate in a company,
+   * keyed by estimate id. Submitted hours are not counted. Company time (no
+   * estimate) is not in this map, because it belongs to no job. */
+  /** Everything the labor totals need, computed once per call: entries costed
+   * with pay type applied, job pays replaced in where they apply, and which
+   * estimates are completed. */
+  async function laborPlan(companyId: UUID) {
+    const entries = deps.timeEntryService ? await deps.timeEntryService.listForCompany({ companyId }) : [];
+    const jobPays = deps.employeeService ? await deps.employeeService.listJobPays(companyId) : [];
+    const [estimates, projects] = await Promise.all([
+      estimateService.list({ companyId }),
+      projectService.list({ companyId }),
+    ]);
+    const projectById = new Map(projects.map((p) => [p.id, p]));
+    const completed = new Set<string>();
+    const estimateProjectId = new Map<string, UUID>();
+    const endDateByEstimate = new Map<string, string | null>();
+    for (const est of estimates) {
+      const project = projectById.get(est.projectId);
+      estimateProjectId.set(est.id, est.projectId);
+      endDateByEstimate.set(est.id, project?.endDate ?? null);
+      if (project?.status === "completed") completed.add(est.id);
+    }
+    return { entries, applied: applyJobPay(entries, jobPays, completed), estimateProjectId, endDateByEstimate };
+  }
+
+  /** Approved labor per estimate: hourly entries (job-pay employees excluded) plus
+   * job pay for estimates whose project is completed. */
+  async function getApprovedLaborByEstimate(companyId: UUID): Promise<Map<UUID, number>> {
+    const byEstimate = new Map<UUID, number>();
+    if (!deps.timeEntryService) return byEstimate;
+    const { entries, applied } = await laborPlan(companyId);
+    for (const e of entries) {
+      const cost = applied.entryCost.get(e.id);
+      if (!e.estimateId || cost === undefined) continue;
+      byEstimate.set(e.estimateId, (byEstimate.get(e.estimateId) ?? 0) + cost);
+    }
+    for (const [estimateId, amount] of applied.jobPayCost) {
+      byEstimate.set(estimateId, (byEstimate.get(estimateId) ?? 0) + amount);
+    }
+    for (const [id, amount] of byEstimate) byEstimate.set(id, Math.round(amount * 100) / 100);
+    return byEstimate;
   }
 
   async function getProjectFinancials(projectId: UUID): Promise<ProjectFinancials> {
@@ -656,6 +726,12 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
       )
     );
 
+    // Approved time-entry labor on this project = the labor on each of its estimates.
+    const projectEstimateIds = new Set((await estimateService.listForProject(projectId)).map((e) => e.id));
+    const laborByEstimate = await getApprovedLaborByEstimate(project.companyId);
+    let laborCost = 0;
+    for (const [estimateId, amount] of laborByEstimate) if (projectEstimateIds.has(estimateId)) laborCost += amount;
+
     // ---------- COST + PROFIT ----------
     // THE shared definition — the identical call getEstimateFinancials
     // makes, so a project and its estimates can never disagree about
@@ -674,6 +750,7 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
       // `expenseItems` via the fronted expense row and would double
       // count here.
       committedRemaining: subcontractorContractRemaining + agentContractRemaining + outstandingTeamLabour,
+      laborCost,
     });
 
     const paymentStatus = derivePaymentStatus(invoicesTotal, amountPaid);
@@ -687,6 +764,7 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
       agentCosts,
       expenseItems,
       mileageCosts,
+      laborCost,
       totalExpenses,
       grossProfit,
       netProfit,
@@ -862,6 +940,9 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
       "agent"
     );
 
+    // Approved time-entry labor on this estimate.
+    const laborCost = (await getApprovedLaborByEstimate(estimate.companyId)).get(estimateId) ?? 0;
+
     // THE shared definition — identical call to the one
     // getProjectFinancials makes. This method previously summed ONLY
     // expense rows into `totalExpenses`, so an estimate's cost and
@@ -873,6 +954,7 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
       subcontractorCosts,
       agentCosts: agentCommissionCosts,
       committedRemaining: teamLabourRemaining + sub.remaining + agent.remaining,
+      laborCost,
     });
 
     return {
@@ -896,6 +978,7 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
       agentRemaining: agent.remaining,
       expenseItems,
       mileageCosts,
+      laborCost,
       totalExpenses,
       grossProfit,
       netProfit,
@@ -1185,12 +1268,12 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     // DIFFERENT model than getProjectFinancials' committed-cost figures.
     const totalRevenue = asRealizedCost(customerPayments.reduce((sum, p) => sum + p.amount, 0));
 
-    // Expenses from the source rows, same as getProjectFinancials — but
-    // period-scoped and CASH-BASIS, which is the company-level model
-    // (see the file header). Only expenses actually settled (isPaid) and
-    // dated inside the range count: a period P&L must not book a vendor
-    // bill that hasn't been paid yet. Soft-deleted rows never arrive
-    // here at all, ExpenseService having already excluded them.
+    // CASH BASIS, like revenue: an expense counts once it is PAID, in the
+    // period of its date. An unpaid vendor bill is not yet money out — it
+    // shows on Vendor bills and as "unpaid" on Accounting, and counts here
+    // the day it is paid. Same rule as getTaxSummary and the year-end
+    // package, so Dashboard, Accounting and Reports agree. Soft-deleted
+    // rows never arrive here at all.
     const periodExpenses = companyExpenses.filter(
       (e) => e.isPaid && withinRange(e.expenseDate, scope.dateRange) && inScope(e.projectId)
     );
@@ -1215,7 +1298,43 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     );
     const agentPaid = asRealizedCost(agentCommissionPaid + agentReimbursementsSettled);
 
-    const totalExpenses = expenseItems + mileageCosts;
+    let laborCost = 0;
+    if (deps.listEmployeeWages) {
+      // Employee wages PAID in the period (cash basis, see the dep's doc).
+      // With a project filter, only pay tied to a job in scope counts.
+      const wages = await coalesce(`wages:${scope.companyId}`, () => deps.listEmployeeWages!(scope.companyId));
+      const plan = projectIds ? await laborPlan(scope.companyId) : null;
+      for (const w of wages) {
+        if (!withinRange(w.paidOn, scope.dateRange)) continue;
+        if (projectIds && !(w.estimateId && projectIds.has(plan!.estimateProjectId.get(w.estimateId) ?? ""))) continue;
+        laborCost += w.amount;
+      }
+      laborCost = Math.round(laborCost * 100) / 100;
+    } else if (deps.timeEntryService) {
+      // Fallback: approved time-entry labor inside the period (hours × rate).
+      // Company time (no estimate) belongs to no job, so it is left out when
+      // a project filter applies.
+      const plan = await laborPlan(scope.companyId);
+      const inProjectScope = (estimateId: string) => !projectIds || projectIds.has(plan.estimateProjectId.get(estimateId) ?? "");
+      // Hourly entries in the period (job-pay employees already replaced).
+      for (const e of plan.entries) {
+        const cost = plan.applied.entryCost.get(e.id);
+        if (cost === undefined || !withinRange(e.workDate, scope.dateRange)) continue;
+        if (!e.estimateId || !inProjectScope(e.estimateId)) {
+          // Company time (no job) counts only when no project filter is applied.
+          if (e.estimateId || projectIds) continue;
+        }
+        laborCost += cost;
+      }
+      // Job pay counts in the period its project's end date falls in.
+      for (const [estimateId, amount] of plan.applied.jobPayCost) {
+        const end = plan.endDateByEstimate.get(estimateId);
+        if (!end || !withinRange(end, scope.dateRange) || !inProjectScope(estimateId)) continue;
+        laborCost += amount;
+      }
+      laborCost = Math.round(laborCost * 100) / 100;
+    }
+    const totalExpenses = expenseItems + mileageCosts + laborCost;
     const netProfit = totalRevenue - totalExpenses;
     const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
 
@@ -1233,7 +1352,7 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
     // nothing else in the app and grew forever. An invoice with no
     // issueDate falls back to createdAt so it is never silently dropped.
     const periodInvoices = invoices.filter(
-      (inv) => isRevenueInvoice(inv) && withinRange((inv.issueDate ?? inv.createdAt).slice(0, 10), scope.dateRange)
+      (inv) => isBilledInvoice(inv) && withinRange((inv.issueDate ?? inv.createdAt).slice(0, 10), scope.dateRange)
     );
     const totalInvoiced = periodInvoices.reduce((sum, inv) => sum + inv.total, 0);
     const totalPaid = totalRevenue; // same normalized source (real payments), not invoice.amount_paid
@@ -1263,6 +1382,7 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
       agentCommissionPaid,
       expenseItems,
       mileageCosts,
+      laborCost,
       totalExpenses,
       netProfit,
       profitMargin,
@@ -1504,7 +1624,15 @@ export function createFinancialEngine(deps: FinancialEngineDeps): FinancialEngin
         (e) => e.isPaid && withinRange(e.expenseDate, scope.dateRange) && (!projectIds || (e.projectId !== null && projectIds.has(e.projectId)))
       )
     );
-    const deductibleExpenses = periodTotals.total + (await getMileageCostForProjects(scopedProjectIds));
+    // Employee wages paid in the period are deductible too (cash basis);
+    // they are not expense rows, so they are added here, as in
+    // getCompanyFinancials.
+    let wagesPaid = 0;
+    if (deps.listEmployeeWages && !projectIds) {
+      const wages = await coalesce(`wages:${scope.companyId}`, () => deps.listEmployeeWages!(scope.companyId));
+      wagesPaid = wages.filter((w) => withinRange(w.paidOn, scope.dateRange)).reduce((t, w) => t + w.amount, 0);
+    }
+    const deductibleExpenses = periodTotals.total + (await getMileageCostForProjects(scopedProjectIds)) + Math.round(wagesPaid * 100) / 100;
 
     // Approved costs = the subcontractor + agent-commission share of
     // the SAME rows already in `deductibleExpenses` — reported as a

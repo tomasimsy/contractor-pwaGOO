@@ -39,9 +39,10 @@ export type Role =
   | "accountant"
   | "subcontractor"
   | "agent"
-  | "field_lead";
+  | "field_lead"
+  | "employee";
 
-export const ROLES: Role[] = ["admin", "office", "sales", "project_manager", "accountant", "subcontractor", "agent", "field_lead"];
+export const ROLES: Role[] = ["admin", "office", "sales", "project_manager", "accountant", "subcontractor", "agent", "field_lead", "employee"];
 
 /** Every resource a permission can be scoped to. Kept as a closed
  * union (like SchemaRegistry entity names) so a typo in a resource
@@ -51,6 +52,7 @@ export type Resource =
   | "project" | "estimate" | "invoice" | "payment" | "expense"
   | "subcontractor_assignment" | "subcontractor_payment"
   | "agent_assignment" | "agent_payment"
+  | "employee" | "time_entry"
   | "tax_settings" | "financial_reports" | "user_roles"
   | "audit_log" | "company_settings"
   /** The company-wide overview page (all projects' revenue/profit,
@@ -125,6 +127,8 @@ const PERMISSION_MATRIX: Record<Role, Partial<Record<Resource, ResourcePermissio
     user_roles: { view: true, create: true, update: true, delete: true },
     audit_log: { view: true },
     company_settings: { view: true, create: true, update: true, delete: true },
+    employee: { view: true, create: true, update: true, delete: true },
+    time_entry: { view: true, create: true, update: true, delete: true, approve: true },
   },
   office: {
     workspace: { view: true },
@@ -138,6 +142,8 @@ const PERMISSION_MATRIX: Record<Role, Partial<Record<Resource, ResourcePermissio
     agent_assignment: { view: true, create: true, update: true, delete: true },
     agent_payment: { view: true, create: true, update: true, delete: true },
     financial_reports: { view: true },
+    employee: { view: true, create: true, update: true, delete: true },
+    time_entry: { view: true, create: true, update: true, delete: true, approve: true },
   },
   sales: {
     workspace: { view: true },
@@ -161,6 +167,8 @@ const PERMISSION_MATRIX: Record<Role, Partial<Record<Resource, ResourcePermissio
     agent_assignment: { view: true, create: true, update: true, delete: true },
     agent_payment: { view: true, create: true, update: true },
     financial_reports: { view: true },
+    employee: { view: true, create: true, update: true },
+    time_entry: { view: true, create: true, update: true, approve: true },
   },
   accountant: {
     workspace: { view: true },
@@ -176,6 +184,8 @@ const PERMISSION_MATRIX: Record<Role, Partial<Record<Resource, ResourcePermissio
     tax_settings: { view: true, create: true, update: true },
     financial_reports: { view: true },
     audit_log: { view: true },
+    employee: { view: true },
+    time_entry: { view: true },
   },
   subcontractor: {
     subcontractor_payment: { view: true },
@@ -187,6 +197,14 @@ const PERMISSION_MATRIX: Record<Role, Partial<Record<Resource, ResourcePermissio
     agent_assignment: { view: true },
     project: { view: true },
   },
+  /** Employee with a login. Clocks themselves in and out and sees their own
+   * timesheet. Sees no estimates or projects by default: the database lets
+   * them read ONLY estimates they are assigned to, and they can't open the
+   * estimate page itself (no estimate view here). No pay rates or other
+   * employees. Cannot approve time. */
+  employee: {
+    time_entry: { view: true, create: true, update: true },
+  },
   /** Runs one job on-site — not a full internal team member. Sees
    * ONLY estimates (their assigned job) and can record expenses
    * against it — nothing else, not even the Projects list/Dashboard.
@@ -197,6 +215,10 @@ const PERMISSION_MATRIX: Record<Role, Partial<Record<Resource, ResourcePermissio
   field_lead: {
     estimate: { view: true },
     expense: { view: true, create: true },
+    // Team members supervise their own estimates' crew: view, clock in/out and
+    // add hours there. Approval is granted per estimate by the database rules,
+    // not by this matrix.
+    time_entry: { view: true, create: true, update: true },
   },
 };
 

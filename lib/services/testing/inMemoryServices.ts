@@ -37,7 +37,7 @@ import { createReportingService } from "../reportingService";
 import { createInMemoryPayrollService, type Payee, type PayRun } from "../payrollService";
 import { createInMemoryLocationService, type Location } from "../locationService";
 import type { ProjectService, Project, CreateProjectInput } from "../projectService";
-import type { EstimateService, Estimate, EstimateLineItem, ScopeLine } from "../estimateService";
+import type { EstimateService, Estimate, EstimateLineItem, EstimateSummaryQuery, EstimateSummaryPage, ScopeLine } from "../estimateService";
 import type { ChangeOrderService, ChangeOrder, ChangeOrderLineItem } from "../changeOrderService";
 import type { InvoiceService, Invoice, InvoiceLineItem, InvoiceLifecycleStatus } from "../invoiceService";
 import type { PaymentService, CustomerPayment } from "../paymentService";
@@ -52,10 +52,11 @@ import type {
   MileageTrip,
 } from "../expenseService";
 import { EXPENSE_TYPES } from "../expenseService";
-import type { SubcontractorService, Subcontractor, SubcontractorAssignment, SubcontractorPayment } from "../subcontractorService";
+import type { SubcontractorService, Subcontractor, SubcontractorAssignment, SubcontractorPayment, SubcontractorProfile } from "../subcontractorService";
 import type { AgentCommissionService, Agent, AgentAssignment, AgentPayment } from "../agentCommissionService";
 import type { TeamAssignmentService, TeamAssignment, TeamAssignmentWithName } from "../teamAssignmentService";
 import type { ClientService, Client, CreateClientInput } from "../clientService";
+import type { PropertyService, Property, CreatePropertyInput, UpdatePropertyInput } from "../propertyService";
 import type { CompanyService, CompanySettings } from "../companyService";
 import { DEFAULT_COMPANY_SETTINGS, mergeCompanyDefaults } from "../../company";
 import type { BillScheduleService, BillSchedule, BillScheduleCreateInput } from "../billScheduleService";
@@ -148,6 +149,7 @@ export interface InMemoryStore {
    * resolving every team-labour figure to empty. */
   teamAssignments: Map<UUID, TeamAssignment & { memberName: string }>;
   clients: Map<UUID, Client>;
+  properties: Map<UUID, Property>;
   /** Keyed by companyId, mirroring the real table's one-row-per-company
    * shape (company_settings.company_id, not unique-constrained but
    * treated as 0-or-1 by every real caller — see lib/company.ts). */
@@ -179,6 +181,7 @@ export function createInMemoryStore(): InMemoryStore {
     locations: new Map(),
     teamAssignments: new Map(),
     clients: new Map(),
+    properties: new Map(),
     companySettings: new Map(),
     billSchedules: new Map(),
   };
@@ -419,6 +422,7 @@ function createProjectService(store: InMemoryStore, validation: ValidationServic
       endDate: null,
       assignedUserId: input.assignedUserId ?? null,
       locationId: input.locationId ?? null,
+      propertyId: input.propertyId ?? null,
       createdBy: null,
       createdAt: now(),
       updatedBy: null,
@@ -442,7 +446,9 @@ function createProjectService(store: InMemoryStore, validation: ValidationServic
     if (!project) throw new Error("Project not found");
     const result = validation.validateProjectStatusTransition(project.status, toStatus);
     if (!result.valid) return result;
-    const updated = await update(projectId, { status: toStatus });
+    // Same rule as the Supabase service: a completed job with no end date gets today's date.
+    const endDate = toStatus === "completed" && !project.endDate ? new Date().toISOString().slice(0, 10) : undefined;
+    const updated = await update(projectId, { status: toStatus, ...(endDate ? { endDate } : {}) });
     return { ...result, project: updated };
   }
   async function softDelete(projectId: UUID, reason: string) {
@@ -497,6 +503,67 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
   }
   async function list(scope: QueryScope) {
     return Array.from(store.estimates.values()).filter((e) => e.companyId === scope.companyId && (scope.includeDeleted || !e.deletedAt));
+  }
+  async function listSummaries(scope: QueryScope, options: EstimateSummaryQuery = {}): Promise<EstimateSummaryPage> {
+    const { estimateType, statuses, search, estimateNumber, title, projectName, clientName, sortKey = "createdAt", sortDir = "desc", page = 1, pageSize = 50 } = options;
+    const contains = (value: string | null | undefined, term: string) => (value ?? "").toLowerCase().includes(term.trim().toLowerCase());
+
+    const all = Array.from(store.estimates.values())
+      .filter((e) => e.companyId === scope.companyId && (scope.includeDeleted || !e.deletedAt))
+      .map((e) => ({
+        id: e.id,
+        projectId: e.projectId,
+        clientId: e.clientId,
+        estimateNumber: e.estimateNumber,
+        title: e.title,
+        status: e.status,
+        total: e.total,
+        estimateType: e.estimateType ?? ("standard" as const),
+        createdAt: e.createdAt,
+        updatedAt: e.updatedAt,
+        projectName: store.projects.get(e.projectId)?.name ?? "",
+        clientName: e.clientId ? (store.clients.get(e.clientId)?.name ?? "") : "",
+      }));
+
+    const filtered = all.filter((e) => {
+      if (estimateType && e.estimateType !== estimateType) return false;
+      if (statuses && statuses.length > 0 && !statuses.includes(e.status)) return false;
+      if (estimateNumber && !contains(e.estimateNumber, estimateNumber)) return false;
+      if (title && !contains(e.title, title)) return false;
+      if (projectName && !contains(e.projectName, projectName)) return false;
+      if (clientName && !contains(e.clientName, clientName)) return false;
+      if (search && !(contains(e.estimateNumber, search) || contains(e.title, search) || contains(e.projectName, search) || contains(e.clientName, search))) return false;
+      return true;
+    });
+
+    const valueOf = (e: (typeof filtered)[number]): string | number => {
+      switch (sortKey) {
+        case "total": return e.total;
+        case "estimateNumber": return e.estimateNumber ?? "";
+        case "updatedAt": return e.updatedAt;
+        case "title": return e.title ?? "";
+        case "status": return e.status;
+        default: return e.createdAt;
+      }
+    };
+    const sorted = [...filtered].sort((a, b) => {
+      const x = valueOf(a);
+      const y = valueOf(b);
+      const c = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y));
+      return (sortDir === "asc" ? c : -c) || a.id.localeCompare(b.id);
+    });
+
+    const from = (page - 1) * pageSize;
+    return { rows: sorted.slice(from, from + pageSize), total: sorted.length };
+  }
+  async function countsByStatus(scope: QueryScope, estimateType?: "standard" | "roofing") {
+    const counts = { draft: 0, sent: 0, viewed: 0, approved: 0, rejected: 0, converted_to_invoice: 0 } as Record<EstimateStatus, number>;
+    for (const e of store.estimates.values()) {
+      if (e.companyId !== scope.companyId || (!scope.includeDeleted && e.deletedAt)) continue;
+      if (estimateType && (e.estimateType ?? "standard") !== estimateType) continue;
+      counts[e.status] += 1;
+    }
+    return counts;
   }
   async function create(input: {
     companyId: UUID; projectId: UUID; clientId: UUID | null; title?: string; description?: string;
@@ -763,7 +830,7 @@ function createEstimateService(store: InMemoryStore, validation: ValidationServi
     return { rows: pageRows, total };
   }
 
-  return { getById, listForProject, list, create, getScopeLines, updateLineItems, update, recalculateTotal, changeStatus, recordSignature, softDelete, restore, listPage };
+  return { getById, listForProject, list, listSummaries, countsByStatus, create, getScopeLines, updateLineItems, update, recalculateTotal, changeStatus, recordSignature, softDelete, restore, listPage };
 }
 
 /** Extracted from EstimateService during the service-layer completion
@@ -1334,6 +1401,8 @@ function createExpenseService(store: InMemoryStore, validation: ValidationServic
       receiptUrl: input.receiptUrl ?? null,
       dueDate: input.dueDate ?? null,
       billNumber: input.billNumber ?? null,
+      paidOn: input.paidOn ?? null,
+      paidReference: input.paidReference ?? null,
       createdBy: null,
       createdAt: now(),
       updatedBy: null,
@@ -1438,11 +1507,17 @@ function createExpenseService(store: InMemoryStore, validation: ValidationServic
     patch(expenseId, { deletedAt: null, deleteReason: null });
   }
 
-  async function markReimbursed(expenseId: UUID) {
+  async function markReimbursed(expenseId: UUID, payment?: { paidOn: string; method: string; reference?: string | null; checkId?: string | null }) {
     const expense = store.expenses.get(expenseId);
     if (!expense) throw new Error("Expense not found");
     if (!expense.reimbursable) throw new Error("This expense is not reimbursable.");
-    return patch(expenseId, { reimbursementStatus: "reimbursed" });
+    return patch(expenseId, {
+      reimbursementStatus: "reimbursed",
+      ...(payment ? { reimbursedOn: payment.paidOn, reimbursedMethod: payment.method, reimbursedReference: payment.reference ?? null, reimbursedCheck: payment.checkId ?? null } : {}),
+    });
+  }
+  async function unmarkReimbursed(expenseId: UUID) {
+    return patch(expenseId, { reimbursementStatus: "pending", reimbursedOn: null, reimbursedMethod: null, reimbursedReference: null, reimbursedCheck: null });
   }
 
   async function listPendingReimbursements(companyId: UUID, payeeId?: UUID) {
@@ -1512,6 +1587,7 @@ function createExpenseService(store: InMemoryStore, validation: ValidationServic
     softDelete,
     restore,
     markReimbursed,
+    unmarkReimbursed,
     listPendingReimbursements,
     async listBills(companyId: UUID) {
       // Same rule as the Supabase impl: a bill is an expense with a due
@@ -1569,7 +1645,7 @@ function createSubcontractorService(store: InMemoryStore, validation: Validation
   async function getRoster(companyId: UUID, includeInactive = true) {
     return Array.from(store.subcontractors.values()).filter((s) => s.companyId === companyId && (includeInactive || s.isActive) && !s.deletedAt);
   }
-  async function createSubcontractor(input: { companyId: UUID; name: string; trade?: string | null; phone?: string | null; contactPerson?: string | null; isActive?: boolean }) {
+  async function createSubcontractor(input: { companyId: UUID; name: string } & Partial<Omit<SubcontractorProfile, "name">>) {
     const sub: Subcontractor = {
       id: id(),
       companyId: input.companyId,
@@ -1578,6 +1654,16 @@ function createSubcontractorService(store: InMemoryStore, validation: Validation
       phone: input.phone ?? null,
       contactPerson: input.contactPerson ?? null,
       isActive: input.isActive ?? true,
+      companyName: input.companyName ?? null,
+      email: input.email ?? null,
+      address: input.address ?? null,
+      notes: input.notes ?? null,
+      entityType: input.entityType ?? null,
+      taxIdLast4: input.taxIdLast4 ?? null,
+      licenseNumber: input.licenseNumber ?? null,
+      licenseState: input.licenseState ?? null,
+      paymentMethod: input.paymentMethod ?? null,
+      payToName: input.payToName ?? null,
       createdBy: null,
       createdAt: now(),
       updatedBy: null,
@@ -1589,7 +1675,7 @@ function createSubcontractorService(store: InMemoryStore, validation: Validation
     store.subcontractors.set(sub.id, sub);
     return sub;
   }
-  async function updateSubcontractor(subcontractorId: UUID, changes: Partial<{ name: string; trade: string | null; phone: string | null; contactPerson: string | null; isActive: boolean }>) {
+  async function updateSubcontractor(subcontractorId: UUID, changes: Partial<SubcontractorProfile>) {
     const sub = store.subcontractors.get(subcontractorId);
     if (!sub) throw new Error("Subcontractor not found");
     const updated = { ...sub, ...changes, updatedAt: now() };
@@ -2166,6 +2252,72 @@ function createClientService(store: InMemoryStore, validation: ValidationService
   return { getById, list, create, update, softDelete, restore };
 }
 
+function createPropertyService(store: InMemoryStore, validation: ValidationService): PropertyService {
+  async function getById(propertyId: UUID, includeDeleted = false): Promise<Property | null> {
+    const property = store.properties.get(propertyId) ?? null;
+    if (property && property.deletedAt && !includeDeleted) return null;
+    return property;
+  }
+
+  async function list(scope: QueryScope & { clientId?: UUID }): Promise<Property[]> {
+    return Array.from(store.properties.values()).filter(
+      (p) =>
+        p.companyId === scope.companyId &&
+        (scope.includeDeleted || !p.deletedAt) &&
+        (!scope.clientId || p.clientId === scope.clientId)
+    );
+  }
+
+  async function create(input: CreatePropertyInput): Promise<Property> {
+    const property: Property = {
+      id: id(),
+      companyId: input.companyId,
+      clientId: input.clientId,
+      nickname: input.nickname ?? null,
+      street: input.street ?? null,
+      city: input.city ?? null,
+      state: input.state ?? null,
+      zip: input.zip ?? null,
+      notes: input.notes ?? null,
+      createdBy: null,
+      createdAt: now(),
+      updatedBy: null,
+      updatedAt: now(),
+      deletedBy: null,
+      deletedAt: null,
+      deleteReason: null,
+    };
+    store.properties.set(property.id, property);
+    return property;
+  }
+
+  async function update(propertyId: UUID, changes: UpdatePropertyInput): Promise<Property> {
+    const property = store.properties.get(propertyId);
+    if (!property) throw new Error("Property not found");
+    const updated = { ...property, ...changes, updatedAt: now() };
+    store.properties.set(propertyId, updated);
+    return updated;
+  }
+
+  async function softDelete(propertyId: UUID, reason: string): Promise<void> {
+    const check = validation.validateDeleteReason(reason);
+    if (!check.valid) throw new Error(check.issues.map((i) => i.message).join("; "));
+    const hasJob = Array.from(store.projects.values()).some((p) => p.propertyId === propertyId && !p.deletedAt);
+    if (hasJob) throw new Error("This property still has active jobs. Move or archive those jobs first.");
+    const property = store.properties.get(propertyId);
+    if (!property) throw new Error("Property not found");
+    store.properties.set(propertyId, { ...property, deletedAt: now(), deleteReason: reason });
+  }
+
+  async function restore(propertyId: UUID): Promise<void> {
+    const property = store.properties.get(propertyId);
+    if (!property) throw new Error("Property not found");
+    store.properties.set(propertyId, { ...property, deletedAt: null, deleteReason: null });
+  }
+
+  return { getById, list, create, update, softDelete, restore };
+}
+
 /** Mirrors lib/company.ts's own contract exactly — `getByCompanyId`
  * always returns a fully-merged CompanySettings (DEFAULT_COMPANY_SETTINGS
  * filling any gap), never null, so a company with no row yet still
@@ -2318,6 +2470,7 @@ export function createInMemoryServices(store: InMemoryStore = createInMemoryStor
   // Prerequisite A additions — see each factory's own doc comment.
   const teamAssignmentService = createTeamAssignmentService(store, validationService);
   const clientService = createClientService(store, validationService);
+  const propertyService = createPropertyService(store, validationService);
   const companyService = createCompanyService(store);
   const billScheduleService = createBillScheduleService(store, expenseService, validationService);
 
@@ -2554,6 +2707,7 @@ export function createInMemoryServices(store: InMemoryStore = createInMemoryStor
     locationService,
     teamAssignmentService,
     clientService,
+    propertyService,
     companyService,
     billScheduleService,
   };

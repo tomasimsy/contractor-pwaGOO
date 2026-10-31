@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/Badge";
 import { RequirePermission } from "@/components/layout/RequirePermission";
 import { usePermission } from "@/lib/hooks/usePermission";
 import { useServices } from "@/components/providers/ServicesProvider";
+import { useConfirmDialog } from "@/components/ui/useConfirmDialog";
 import { calculateChangeOrderRevenue, calculateRevisedEstimateTotal } from "@/lib/services/financialCalculations";
 import type { ChangeOrder, ChangeOrderLineItem } from "@/lib/services/changeOrderService";
 import type { Project } from "@/lib/services/projectService";
@@ -121,9 +122,11 @@ function ChangeOrderDetailContent() {
     }
   }
 
+  const { ask, dialog } = useConfirmDialog();
+
   async function handleDelete() {
     if (!changeOrder) return;
-    const reason = window.prompt(`Why are you deleting change order ${changeOrder.changeOrderNumber}?`);
+    const reason = await ask({ title: `Delete change order ${changeOrder.changeOrderNumber}?`, confirmLabel: "Delete", destructive: true, reasonLabel: "Why are you deleting this change order?" });
     if (!reason) return;
     try {
       await changeOrderService.softDelete(changeOrder.id, reason);
@@ -281,6 +284,7 @@ function ChangeOrderDetailContent() {
           </section>
         </div>
       </div>
+      {dialog}
     </PageContainer>
   );
 }

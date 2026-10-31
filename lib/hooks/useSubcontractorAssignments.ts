@@ -14,6 +14,7 @@
 import { useCallback, useState } from "react";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useRefreshableResource } from "./useAsyncResource";
+import { balancesForAssignments } from "./estimateScopedBalances";
 import type { PayeeBalance, Subcontractor, SubcontractorAssignment } from "../services";
 
 export function useSubcontractorAssignments(companyId: string, projectId: string, estimateId?: string | null) {
@@ -46,17 +47,30 @@ export function useSubcontractorAssignments(companyId: string, projectId: string
       subcontractorService.listAssignments({ companyId, projectId }),
     ]);
     setRoster(rosterList);
-    setAssignments(assignmentList);
-    const payeeBalances = await financialEngine.getPayeeBalances({ companyId, projectId }, "subcontractor");
-    setBalances(Object.fromEntries(payeeBalances.map((b) => [b.payeeId, b] as const)));
-
+    // On an estimate, only that estimate's assignments, with balances for that job alone.
+    // Otherwise every assignment on the project and each payee's project-wide balance.
+    const shown = estimateId ? assignmentList.filter((a) => a.estimateId === estimateId) : assignmentList;
+    setAssignments(shown);
     const payables = await financialEngine.getPayablesSummary({ companyId, projectId });
+    if (estimateId) {
+      setBalances(
+        balancesForAssignments(
+          payables.lines,
+          shown.map((a) => ({ id: a.id, payeeId: a.subcontractorId, payeeName: a.subcontractorName, projectId: a.projectId })),
+          "subcontractor"
+        )
+      );
+    } else {
+      const payeeBalances = await financialEngine.getPayeeBalances({ companyId, projectId }, "subcontractor");
+      setBalances(Object.fromEntries(payeeBalances.map((b) => [b.payeeId, b] as const)));
+    }
+
     setPaidByAssignment(
       Object.fromEntries(
         payables.lines.filter((l) => l.role === "subcontractor").map((l) => [l.assignmentId, l.paid] as const)
       )
     );
-  }, [subcontractorService, financialEngine, companyId, projectId]);
+  }, [subcontractorService, financialEngine, companyId, projectId, estimateId]);
 
   const assign = useCallback(
     async (subcontractorId: string, contractedAmount: number, notes?: string) => {

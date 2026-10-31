@@ -1,271 +1,308 @@
 "use client";
 
 /**
- * Subcontractor roster management — company-wide, cross-project. The
- * Estimate Detail page's SubcontractorAssignmentPanel handles per-
- * project assignment/payment; this page is where the roster itself
- * (add/edit/deactivate a subcontractor) and every assignment across
- * every project live, so a user without an open estimate in front of
- * them can still find "who do we owe and how much."
+ * Subcontractor roster — who they are and whether their paperwork is in
+ * order (W-9, insurance, license, agreement). Each name opens the sub's
+ * own page (/subcontractors/[id]) with the documents and full profile.
+ *
+ * Money is not handled here. What a sub is owed comes from
+ * FinancialEngine.getPayablesSummary — the same figure Payroll shows —
+ * and paying happens on Payroll.
  */
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { HardHat, Plus, Search, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { PageContainer } from "@/components/ui/PageContainer";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Badge } from "@/components/ui/Badge";
 import { RequirePermission } from "@/components/layout/RequirePermission";
-import { usePermission } from "@/lib/hooks/usePermission";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
-import type { Subcontractor, SubcontractorAssignment } from "@/lib/services/subcontractorService";
-import type { PayeeBalance } from "@/lib/services";
-import type { Project } from "@/lib/services/projectService";
+import type { Subcontractor } from "@/lib/services/subcontractorService";
+import { subcontractorCompliance, type SubcontractorDocument } from "@/lib/services/subcontractorDocumentService";
+import { ComplianceMarks, complianceIssueLine } from "@/components/subcontractors/ComplianceMarks";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
-type AssignmentRow = SubcontractorAssignment & { subcontractorName: string; trade: string | null };
+type Filter = "active" | "attention" | "inactive" | "all";
+
+const FIELD =
+  "h-8 w-full rounded-md border border-input bg-background px-2 text-[13px] text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30";
 
 function SubcontractorsContent() {
-  const { subcontractorService, projectService, financialEngine } = useServices();
+  const { subcontractorService, subcontractorDocumentService, financialEngine } = useServices();
   const { profile } = useAuth();
+  const companyId = profile?.companyId ?? null;
+  const router = useRouter();
 
   const [roster, setRoster] = useState<Subcontractor[]>([]);
-  const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
-  /** Keyed by SUBCONTRACTOR id — one payee, one balance. */
-  const [balances, setBalances] = useState<Record<string, PayeeBalance>>({});
-  const [projectsById, setProjectsById] = useState<Record<string, Project>>({});
+  const [docs, setDocs] = useState<SubcontractorDocument[]>([]);
+  const [docsError, setDocsError] = useState<string | null>(null);
+  const [owed, setOwed] = useState<Map<string, number>>(new Map());
+  const [jobs, setJobs] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>("active");
   const [search, setSearch] = useState("");
 
-  const [showNew, setShowNew] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newTrade, setNewTrade] = useState("");
-  const [newPhone, setNewPhone] = useState("");
-  const [newContactPerson, setNewContactPerson] = useState("");
-
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editTrade, setEditTrade] = useState("");
-  const [editPhone, setEditPhone] = useState("");
-  const [editContactPerson, setEditContactPerson] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState({ name: "", trade: "", contactPerson: "", phone: "", email: "" });
+  const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    if (!profile?.companyId) return;
+    if (!companyId) return;
     setLoading(true);
     setError(null);
     try {
-      // ONE PAYMENT = ONE EXPENSE RECORD. Money paid to a subcontractor
-      // is an expense row, so committed/paid/outstanding all come from
-      // FinancialEngine.getPayeeBalances — the SAME records project and
-      // estimate financials read. No separate payment table is consulted.
-      const [rosterList, assignmentList, projectList, payeeBalances] = await Promise.all([
-        subcontractorService.getRoster(profile.companyId),
-        subcontractorService.listAssignments({ companyId: profile.companyId }),
-        projectService.list({ companyId: profile.companyId }),
-        financialEngine.getPayeeBalances({ companyId: profile.companyId }, "subcontractor"),
+      const [subs, payables, assignments] = await Promise.all([
+        subcontractorService.getRoster(companyId, true),
+        financialEngine.getPayablesSummary({ companyId }),
+        subcontractorService.listAssignments({ companyId }),
       ]);
-      setRoster(rosterList);
-      setAssignments(assignmentList);
-      setProjectsById(Object.fromEntries(projectList.map((p) => [p.id, p])));
-      setBalances(Object.fromEntries(payeeBalances.map((b) => [b.payeeId, b] as const)));
+      setRoster(subs);
+      const owedBy = new Map<string, number>();
+      for (const l of payables.lines) {
+        if (l.role === "subcontractor" && l.outstanding > 0.005) owedBy.set(l.payeeId, (owedBy.get(l.payeeId) ?? 0) + l.outstanding);
+      }
+      setOwed(owedBy);
+      const jobsBy = new Map<string, number>();
+      for (const a of assignments) jobsBy.set(a.subcontractorId, (jobsBy.get(a.subcontractorId) ?? 0) + 1);
+      setJobs(jobsBy);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load subcontractors.");
     } finally {
       setLoading(false);
     }
-  }, [subcontractorService, projectService, financialEngine, profile]);
+    // Documents load on their own, so the roster still shows before the documents migration has run.
+    try {
+      setDocs(await subcontractorDocumentService.listForCompany(companyId));
+      setDocsError(null);
+    } catch (err) {
+      setDocsError(err instanceof Error ? err.message : "Failed to load documents.");
+    }
+  }, [companyId, subcontractorService, subcontractorDocumentService, financialEngine]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return roster;
-    const q = search.trim().toLowerCase();
-    return roster.filter((s) => s.name.toLowerCase().includes(q) || (s.trade ?? "").toLowerCase().includes(q));
-  }, [roster, search]);
+  const compliance = useMemo(() => {
+    const bySub = new Map<string, SubcontractorDocument[]>();
+    for (const d of docs) (bySub.get(d.subcontractorId) ?? bySub.set(d.subcontractorId, []).get(d.subcontractorId)!).push(d);
+    return new Map(roster.map((s) => [s.id, subcontractorCompliance(s, bySub.get(s.id) ?? [])]));
+  }, [roster, docs]);
 
-  const assignmentsBySub = useMemo(() => {
-    const map: Record<string, AssignmentRow[]> = {};
-    for (const a of assignments) {
-      (map[a.subcontractorId] ??= []).push(a);
+  const active = roster.filter((s) => s.isActive);
+  const attention = active.filter((s) => compliance.get(s.id)?.worst === "problem");
+  const expiring = active.filter((s) => compliance.get(s.id)?.issues.some((i) => i.state === "expiring"));
+  const owedTotal = [...owed.values()].reduce((a, b) => a + b, 0);
+
+  const counts: Record<Filter, number> = {
+    active: active.length,
+    attention: attention.length,
+    inactive: roster.length - active.length,
+    all: roster.length,
+  };
+
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return roster
+      .filter((s) =>
+        filter === "all" ? true
+        : filter === "inactive" ? !s.isActive
+        : filter === "attention" ? s.isActive && compliance.get(s.id)?.worst === "problem"
+        : s.isActive
+      )
+      .filter((s) => !q || [s.name, s.trade, s.companyName, s.contactPerson].some((v) => (v ?? "").toLowerCase().includes(q)));
+  }, [roster, filter, search, compliance]);
+
+  async function addSub() {
+    if (!companyId || !draft.name.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const sub = await subcontractorService.createSubcontractor({
+        companyId,
+        name: draft.name.trim(),
+        trade: draft.trade.trim() || null,
+        contactPerson: draft.contactPerson.trim() || null,
+        phone: draft.phone.trim() || null,
+        email: draft.email.trim() || null,
+      });
+      // Straight to their page: the documents are the next thing to collect.
+      router.push(`/subcontractors/${sub.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not add this subcontractor.");
+      setSaving(false);
     }
-    return map;
-  }, [assignments]);
+  }
 
   return (
-    <PageContainer>
-      <PageHeader
-        title="Subcontractors"
-        description="Roster, project assignments, and outstanding balances — across every project."
-        actions={
-          <button type="button" onClick={() => setShowNew((v) => !v)} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-            <Plus className="size-4" /> New Subcontractor
-          </button>
-        }
-      />
-
-      {error && <div className="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</div>}
-
-      {showNew && (
-        <div className="mb-4 grid grid-cols-1 gap-3 rounded-xl border border-border bg-card p-4 sm:grid-cols-2">
-          <input placeholder="Name *" value={newName} onChange={(e) => setNewName(e.target.value)} className="h-9 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30" />
-          <input placeholder="Trade" value={newTrade} onChange={(e) => setNewTrade(e.target.value)} className="h-9 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30" />
-          <input placeholder="Phone" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className="h-9 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30" />
-          <input placeholder="Contact person" value={newContactPerson} onChange={(e) => setNewContactPerson(e.target.value)} className="h-9 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30" />
-          <div className="sm:col-span-2 flex justify-end gap-2">
-            <button type="button" onClick={() => setShowNew(false)} className="rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted">Cancel</button>
-            <button
-              type="button"
-              disabled={!newName.trim() || !profile?.companyId}
-              onClick={async () => {
-                if (!profile?.companyId) return;
-                await subcontractorService.createSubcontractor({
-                  companyId: profile.companyId, name: newName.trim(), trade: newTrade.trim() || null,
-                  phone: newPhone.trim() || null, contactPerson: newContactPerson.trim() || null,
-                });
-                setNewName(""); setNewTrade(""); setNewPhone(""); setNewContactPerson(""); setShowNew(false);
-                await load();
-              }}
-              className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              Add subcontractor
-            </button>
+    <PageContainer className="sm:px-0 sm:py-0 lg:px-0">
+      <div className="flex flex-col gap-4">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">Subcontractors</h1>
+            <p className="text-[12px] text-muted-foreground">
+              Contacts, W-9s and insurance. Pay them in{" "}
+              <Link href="/payroll" className="text-primary hover:underline">Payroll</Link>.
+            </p>
           </div>
+          <button
+            type="button"
+            onClick={() => setAdding((v) => !v)}
+            className="whitespace-nowrap rounded-md bg-primary px-3 py-1.5 text-[13px] font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            {adding ? "Cancel" : "Add subcontractor"}
+          </button>
         </div>
-      )}
 
-      <div className="mb-4 relative max-w-sm">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name or trade…"
-          className="h-9 w-full rounded-lg border border-input bg-background pl-8 pr-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
-        />
+        <div className="grid grid-cols-2 rounded-lg border border-border bg-card sm:grid-cols-4">
+          <div className="border-b border-r border-border px-4 py-2.5 sm:border-b-0">
+            <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Active</div>
+            <div className="mt-1 text-[15px] font-semibold tabular-nums text-foreground">{active.length}</div>
+          </div>
+          <button type="button" onClick={() => setFilter("attention")} className="border-b border-border px-4 py-2.5 text-left hover:bg-muted/40 sm:border-b-0 sm:border-r">
+            <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Papers missing</div>
+            <div className={`mt-1 text-[15px] font-semibold tabular-nums ${attention.length > 0 ? "text-danger" : "text-foreground"}`}>
+              {attention.length}
+            </div>
+          </button>
+          <div className="border-r border-border px-4 py-2.5">
+            <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Expiring in 30 days</div>
+            <div className={`mt-1 text-[15px] font-semibold tabular-nums ${expiring.length > 0 ? "text-warning" : "text-foreground"}`}>
+              {expiring.length}
+            </div>
+          </div>
+          <Link href="/payroll" className="px-4 py-2.5 hover:bg-muted/40">
+            <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Owed · Payroll →</div>
+            <div className={`mt-1 text-[15px] font-semibold tabular-nums ${owedTotal > 0.005 ? "text-warning" : "text-foreground"}`}>{money(owedTotal)}</div>
+          </Link>
+        </div>
+
+        {adding && (
+          <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-[1.4fr_1fr_1fr_1fr_1.2fr_auto]">
+              <input autoFocus placeholder="Name *" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className={`${FIELD} col-span-2 sm:col-span-1`} />
+              <input placeholder="Trade" value={draft.trade} onChange={(e) => setDraft({ ...draft, trade: e.target.value })} className={FIELD} />
+              <input placeholder="Contact person" value={draft.contactPerson} onChange={(e) => setDraft({ ...draft, contactPerson: e.target.value })} className={FIELD} />
+              <input placeholder="Phone" inputMode="tel" value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} className={FIELD} />
+              <input placeholder="Email" type="email" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} className={FIELD} />
+              <button
+                type="button"
+                disabled={!draft.name.trim() || saving}
+                onClick={addSub}
+                className="col-span-2 h-8 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 sm:col-span-1"
+              >
+                {saving ? "Adding…" : "Add"}
+              </button>
+            </div>
+            <p className="mt-1.5 text-[11px] text-muted-foreground">Next you&apos;ll upload their W-9, insurance and agreement.</p>
+          </div>
+        )}
+
+        {error && <div className="rounded-lg bg-danger/10 px-3 py-2 text-[13px] text-danger">{error}</div>}
+        {docsError && (
+          <div className="rounded-lg bg-warning/10 px-3 py-2 text-[13px] text-warning">
+            Documents aren&apos;t available yet: run migration 20261029020000_subcontractor_profile_and_documents.sql in Supabase.
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap gap-1 text-[13px]">
+            {(["active", "attention", "inactive", "all"] as Filter[]).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setFilter(f)}
+                className={`rounded-md px-2.5 py-1 ${filter === f ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {f === "active" ? "Active" : f === "attention" ? "Needs papers" : f === "inactive" ? "Inactive" : "All"}{" "}
+                <span className="font-normal text-muted-foreground">{counts[f]}</span>
+              </button>
+            ))}
+          </div>
+          <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, trade or company" className={`${FIELD} max-w-64`} />
+        </div>
+
+        {loading ? (
+          <div className="py-12 text-center text-[13px] text-muted-foreground">Loading…</div>
+        ) : visible.length === 0 ? (
+          <div className="py-12 text-center text-[13px] text-muted-foreground">
+            {roster.length === 0 ? "No subcontractors yet. Add one to start assigning them to estimates." : "No subcontractors in this view."}
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-border bg-card">
+            <table className="w-full text-left text-[13px]">
+              <thead className="bg-primary/10 text-[11px] uppercase tracking-wide text-primary [&_th]:px-4 [&_th]:py-2 [&_th]:font-semibold">
+                <tr>
+                  <th>Name</th>
+                  <th className="hidden md:table-cell">Contact</th>
+                  <th>Papers</th>
+                  <th className="hidden text-right sm:table-cell">Jobs</th>
+                  <th className="text-right">Owed</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {visible.map((s) => {
+                  const c = compliance.get(s.id)!;
+                  const owedNow = owed.get(s.id) ?? 0;
+                  return (
+                    <tr key={s.id} className="align-top hover:bg-muted/30">
+                      <td className="min-w-[7.5rem] px-4 py-2.5">
+                        <Link href={`/subcontractors/${s.id}`} className="font-semibold text-foreground hover:text-primary hover:underline">
+                          {s.name}
+                        </Link>
+                        {!s.isActive && <span className="ml-1.5 text-[11px] text-muted-foreground">Inactive</span>}
+                        <div className="text-[12px] text-muted-foreground">
+                          {[s.trade, s.companyName && s.companyName !== s.name ? s.companyName : null].filter(Boolean).join(" · ") || "—"}
+                        </div>
+                      </td>
+                      <td className="hidden px-4 py-2.5 text-[12px] md:table-cell">
+                        <div className="text-foreground">{s.contactPerson || "—"}</div>
+                        <div className="text-muted-foreground">
+                          {s.phone ? <a href={`tel:${s.phone}`} className="hover:underline">{s.phone}</a> : null}
+                          {s.phone && s.email ? " · " : null}
+                          {s.email ? <a href={`mailto:${s.email}`} className="hover:underline">{s.email}</a> : null}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {docsError ? (
+                          <span className="text-[12px] text-muted-foreground">—</span>
+                        ) : (
+                          <>
+                            <ComplianceMarks summary={c} />
+                            <div className={`text-[11px] ${c.worst === "problem" ? "text-danger" : c.worst === "expiring" ? "text-warning" : "text-muted-foreground"}`}>
+                              {complianceIssueLine(c)}
+                            </div>
+                          </>
+                        )}
+                      </td>
+                      <td className="hidden px-4 py-2.5 text-right tabular-nums text-muted-foreground sm:table-cell">{jobs.get(s.id) ?? 0}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">
+                        {owedNow > 0.005 ? (
+                          <Link href={`/payroll?person=sub:${s.id}`} className="font-semibold text-warning hover:underline">
+                            {money(owedNow)}
+                          </Link>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {!docsError && (
+          <p className="text-[11px] text-muted-foreground">
+            <span className="font-semibold text-success">Green</span> on file ·{" "}
+            <span className="font-semibold text-warning">amber</span> expires within 30 days ·{" "}
+            <span className="font-semibold text-danger line-through">red</span>{" "}missing or expired. GL general liability, WC
+            workers&apos; comp, Agmt signed agreement.
+          </p>
+        )}
       </div>
-
-      {loading ? (
-        <div className="py-12 text-center text-sm text-muted-foreground">Loading…</div>
-      ) : filtered.length === 0 ? (
-        <EmptyState icon={HardHat} title={roster.length === 0 ? "No subcontractors yet" : "No subcontractors match your search"} description="Add a subcontractor to start assigning them to projects." />
-      ) : (
-        <div className="space-y-3">
-          {filtered.map((s) => {
-            const balance = balances[s.id];
-            const totalOutstanding = balance?.outstanding ?? 0;
-            const relatedProjectIds = Array.from(
-              new Set([...(assignmentsBySub[s.id] ?? []).map((a) => a.projectId), ...(balance?.projectIds ?? [])])
-            );
-            const isEditing = editingId === s.id;
-            return (
-              <div key={s.id} className="rounded-xl border border-border bg-card p-4">
-                {isEditing ? (
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <input value={editName} onChange={(e) => setEditName(e.target.value)} className="h-9 rounded-lg border border-input bg-background px-2 text-sm" />
-                    <input value={editTrade} onChange={(e) => setEditTrade(e.target.value)} placeholder="Trade" className="h-9 rounded-lg border border-input bg-background px-2 text-sm" />
-                    <input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} placeholder="Phone" className="h-9 rounded-lg border border-input bg-background px-2 text-sm" />
-                    <input value={editContactPerson} onChange={(e) => setEditContactPerson(e.target.value)} placeholder="Contact person" className="h-9 rounded-lg border border-input bg-background px-2 text-sm" />
-                    <div className="sm:col-span-2 flex justify-end gap-2">
-                      <button type="button" onClick={() => setEditingId(null)} className="rounded-lg border border-input px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted">Cancel</button>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          await subcontractorService.updateSubcontractor(s.id, { name: editName, trade: editTrade || null, phone: editPhone || null, contactPerson: editContactPerson || null });
-                          setEditingId(null);
-                          await load();
-                        }}
-                        className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-                      >
-                        Save
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-foreground">{s.name}</span>
-                        {s.trade && <span className="text-xs text-muted-foreground">· {s.trade}</span>}
-                        {!s.isActive && <Badge tone="neutral">inactive</Badge>}
-                      </div>
-                      <div className="mt-0.5 text-xs text-muted-foreground">
-                        {s.phone || "No phone"}{s.contactPerson ? ` · Contact: ${s.contactPerson}` : ""}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {totalOutstanding > 0 && (
-                        <span className="rounded-full bg-warning/15 px-2.5 py-0.5 text-xs font-semibold text-warning-foreground">
-                          {money(totalOutstanding)} owed
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingId(s.id);
-                          setEditName(s.name); setEditTrade(s.trade ?? ""); setEditPhone(s.phone ?? ""); setEditContactPerson(s.contactPerson ?? "");
-                        }}
-                        className="rounded-lg border border-input px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          await subcontractorService.updateSubcontractor(s.id, { isActive: !s.isActive });
-                          await load();
-                        }}
-                        className="rounded-lg border border-input px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted"
-                      >
-                        {s.isActive ? "Deactivate" : "Reactivate"}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {balance && (
-                  <div className="mt-3 grid grid-cols-3 gap-2 border-t border-border pt-2 text-xs">
-                    <div>
-                      <div className="text-muted-foreground">Total committed</div>
-                      <div className="font-semibold text-foreground">{money(balance.contracted)}</div>
-                    </div>
-                    <div>
-                      <div className="text-muted-foreground">Total paid</div>
-                      <div className="font-semibold text-foreground">{money(balance.paid)}</div>
-                    </div>
-                    <div>
-                      <div className="text-muted-foreground">Outstanding</div>
-                      <div className={balance.outstanding > 0 ? "font-semibold text-warning-foreground" : "font-semibold text-foreground"}>
-                        {money(balance.outstanding)}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Related projects — from assignments AND from any
-                    expense paid to this subcontractor, both already
-                    resolved by getPayeeBalances. */}
-                {relatedProjectIds.length > 0 && (
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
-                    <span className="text-muted-foreground">Projects:</span>
-                    {relatedProjectIds.map((pid) => (
-                      <Link key={pid} href={`/projects/${pid}`} className="font-medium text-primary hover:underline">
-                        {projectsById[pid]?.name ?? "Unknown project"}
-                      </Link>
-                    ))}
-                  </div>
-                )}
-
-                {/* Payments themselves are expense rows now — managed on
-                    the Expenses page, which is the one place a cost
-                    record is created, edited or deleted. */}
-              </div>
-            );
-          })}
-        </div>
-      )}
     </PageContainer>
   );
 }

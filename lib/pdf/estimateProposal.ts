@@ -8,6 +8,7 @@ import {
   type CompanySettings,
 } from "@/lib/company";
 import { sumApprovedChangeOrderRevenue } from "@/lib/services/financialCalculations";
+import { formatPropertyAddress } from "@/lib/services/propertyService";
 import {
   getEstimateTermsTemplate, overrideForTemplateKey, renderTermsBodyHtml, DEFAULT_ESTIMATE_TERMS_TEMPLATE,
   type EstimateTermsTemplateKey,
@@ -27,9 +28,38 @@ import {
  * is a pure function over that data — no I/O, no Supabase.
  */
 
+/** The property the estimate's job is at, as one line. Null when the job has
+ * no property, or when the caller cannot read properties (e.g. the customer
+ * portal's anonymous link), in which case the PDF simply omits the line. */
+async function loadJobPropertyAddress(supabase: SupabaseClient, projectId: string | null | undefined): Promise<string | null> {
+  if (!projectId) return null;
+  const { data: project } = await supabase.from("projects").select("*").eq("id", projectId).maybeSingle();
+  const propertyId = (project as { property_id?: string | null } | null)?.property_id;
+  if (!propertyId) return null;
+  const { data: property } = await supabase
+    .from("properties")
+    .select("nickname, street, city, state, zip")
+    .eq("id", propertyId)
+    .maybeSingle();
+  return property ? formatPropertyAddress(property as { nickname: string | null; street: string | null; city: string | null; state: string | null; zip: string | null }) : null;
+}
+
+async function loadJobProjectName(supabase: SupabaseClient, projectId: string | null | undefined): Promise<string | null> {
+  if (!projectId) return null;
+  const { data: project } = await supabase.from("projects").select("name").eq("id", projectId).maybeSingle();
+  return (project as { name?: string | null } | null)?.name ?? null;
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 export interface EstimateProposalData {
   estimate: Record<string, any>;
   client: Record<string, any> | null;
+  /** Job site address line (see loadJobPropertyAddress). Null = not shown. */
+  propertyAddress: string | null;
+  projectName: string | null;
   estimateItems: Array<Record<string, any>>;
   company: Awaited<ReturnType<typeof getCompanySettingsByCompanyId>>;
   roofingAreas: Array<Record<string, any>>;
@@ -181,9 +211,14 @@ export async function loadEstimateProposalData(
   const totalLaborCost = roofingAreas.reduce((sum, a) => sum + (Number(a.labor_cost) || 0), 0);
   const totalRoofTax = roofingAreas.reduce((sum, a) => sum + (Number(a.tax) || 0), 0);
 
+  const propertyAddress = await loadJobPropertyAddress(supabase, estimate.project_id);
+  const projectName = await loadJobProjectName(supabase, estimate.project_id);
+
   return {
     estimate,
     client,
+    propertyAddress,
+    projectName,
     estimateItems,
     company,
     roofingAreas,
@@ -209,7 +244,7 @@ export async function loadEstimateProposalData(
  * PDF) without a second copy of ~1500 lines of markup. */
 export function renderEstimateProposalHtml(data: EstimateProposalData): { docTitle: string; bodyHtml: string } {
   const {
-    estimate, client, estimateItems, company, roofingAreas, roofingAreaPhotos, estimatePhotosByType, photoUrl, origin,
+    estimate, client, propertyAddress, projectName, estimateItems, company, roofingAreas, roofingAreaPhotos, estimatePhotosByType, photoUrl, origin,
     subtotal, taxAmount, markupAmount, discountAmount, approvedChangeOrderTotal, total, depositAmount,
     totalMaterialCost, totalLaborCost, totalRoofTax,
   } = data;
@@ -245,6 +280,8 @@ export function renderEstimateProposalHtml(data: EstimateProposalData): { docTit
         <div>${client?.phone || ""}</div>
         <div>${client?.email || ""}</div>
         <div>${client?.address || ""}</div>
+        ${projectName ? `<div style="margin-top: 6px;"><span style="font-weight: 600; color: #111827;">Project:</span> ${escapeHtml(projectName)}</div>` : ""}
+        ${propertyAddress ? `<div style="margin-top: 6px;"><span style="font-weight: 600; color: #111827;">Property:</span> ${escapeHtml(propertyAddress)}</div>` : ""}
       </div>
       <div style="flex: 1;">
         <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #9ca3af; letter-spacing: 0.05em; margin-bottom: 4px;">Project Scope</div>
@@ -331,6 +368,7 @@ export function renderEstimateProposalHtml(data: EstimateProposalData): { docTit
                       <div style="width:54%; flex-grow:1; font-size:11.5px; color:#374151; line-height:1.5;">
                         ${labelValueBlock("Title / Area Name", `<span style="font-weight:600; color:#1f2937; font-size:12px;">${area.area_name || "-"}</span>`)}
                         ${area.quantity ? `<div style="margin-bottom:6px;"><strong style="color:#1f2937;">Quantity:</strong> ${area.quantity}${area.quantity_unit ? ` ${area.quantity_unit}` : ""}</div>` : ""}
+                        ${area.measurements ? `<div style="margin-bottom:6px;"><strong style="color:#1f2937;">Measurements:</strong> ${escapeHtml(area.measurements)}</div>` : ""}
                         ${area.location ? `<div style="margin-bottom:6px;"><strong style="color:#1f2937;">Location:</strong> ${area.location}</div>` : ""}
                         ${
                           [
@@ -338,6 +376,7 @@ export function renderEstimateProposalHtml(data: EstimateProposalData): { docTit
                             area.defect ? { label: "Defect", value: area.defect } : null,
                             area.corrective_action ? { label: "Corrective Action", value: area.corrective_action } : null,
                             area.materials_included ? { label: "Materials Included", value: area.materials_included } : null,
+                            area.notes ? { label: "Notes", value: area.notes } : null,
                           ]
                             .filter((f): f is { label: string; value: string } => f !== null)
                             .map(

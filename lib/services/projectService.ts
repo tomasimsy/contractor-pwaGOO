@@ -18,6 +18,11 @@ export interface Project extends AuditedEntity {
   startDate: string | null;
   endDate: string | null;
   assignedUserId: UUID | null;
+  /** The client's property this job is performed at (see PropertyService).
+   * Nullable: projects created before properties existed, projects with no
+   * client, and projects with no address keep null. `address` below stays
+   * the printed snapshot and is not derived from this. */
+  propertyId: UUID | null;
   /** Which branch/location this job belongs to — see LocationService.
    * Nullable: a single-location company (every company that exists
    * today) never needs to set this. Added for the multi-location
@@ -34,6 +39,8 @@ export interface CreateProjectInput {
   address?: string;
   assignedUserId?: UUID | null;
   locationId?: UUID | null;
+  /** Must belong to the same company and client as the project. */
+  propertyId?: UUID | null;
 }
 
 export interface ProjectService {

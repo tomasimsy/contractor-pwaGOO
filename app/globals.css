@@ -18,6 +18,9 @@
   --color-danger-foreground: var(--danger-foreground);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-border-strong: var(--border-strong);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -54,6 +57,9 @@
   --danger-foreground: #ffffff;
   --warning: #d97706;
   --warning-foreground: #78350f;
+  --success: #16794f;
+  --success-foreground: #ffffff;
+  --border-strong: #a1a1aa;
 }
 
 :root[data-theme="dark"] {
@@ -74,6 +80,9 @@
   --danger-foreground: #1c0a0a;
   --warning: #fbbf24;
   --warning-foreground: #451a03;
+  --success: #34b579;
+  --success-foreground: #05170f;
+  --border-strong: #52525b;
 }
 
 body {

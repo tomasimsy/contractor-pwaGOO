@@ -73,6 +73,24 @@ export type ExpenseCategory = "material" | "labor" | "other";
 export const PAYEE_TYPES = ["vendor", "subcontractor", "agent", "employee", "other"] as const;
 export type PayeeType = (typeof PAYEE_TYPES)[number];
 
+/** Payees who are PEOPLE: paid on Payroll, never as a vendor bill. */
+const PERSON_PAYEES: ReadonlySet<string> = new Set(["subcontractor", "agent", "employee"]);
+const PERSON_EXPENSE_TYPES: ReadonlySet<string> = new Set(["subcontractor", "agent_commission", "labor"]);
+
+/** A bill on the Vendor bills page: a due-dated expense the COMPANY owes a
+ * supplier or vendor. Some older rows also carry a due date but belong to
+ * Payroll — a people payment (a sub, an agent, team labour) or something a
+ * person paid for out of pocket (a reimbursement). They are left out here
+ * so their paid/unpaid state is only changed there. */
+export function isVendorBill(e: { dueDate: string | null; payeeType: string | null; expenseType: string; paidByType?: string | null }): boolean {
+  return (
+    !!e.dueDate &&
+    (e.paidByType ?? "company") === "company" &&
+    !PERSON_PAYEES.has(e.payeeType ?? "") &&
+    !PERSON_EXPENSE_TYPES.has(e.expenseType)
+  );
+}
+
 /** Who fronted the money. Drives reimbursement: anything other than
  * `company` means somebody is out of pocket. */
 export const PAID_BY_TYPES = ["company", "agent", "subcontractor", "employee", "customer"] as const;
@@ -134,6 +152,26 @@ export interface Expense extends AuditedEntity {
    * second expense for the same obligation. */
   dueDate: string | null;
   billNumber: string | null;
+  /** When it was paid. Set when a bill is paid; display only. */
+  paidOn?: string | null;
+  /** Check # or transfer reference for that payment. */
+  paidReference?: string | null;
+  /** When a reimbursable expense was paid back, how, and in which Payroll
+   * payment (see ReimbursementPayment). Null until reimbursed. */
+  reimbursedOn?: string | null;
+  reimbursedMethod?: string | null;
+  reimbursedReference?: string | null;
+  reimbursedCheck?: string | null;
+}
+
+/** How a reimbursement was paid back. */
+export interface ReimbursementPayment {
+  paidOn: string;
+  /** As Payroll writes it, e.g. "Check 1042". */
+  method: string;
+  reference?: string | null;
+  /** The Payroll payment it belongs to (shared with commission parts of the same check). */
+  checkId?: string | null;
 }
 
 export interface MileageTrip {
@@ -165,6 +203,8 @@ export interface ExpenseCreateInput {
   /** Non-null makes this a Bill. See Expense.dueDate. */
   dueDate?: string | null;
   billNumber?: string | null;
+  paidOn?: string | null;
+  paidReference?: string | null;
 }
 
 export type ExpenseUpdateInput = Partial<Omit<ExpenseCreateInput, "companyId">>;
@@ -213,7 +253,9 @@ export interface ExpenseService {
   /** Settle the debt to whoever fronted an expense. The Agent and
    * Subcontractor modules call THIS when recording a payout instead of
    * tracking reimbursement themselves. */
-  markReimbursed(expenseId: UUID): Promise<Expense>;
+  markReimbursed(expenseId: UUID, payment?: ReimbursementPayment): Promise<Expense>;
+  /** Undoes a reimbursement (a reversed Payroll payment): owed again. */
+  unmarkReimbursed(expenseId: UUID): Promise<Expense>;
 
   /** Everything still owed to people who fronted company money —
    * agents, subcontractors, employees. The future payouts view is a

@@ -62,7 +62,7 @@
  * delete/restore) already does.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Estimate, EstimateLineItem, EstimateService, ScopeLine } from "../estimateService";
+import type { Estimate, EstimateLineItem, EstimateService, EstimateSummaryQuery, EstimateSummaryPage, ScopeLine } from "../estimateService";
 import type { UUID, EstimateStatus, ProjectStatus, ValidationResult, QueryScope } from "../types";
 import type { ValidationService } from "../validationService";
 import type { AuditService } from "../auditService";
@@ -427,6 +427,126 @@ export function createSupabaseEstimateService(
     const { data, error } = await query.order("created_at", { ascending: false });
     if (error) throw new Error(`Failed to list estimates: ${error.message}`);
     return (data as EstimateRow[]).map(rowToEstimate);
+  }
+
+  async function listSummaries(scope: QueryScope, options: EstimateSummaryQuery = {}): Promise<EstimateSummaryPage> {
+    const { estimateType, statuses, search, estimateNumber, title, projectName, clientName, sortKey = "createdAt", sortDir = "desc", page = 1, pageSize = 50 } = options;
+
+    // Same escaping as listPage: characters that would change PostgREST's
+    // filter syntax are removed from user input before it goes into a filter.
+    const clean = (value: string) => value.trim().replace(/[(),*%_]/g, "");
+
+    // Project and client names live on other tables, so a name filter first
+    // finds the matching ids and then filters estimates by those ids.
+    const idsByName = async (table: "projects" | "clients", term: string): Promise<string[]> => {
+      const { data, error } = await supabase
+        .from(table)
+        .select("id")
+        .eq("company_id", scope.companyId)
+        .ilike("name", `%${term}%`)
+        .limit(500);
+      if (error) throw new Error(`Failed to search ${table}: ${error.message}`);
+      return (data ?? []).map((row) => (row as { id: string }).id);
+    };
+
+    // Explicit columns, so the signature image and other large fields are
+    // never downloaded for a list. Project and client names come from the
+    // same request.
+    let query = supabase
+      .from("estimates")
+      .select(
+        "id, company_id, project_id, client_id, estimate_number, title, status, total, estimate_type, created_at, updated_at, project:projects!estimates_project_id_fkey(name), client:clients(name)",
+        { count: "exact" }
+      )
+      .eq("company_id", scope.companyId);
+    if (!scope.includeDeleted) query = query.is("deleted_at", null);
+    if (estimateType) query = query.eq("estimate_type", estimateType);
+    if (statuses && statuses.length > 0) query = query.in("status", statuses);
+    if (estimateNumber && clean(estimateNumber)) query = query.ilike("estimate_number", `%${clean(estimateNumber)}%`);
+    if (title && clean(title)) query = query.ilike("title", `%${clean(title)}%`);
+
+    if (projectName && clean(projectName)) {
+      const ids = await idsByName("projects", clean(projectName));
+      if (ids.length === 0) return { rows: [], total: 0 };
+      query = query.in("project_id", ids);
+    }
+    if (clientName && clean(clientName)) {
+      const ids = await idsByName("clients", clean(clientName));
+      if (ids.length === 0) return { rows: [], total: 0 };
+      query = query.in("client_id", ids);
+    }
+
+    if (search && clean(search)) {
+      const term = clean(search);
+      const [projectIds, clientIds] = await Promise.all([idsByName("projects", term), idsByName("clients", term)]);
+      const parts = [`estimate_number.ilike.%${term}%`, `title.ilike.%${term}%`];
+      if (projectIds.length) parts.push(`project_id.in.(${projectIds.join(",")})`);
+      if (clientIds.length) parts.push(`client_id.in.(${clientIds.join(",")})`);
+      query = query.or(parts.join(","));
+    }
+
+    const SORT_COLUMN: Record<NonNullable<EstimateSummaryQuery["sortKey"]>, string> = {
+      createdAt: "created_at",
+      updatedAt: "updated_at",
+      total: "total",
+      estimateNumber: "estimate_number",
+      title: "title",
+      status: "status",
+    };
+    // "id" as the second sort key keeps pages stable when values tie.
+    query = query.order(SORT_COLUMN[sortKey], { ascending: sortDir === "asc" }).order("id", { ascending: true });
+
+    const from = (page - 1) * pageSize;
+    query = query.range(from, from + pageSize - 1);
+
+    const { data, error, count } = await query;
+    if (error) throw new Error(`Failed to list estimates: ${error.message}`);
+
+    type SummaryRow = Pick<
+      EstimateRow,
+      "id" | "project_id" | "client_id" | "estimate_number" | "title" | "status" | "total" | "estimate_type" | "created_at" | "updated_at"
+    > & {
+      project: { name: string } | null;
+      client: { name: string } | null;
+    };
+    const rows = ((data ?? []) as unknown as SummaryRow[]).map((row) => ({
+      id: row.id,
+      projectId: row.project_id,
+      clientId: row.client_id,
+      estimateNumber: row.estimate_number,
+      title: row.title,
+      status: row.status as EstimateStatus,
+      total: row.total,
+      estimateType: row.estimate_type,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at ?? row.created_at,
+      projectName: row.project?.name ?? "",
+      clientName: row.client?.name ?? "",
+    }));
+    return { rows, total: count ?? 0 };
+  }
+
+  async function countsByStatus(scope: QueryScope, estimateType?: "standard" | "roofing"): Promise<Record<EstimateStatus, number>> {
+    const statuses: EstimateStatus[] = ["draft", "sent", "viewed", "approved", "rejected", "converted_to_invoice"];
+    // Each count is a HEAD request, so no rows are downloaded.
+    const results = await Promise.all(
+      statuses.map((status) => {
+        let query = supabase
+          .from("estimates")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", scope.companyId)
+          .eq("status", status);
+        if (!scope.includeDeleted) query = query.is("deleted_at", null);
+        if (estimateType) query = query.eq("estimate_type", estimateType);
+        return query;
+      })
+    );
+    const counts = {} as Record<EstimateStatus, number>;
+    results.forEach((result, i) => {
+      if (result.error) throw new Error(`Failed to count estimates: ${result.error.message}`);
+      counts[statuses[i]] = result.count ?? 0;
+    });
+    return counts;
   }
 
   async function create(input: {
@@ -904,5 +1024,5 @@ export function createSupabaseEstimateService(
     return { rows, total: count ?? 0 };
   }
 
-  return { getById, listForProject, list, create, getScopeLines, updateLineItems, update, recalculateTotal, changeStatus, recordSignature, softDelete, restore, listPage };
+  return { getById, listForProject, list, listSummaries, countsByStatus, create, getScopeLines, updateLineItems, update, recalculateTotal, changeStatus, recordSignature, softDelete, restore, listPage };
 }

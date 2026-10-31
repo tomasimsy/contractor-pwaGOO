@@ -119,6 +119,8 @@ export interface ProjectFinancials {
   agentCosts: CommittedCost; // max(assigned, paid) per assignment
   expenseItems: number;
   mileageCosts: number;
+  /** Approved time-entry labor (hours × rate). Counted once, in totalExpenses. */
+  laborCost: number;
   totalExpenses: number;
   grossProfit: number; // revisedTotal - (subcontractorCosts + agentCosts)
   netProfit: number; // revisedTotal - totalExpenses
@@ -271,6 +273,8 @@ export interface EstimateFinancials {
   /** Mileage reimbursement (ExpenseService's `mileage_trips`),
    * project-scoped like the assignment costs above. */
   mileageCosts: number;
+  /** Approved time-entry labor (hours × rate). Counted once, in totalExpenses. */
+  laborCost: number;
   /** expenseItems + mileageCosts + teamLabourRemaining, via the shared
    * calculateJobProfit (financialCalculations.ts) — the same definition
    * ProjectFinancials.totalExpenses uses.
@@ -308,6 +312,8 @@ export interface CompanyFinancials {
   agentCommissionPaid: RealizedCost;
   expenseItems: number;
   mileageCosts: number;
+  /** Approved time-entry labor (hours × rate). Counted once, in totalExpenses. */
+  laborCost: number;
   totalExpenses: number;
   netProfit: number;
   profitMargin: number;

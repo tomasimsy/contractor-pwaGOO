@@ -10,6 +10,7 @@
  * system-generated status history (read-only); this is staff-written
  * freeform notes (add/edit/delete).
  */
+import { buttonClass } from "@/components/ui/Button";
 import { useCallback, useEffect, useState } from "react";
 import { StickyNote, Loader2, Trash2, Pencil, Plus } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
@@ -98,13 +99,13 @@ export function EstimateNotesPanel({
   }
 
   return (
-    <section className="rounded-xl border border-[#d4a000]/20 bg-[#f7ecc8] shadow-sm">
+    <section className="rounded-xl border border-[#E2E5E0] bg-white">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-[#d4a000]/15 px-4 py-2.5">
-        <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-black">
-          <StickyNote className="size-3.5 text-[#7a5200]" /> Notes
+      <div className="flex items-center justify-between border-b border-[#E2E5E0] px-4 py-2.5">
+        <h2 className="flex items-center gap-2 font-[family-name:var(--font-doc-display)] text-[15px] font-semibold text-[#1B2430]">
+          <StickyNote className="size-3.5 text-[#0B5F5E]" /> Notes
         </h2>
-        <span className="text-[10px] font-medium text-black/50">
+        <span className="text-[10px] font-medium text-[#8A93A0]">
           {notes?.length || 0}
         </span>
       </div>
@@ -119,13 +120,13 @@ export function EstimateNotesPanel({
               onChange={(e) => setDraft(e.target.value)}
               placeholder="Write a note…"
               rows={2}
-              className="w-full resize-none rounded-lg border border-[#d4a000]/20 bg-[#fdf6e0] px-3 py-2 pr-20 text-sm text-black placeholder:text-black/40 focus:border-[#b8960f] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#d4a000]/20 transition-all"
+              className="w-full resize-none rounded-lg border border-[#D0D5CD] bg-white px-3 py-2 pr-20 text-sm text-[#1B2430] placeholder:text-[#8A93A0] focus:border-[#0E7C7B] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0E7C7B]/20 transition-all"
             />
             <button
               type="button"
               onClick={handleAdd}
               disabled={!draft.trim() || saving}
-              className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-lg bg-[#070401] px-3 py-1 text-[11px] font-medium text-white hover:bg-[#5c3d00] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+              className={buttonClass("primary", "absolute bottom-2 right-2 h-7 px-2.5 text-xs")}
             >
               {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
               Add
@@ -137,13 +138,13 @@ export function EstimateNotesPanel({
         {/* Notes List */}
         {notes === null ? (
           <div className="flex items-center justify-center py-6">
-            <Loader2 className="size-5 animate-spin text-black/20" />
+            <Loader2 className="size-5 animate-spin text-[#8A93A0]" />
           </div>
         ) : notes.length === 0 ? (
           <div className="py-8 text-center">
-            <StickyNote className="mx-auto size-8 text-black/10" strokeWidth={1.5} />
-            <p className="mt-2 text-sm font-medium text-black/40">No notes yet</p>
-            <p className="text-xs text-black/30">Add your first note above</p>
+            <StickyNote className="mx-auto size-8 text-[#8A93A0]" strokeWidth={1.5} />
+            <p className="mt-2 text-sm font-medium text-[#8A93A0]">No notes yet</p>
+            <p className="text-xs text-[#8A93A0]">Add your first note above</p>
           </div>
         ) : (
           <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
@@ -152,7 +153,7 @@ export function EstimateNotesPanel({
               return (
                 <div
                   key={note.id}
-                  className="group rounded-lg border border-[#d4a000]/15 bg-[#fdf6e0] p-3 transition-all hover:border-[#b8960f]/30 hover:bg-[#fdf6e0]/80 hover:shadow-sm"
+                  className="group rounded-lg border border-[#E2E5E0] bg-white p-3 transition-all hover:border-[#D0D5CD] hover:shadow-sm"
                 >
                   {isEditing ? (
                     <div className="space-y-2">
@@ -161,13 +162,13 @@ export function EstimateNotesPanel({
                         onChange={(e) => setEditDraft(e.target.value)}
                         rows={2}
                         autoFocus
-                        className="w-full resize-none rounded-lg border border-[#d4a000]/20 bg-[#fdf6e0] px-3 py-2 text-sm text-black focus:border-[#b8960f] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#d4a000]/20 transition-all"
+                        className="w-full resize-none rounded-lg border border-[#D0D5CD] bg-white px-3 py-2 text-sm text-[#1B2430] focus:border-[#0E7C7B] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0E7C7B]/20 transition-all"
                       />
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
                           onClick={cancelEdit}
-                          className="rounded-lg px-3 py-1 text-[11px] font-medium text-black/60 hover:bg-black/5 transition-all"
+                          className={buttonClass("secondary", "h-7 px-2.5 text-xs")}
                         >
                           Cancel
                         </button>
@@ -175,7 +176,7 @@ export function EstimateNotesPanel({
                           type="button"
                           onClick={() => saveEdit(note.id)}
                           disabled={!editDraft.trim() || editSaving}
-                          className="rounded-lg bg-[#7a5200] px-3 py-1 text-[11px] font-medium text-white hover:bg-[#5c3d00] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+                          className={buttonClass("primary", "h-7 px-2.5 text-xs")}
                         >
                           {editSaving ? <Loader2 className="size-3.5 animate-spin" /> : "Save"}
                         </button>
@@ -183,16 +184,16 @@ export function EstimateNotesPanel({
                     </div>
                   ) : (
                     <>
-                      <p className="text-sm text-black leading-relaxed">{note.body}</p>
+                      <p className="text-sm text-[#1B2430] leading-relaxed">{note.body}</p>
                       <div className="mt-2 flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-[10px] text-black/60">
-                          <span className="font-semibold text-black/80">
+                        <div className="flex items-center gap-2 text-[10px] text-[#5B6675]">
+                          <span className="font-semibold text-[#1B2430]">
                             {note.authorName ?? "Team Member"}
                           </span>
-                          <span className="text-black/20">·</span>
+                          <span className="text-[#8A93A0]">·</span>
                           <span>{formatWhen(note.createdAt)}</span>
                           {note.updatedAt && (
-                            <span className="text-black/20">(edited)</span>
+                            <span className="text-[#8A93A0]">(edited)</span>
                           )}
                         </div>
                         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -200,7 +201,7 @@ export function EstimateNotesPanel({
                             type="button"
                             onClick={() => startEdit(note)}
                             aria-label="Edit note"
-                            className="rounded p-1 text-black/30 hover:bg-black/5 hover:text-black/70 transition-all"
+                            className="rounded p-1 text-[#8A93A0] hover:bg-[#F4F5F2] hover:text-[#1B2430]/70 transition-all"
                           >
                             <Pencil className="size-3.5" />
                           </button>
@@ -209,7 +210,7 @@ export function EstimateNotesPanel({
                             onClick={() => handleDelete(note.id)}
                             disabled={deletingId === note.id}
                             aria-label="Delete note"
-                            className="rounded p-1 text-black/30 hover:bg-red-50 hover:text-red-600 transition-all disabled:opacity-50"
+                            className="rounded p-1 text-[#8A93A0] hover:bg-red-50 hover:text-red-600 transition-all disabled:opacity-50"
                           >
                             {deletingId === note.id ? (
                               <Loader2 className="size-3.5 animate-spin" />

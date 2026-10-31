@@ -8,6 +8,8 @@ import { ALL_NAV_ITEMS } from "@/lib/navigation";
 function humanize(segment: string): string {
   const known = ALL_NAV_ITEMS.find((i) => i.href === `/${segment}`);
   if (known) return known.label;
+  // A record id means nothing to a reader; the page's own heading names the record.
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment)) return "Details";
   return segment
     .split("-")
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))

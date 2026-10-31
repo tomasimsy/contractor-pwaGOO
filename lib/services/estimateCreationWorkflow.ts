@@ -38,6 +38,7 @@
 import type { UUID } from "./types";
 import type { Project, ProjectService } from "./projectService";
 import type { Estimate, EstimateService } from "./estimateService";
+import { formatPropertyAddress, type Property } from "./propertyService";
 
 /** EstimateService.create's input. Declared structurally here because
  * that service takes its input inline and exports no named type; this
@@ -86,22 +87,30 @@ export function defaultProjectName(clientName: string): string {
  */
 export async function resolveProjectForClient(
   projectService: ProjectService,
-  input: { companyId: UUID; clientId: UUID; clientName: string }
+  input: { companyId: UUID; clientId: UUID; clientName: string; property?: Property | null }
 ): Promise<{ project: Project; created: boolean }> {
   const projects = await projectService.list({ companyId: input.companyId });
-  const existing = projects
+  const clientOpen = projects
     .filter((p) => p.clientId === input.clientId && isOpenProject(p))
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  // With a property chosen, only a job at that same house will do. An
+  // estimate for House B must never land on a job for House A.
+  const existing = input.property
+    ? clientOpen.find((p) => p.propertyId === input.property!.id)
+    : clientOpen[0];
 
   if (existing) return { project: existing, created: false };
 
-  // Same call, same fields, same defaults as ProjectForm's manual
-  // create — description/address are simply left unset, exactly as they
-  // are when a user submits that form with those inputs blank.
+  // Same call as ProjectForm's manual create. A chosen property also
+  // sets the job's address text, so the printed address matches the house.
   const project = await projectService.create({
     companyId: input.companyId,
     clientId: input.clientId,
     name: defaultProjectName(input.clientName),
+    ...(input.property
+      ? { propertyId: input.property.id, address: formatPropertyAddress(input.property) }
+      : {}),
   });
   return { project, created: true };
 }
@@ -113,6 +122,9 @@ export interface CreateEstimateWorkflowInput extends Omit<CreateEstimateInput, "
   projectId?: UUID | null;
   /** Required only when a project has to be created, to name it. */
   clientName?: string | null;
+  /** Only used when no project is chosen (Auto). The estimate goes to the
+   * open job for this property, or a new job at this property is created. */
+  property?: Property | null;
 }
 
 export interface CreateEstimateWorkflowResult {
@@ -141,7 +153,7 @@ export async function createEstimateForClient(
   input: CreateEstimateWorkflowInput,
   basePath = "/estimates"
 ): Promise<CreateEstimateWorkflowResult> {
-  const { projectId, clientName, ...estimateInput } = input;
+  const { projectId, clientName, property, ...estimateInput } = input;
 
   let project: Project | null = null;
   let projectCreated = false;
@@ -155,6 +167,7 @@ export async function createEstimateForClient(
       companyId: estimateInput.companyId,
       clientId: estimateInput.clientId,
       clientName: clientName?.trim() || "Client",
+      property: property ?? null,
     });
     project = resolved.project;
     projectCreated = resolved.created;

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isBilledInvoice } from "@/lib/services/financialEngine";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { SUPABASE_URL } from "@/lib/supabase/env";
 import { createServerAppServices } from "@/lib/services/server";
@@ -359,14 +360,20 @@ async function sendWeeklyDigest(services: ReturnType<typeof createServerAppServi
   const weekStart = new Date(now);
   weekStart.setUTCDate(weekStart.getUTCDate() - 7);
 
-  const [invoices, payments] = await Promise.all([
+  const [invoices, payments, allPayments] = await Promise.all([
     services.invoiceService.listForCompany({ companyId }),
     services.paymentService.listForCompany({ companyId, dateRange: { start: weekStart, end: now } }),
+    services.paymentService.listForCompany({ companyId }),
   ]);
 
   const revenue = payments.reduce((sum, p) => sum + p.amount, 0);
-  const unpaid = invoices.filter((i) => isOutstandingInvoiceStatus(i.status));
-  const unpaidTotal = unpaid.reduce((sum, i) => sum + i.total, 0);
+  // What is still owed on each open invoice — its total less what has been
+  // paid on it — the same figure Accounting's receivables shows.
+  const paidOn = new Map<string, number>();
+  for (const p of allPayments) paidOn.set(p.invoiceId, (paidOn.get(p.invoiceId) ?? 0) + p.amount);
+  const remaining = (i: (typeof invoices)[number]) => Math.max(0, i.total - (paidOn.get(i.id) ?? 0));
+  const unpaid = invoices.filter((i) => isOutstandingInvoiceStatus(i.status) && isBilledInvoice(i) && remaining(i) > 0.005);
+  const unpaidTotal = Math.round(unpaid.reduce((sum, i) => sum + remaining(i), 0) * 100) / 100;
 
   await sendPushToCompany(services.pushSubscriptionService, companyId, {
     title: "Weekly summary",

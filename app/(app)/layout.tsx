@@ -32,7 +32,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // and RLS layers regardless.
   const { user, authResolving } = useAuth();
   const router = useRouter();
-  const navHidden = hidesMobileBottomNav(usePathname());
+  const pathname = usePathname();
+  const navHidden = hidesMobileBottomNav(pathname);
+  // New-estimate and edit screens are focused tasks: no app sidebar, header or
+  // bottom tab bar, and a tighter gutter. They have a "← Estimates" link back.
+  // The estimate view page keeps the full shell so navigation stays available.
+  const estimatePage = /^\/estimates(-roof)?\/(new$|[0-9a-f]{8}-[0-9a-f-]{27}\/edit$)/i.test(pathname);
+  // These pages keep the sidebar and top bar but use the tighter gutter.
+  const tightTopPage = pathname === "/estimates-roof" || pathname === "/accounting" || pathname === "/payroll" || /^\/(projects|subcontractors)\/[0-9a-f-]{36}$/i.test(pathname) || pathname === "/subcontractors" || pathname === "/bills" || pathname === "/payments";
 
   useEffect(() => {
     if (!authResolving && !user) router.replace("/login");
@@ -50,18 +57,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-muted/40">
-      <Sidebar />
+      {!estimatePage && <Sidebar />}
       <div className="flex min-w-0 flex-1 flex-col">
-        <AppHeader />
+        {!estimatePage && <AppHeader />}
        {/* `pb-24` reserves room for the fixed MobileBottomNav. When
            that nav isn't rendered (edit screens — see
            hidesMobileBottomNav) the reservation would just be 96px of
            dead space at the bottom of the page. */}
-       <main className={`flex-1 px-4 py-6 sm:px-6 lg:px-8 ${navHidden ? "pb-6" : "pb-24"}`}>
+       <main className={`flex-1 ${estimatePage ? "px-3 py-3 sm:px-4 lg:px-4" : tightTopPage ? "px-3 py-3 sm:px-4 lg:px-4" : "px-4 py-6 sm:px-6 lg:px-8"} ${navHidden || estimatePage ? "pb-6" : "pb-24"}`}>
         {children}
       </main>
 
-      <MobileBottomNav />
+      {!estimatePage && <MobileBottomNav />}
       </div>
     </div>
   );

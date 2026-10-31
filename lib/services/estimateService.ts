@@ -39,6 +39,46 @@ export interface EstimateLineItem {
   groupName?: string | null;
 }
 
+/** An estimate as a list row shows it: no line items, no signature image. */
+export interface EstimateSummary {
+  id: UUID;
+  projectId: UUID;
+  clientId: UUID | null;
+  estimateNumber: string | null;
+  title: string | null;
+  status: EstimateStatus;
+  total: number;
+  estimateType: "standard" | "roofing";
+  createdAt: string;
+  updatedAt: string;
+  projectName: string;
+  clientName: string;
+}
+
+/** Filters, sort and paging for listSummaries. Every filter is optional. */
+export interface EstimateSummaryQuery {
+  estimateType?: "standard" | "roofing";
+  /** Matches any of these statuses. Empty or missing means all statuses. */
+  statuses?: EstimateStatus[];
+  /** Matches estimate #, title, project name or client name. */
+  search?: string;
+  estimateNumber?: string;
+  title?: string;
+  projectName?: string;
+  clientName?: string;
+  sortKey?: "createdAt" | "updatedAt" | "total" | "estimateNumber" | "title" | "status";
+  sortDir?: "asc" | "desc";
+  /** 1-based. */
+  page?: number;
+  pageSize?: number;
+}
+
+export interface EstimateSummaryPage {
+  rows: EstimateSummary[];
+  /** Rows matching the filters, across all pages. */
+  total: number;
+}
+
 export interface Estimate extends AuditedEntity {
   projectId: UUID;
   clientId: UUID | null;
@@ -178,6 +218,16 @@ export interface EstimateService {
    * across every project, not just one) — same QueryScope contract as
    * ClientService.list/ProjectService.list. */
   list(scope: QueryScope): Promise<Estimate[]>;
+
+  /** One page of company-wide list rows, filtered, sorted and paged on the
+   * server. Only the columns those rows show, plus the project and client
+   * names, in one request. Leaves out the signature image and other large
+   * fields that `list` returns. */
+  listSummaries(scope: QueryScope, query?: EstimateSummaryQuery): Promise<EstimateSummaryPage>;
+
+  /** Number of estimates in each status, for the list's status tabs. Counts
+   * only the estimate type given (or all types), not the list's search. */
+  countsByStatus(scope: QueryScope, estimateType?: "standard" | "roofing"): Promise<Record<EstimateStatus, number>>;
 
   create(input: {
     companyId: UUID;

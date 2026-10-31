@@ -54,7 +54,9 @@ describe("Enterprise platform: accounting, payroll, multi-location, reporting", 
     });
     await services.estimateService.changeStatus(estB.id, "sent");
     await services.estimateService.changeStatus(estB.id, "approved");
-    await services.invoiceService.createFromEstimate(estB.id, { issueDate: "2026-01-06", dueDate: "2020-01-01" }); // already overdue, no payment
+    const invB = await services.invoiceService.createFromEstimate(estB.id, { issueDate: "2026-01-06", dueDate: "2020-01-01" }); // already overdue, no payment
+    // Sent, so it is a receivable (an unsent draft is not owed yet).
+    await services.invoiceService.changeStatus(invB.id, "sent");
   });
 
   describe("Financial Statements", () => {

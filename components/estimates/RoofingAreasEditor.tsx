@@ -9,6 +9,8 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useConfirmDialog } from "@/components/ui/useConfirmDialog";
+import { useToast } from "@/components/ui/useToast";
 import { Plus, Trash2, Upload, Image as ImageIcon } from "lucide-react";
 import { useServices } from "@/components/providers/ServicesProvider";
 import type { RoofingArea, RoofingPhoto } from "@/lib/services";
@@ -59,7 +61,7 @@ export function RoofingAreasEditor({ estimateId, areas, onChange, onSave, onDele
       // Validate that the area has been saved (has a company_id)
       const area = areas.find((a) => a.id === areaId);
       if (!area?.companyId) {
-        alert("Please save the roof area first before uploading photos.");
+        notify("Please save the roof area first before uploading photos.");
         return;
       }
 
@@ -102,7 +104,7 @@ export function RoofingAreasEditor({ estimateId, areas, onChange, onSave, onDele
         }
       } catch (error) {
         console.error("Photo upload error:", error);
-        alert(`Failed to upload photo: ${error instanceof Error ? error.message : "Unknown error"}`);
+        notify(`Failed to upload photo: ${error instanceof Error ? error.message : "Unknown error"}`);
       } finally {
         setUploading((prev) => ({ ...prev, [uploadKey]: false }));
       }
@@ -110,9 +112,12 @@ export function RoofingAreasEditor({ estimateId, areas, onChange, onSave, onDele
     [estimateId, roofingAreaService]
   );
 
+  const { ask, dialog } = useConfirmDialog();
+  const { notify, toast } = useToast();
+
   const handleDeletePhoto = useCallback(
     async (areaId: UUID, photoId: UUID) => {
-      if (!confirm("Delete this photo?")) return;
+      if ((await ask({ title: "Delete this photo?", confirmLabel: "Delete", destructive: true })) === null) return;
       try {
         await roofingAreaService.deletePhoto(photoId, "Deleted by user");
         setAreaPhotos((prev) => ({
@@ -124,7 +129,7 @@ export function RoofingAreasEditor({ estimateId, areas, onChange, onSave, onDele
         }));
       } catch (error) {
         console.error("Failed to delete photo:", error);
-        alert("Failed to delete photo. Please try again.");
+        notify("Failed to delete photo. Please try again.");
       }
     },
     [roofingAreaService]
@@ -158,7 +163,7 @@ export function RoofingAreasEditor({ estimateId, areas, onChange, onSave, onDele
     async (area: RoofingArea) => {
       console.log("handleSaveArea called with area:", area.id, area.areaName);
       if (!area.areaName.trim()) {
-        alert("Area name is required.");
+        notify("Area name is required.");
         return;
       }
       setSavingAreaIds((prev) => new Set([...prev, area.id]));
@@ -184,7 +189,7 @@ export function RoofingAreasEditor({ estimateId, areas, onChange, onSave, onDele
         }, 2000);
       } catch (error) {
         console.error("Failed to save area:", area.id, error instanceof Error ? error.message : JSON.stringify(error));
-        alert("Failed to save roof area. Please try again.");
+        notify("Failed to save roof area. Please try again.");
       } finally {
         setSavingAreaIds((prev) => {
           const next = new Set(prev);
@@ -198,14 +203,14 @@ export function RoofingAreasEditor({ estimateId, areas, onChange, onSave, onDele
 
   const handleDeleteArea = useCallback(
     async (areaId: UUID) => {
-      if (!confirm("Delete this roof area?")) return;
+      if ((await ask({ title: "Delete this roof area?", confirmLabel: "Delete", destructive: true })) === null) return;
       setDeletingAreaIds((prev) => new Set([...prev, areaId]));
       try {
         await onDelete(areaId);
         onChange(areas.filter((a) => a.id !== areaId));
       } catch (error) {
         console.error("Failed to delete area:", areaId, error);
-        alert("Failed to delete roof area. Please try again.");
+        notify("Failed to delete roof area. Please try again.");
       } finally {
         setDeletingAreaIds((prev) => {
           const next = new Set(prev);
@@ -399,6 +404,8 @@ export function RoofingAreasEditor({ estimateId, areas, onChange, onSave, onDele
       >
         <Plus className="inline size-4 mr-1" /> Add Another Area
       </button>
+      {dialog}
+      {toast}
     </div>
   );
 }

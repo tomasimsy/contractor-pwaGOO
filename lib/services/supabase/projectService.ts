@@ -42,6 +42,7 @@ interface ProjectRow {
   end_date: string | null;
   assigned_user_id: string | null;
   location_id: string | null;
+  property_id: string | null;
   created_by: string | null;
   created_at: string;
   updated_by: string | null;
@@ -65,6 +66,7 @@ function rowToProject(row: ProjectRow): Project {
     endDate: row.end_date,
     assignedUserId: row.assigned_user_id,
     locationId: row.location_id,
+    propertyId: row.property_id ?? null,
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedBy: row.updated_by,
@@ -98,6 +100,21 @@ export function createSupabaseProjectService(
     if (!validation.valid) throw new Error(validation.issues[0]?.message ?? "This client does not belong to your company.");
   }
 
+  /** A project's property must belong to the same company, and to the
+   * same client when the project has one. Nothing else in the database
+   * enforces this, so a crafted request could otherwise attach another
+   * client's address to a job. Null clears the link and is always allowed. */
+  async function assertPropertyOwnership(propertyId: UUID | null | undefined, companyId: UUID, clientId: UUID | null): Promise<void> {
+    if (!propertyId) return;
+    const { data, error } = await supabase.from("properties").select("company_id, client_id").eq("id", propertyId).is("deleted_at", null).maybeSingle();
+    if (error) throw new Error(`Failed to check property: ${error.message}`);
+    if (!data) throw new Error("Selected property was not found.");
+    const row = data as { company_id: string; client_id: string };
+    const sameCompany = validationService.validateCompanyOwnership({ payloadCompanyId: row.company_id, sessionCompanyId: companyId });
+    if (!sameCompany.valid) throw new Error(sameCompany.issues[0]?.message ?? "This property does not belong to your company.");
+    if (clientId && row.client_id !== clientId) throw new Error("This property belongs to a different client.");
+  }
+
   async function getById(projectId: UUID, includeDeleted = false): Promise<Project | null> {
     let query = supabase.from("projects").select("*").eq("id", projectId);
     if (!includeDeleted) query = query.is("deleted_at", null);
@@ -117,6 +134,7 @@ export function createSupabaseProjectService(
 
   async function create(input: CreateProjectInput): Promise<Project> {
     await assertClientOwnership(input.clientId, input.companyId);
+    await assertPropertyOwnership(input.propertyId, input.companyId, input.clientId);
 
     const { data, error } = await supabase
       .from("projects")
@@ -128,6 +146,9 @@ export function createSupabaseProjectService(
         address: input.address ?? null,
         assigned_user_id: input.assignedUserId ?? null,
         location_id: input.locationId ?? null,
+        // Only sent when set, so a project saved without a property never
+        // touches the column — it works before the properties migration too.
+        ...(input.propertyId ? { property_id: input.propertyId } : {}),
       })
       .select()
       .single();
@@ -137,13 +158,20 @@ export function createSupabaseProjectService(
   }
 
   async function update(projectId: UUID, changes: Partial<Omit<Project, "id" | "companyId" | "createdBy" | "createdAt" | "updatedBy" | "updatedAt" | "deletedBy" | "deletedAt" | "deleteReason">>): Promise<Project> {
-    if (changes.clientId !== undefined) {
+    if (changes.clientId !== undefined || changes.propertyId !== undefined) {
       const current = await getById(projectId);
       if (!current) throw new Error("Project not found.");
-      await assertClientOwnership(changes.clientId, current.companyId);
+      if (changes.clientId !== undefined) await assertClientOwnership(changes.clientId, current.companyId);
+      // Check the property against the client the project will have after this update.
+      const effectiveClientId = changes.clientId !== undefined ? changes.clientId : current.clientId;
+      if (changes.propertyId !== undefined) await assertPropertyOwnership(changes.propertyId, current.companyId, effectiveClientId);
     }
 
     const payload: Record<string, unknown> = {};
+    // Clearing (null) is only written when there is something to clear, so
+    // saving a job with no property never touches the column.
+    if (changes.propertyId !== undefined && changes.propertyId !== null) payload.property_id = changes.propertyId;
+    if (changes.propertyId === null) payload.property_id = null;
     if (changes.name !== undefined) payload.name = changes.name;
     if (changes.description !== undefined) payload.description = changes.description;
     if (changes.address !== undefined) payload.address = changes.address;
@@ -166,7 +194,16 @@ export function createSupabaseProjectService(
     const validation = validationService.validateProjectStatusTransition(current.status, toStatus);
     if (!validation.valid) return validation;
 
-    const { data, error } = await supabase.from("projects").update({ status: toStatus }).eq("id", projectId).select().single();
+    // A completed job needs an end date: job pay is counted in the period that
+    // contains it. Fill in today (local date) when the job has none yet.
+    const statusPayload: Record<string, unknown> = { status: toStatus };
+    if (toStatus === "completed" && !current.endDate) {
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      statusPayload.end_date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    }
+
+    const { data, error } = await supabase.from("projects").update(statusPayload).eq("id", projectId).select().single();
     if (error) throw new Error(`Failed to change project status: ${error.message}`);
     const project = rowToProject(data as ProjectRow);
 

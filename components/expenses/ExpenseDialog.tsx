@@ -10,11 +10,13 @@
  * - Agent commission amount is manually adjustable (defaults to calculated split)
  */
 import { useMemo, useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { X, Check, Trash2 } from "lucide-react";
 import { CreateOrSelect, type DirectoryOption } from "@/components/shared/CreateOrSelect";
 import { AgentCommissionPreview } from "./AgentCommissionPreview";
 import { createAgentDirectory, createSubcontractorDirectory, createVendorDirectory, createCompanyUserDirectory } from "./directories";
 import { PAYMENT_METHODS } from "@/components/payments/paymentMethods";
+import { useConfirmDialog } from "@/components/ui/useConfirmDialog";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { supabase } from "@/lib/supabase/client";
@@ -247,6 +249,8 @@ export function ExpenseDialog({
     }
   }
 
+  const { ask, dialog } = useConfirmDialog();
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
@@ -277,9 +281,12 @@ export function ExpenseDialog({
       // Warn if total commission exceeds remaining profit, but allow submission
       const totalCommission = parsedManualAmount * selectedAgents.length;
       if (totalCommission > (estimateFinancials.netProfit ?? 0)) {
-        if (!window.confirm(`Total commission ($${totalCommission.toFixed(2)}) exceeds remaining profit ($${estimateFinancials.netProfit?.toFixed(2)}). Continue anyway?`)) {
-          return;
-        }
+        const confirmed = await ask({
+          title: "Commission exceeds profit",
+          message: `Total commission ($${totalCommission.toFixed(2)}) exceeds remaining profit ($${estimateFinancials.netProfit?.toFixed(2)}). Continue anyway?`,
+          confirmLabel: "Continue",
+        });
+        if (confirmed === null) return;
       }
     }
 
@@ -353,7 +360,8 @@ export function ExpenseDialog({
 
   async function handleDelete() {
     if (!expense || !onDelete) return;
-    if (!window.confirm(`Delete this expense?`)) return;
+    const confirmed = await ask({ title: "Delete this expense?", confirmLabel: "Delete", destructive: true });
+    if (confirmed === null) return;
     setDeleting(true);
     setError(null);
     try {
@@ -372,6 +380,9 @@ export function ExpenseDialog({
   const isAgentTab = activeTab === "agent";
   const isSubTab = activeTab === "subcontractor";
   const isGeneralTab = activeTab === "general";
+  // Subcontractor and agent payments are made on Payroll for now, so each check has a
+  // number and shows as one payment. Existing ones can still be edited here.
+  const payOnPayroll = !isEdit && (isSubTab || isAgentTab);
   const showAmount = expenseType !== "agent_commission";
 
   return (
@@ -405,12 +416,27 @@ export function ExpenseDialog({
               }`}
             >
               {tab === "general" ? "General" : tab === "subcontractor" ? "Subcontractor" : "Agent"}
+              {tab !== "general" && !isEdit && <span className="ml-1 font-normal text-muted-foreground">· Payroll</span>}
             </button>
           ))}
         </div>
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto px-4 py-3">
+          {payOnPayroll ? (
+            <div className="rounded-lg border border-border bg-muted/40 px-4 py-4 text-sm">
+              <p className="font-medium text-foreground">
+                {isSubTab ? "Subcontractors" : "Agents"} are paid on the Payroll page
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                Assign the amount on the estimate, then record the payment on Payroll. Each payment gets a check number and
+                shows up here, on the estimate and in the profit figures automatically.
+              </p>
+              <Link href="/payroll" className="mt-3 inline-block font-medium text-primary hover:underline">
+                Go to Payroll →
+              </Link>
+            </div>
+          ) : (
           <form ref={formRef} onSubmit={handleSubmit} className="space-y-3">
             {error && (
               <div className="rounded bg-danger/10 px-3 py-1.5 text-sm text-danger">{error}</div>
@@ -730,6 +756,7 @@ export function ExpenseDialog({
             {/* Invisible spacer to ensure scroll doesn't hide content behind footer */}
             <div className="h-2" />
           </form>
+          )}
         </div>
 
         {/* ---- STICKY FOOTER ---- */}
@@ -756,6 +783,7 @@ export function ExpenseDialog({
               >
                 Cancel
               </button>
+              {!payOnPayroll && (
               <button
                 type="submit"
                 onClick={(e) => {
@@ -767,10 +795,12 @@ export function ExpenseDialog({
               >
                 {saving ? "Saving…" : isEdit ? "Save" : "Record"}
               </button>
+              )}
             </div>
           </div>
         </div>
       </div>
+      {dialog}
     </div>
   );
 }

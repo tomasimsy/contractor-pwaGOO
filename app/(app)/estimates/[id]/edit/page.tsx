@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { PageContainer } from "@/components/ui/PageContainer";
-import { PageHeader } from "@/components/ui/PageHeader";
 import { RequirePermission } from "@/components/layout/RequirePermission";
 import { EstimateForm } from "@/components/estimates/EstimateForm";
 import { useServices } from "@/components/providers/ServicesProvider";
@@ -25,14 +24,13 @@ export default function EditEstimatePage() {
 
   return (
     <RequirePermission resource="estimate" action="update">
-      <PageContainer>
-        <PageHeader title="Edit Estimate" />
+      <PageContainer className="sm:px-0 sm:py-0 lg:px-0">
         {loading ? (
           <div className="py-12 text-center text-sm text-muted-foreground">Loading…</div>
         ) : !estimate ? (
           <div className="py-12 text-center text-sm text-muted-foreground">Estimate not found.</div>
         ) : (
-          <EstimateForm estimate={estimate} lineItems={estimate.lineItems} />
+          <EstimateForm estimate={estimate} lineItems={estimate.lineItems} layout="document" />
         )}
       </PageContainer>
     </RequirePermission>

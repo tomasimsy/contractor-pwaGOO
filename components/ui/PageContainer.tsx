@@ -9,14 +9,14 @@ import { cn } from "@/lib/utils";
  * 16px twice on each side: measured at 375px wide, content got 311px
  * (83%) and the top of every page burned 48px before the first pixel.
  *
- * Dropping the mobile padding here leaves <main>'s 16px as the single
- * source of the gutter, which is the native-app feel we want. From `sm`
- * up the original `px-6`/`py-6` (and `lg:px-8`) are restored verbatim,
- * so tablet and desktop render exactly as before.
+ * The same doubling happened sideways on tablet and desktop: <main> adds
+ * `sm:px-6 lg:px-8` and this wrapper added them again, so the gap between
+ * the sidebar and the page content was 64px on desktop. Horizontal
+ * padding now comes from <main> alone; the vertical `sm:py-6` stays here.
  */
 export function PageContainer({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={cn("mx-auto max-w-screen-2xl px-0 py-0 sm:px-6 sm:py-6 lg:px-8", className)}>
+    <div className={cn("mx-auto max-w-screen-2xl px-0 py-0 sm:py-6", className)}>
       {children}
     </div>
   );

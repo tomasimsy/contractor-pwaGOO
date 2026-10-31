@@ -17,6 +17,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { SignaturePad } from "@/components/estimates/SignaturePad";
 
+const SIGN_TIMEOUT_MS = 30_000;
+
 export function SignEstimateForm({ token, signedValue, signedDate }: { token: string; signedValue: string | null; signedDate: string | null }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +54,29 @@ export function SignEstimateForm({ token, signedValue, signedDate }: { token: st
     );
   }
 
+  // Asks the server whether this estimate is signed. Used when the signing
+  // request failed or timed out, because the server may have saved the
+  // signature even though the customer's browser did not get the reply.
+  async function isSignedOnServer(): Promise<boolean> {
+    try {
+      const res = await fetch("/api/portal/sign-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const result = await res.json();
+      return result.ok === true && result.signed === true;
+    } catch {
+      return false;
+    }
+  }
+
+  function showSigned(): { ok: boolean } {
+    setJustSigned(true);
+    router.refresh();
+    return { ok: true };
+  }
+
   async function handleSign(signature: { type: "draw" | "type"; value: string; date: string }): Promise<{ ok: boolean; message?: string }> {
     setSaving(true);
     setError(null);
@@ -60,13 +85,17 @@ export function SignEstimateForm({ token, signedValue, signedDate }: { token: st
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, signatureType: signature.type, signatureValue: signature.value }),
+        // Stops a stalled request from leaving the customer waiting forever.
+        // The status check below decides what to show after a timeout.
+        signal: AbortSignal.timeout(SIGN_TIMEOUT_MS),
       });
       const result = await res.json();
       if (!result.ok) {
         // The route returns a generic rejection for every failure case
         // (bad token, already signed, no longer open) without saying
-        // which — deliberately, so it can't be used to probe. Reloading
-        // shows the true state.
+        // which — deliberately, so it can't be used to probe. The status
+        // check tells "already signed" apart from a real failure.
+        if (await isSignedOnServer()) return showSigned();
         const message = result.message ?? "This estimate could not be signed.";
         setError(`${message} Refreshing…`);
         setTimeout(() => router.refresh(), 1500);
@@ -75,11 +104,12 @@ export function SignEstimateForm({ token, signedValue, signedDate }: { token: st
       // Immediate, local confirmation — see justSigned's own comment.
       // router.refresh() still runs to pull the real persisted
       // signature/date in behind it.
-      setJustSigned(true);
-      router.refresh();
-      return { ok: true };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not save your signature. Please try again.";
+      return showSigned();
+    } catch {
+      // A dropped connection or timeout does not mean the signature failed.
+      // Check the server before telling the customer anything went wrong.
+      if (await isSignedOnServer()) return showSigned();
+      const message = "We could not confirm that your signature was saved. Please refresh this page to check before signing again.";
       setError(message);
       return { ok: false, message };
     } finally {

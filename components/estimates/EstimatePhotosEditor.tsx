@@ -6,6 +6,8 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useConfirmDialog } from "@/components/ui/useConfirmDialog";
+import { useToast } from "@/components/ui/useToast";
 import { Plus, Trash2, Upload } from "lucide-react";
 import type { EstimatePhoto } from "@/lib/services/estimatePhotoService";
 import type { UUID } from "@/lib/services/types";
@@ -72,10 +74,10 @@ export function EstimatePhotosEditor({ estimateId, photos, onChange, onDelete, o
           onPhotoUpload(data.photo);
         }
         // Optionally show success message
-        // alert(`${photoType.charAt(0).toUpperCase() + photoType.slice(1)} photo uploaded successfully!`);
+        // notify(`${photoType.charAt(0).toUpperCase() + photoType.slice(1)} photo uploaded successfully!`);
       } catch (error) {
         console.error("Photo upload error:", error);
-        alert("Failed to upload photo. Please try again.");
+        notify("Failed to upload photo. Please try again.");
       } finally {
         setUploading((prev) => ({ ...prev, [uploadKey]: false }));
       }
@@ -83,14 +85,17 @@ export function EstimatePhotosEditor({ estimateId, photos, onChange, onDelete, o
     [estimateId]
   );
 
+  const { ask, dialog } = useConfirmDialog();
+  const { notify, toast } = useToast();
+
   const handleDeletePhoto = useCallback(
     async (photoId: UUID) => {
-      if (!confirm("Delete this photo?")) return;
+      if ((await ask({ title: "Delete this photo?", confirmLabel: "Delete", destructive: true })) === null) return;
       try {
         await onDelete(photoId);
       } catch (error) {
         console.error("Failed to delete photo:", error);
-        alert("Failed to delete photo. Please try again.");
+        notify("Failed to delete photo. Please try again.");
       }
     },
     [onDelete]
@@ -155,6 +160,8 @@ export function EstimatePhotosEditor({ estimateId, photos, onChange, onDelete, o
           )}
         </div>
       ))}
+      {dialog}
+      {toast}
     </div>
   );
 }

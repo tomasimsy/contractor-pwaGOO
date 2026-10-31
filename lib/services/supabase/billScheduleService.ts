@@ -172,42 +172,56 @@ export function createSupabaseBillScheduleService(
         (!s.endDate || due <= s.endDate) &&
         (s.maxOccurrences === null || generated < s.maxOccurrences)
       ) {
-        // ONE ordinary expense row, through the same service every other
-        // entry point uses. Non-null dueDate is what makes it a Bill.
-        await expenseService.create({
-          companyId,
-          projectId: s.projectId ?? null,
-          expenseType: s.expenseType,
-          amount: s.amount,
-          expenseDate: due,
-          dueDate: due,
-          vendor: s.vendor,
-          payeeType: s.vendor ? "vendor" : null,
-          paidByType: "company",
-          // A bill starts life unpaid — that is the entire point.
-          isPaid: false,
-          reimbursable: false,
-          notes: s.notes,
-        });
+        const next = advanceBillDate(due, s.frequency, s.intervalCount);
+        const exhausted =
+          (!!s.endDate && next > s.endDate) ||
+          (s.maxOccurrences !== null && generated + 1 >= s.maxOccurrences);
+
+        // CLAIM the occurrence before creating it. The page can load
+        // twice at once (two tabs, a re-render); both runs read the same
+        // next_due_date, and before this both created the bill. The
+        // update only matches while next_due_date is still `due`, so
+        // exactly one run gets a row back and the other stops.
+        const { data: claimed, error: claimError } = await supabase
+          .from("bill_schedules")
+          .update({ next_due_date: next, occurrences_generated: generated + 1, is_active: !exhausted })
+          .eq("id", s.id)
+          .eq("next_due_date", due)
+          .select("id");
+        if (claimError) throw new Error(`Failed to advance recurring bill: ${claimError.message}`);
+        if (!claimed || claimed.length === 0) break;
+
+        try {
+          // ONE ordinary expense row, through the same service every other
+          // entry point uses. Non-null dueDate is what makes it a Bill.
+          await expenseService.create({
+            companyId,
+            projectId: s.projectId ?? null,
+            expenseType: s.expenseType,
+            amount: s.amount,
+            expenseDate: due,
+            dueDate: due,
+            vendor: s.vendor,
+            payeeType: s.vendor ? "vendor" : null,
+            paidByType: "company",
+            // A bill starts life unpaid — that is the entire point.
+            isPaid: false,
+            reimbursable: false,
+            notes: s.notes,
+          });
+        } catch (err) {
+          // Hand the occurrence back so the next load retries it, unless
+          // something else has already moved the schedule on.
+          await supabase
+            .from("bill_schedules")
+            .update({ next_due_date: due, occurrences_generated: generated, is_active: true })
+            .eq("id", s.id)
+            .eq("next_due_date", next);
+          throw err;
+        }
         created += 1;
         generated += 1;
-        due = advanceBillDate(due, s.frequency, s.intervalCount);
-      }
-
-      if (due !== s.nextDueDate) {
-        const exhausted =
-          (!!s.endDate && due > s.endDate) ||
-          (s.maxOccurrences !== null && generated >= s.maxOccurrences);
-        const { error } = await supabase
-          .from("bill_schedules")
-          .update({
-            next_due_date: due,
-            occurrences_generated: generated,
-            // Stop a finished schedule rather than re-checking it daily.
-            is_active: !exhausted,
-          })
-          .eq("id", s.id);
-        if (error) throw new Error(`Failed to advance recurring bill: ${error.message}`);
+        due = next;
       }
     }
 

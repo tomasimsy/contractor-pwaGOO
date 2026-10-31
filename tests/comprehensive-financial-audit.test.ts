@@ -517,8 +517,11 @@ describe("Multiple companies never leak into each other's totals", () => {
 
     const estA = await seedApprovedEstimate(services, COMPANY_A, projectA.id, "client-1", 1000);
     const estB = await seedApprovedEstimate(services, COMPANY_B, projectB.id, "client-2", 2000);
-    await services.invoiceService.createFromEstimate(estA.id, { issueDate: "2026-01-01", dueDate: "2026-01-31" });
-    await services.invoiceService.createFromEstimate(estB.id, { issueDate: "2026-01-01", dueDate: "2026-01-31" });
+    const invA = await services.invoiceService.createFromEstimate(estA.id, { issueDate: "2026-01-01", dueDate: "2026-01-31" });
+    const invB = await services.invoiceService.createFromEstimate(estB.id, { issueDate: "2026-01-01", dueDate: "2026-01-31" });
+    // Sent, so they count as invoiced (an unsent draft does not).
+    await services.invoiceService.changeStatus(invA.id, "sent");
+    await services.invoiceService.changeStatus(invB.id, "sent");
 
     const wideRange = { start: new Date("2000-01-01"), end: new Date("2100-01-01") };
     const companyA = await services.financialEngine.getCompanyFinancials({ companyId: COMPANY_A, dateRange: wideRange });

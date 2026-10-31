@@ -17,6 +17,7 @@ export function useFilteredNavGroups(): NavGroup[] {
     return NAV_GROUPS.map((group) => ({
       ...group,
       items: group.items.filter((item) => {
+        if (item.roles && (!role || !item.roles.includes(role))) return false;
         if (!item.permission) return true;
         if (!role) return false;
         return hasPermission(role, item.permission.resource, item.permission.action);

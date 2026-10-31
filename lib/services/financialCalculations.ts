@@ -392,9 +392,12 @@ export interface CommittedCostBalance {
  * variable names) TransactionService.getReimbursementBalance before
  * this consolidation — both now call this. */
 export function calculateCommittedCostBalance(assigned: number, paid: number): CommittedCostBalance {
+  // Rounded to cents: summing many small payments leaves float dust
+  // (e.g. 2.3 - 2.3000000000000003), which showed as "$0.00 owed".
+  const cents = (n: number) => Math.round(n * 100) / 100;
   return {
-    committed: Math.max(assigned, paid),
-    outstanding: Math.max(0, assigned - paid),
+    committed: cents(Math.max(assigned, paid)),
+    outstanding: cents(Math.max(0, assigned - paid)),
   };
 }
 
@@ -432,6 +435,10 @@ export interface JobCostInputs {
   /** Sum of expenseType === "agent_commission" rows. Same breakdown-not-
    * addition rule as subcontractorCosts. */
   agentCosts: number;
+  /** Labor from APPROVED time entries: hours × rate, per employee. Its own
+   * cost source, added once. It is never an expense row, so it cannot double
+   * count with `expenseItems`. Unapproved hours are not counted. */
+  laborCost?: number;
 }
 
 export interface JobProfit extends JobCostInputs {
@@ -473,7 +480,7 @@ export interface JobProfit extends JobCostInputs {
 export function calculateJobProfit(revenue: number, costs: JobCostInputs): JobProfit {
   // sub/agent are buckets INSIDE expenseItems — adding them here is the
   // double-count this model exists to prevent.
-  const totalExpenses = costs.expenseItems + costs.mileageCosts + (costs.committedRemaining ?? 0);
+  const totalExpenses = costs.expenseItems + costs.mileageCosts + (costs.committedRemaining ?? 0) + (costs.laborCost ?? 0);
   const grossProfit = revenue - (costs.subcontractorCosts + costs.agentCosts);
   const netProfit = revenue - totalExpenses;
   return {

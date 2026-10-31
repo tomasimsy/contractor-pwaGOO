@@ -1,22 +1,18 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { isRevenueInvoice } from "@/lib/services/financialEngine";
+import { Fragment, useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import {
-  Pencil, Trash2, Archive, FileText, GitPullRequest, Receipt, Wallet, ReceiptText,
-  HardHat, FolderOpen, History, User, MapPin,
-} from "lucide-react";
+import { ChevronDown, MoreHorizontal } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
-import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Badge } from "@/components/ui/Badge";
 import { RequirePermission } from "@/components/layout/RequirePermission";
 import { useServices } from "@/components/providers/ServicesProvider";
-import { ProjectExpensesGroupedPanel } from "@/components/expenses/ProjectExpensesGroupedPanel";
-import { ProfitSummaryCard } from "@/components/shared/ProfitSummaryCard";
-import { INVOICE_STATUS_TONE } from "@/components/invoices/invoiceStatus";
-import { usePermission } from "@/lib/hooks/usePermission";
+import { LaborByPerson } from "@/components/shared/EstimateProfitSummaryCard";
+import { laborBreakdownByEmployee, type LaborLine } from "@/lib/services/laborBreakdown";
+import { INVOICE_STATUS_TONE, isUnpaidInvoiceStatus } from "@/components/invoices/invoiceStatus";
+import { useConfirmDialog } from "@/components/ui/useConfirmDialog";
 import type { Project } from "@/lib/services/projectService";
 import type { Client } from "@/lib/services/clientService";
 import type { Estimate } from "@/lib/services/estimateService";
@@ -25,10 +21,25 @@ import type { Invoice } from "@/lib/services/invoiceService";
 import type { CustomerPayment } from "@/lib/services/paymentService";
 import type { SubcontractorAssignment } from "@/lib/services/subcontractorService";
 import type { AgentAssignment } from "@/lib/services/agentCommissionService";
-import { sumApprovedChangeOrderRevenue, calculateChangeOrderRevenue } from "@/lib/services/financialCalculations";
+import { calculateChangeOrderRevenue } from "@/lib/services/financialCalculations";
+import { EXPENSE_TYPE_LABEL, type Expense } from "@/lib/services";
 import type { AuditLogEntry, ProjectStatus, EstimateStatus, ChangeOrderStatus, ProjectFinancials } from "@/lib/services";
 
-const STATUS_TONE: Record<ProjectStatus, "neutral" | "success" | "warning" | "danger"> = {
+type Tone = "neutral" | "success" | "warning" | "danger";
+const TONE_TEXT: Record<Tone, string> = {
+  neutral: "text-muted-foreground",
+  success: "text-success",
+  warning: "text-warning",
+  danger: "text-danger",
+};
+const TONE_CHIP: Record<Tone, string> = {
+  neutral: "bg-muted text-muted-foreground",
+  success: "bg-success/10 text-success",
+  warning: "bg-warning/10 text-warning",
+  danger: "bg-danger/10 text-danger",
+};
+
+const STATUS_TONE: Record<ProjectStatus, Tone> = {
   draft: "neutral",
   active: "success",
   in_progress: "success",
@@ -38,7 +49,7 @@ const STATUS_TONE: Record<ProjectStatus, "neutral" | "success" | "warning" | "da
   archived: "neutral",
 };
 
-const ESTIMATE_STATUS_TONE: Record<EstimateStatus, "neutral" | "success" | "warning" | "danger"> = {
+const ESTIMATE_STATUS_TONE: Record<EstimateStatus, Tone> = {
   draft: "neutral",
   sent: "warning",
   viewed: "warning",
@@ -47,7 +58,7 @@ const ESTIMATE_STATUS_TONE: Record<EstimateStatus, "neutral" | "success" | "warn
   converted_to_invoice: "success",
 };
 
-const CHANGE_ORDER_STATUS_TONE: Record<ChangeOrderStatus, "neutral" | "success" | "warning" | "danger"> = {
+const CHANGE_ORDER_STATUS_TONE: Record<ChangeOrderStatus, Tone> = {
   draft: "neutral",
   pending: "warning",
   approved: "success",
@@ -56,14 +67,45 @@ const CHANGE_ORDER_STATUS_TONE: Record<ChangeOrderStatus, "neutral" | "success" 
 };
 
 type Balance = { assigned: number; paid: number; committed: number; outstanding: number };
+type SubRow = SubcontractorAssignment & { subcontractorName: string; trade: string | null };
+type AgentRow = AgentAssignment & { agentName: string };
+
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+const cents = (n: number) => Math.round(n * 100) / 100;
+const label = (s: string) => {
+  const t = s.replace(/_/g, " ");
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+const shortDate = (d: string) => new Date(`${d.slice(0, 10)}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+const estimateHref = (e: Estimate) => `${e.estimateType === "roofing" ? "/estimates-roof" : "/estimates"}/${e.id}`;
+
+/** Everything on the project that belongs to one estimate (or to none: the project-level group). */
+interface Job {
+  key: string;
+  estimate: Estimate | null;
+  invoices: Invoice[];
+  payments: Array<CustomerPayment & { invoiceNumber: string }>;
+  changeOrders: ChangeOrder[];
+  expenses: Expense[];
+  subs: SubRow[];
+  agents: AgentRow[];
+  /** Invoiced total, or the estimate total once approved. Null when nothing is signed yet. */
+  contract: number | null;
+  paid: number;
+  balance: number;
+  expenseTotal: number;
+}
+
+const GRID = "sm:grid sm:grid-cols-[20px_minmax(0,1.8fr)_minmax(0,0.9fr)_96px_96px_96px_96px] sm:items-center sm:gap-3";
 
 function ProjectDetailContent() {
   const params = useParams();
   const router = useRouter();
   const projectId = params.id as string;
-  const { projectService, clientService, estimateService, changeOrderService, auditService, financialEngine, subcontractorService, agentCommissionService, invoiceService, paymentService } = useServices();
-  const canEditExpenses = usePermission("expense", "create");
+  const {
+    projectService, clientService, estimateService, changeOrderService, auditService, financialEngine, subcontractorService,
+    agentCommissionService, invoiceService, paymentService, timeEntryService, employeeService, expenseService,
+  } = useServices();
 
   const [project, setProject] = useState<Project | null>(null);
   const [client, setClient] = useState<Client | null>(null);
@@ -72,17 +114,21 @@ function ProjectDetailContent() {
   const [changeOrders, setChangeOrders] = useState<ChangeOrder[]>([]);
   const [activity, setActivity] = useState<AuditLogEntry[]>([]);
   const [financials, setFinancials] = useState<ProjectFinancials | null>(null);
-  const [subAssignments, setSubAssignments] = useState<Array<SubcontractorAssignment & { subcontractorName: string; trade: string | null }>>([]);
+  const [laborLines, setLaborLines] = useState<LaborLine[]>([]);
+  const [subAssignments, setSubAssignments] = useState<SubRow[]>([]);
   const [subBalances, setSubBalances] = useState<Record<string, Balance>>({});
-  const [agentAssignments, setAgentAssignments] = useState<Array<AgentAssignment & { agentName: string }>>([]);
+  const [agentAssignments, setAgentAssignments] = useState<AgentRow[]>([]);
   const [agentBalances, setAgentBalances] = useState<Record<string, Balance>>({});
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [paymentsByInvoice, setPaymentsByInvoice] = useState<Record<string, CustomerPayment[]>>({});
+  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [openJob, setOpenJob] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [showAllActivity, setShowAllActivity] = useState(false);
 
-  /** Re-reads the profit picture from FinancialEngine. Called after any
-   * expense mutation so cost and profit move together. */
+  /** Re-reads the profit picture from FinancialEngine, plus who the labor cost is for. */
   const loadFinancials = useCallback(async () => {
     try {
       setFinancials(await financialEngine.getProjectFinancials(projectId));
@@ -90,7 +136,29 @@ function ProjectDetailContent() {
       // A missing financial figure must not blank out the project page.
       setFinancials(null);
     }
-  }, [financialEngine, projectId]);
+    const companyId = project?.companyId;
+    if (!companyId) return;
+    try {
+      const [estimateList, entries, people, jobPays] = await Promise.all([
+        estimateService.listForProject(projectId),
+        timeEntryService.listForCompany({ companyId }),
+        employeeService.list({ companyId, includeDeleted: true }),
+        employeeService.listJobPays(companyId),
+      ]);
+      const estimateIds = new Set(estimateList.map((e) => e.id));
+      setLaborLines(
+        laborBreakdownByEmployee({
+          entries,
+          nameById: new Map(people.map((p) => [p.id, p.name])),
+          estimateIds,
+          jobPays,
+          completedEstimateIds: project?.status === "completed" ? estimateIds : new Set(),
+        })
+      );
+    } catch {
+      setLaborLines([]);
+    }
+  }, [financialEngine, estimateService, timeEntryService, employeeService, projectId, project?.companyId, project?.status]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -103,50 +171,50 @@ function ProjectDetailContent() {
     try {
       const p = await projectService.getById(projectId);
       setProject(p);
+      if (!p) return;
 
-      if (p?.clientId) {
-        const c = await clientService.getById(p.clientId);
-        setClient(c);
-        if (c) {
-          const clientProjects = await projectService.list({ companyId: p.companyId });
-          setClientProjectCount(clientProjects.filter((row) => row.clientId === c.id).length);
-        }
-      } else {
-        setClient(null);
-      }
+      // Everything below depends only on the project, so it loads in parallel.
+      const scope = { companyId: p.companyId, projectId: p.id };
+      const [c, companyProjects, history, estimateList, coList, subs, agents, projectInvoices, expenseList] = await Promise.all([
+        p.clientId ? clientService.getById(p.clientId) : Promise.resolve(null),
+        p.clientId ? projectService.list({ companyId: p.companyId }) : Promise.resolve([]),
+        auditService.getHistory(p.companyId, "projects", p.id),
+        estimateService.listForProject(p.id),
+        changeOrderService.listForProject(p.id),
+        subcontractorService.listAssignments(scope),
+        agentCommissionService.listAssignments(scope),
+        invoiceService.listForProject(p.id),
+        expenseService.listForProject(p.id),
+      ]);
+      setClient(c);
+      setClientProjectCount(c ? companyProjects.filter((row) => row.clientId === c.id).length : null);
+      setActivity(history);
+      setEstimates(estimateList);
+      setChangeOrders(coList);
+      setSubAssignments(subs);
+      setAgentAssignments(agents);
+      setInvoices(projectInvoices);
+      setExpenses(expenseList);
 
-      if (p) {
-        const history = await auditService.getHistory(p.companyId, "projects", p.id);
-        setActivity(history);
-        setEstimates(await estimateService.listForProject(p.id));
-        setChangeOrders(await changeOrderService.listForProject(p.id));
-
-        const scope = { companyId: p.companyId, projectId: p.id };
-        const [subs, agents] = await Promise.all([
-          subcontractorService.listAssignments(scope),
-          agentCommissionService.listAssignments(scope),
-        ]);
-        setSubAssignments(subs);
-        setAgentAssignments(agents);
-
-        const [subBalanceEntries, agentBalanceEntries] = await Promise.all([
-          Promise.all(subs.map(async (a) => [a.id, await subcontractorService.getBalance(a.id)] as const)),
-          Promise.all(agents.map(async (a) => [a.id, await agentCommissionService.getBalance(a.id)] as const)),
-        ]);
-        setSubBalances(Object.fromEntries(subBalanceEntries));
-        setAgentBalances(Object.fromEntries(agentBalanceEntries));
-
-        const projectInvoices = await invoiceService.listForProject(p.id);
-        setInvoices(projectInvoices);
-        // Batched: was one query per invoice in a loop.
-        setPaymentsByInvoice(await paymentService.listForInvoices(projectInvoices.map((inv) => inv.id)));
-      }
+      // Assigned, paid and owed per assignment: the engine's payables, the same
+      // expense-based figures Payroll and the estimate show.
+      const [payables, payments] = await Promise.all([
+        financialEngine.getPayablesSummary(scope),
+        paymentService.listForInvoices(projectInvoices.map((inv) => inv.id)),
+      ]);
+      const balanceOf = (assignmentId: string): Balance | undefined => {
+        const line = payables.lines.find((l) => l.assignmentId === assignmentId);
+        return line ? { assigned: line.assigned, paid: line.paid, committed: Math.max(line.assigned, line.paid), outstanding: line.outstanding } : undefined;
+      };
+      setSubBalances(Object.fromEntries(subs.flatMap((a) => (balanceOf(a.id) ? [[a.id, balanceOf(a.id)!]] : []))));
+      setAgentBalances(Object.fromEntries(agents.flatMap((a) => (balanceOf(a.id) ? [[a.id, balanceOf(a.id)!]] : []))));
+      setPaymentsByInvoice(payments);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load project.");
     } finally {
       setLoading(false);
     }
-  }, [projectService, clientService, estimateService, changeOrderService, auditService, subcontractorService, agentCommissionService, invoiceService, paymentService, projectId]);
+  }, [projectService, clientService, estimateService, changeOrderService, auditService, subcontractorService, agentCommissionService, invoiceService, paymentService, expenseService, financialEngine, projectId]);
 
   useEffect(() => {
     // Fetch-on-mount is this effect's entire purpose — synchronizing
@@ -155,14 +223,67 @@ function ProjectDetailContent() {
     load();
   }, [load]);
 
+  // One row per estimate, newest number first, then a project-level row for anything not tied to one.
+  const jobs = useMemo<Job[]>(() => {
+    const build = (estimate: Estimate | null): Job => {
+      const id = estimate?.id ?? null;
+      const jobInvoices = invoices.filter((inv) => inv.estimateId === id);
+      const payments = jobInvoices.flatMap((inv) => (paymentsByInvoice[inv.id] ?? []).map((pay) => ({ ...pay, invoiceNumber: inv.invoiceNumber })));
+      const paid = cents(payments.reduce((s, pay) => s + pay.amount, 0));
+      // Void and cancelled invoices are listed but bill nothing (isRevenueInvoice).
+      const billing = jobInvoices.filter(isRevenueInvoice);
+      const invoiced = cents(billing.reduce((s, inv) => s + inv.total, 0));
+      const contract = billing.length > 0 ? invoiced : estimate && estimate.status === "approved" ? estimate.total : null;
+      const jobExpenses = expenses.filter((x) => x.estimateId === id);
+      return {
+        key: id ?? "_project",
+        estimate,
+        invoices: jobInvoices,
+        payments: payments.sort((a, b) => b.paymentDate.localeCompare(a.paymentDate)),
+        changeOrders: id ? changeOrders.filter((co) => co.estimateId === id) : [],
+        expenses: jobExpenses,
+        subs: subAssignments.filter((a) => a.estimateId === id),
+        agents: agentAssignments.filter((a) => a.estimateId === id),
+        contract,
+        paid,
+        balance: contract === null ? 0 : cents(Math.max(0, contract - paid)),
+        expenseTotal: cents(jobExpenses.reduce((s, x) => s + x.amount, 0)),
+      };
+    };
+    const list = [...estimates]
+      .sort((a, b) => (b.estimateNumber ?? "").localeCompare(a.estimateNumber ?? ""))
+      .map((e) => build(e));
+    const projectLevel = build(null);
+    const hasProjectLevel =
+      projectLevel.invoices.length + projectLevel.expenses.length + projectLevel.subs.length + projectLevel.agents.length > 0;
+    return hasProjectLevel ? [...list, projectLevel] : list;
+  }, [estimates, invoices, paymentsByInvoice, changeOrders, expenses, subAssignments, agentAssignments]);
+
+  const totals = useMemo(
+    () => ({
+      contract: cents(jobs.reduce((s, j) => s + (j.contract ?? 0), 0)),
+      paid: cents(jobs.reduce((s, j) => s + j.paid, 0)),
+      balance: cents(jobs.reduce((s, j) => s + j.balance, 0)),
+      expenses: cents(jobs.reduce((s, j) => s + j.expenseTotal, 0)),
+    }),
+    [jobs]
+  );
+
   // Soft-delete — a real delete (hidden from every list, recoverable
   // only via /projects/trash's Restore), NOT the same thing as the
-  // "archived" status below. Previously this button was labeled
-  // "Archive" while actually calling softDelete, which made deleted
-  // projects look "archived" when there was no way to see them again.
+  // "archived" status below.
+  const { ask, dialog } = useConfirmDialog();
+
   async function handleDelete() {
     if (!project) return;
-    const reason = window.prompt(`Why are you deleting "${project.name}"? (This can be undone from Projects → Deleted.)`);
+    setMenuOpen(false);
+    const reason = await ask({
+      title: `Delete "${project.name}"?`,
+      message: "This can be undone from Projects → Deleted.",
+      confirmLabel: "Delete",
+      destructive: true,
+      reasonLabel: "Why are you deleting this project?",
+    });
     if (!reason) return;
     try {
       await projectService.softDelete(project.id, reason);
@@ -172,13 +293,11 @@ function ProjectDetailContent() {
     }
   }
 
-  // Real "archived" status — a non-destructive, reversible-by-status-
-  // change marker for a job that's fully wrapped up, distinct from
-  // deletion. ValidationService.PROJECT_TRANSITIONS only allows this
-  // from "completed"/"cancelled" (archived has no further transitions
-  // out), matching the button's disabled condition below.
+  // Real "archived" status: only allowed from completed or cancelled
+  // (ValidationService.PROJECT_TRANSITIONS), matching when the menu offers it.
   async function handleArchive() {
     if (!project) return;
+    setMenuOpen(false);
     setError(null);
     try {
       await projectService.changeStatus(project.id, "archived");
@@ -189,397 +308,425 @@ function ProjectDetailContent() {
   }
 
   if (loading) return <PageContainer><div className="py-12 text-center text-sm text-muted-foreground">Loading…</div></PageContainer>;
-  if (error) return <PageContainer><div className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</div></PageContainer>;
+  if (error && !project) return <PageContainer><div className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</div></PageContainer>;
   if (!project) return <PageContainer><EmptyState title="Project not found" description="It may have been archived or the link is incorrect." /></PageContainer>;
 
+  const f = financials;
+  const openInvoices = invoices.filter((inv) => isUnpaidInvoiceStatus(inv.status)).length;
+  const paymentCount = Object.values(paymentsByInvoice).reduce((s, list) => s + list.length, 0);
+  const approvedCoTotal = cents(changeOrders.filter((co) => co.status === "approved" || co.status === "invoiced").reduce((s, co) => s + calculateChangeOrderRevenue(co.totalAmount, co.tax), 0));
+  const activityShown = showAllActivity ? activity : activity.slice(0, 4);
+
   return (
-    <PageContainer>
-      <PageHeader
-        title={project.name}
-        description={client ? `For ${client.name}` : "No client assigned"}
-        actions={
-          <div className="flex items-center gap-2">
-            <Badge tone={STATUS_TONE[project.status]}>{project.status.replace("_", " ")}</Badge>
-            <Link href={`/projects/${project.id}/edit`} className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted">
-              <Pencil className="size-3.5" /> Edit
-            </Link>
-            {(project.status === "completed" || project.status === "cancelled") && (
+    <PageContainer className="sm:px-0 sm:py-0 lg:px-0">
+      <div className="flex flex-col gap-4 text-[13px]">
+        {/* Header */}
+        <div>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-xl font-semibold tracking-tight text-foreground">{project.name}</h1>
+                <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${TONE_CHIP[STATUS_TONE[project.status]]}`}>{label(project.status)}</span>
+              </div>
+              <div className="mt-0.5 text-[12px] text-muted-foreground">
+                {client ? (
+                  <Link href={`/clients/${client.id}`} className="text-primary hover:underline">{client.name}</Link>
+                ) : (
+                  "No client"
+                )}
+                {project.address && <> · {project.address}</>}
+                {" · "}
+                {estimates.length} {estimates.length === 1 ? "estimate" : "estimates"}
+                {project.projectNumber && <> · #{project.projectNumber}</>}
+              </div>
+            </div>
+            <div className="relative flex items-center gap-1.5">
+              <Link href={`/projects/${project.id}/edit`} className="inline-flex h-8 items-center rounded-md border border-border px-3 text-[12px] font-medium text-foreground hover:bg-muted">
+                Edit
+              </Link>
               <button
                 type="button"
-                onClick={handleArchive}
-                title="Mark this completed/cancelled job as archived — reversible only by changing status again, not a deletion."
-                className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
+                aria-label="More actions"
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen((o) => !o)}
+                className="inline-flex size-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-muted"
               >
-                <Archive className="size-3.5" /> Archive
+                <MoreHorizontal className="size-4" aria-hidden="true" />
               </button>
-            )}
-            <button
-              type="button"
-              onClick={handleDelete}
-              title="Soft-delete — hides this project everywhere; recoverable from Projects → Deleted."
-              className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-medium text-danger hover:bg-danger/10"
-            >
-              <Trash2 className="size-3.5" /> Delete
-            </button>
-          </div>
-        }
-      />
-
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-        <div className="space-y-5 xl:col-span-2">
-          <Section title="Project Information" icon={FileText}>
-            <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-              <Row label="Address / Location" value={project.address ?? "—"} />
-              <Row label="Status" value={project.status.replace("_", " ")} />
-              <Row label="Start Date" value={project.startDate ?? "—"} />
-              <Row label="End Date" value={project.endDate ?? "—"} />
-              <Row label="Project Number" value={project.projectNumber ?? "—"} className="sm:col-span-2" />
-              <Row label="Notes" value={project.description ?? "—"} className="sm:col-span-2" />
-            </dl>
-          </Section>
-
-<Section
-  title="Estimates"
-  icon={FileText}
-  actions={
-    <Link
-      href={`/estimates/new?projectId=${project.id}`}
-      className="text-xs font-medium text-primary hover:underline"
-    >
-      + New Estimate
-    </Link>
-  }
->
-  {estimates.length === 0 ? (
-    <EmptyState
-      title="No estimates yet"
-      description="Create the first proposal for this project."
-    />
-  ) : (
-    <div className="overflow-hidden rounded-lg border border-border text-xs">
-      {/* Header */}
-      <div className="grid grid-cols-[1fr_140px_120px_120px] bg-muted px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        <div>Estimate</div>
-        <div>Number</div>
-        <div className="text-right">Amount</div>
-        <div className="text-right">Status</div>
-      </div>
-
-      {/* Rows */}
-      {estimates.map((estimate, index) => (
-        <Link
-          key={estimate.id}
-          href={`/estimates/${estimate.id}`}
-          className={`grid grid-cols-[1fr_140px_120px_120px] items-center px-4 py-3 transition-colors hover:bg-muted/50 ${
-            index !== estimates.length - 1 ? "border-t border-border" : ""
-          }`}
-        >
-          <div className="text-xs font-medium text-foreground">
-            {estimate.title}
-          </div>
-
-          <div className="text-xs text-muted-foreground">
-            {estimate.estimateNumber ?? estimate.id.slice(0, 8)}
-          </div>
-
-          <div className="text-right text-xs font-medium text-foreground">
-            {estimate.total.toLocaleString("en-US", {
-              style: "currency",
-              currency: "USD",
-            })}
-          </div>
-
-          <div className="flex justify-end">
-            <Badge
-              className="text-xs"
-              tone={ESTIMATE_STATUS_TONE[estimate.status]}
-            >
-              {estimate.status.replace(/_/g, " ")}
-            </Badge>
-          </div>
-        </Link>
-      ))}
-    </div>
-  )}
-</Section>
-
-<Section
-  title="Change Orders"
-  icon={GitPullRequest}
-  actions={
-    <Link
-      href={`/change-orders/new?projectId=${project.id}`}
-      className="text-xs font-medium text-primary hover:underline"
-    >
-      + New Change Order
-    </Link>
-  }
->
-  {changeOrders.length === 0 ? (
-    <EmptyState
-      title="No change orders yet"
-      description="Pending, approved, and rejected change orders will appear here."
-    />
-  ) : (
-    <>
-      <div className="overflow-hidden rounded-lg border border-border text-xs">
-        {/* Header */}
-        <div className="grid grid-cols-[140px_1fr_120px_120px] bg-muted px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          <div>Number</div>
-          <div>Title</div>
-          <div className="text-right">Amount</div>
-          <div className="text-right">Status</div>
-        </div>
-
-        {/* Rows */}
-        {changeOrders.map((co, index) => (
-          <Link
-            key={co.id}
-            href={`/change-orders/${co.id}`}
-            className={`grid grid-cols-[140px_1fr_120px_120px] items-center px-4 py-3 transition-colors hover:bg-muted/50 ${
-              index !== changeOrders.length - 1 ? "border-t border-border" : ""
-            }`}
-          >
-            <div className="text-xs font-medium text-foreground">
-              {co.changeOrderNumber}
-            </div>
-
-            <div className="text-xs text-muted-foreground truncate">
-              {co.title}
-            </div>
-
-            <div className="text-right text-xs font-medium text-foreground">
-              {calculateChangeOrderRevenue(co.totalAmount, co.tax).toLocaleString(
-                "en-US",
-                {
-                  style: "currency",
-                  currency: "USD",
-                }
+              {menuOpen && (
+                <div className="absolute right-0 top-9 z-20 w-56 rounded-md border border-border bg-card py-1 text-[12px] shadow-md">
+                  {(project.status === "completed" || project.status === "cancelled") && (
+                    <button type="button" onClick={handleArchive} className="block w-full px-3 py-1.5 text-left text-foreground hover:bg-muted">
+                      Archive project
+                    </button>
+                  )}
+                  <button type="button" onClick={handleDelete} className="block w-full px-3 py-1.5 text-left text-danger hover:bg-danger/10">
+                    Delete project
+                  </button>
+                </div>
               )}
             </div>
-
-            <div className="flex justify-end">
-              <Badge
-                className="text-xs"
-                tone={CHANGE_ORDER_STATUS_TONE[co.status]}
-              >
-                {co.status}
-              </Badge>
-            </div>
-          </Link>
-        ))}
-      </div>
-
-      {changeOrders.some((c) => c.status === "approved") && (
-        <div className="mt-3 flex items-center justify-between rounded-lg border border-border bg-muted/30 px-4 py-2 text-xs">
-          <span className="font-medium text-muted-foreground">
-            Approved Change Order Revenue
-          </span>
-          <span className="font-semibold text-foreground">
-            {sumApprovedChangeOrderRevenue(changeOrders).toLocaleString(
-              "en-US",
-              {
-                style: "currency",
-                currency: "USD",
-              }
-            )}
-          </span>
+          </div>
         </div>
-      )}
-    </>
-  )}
-</Section>
 
-          <Section title="Invoices" icon={Receipt}>
-            {invoices.length === 0 ? (
-              <EmptyState title="No invoices yet" description="Invoice status and outstanding balances will appear here once an estimate is converted." />
-            ) : (
-              <ul className="divide-y divide-border">
-                {invoices.map((inv) => {
-                  const estimate = inv.estimateId ? estimates.find((e) => e.id === inv.estimateId) : null;
-                  return (
-                    <li key={inv.id} className="flex items-center justify-between gap-2 py-2 text-sm">
-                      <div>
-                        <Link href={`/invoices/${inv.id}`} className="font-medium text-primary hover:underline">
-                          {inv.invoiceNumber || inv.id.slice(0, 8)}
-                        </Link>
-                        {estimate && (
-                          <div className="text-xs text-muted-foreground">
-                            {estimate.estimateNumber ?? "—"}{estimate.title ? ` · ${estimate.title}` : ""}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge tone={INVOICE_STATUS_TONE[inv.status]}>{inv.status.replace(/_/g, " ")}</Badge>
-                        <span className="font-medium text-foreground">{money(inv.total)}</span>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </Section>
+        {error && <div className="rounded-lg bg-danger/10 px-3 py-2 text-danger">{error}</div>}
 
-          <Section title="Payments" icon={Wallet}>
-            {invoices.every((inv) => (paymentsByInvoice[inv.id] ?? []).length === 0) ? (
-              <EmptyState title="No payments recorded" description="Payment history, amount collected, and remaining balance will appear here." />
-            ) : (
-              <ul className="divide-y divide-border">
-                {invoices.flatMap((inv) => {
-                  const estimate = inv.estimateId ? estimates.find((e) => e.id === inv.estimateId) : null;
-                  return (paymentsByInvoice[inv.id] ?? []).map((payment) => (
-                    <li key={payment.id} className="flex items-center justify-between gap-2 py-2 text-sm">
-                      <div>
-                        <Link href={`/invoices/${inv.id}`} className="font-medium text-primary hover:underline">
-                          {inv.invoiceNumber || inv.id.slice(0, 8)}
-                        </Link>
-                        <div className="text-xs text-muted-foreground">
-                          {payment.paymentDate}
-                          {estimate ? ` · ${estimate.estimateNumber ?? "—"}${estimate.title ? ` · ${estimate.title}` : ""}` : ""}
-                        </div>
-                      </div>
-                      <span className="font-medium text-foreground">{money(payment.amount)}</span>
-                    </li>
-                  ));
-                })}
-              </ul>
-            )}
-          </Section>
-
-          <ProjectExpensesGroupedPanel
-            companyId={project.companyId}
-            projectId={project.id}
-            estimates={estimates}
-            canEdit={canEditExpenses}
-            onChanged={loadFinancials}
+        {/* Money strip: the same FinancialEngine figures the dashboard and reports use. */}
+        <div className="grid grid-cols-2 rounded-lg border border-border bg-card sm:grid-cols-5">
+          <Stat title="Contract" value={f ? money(f.revisedTotal) : "—"} note={approvedCoTotal > 0 ? `incl. ${money(approvedCoTotal)} change orders` : "no change orders"} className="border-b border-r sm:border-b-0" />
+          <Stat title="Collected" value={f ? money(f.amountPaid) : "—"} tone="text-success" note={`${paymentCount} ${paymentCount === 1 ? "payment" : "payments"}`} className="border-b sm:border-b-0 sm:border-r" />
+          <Stat
+            title="Balance due"
+            value={f ? money(f.remainingBalance) : "—"}
+            tone={f && f.remainingBalance > 0 ? "text-warning" : undefined}
+            note={`${openInvoices} open ${openInvoices === 1 ? "invoice" : "invoices"}`}
+            className="border-b border-r sm:border-b-0"
           />
-
-          <ProfitSummaryCard financials={financials} />
-
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            <Section title="Subcontractors" icon={HardHat}>
-              {subAssignments.length === 0 ? (
-                <EmptyState title="None assigned" description="Subcontractors assigned to this project and their payments will appear here." />
-              ) : (
-                <ul className="divide-y divide-border">
-                  {subAssignments.map((a) => {
-                    const b = subBalances[a.id];
-                    return (
-                      <li key={a.id} className="flex items-center justify-between gap-2 py-2 text-sm">
-                        <div>
-                          <div className="font-medium text-foreground">{a.subcontractorName}</div>
-                          {a.trade && <div className="text-xs text-muted-foreground">{a.trade}</div>}
-                        </div>
-                        {b && (
-                          <div className="text-right text-xs text-muted-foreground">
-                            <div>Assigned {money(b.assigned)}</div>
-                            <div>Paid {money(b.paid)} · Outstanding <span className="font-semibold text-foreground">{money(b.outstanding)}</span></div>
-                          </div>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </Section>
-            <Section title="Agents" icon={HardHat}>
-              {agentAssignments.length === 0 ? (
-                <EmptyState title="None assigned" description="Agents assigned to this project and their commissions/reimbursements will appear here." />
-              ) : (
-                <ul className="divide-y divide-border">
-                  {agentAssignments.map((a) => {
-                    const b = agentBalances[a.id];
-                    return (
-                      <li key={a.id} className="flex items-center justify-between gap-2 py-2 text-sm">
-                        <div className="font-medium text-foreground">{a.agentName}</div>
-                        {b && (
-                          <div className="text-right text-xs text-muted-foreground">
-                            <div>Assigned {money(b.assigned)}</div>
-                            <div>Paid {money(b.paid)} · Owed <span className="font-semibold text-foreground">{money(b.outstanding)}</span></div>
-                          </div>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </Section>
-          </div>
-
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            <Section title="Documents" icon={FolderOpen}>
-              <EmptyState icon={FolderOpen} title="No documents yet" description="Plans, permits, and other project documents will attach here, reusing the shared document/media architecture once connected." />
-            </Section>
-            <Section title="Photos" icon={FolderOpen}>
-              <EmptyState icon={FolderOpen} title="No photos yet" description="Site photos will attach here, reusing the shared document/media architecture once connected." />
-            </Section>
-          </div>
+          <Stat title="Costs" value={f ? money(f.totalExpenses) : "—"} note={f && f.outstandingTotal > 0 ? `${money(f.outstandingTotal)} still owed` : "nothing owed"} className="border-b sm:border-b-0 sm:border-r" />
+          <Stat
+            title="Est. profit"
+            value={f ? money(f.netProfit) : "—"}
+            tone={f ? (f.netProfit >= 0 ? "text-foreground" : "text-danger") : undefined}
+            note={f ? `${f.profitMargin.toFixed(1)}% margin` : ""}
+            className="col-span-2 sm:col-span-1"
+          />
         </div>
 
-        <div className="space-y-5">
-          <Section title="Related Client" icon={User}>
+        {/* Jobs */}
+        <div>
+          <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-[14px] font-semibold text-foreground">Jobs on this project</h2>
+            <div className="flex gap-4 text-[12px]">
+              <Link href={`/estimates/new?projectId=${project.id}`} className="text-primary hover:underline">+ New estimate</Link>
+              <Link href={`/change-orders/new?projectId=${project.id}`} className="text-primary hover:underline">+ New change order</Link>
+              <Link href="/expense-v2" className="text-primary hover:underline">+ Record expense</Link>
+            </div>
+          </div>
+
+          {jobs.length === 0 ? (
+            <div className="rounded-lg border border-border bg-card px-4 py-8 text-center text-muted-foreground">
+              No estimates yet. <Link href={`/estimates/new?projectId=${project.id}`} className="text-primary hover:underline">Create the first one</Link>.
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-lg border border-border bg-card">
+              <div className={`hidden bg-primary/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-primary ${GRID}`}>
+                <span />
+                <span>Estimate</span>
+                <span>Invoice</span>
+                <span className="text-right">Contract</span>
+                <span className="text-right">Paid</span>
+                <span className="text-right">Balance</span>
+                <span className="text-right">Expenses</span>
+              </div>
+              {jobs.map((job) => {
+                const isOpen = openJob === job.key;
+                const e = job.estimate;
+                const inv = job.invoices[0];
+                return (
+                  <Fragment key={job.key}>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={isOpen}
+                      onClick={() => setOpenJob(isOpen ? null : job.key)}
+                      onKeyDown={(ev) => {
+                        if (ev.key === "Enter" || ev.key === " ") {
+                          ev.preventDefault();
+                          setOpenJob(isOpen ? null : job.key);
+                        }
+                      }}
+                      className={`flex cursor-pointer gap-2 border-t border-border px-3 py-2.5 first:border-t-0 hover:bg-muted/40 sm:first:border-t ${GRID} ${!e ? "bg-muted/30" : ""}`}
+                    >
+                      <ChevronDown className={`mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform sm:mt-0 ${isOpen ? "rotate-180" : ""}`} aria-hidden="true" />
+                      <div className="min-w-0 flex-1">
+                        {e ? (
+                          <div className="flex flex-wrap items-center gap-x-1.5">
+                            <Link href={estimateHref(e)} onClick={(ev) => ev.stopPropagation()} className="font-medium text-primary hover:underline">
+                              {e.estimateNumber ?? "Estimate"}
+                            </Link>
+                            <span className="truncate text-foreground">{e.title || "Untitled"}</span>
+                            {e.estimateType === "roofing" && <span className="rounded bg-muted px-1 text-[10px] text-muted-foreground">Roofing</span>}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">Project-level · not tied to an estimate</span>
+                        )}
+                        {/* Phones: the money on a second line. */}
+                        <div className="mt-0.5 text-[11px] text-muted-foreground sm:hidden">
+                          {inv ? `${inv.invoiceNumber} · ${label(inv.status)}` : e ? `Estimate ${label(e.status).toLowerCase()}` : ""}
+                          {job.contract !== null && ` · ${money(job.contract)} · paid ${money(job.paid)}`}
+                        </div>
+                      </div>
+                      <div className="hidden min-w-0 sm:block">
+                        {inv ? (
+                          <>
+                            <Link href={`/invoices/${inv.id}`} onClick={(ev) => ev.stopPropagation()} className="text-primary hover:underline">
+                              {inv.invoiceNumber}
+                            </Link>
+                            {job.invoices.length > 1 && <span className="text-muted-foreground"> +{job.invoices.length - 1}</span>}
+                            <div className={`text-[11px] ${TONE_TEXT[INVOICE_STATUS_TONE[inv.status]]}`}>{label(inv.status)}</div>
+                          </>
+                        ) : e ? (
+                          <span className={`text-[11px] ${TONE_TEXT[ESTIMATE_STATUS_TONE[e.status]]}`}>Estimate {label(e.status).toLowerCase()}</span>
+                        ) : null}
+                      </div>
+                      <span
+                        className={`hidden text-right tabular-nums sm:block ${job.contract === null ? "text-muted-foreground" : "text-foreground"}`}
+                        title={job.contract === null && e ? "Not signed yet, so not counted in the contract" : undefined}
+                      >
+                        {job.contract !== null ? money(job.contract) : e && e.total > 0 ? `(${money(e.total)})` : "—"}
+                      </span>
+                      <span className={`hidden text-right tabular-nums sm:block ${job.paid > 0 ? "text-success" : "text-muted-foreground"}`}>{job.paid > 0 ? money(job.paid) : "—"}</span>
+                      <span className={`shrink-0 text-right tabular-nums ${job.balance > 0 ? "font-medium text-warning" : "text-muted-foreground"}`}>
+                        {job.balance > 0 ? money(job.balance) : job.contract ? "Paid" : "—"}
+                      </span>
+                      <span className="hidden text-right tabular-nums text-foreground sm:block">{job.expenseTotal > 0 ? money(job.expenseTotal) : <span className="text-muted-foreground">—</span>}</span>
+                    </div>
+                    {isOpen && <JobDetail job={job} subBalances={subBalances} agentBalances={agentBalances} />}
+                  </Fragment>
+                );
+              })}
+              <div className={`hidden border-t border-border bg-muted/30 px-3 py-2 font-semibold text-foreground ${GRID}`}>
+                <span />
+                <span>Total</span>
+                <span />
+                <span className="text-right tabular-nums">{money(totals.contract)}</span>
+                <span className="text-right tabular-nums text-success">{money(totals.paid)}</span>
+                <span className={`text-right tabular-nums ${totals.balance > 0 ? "text-warning" : ""}`}>{money(totals.balance)}</span>
+                <span className="text-right tabular-nums">{money(totals.expenses)}</span>
+              </div>
+            </div>
+          )}
+          <p className="mt-1.5 text-[11px] text-muted-foreground">
+            Amounts in brackets are unsigned estimates and aren&apos;t counted. Expenses are the costs recorded on each job; the Costs figure above also includes labor and mileage.
+          </p>
+        </div>
+
+        {/* Client, details, profit, activity */}
+        <div className="grid grid-cols-1 gap-x-8 gap-y-5 border-t border-border pt-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div>
+            <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Client</h3>
             {client ? (
-              <div className="space-y-2 text-sm">
-                <div className="font-medium text-foreground">{client.name}</div>
+              <div className="leading-relaxed">
+                <Link href={`/clients/${client.id}`} className="font-medium text-primary hover:underline">{client.name}</Link>
                 {client.email && <div className="text-muted-foreground">{client.email}</div>}
                 {client.phone && <div className="text-muted-foreground">{client.phone}</div>}
-                {client.address && (
-                  <div className="flex items-start gap-1 text-muted-foreground">
-                    <MapPin className="mt-0.5 size-3.5 shrink-0" /> {client.address}
-                  </div>
-                )}
-                <div className="pt-2 text-xs text-muted-foreground">
-                  {clientProjectCount ?? 1} project{(clientProjectCount ?? 1) === 1 ? "" : "s"} with this client
-                </div>
-                <Link href={`/projects?clientId=${client.id}`} className="inline-block text-xs font-medium text-primary hover:underline">
-                  View all projects for this client →
+                {client.address && <div className="text-muted-foreground">{client.address}</div>}
+                <Link href={`/projects?clientId=${client.id}`} className="mt-1 inline-block text-[12px] text-primary hover:underline">
+                  {clientProjectCount ?? 1} {(clientProjectCount ?? 1) === 1 ? "project" : "projects"} with this client →
                 </Link>
               </div>
             ) : (
-              <EmptyState title="No client assigned" description="Edit this project to attach a client." />
+              <div className="text-muted-foreground">No client. <Link href={`/projects/${project.id}/edit`} className="text-primary hover:underline">Add one</Link></div>
             )}
-          </Section>
+          </div>
 
-          <Section title="Activity Timeline" icon={History}>
-            {activity.length === 0 ? (
-              <EmptyState title="No activity recorded yet" description="Create/update/delete events for this project (and, once connected, its estimates/invoices/payments/expenses/documents) will appear here." />
+          <div>
+            <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Project details</h3>
+            <dl className="divide-y divide-border">
+              <DetailRow name="Address" value={project.address ?? "—"} />
+              <DetailRow name="Project #" value={project.projectNumber ?? "—"} />
+              <DetailRow name="Start" value={project.startDate ? shortDate(project.startDate) : "—"} />
+              <DetailRow name="End" value={project.endDate ? shortDate(project.endDate) : "—"} />
+            </dl>
+            {project.description && <p className="mt-2 whitespace-pre-line text-muted-foreground">{project.description}</p>}
+          </div>
+
+          <div>
+            <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Profit</h3>
+            {f ? (
+              <dl className="divide-y divide-border">
+                <DetailRow name="Revenue (revised contract)" value={money(f.revisedTotal)} />
+                <DetailRow name="Labor (approved time)" value={money(f.laborCost)} />
+                {laborLines.length > 0 && <div className="py-1"><LaborByPerson lines={laborLines} /></div>}
+                <DetailRow name="Total costs" value={money(f.totalExpenses)} />
+                {f.outstandingTotal > 0 && <DetailRow name="Still owed to subs and agents" value={money(f.outstandingTotal)} tone="text-warning" />}
+                <DetailRow name="Estimated profit" value={money(f.netProfit)} tone={f.netProfit >= 0 ? "text-success" : "text-danger"} strong />
+                <DetailRow name="Actual profit (cash in − costs)" value={money(f.amountPaid - f.totalExpenses)} tone={f.amountPaid - f.totalExpenses >= 0 ? "text-success" : "text-danger"} strong />
+              </dl>
             ) : (
-              <ol className="space-y-3 border-l-2 border-border pl-4">
-                {activity.map((entry) => (
-                  <li key={entry.id} className="relative">
-                    <span className="absolute -left-[21px] top-0.5 size-3 rounded-full bg-primary" />
-                    <div className="text-sm font-medium text-foreground capitalize">{entry.action.replace("_", " ")}</div>
-                    <div className="text-xs text-muted-foreground">{new Date(entry.occurredAt).toLocaleString()}</div>
+              <div className="text-muted-foreground">Not available.</div>
+            )}
+          </div>
+
+          <div>
+            <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Activity</h3>
+            {activity.length === 0 ? (
+              <div className="text-muted-foreground">Nothing recorded yet.</div>
+            ) : (
+              <ul className="space-y-1">
+                {activityShown.map((entry) => (
+                  <li key={entry.id} className="flex justify-between gap-3">
+                    <span className="text-foreground">{label(entry.action)}</span>
+                    <span className="text-muted-foreground">{new Date(entry.occurredAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
                   </li>
                 ))}
-              </ol>
+                {activity.length > 4 && (
+                  <li>
+                    <button type="button" onClick={() => setShowAllActivity((s) => !s)} className="text-[12px] text-primary hover:underline">
+                      {showAllActivity ? "Show less" : `Show all ${activity.length}`}
+                    </button>
+                  </li>
+                )}
+              </ul>
             )}
-          </Section>
+          </div>
         </div>
       </div>
+      {dialog}
     </PageContainer>
   );
 }
 
-function Section({ title, icon: Icon, actions, children }: { title: string; icon: typeof FileText; actions?: React.ReactNode; children: React.ReactNode }) {
+/** The expanded part of a job row: change orders and payments on the left, costs on the right. */
+function JobDetail({ job, subBalances, agentBalances }: { job: Job; subBalances: Record<string, Balance>; agentBalances: Record<string, Balance> }) {
+  const e = job.estimate;
+  const empty = job.changeOrders.length + job.payments.length + job.expenses.length + job.subs.length + job.agents.length === 0;
   return (
-    <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          <Icon className="size-4 text-muted-foreground" /> {title}
-        </h2>
-        {actions}
-      </div>
-      {children}
-    </section>
+    <div className="border-t border-border bg-muted/40 px-3 py-3 text-[12px] sm:pl-11">
+      {empty ? (
+        <div className="text-muted-foreground">No change orders, payments or costs on this job yet.</div>
+      ) : (
+        <div className="grid grid-cols-1 gap-x-8 gap-y-4 md:grid-cols-2">
+          <div className="space-y-4">
+            {job.changeOrders.length > 0 && (
+              <ListBlock title={`Change orders · ${money(job.changeOrders.reduce((s, co) => s + calculateChangeOrderRevenue(co.totalAmount, co.tax), 0))}`}>
+                {job.changeOrders.map((co) => (
+                  <Line
+                    key={co.id}
+                    left={
+                      <>
+                        <Link href={`/change-orders/${co.id}`} className="text-primary hover:underline">{co.changeOrderNumber}</Link> {co.title}{" "}
+                        <span className={TONE_TEXT[CHANGE_ORDER_STATUS_TONE[co.status]]}>· {label(co.status)}</span>
+                      </>
+                    }
+                    right={money(calculateChangeOrderRevenue(co.totalAmount, co.tax))}
+                  />
+                ))}
+              </ListBlock>
+            )}
+            {job.payments.length > 0 && (
+              <ListBlock title={`Payments received · ${money(job.paid)}`}>
+                {job.payments.map((pay) => (
+                  <Line key={pay.id} left={`${shortDate(pay.paymentDate)} · ${pay.invoiceNumber} · ${label(pay.method)}${pay.referenceNumber ? ` #${pay.referenceNumber}` : ""}`} right={money(pay.amount)} tone="text-success" />
+                ))}
+              </ListBlock>
+            )}
+            {job.changeOrders.length === 0 && job.payments.length === 0 && <div className="text-muted-foreground">No change orders or payments.</div>}
+          </div>
+          <div className="space-y-4">
+            {job.expenses.length > 0 && (
+              <ListBlock title={`Expenses · ${money(job.expenseTotal)}`}>
+                {job.expenses.map((x) => (
+                  <Line
+                    key={x.id}
+                    left={
+                      <>
+                        <span className="text-muted-foreground">{shortDate(x.expenseDate)} · </span>
+                        {EXPENSE_TYPE_LABEL[x.expenseType]}
+                        {x.description && <span className="text-muted-foreground"> · {x.description}</span>}
+                        {x.vendor && <span className="text-muted-foreground"> · {x.vendor}</span>}
+                      </>
+                    }
+                    right={money(x.amount)}
+                  />
+                ))}
+              </ListBlock>
+            )}
+            {(job.subs.length > 0 || job.agents.length > 0) && (
+              <ListBlock title="Subcontractors and agents">
+                {job.subs.map((a) => {
+                  const b = subBalances[a.id];
+                  return (
+                    <Line
+                      key={a.id}
+                      left={
+                        <>
+                          {a.subcontractorName}
+                          {a.trade && <span className="text-muted-foreground"> · {a.trade}</span>}
+                          {b && <span className={b.outstanding > 0 ? "text-warning" : "text-success"}> · {b.outstanding > 0 ? `owed ${money(b.outstanding)}` : "paid"}</span>}
+                          {b && b.outstanding > 0 && <PayLink payeeKey={`sub:${a.subcontractorId}`} />}
+                        </>
+                      }
+                      right={b ? money(b.assigned) : "—"}
+                    />
+                  );
+                })}
+                {job.agents.map((a) => {
+                  const b = agentBalances[a.id];
+                  return (
+                    <Line
+                      key={a.id}
+                      left={
+                        <>
+                          {a.agentName} <span className="text-muted-foreground">· agent</span>
+                          {b && <span className={b.outstanding > 0 ? "text-warning" : "text-success"}> · {b.outstanding > 0 ? `owed ${money(b.outstanding)}` : "paid"}</span>}
+                          {b && b.outstanding > 0 && <PayLink payeeKey={`agent:${a.agentId}`} />}
+                        </>
+                      }
+                      right={b ? money(b.assigned) : "—"}
+                    />
+                  );
+                })}
+              </ListBlock>
+            )}
+            {job.expenses.length === 0 && job.subs.length === 0 && job.agents.length === 0 && <div className="text-muted-foreground">No costs recorded.</div>}
+          </div>
+        </div>
+      )}
+      {e && (
+        <div className="mt-3 flex gap-4">
+          <Link href={estimateHref(e)} className="text-primary hover:underline">Open estimate →</Link>
+          {job.invoices.map((inv) => (
+            <Link key={inv.id} href={`/invoices/${inv.id}`} className="text-primary hover:underline">Open {inv.invoiceNumber} →</Link>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
-function Row({ label, value, className }: { label: string; value: string; className?: string }) {
+/** Subcontractors and agents are paid on Payroll; this opens their row there. */
+function PayLink({ payeeKey }: { payeeKey: string }) {
   return (
-    <div className={className}>
-      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 text-foreground">{value}</dd>
+    <Link href={`/payroll?person=${encodeURIComponent(payeeKey)}`} className="ml-2 text-primary hover:underline">
+      Pay →
+    </Link>
+  );
+}
+
+function ListBlock({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{title}</div>
+      <div className="divide-y divide-border border-y border-border">{children}</div>
+    </div>
+  );
+}
+
+function Line({ left, right, tone }: { left: React.ReactNode; right: string; tone?: string }) {
+  return (
+    <div className="flex justify-between gap-3 py-1.5">
+      <span className="min-w-0 text-foreground">{left}</span>
+      <span className={`shrink-0 tabular-nums ${tone ?? "text-foreground"}`}>{right}</span>
+    </div>
+  );
+}
+
+function Stat({ title, value, note, tone, className }: { title: string; value: string; note: string; tone?: string; className?: string }) {
+  return (
+    <div className={`border-border px-4 py-2.5 ${className ?? ""}`}>
+      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{title}</div>
+      <div className={`mt-0.5 text-[16px] font-semibold tabular-nums ${tone ?? "text-foreground"}`}>{value}</div>
+      <div className="text-[11px] text-muted-foreground">{note}</div>
+    </div>
+  );
+}
+
+function DetailRow({ name, value, tone, strong }: { name: string; value: string; tone?: string; strong?: boolean }) {
+  return (
+    <div className={`flex justify-between gap-3 py-1 ${strong ? "font-semibold" : ""}`}>
+      <dt className="text-muted-foreground">{name}</dt>
+      <dd className={`text-right tabular-nums ${tone ?? "text-foreground"}`}>{value}</dd>
     </div>
   );
 }

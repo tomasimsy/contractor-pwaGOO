@@ -70,7 +70,7 @@ export function SharePortalPanel({
         <button
           type="button"
           onClick={copy}
-          className="inline-flex h-5 items-center justify-center gap-0.5 rounded border border-emerald-200 bg-white px-1.5 text-[9px] font-medium text-emerald-700 hover:bg-emerald-50"
+          className="inline-flex h-5 items-center justify-center gap-0.5 rounded border border-[#E2E5E0] bg-white px-1.5 text-[9px] font-medium text-[#0B5F5E] hover:bg-[#F8F9F7]"
         >
           {copied ? <Check className="size-2.5" /> : <Copy className="size-2.5" />}
           <span>{copied ? "Copied" : "Copy"}</span>
@@ -79,13 +79,13 @@ export function SharePortalPanel({
         {phone ? (
           <a
             href={buildSmsHref(phone, smsBody)}
-            className="inline-flex h-5 items-center justify-center gap-0.5 rounded bg-emerald-600 px-1.5 text-[9px] font-medium text-white hover:bg-emerald-700"
+            className="inline-flex h-5 items-center justify-center gap-0.5 rounded bg-[#0B5F5E] px-1.5 text-[9px] font-medium text-white hover:bg-[#0B6666]"
           >
             <MessageSquare className="size-2.5" /> SMS
           </a>
         ) : (
           <span
-            className="inline-flex h-5 cursor-not-allowed items-center justify-center gap-0.5 rounded border border-emerald-200 bg-emerald-50/50 px-1.5 text-[9px] font-medium text-emerald-400"
+            className="inline-flex h-5 cursor-not-allowed items-center justify-center gap-0.5 rounded border border-[#E2E5E0] bg-[#F8F9F7] px-1.5 text-[9px] font-medium text-[#8A93A0]"
             title="No phone number on file"
           >
             <MessageSquare className="size-2.5" /> SMS
@@ -96,16 +96,16 @@ export function SharePortalPanel({
           href={portalUrl}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex h-5 items-center justify-center gap-0.5 rounded border border-emerald-200 bg-white px-1.5 text-[9px] font-medium text-emerald-700 hover:bg-emerald-50"
+          className="inline-flex h-5 items-center justify-center gap-0.5 rounded border border-[#E2E5E0] bg-white px-1.5 text-[9px] font-medium text-[#0B5F5E] hover:bg-[#F8F9F7]"
         >
           <ExternalLink className="size-2.5" /> Preview
         </a>
       </div>
 
       {/* URL display - super compact */}
-      <div className="rounded bg-emerald-50/70 px-1.5 py-0.5">
+      <div className="rounded bg-[#F8F9F7] px-1.5 py-0.5">
         <p
-          className="truncate font-mono text-[9px] text-emerald-700"
+          className="truncate font-mono text-[9px] text-[#0B5F5E]"
           title={portalUrl}
         >
           {maskPortalUrl(portalUrl)}
@@ -117,7 +117,7 @@ export function SharePortalPanel({
       )}
       
       {!phone && (
-        <p className="text-[8px] text-emerald-600/50">
+        <p className="text-[8px] text-[#0B5F5E]">
           No phone on file
         </p>
       )}

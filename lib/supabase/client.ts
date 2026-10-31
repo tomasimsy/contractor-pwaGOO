@@ -2,6 +2,7 @@
 
 import { createBrowserClient } from "@supabase/ssr";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./env";
+import { dedupeFetch } from "./dedupeFetch";
 
 /**
  * The one browser Supabase client — same singleton discipline
@@ -25,4 +26,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./env";
  * it only stops an unconfigured project from crashing the build.
  * See lib/supabase/env.ts for the shared fallback values.
  */
-export const supabase = createBrowserClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+export const supabase = createBrowserClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  // Identical reads that are already in flight share one request. See dedupeFetch.ts.
+  global: { fetch: dedupeFetch },
+});

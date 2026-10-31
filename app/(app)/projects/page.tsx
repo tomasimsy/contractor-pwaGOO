@@ -1,5 +1,6 @@
 "use client";
 
+import { isRevenueInvoice } from "@/lib/services/financialEngine";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -193,7 +194,7 @@ function ProjectsListContent() {
                 {filtered.map((project) => {
                   const projectEstimates = estimatesByProject[project.id] ?? [];
                   const projectInvoices = invoicesByProject[project.id] ?? [];
-                  const invoicedTotal = projectInvoices.reduce((sum, i) => sum + i.total, 0);
+                  const invoicedTotal = projectInvoices.filter(isRevenueInvoice).reduce((sum, i) => sum + i.total, 0);
                   return (
                   <tr key={project.id} className="hover:bg-muted/40">
                     <td className="px-3 py-2.5">

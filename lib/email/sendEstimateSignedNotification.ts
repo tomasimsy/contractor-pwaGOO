@@ -66,7 +66,7 @@ export async function sendEstimateSignedNotification(
             <div style="margin-top: 12px; font-size: 14px; color: #1f2429;">Total: <strong>${formatCurrency(estimate.total)}</strong></div>
             ${
               invoiceProblem
-                ? `<div style="margin-top: 16px; padding: 12px; border: 1px solid #fca5a5; background: #fef2f2; border-radius: 8px; font-size: 13px; color: #991b1b; line-height: 1.5;"><strong>Action needed:</strong> the invoice was NOT created automatically. ${escapeHtml(invoiceProblem)}</div>`
+                ? `<div style="margin-top: 16px; padding: 12px; border: 1px solid #fca5a5; background: #fef2f2; border-radius: 8px; font-size: 13px; color: #991b1b; line-height: 1.5;"><strong>Action needed:</strong> a follow-up step did not finish automatically. ${escapeHtml(invoiceProblem)}</div>`
                 : ""
             }
             <div style="margin: 24px 0 0;">

@@ -1,6 +1,6 @@
 /**
  * "What should I act on today?" — the headline figures behind the
- * Dashboard tile and the /payments Needs Payment list.
+ * Dashboard's "Owed to people" and "Unpaid vendor bills" rows.
  *
  * ============================================================
  * WHY THIS EXISTS AS ONE FUNCTION
@@ -50,7 +50,7 @@
  */
 import { derivePayableState, isActionablePayable } from "./financialCalculations";
 import type { FinancialEngine } from "./financialEngine";
-import type { ExpenseService } from "./expenseService";
+import { isVendorBill, type ExpenseService } from "./expenseService";
 import type { TeamAssignmentService } from "./teamAssignmentService";
 import type { EstimateService } from "./estimateService";
 import type { ProjectService } from "./projectService";
@@ -72,6 +72,11 @@ export interface ActionablePayables {
     bills: number;
     reimbursements: number;
   };
+  /** What PAYROLL shows as owed — subs, agents, team and reimbursements —
+   * so the dashboard's "Owed to people" matches the page it links to.
+   * Same as the people part of byKind except team pay, which Payroll
+   * only counts once the job's PROJECT is completed. */
+  peopleOwed: number;
 }
 
 export interface PayablesWorklistDeps {
@@ -197,13 +202,24 @@ export async function getActionablePayables(
     teamLabour: roll(teamLabour, teamDone),
     // A bill is already an obligation with no assignment behind it —
     // unpaid is the whole condition.
-    bills: bills.filter((b) => !b.isPaid).reduce((s, b) => s + b.amount, 0),
+    // Vendor bills only — a due-dated people payment is counted above.
+    bills: bills.filter((b) => !b.isPaid && isVendorBill(b)).reduce((s, b) => s + b.amount, 0),
     reimbursements: pending.reduce((s, e) => s + e.amount, 0),
   };
+
+  // Payroll's team rule (payeePaymentService: completedEstimateIds):
+  // owed per assignment, once its project is completed.
+  const teamProject = new Map(teamAssign.map((a) => [a.id, a.projectId] as const));
+  const teamOwedOnCompleted = payablesSummary.teamLines.reduce((sum, l) => {
+    const projectId = teamProject.get(l.assignmentId);
+    const outstanding = l.outstanding as number;
+    return projectId && projStatus.get(projectId) === "completed" && outstanding > 0 ? sum + outstanding : sum;
+  }, 0);
 
   return {
     total: Object.values(byKind).reduce((s, v) => s + v, 0),
     needsAmount,
     byKind,
+    peopleOwed: byKind.subcontractor + byKind.agent + teamOwedOnCompleted + byKind.reimbursements,
   };
 }

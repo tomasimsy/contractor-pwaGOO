@@ -14,6 +14,7 @@
 * comment). Date range: a preset picker resolving to the exact
 * DateRange shape getCompanyFinancials already accepts.
 */
+import { isBilledInvoice } from "@/lib/services/financialEngine";
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useEffect } from "react";
@@ -114,7 +115,7 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
     const unpaidInvoices = useMemo(
       () =>
         invoices
-          .filter((i) => isOutstandingInvoiceStatus(i.status))
+          .filter((i) => isOutstandingInvoiceStatus(i.status) && isBilledInvoice(i) && i.total > 0)
           .sort((a, b) => b.total - a.total)
           .slice(0, 5),
       [invoices]
@@ -193,12 +194,21 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
     // ExpenseService has no date-scoped list method.
     const expenseBreakdown = useMemo(() => {
       const { start, end } = resolveDateRangePreset(preset);
+      // Paid only — the same cash-basis rule as the Expenses tile.
       const periodExpenses = allExpenses.filter((e) => {
         const d = new Date(e.expenseDate);
-        return d >= start && d <= end;
+        return e.isPaid && d >= start && d <= end;
       });
       return calculateExpenseTotals(periodExpenses);
     }, [allExpenses, preset]);
+
+    // The donut shows the same total as the Expenses tile: expense rows, plus
+    // crew labor (approved time) and mileage from the engine.
+    const donutByType = useMemo(() => {
+      if (!financials) return expenseBreakdown.byType;
+      return { ...expenseBreakdown.byType, time_labor: financials.laborCost, mileage: financials.mileageCosts };
+    }, [expenseBreakdown, financials]);
+    const donutTotal = financials ? financials.totalExpenses : expenseBreakdown.total;
 
     return (
     <PageContainer>
@@ -302,10 +312,12 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
                     {
                       href: "/invoices",
                       label: "Unpaid invoices",
-                      count: invoices.filter((i) => isOutstandingInvoiceStatus(i.status)).length,
+                      // $0 invoices owe nothing; leaving them out matches Accounting's receivables list.
+                      count: invoices.filter((i) => isOutstandingInvoiceStatus(i.status) && isBilledInvoice(i) && i.total > 0).length,
                       extra: (financials?.totalOutstanding ?? 0) > 0 ? money(financials?.totalOutstanding ?? 0) : null,
                     },
-                    { href: "/payments", label: "Owed to people", count: null, extra: (payables?.total ?? 0) > 0 ? money(payables?.total ?? 0) : null, isPositive: (payables?.total ?? 0) === 0 },
+                    { href: "/payroll", label: "Owed to people", count: null, extra: (payables?.peopleOwed ?? 0) > 0.005 ? money(payables?.peopleOwed ?? 0) : null, isPositive: (payables?.peopleOwed ?? 0) <= 0.005 },
+                    { href: "/bills", label: "Unpaid vendor bills", count: null, extra: (payables?.byKind.bills ?? 0) > 0.005 ? money(payables?.byKind.bills ?? 0) : null, isPositive: (payables?.byKind.bills ?? 0) <= 0.005 },
                     { href: "/change-orders", label: "Change orders pending", count: pendingChangeOrdersCount },
                     { href: "/estimates", label: "Stale draft estimates", count: staleEstimatesCount },
                     { href: "/projects", label: "Unstaffed jobs", count: unstaffedSoonCount },
@@ -345,7 +357,7 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
               {loading ? (
                 <div className="h-40 animate-pulse rounded-lg bg-white/5" />
               ) : (
-                <ExpenseBreakdownDonut byType={expenseBreakdown.byType} total={expenseBreakdown.total} />
+                <ExpenseBreakdownDonut byType={donutByType} total={donutTotal} />
               )}
             </div>
 
@@ -403,9 +415,15 @@ const [preset, setPreset] = useState<DateRangePreset>("this_year");
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <span className="text-sm font-bold text-emerald-50">{formatMoney(invoice.total)}</span>
-                      <span className="inline-flex items-center rounded-full bg-rose-400/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-rose-300">
-                        Unpaid
-                      </span>
+                      {invoice.status === "partially_paid" ? (
+                        <span className="inline-flex items-center rounded-full bg-amber-400/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-300">
+                          Partial
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-rose-400/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-rose-300">
+                          {invoice.status === "overdue" ? "Overdue" : "Unpaid"}
+                        </span>
+                      )}
                     </div>
                   </Link>
                 </li>

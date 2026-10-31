@@ -32,7 +32,7 @@ function StatusBadge({ status }: { status: EstimateEmailStatus }) {
     sent: "bg-muted text-muted-foreground",
     delivered: "bg-blue-100 text-blue-700",
     opened: "bg-green-100 text-green-700",
-    clicked: "bg-emerald-100 text-emerald-700",
+    clicked: "bg-[#F8F9F7] text-[#0B5F5E]",
     bounced: "bg-destructive/10 text-destructive",
     complained: "bg-destructive/10 text-destructive",
     failed: "bg-destructive/10 text-destructive",

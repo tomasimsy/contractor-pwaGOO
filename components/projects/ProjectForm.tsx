@@ -9,6 +9,8 @@ import { useAuth } from "@/components/providers/AuthProvider";
 import { supabase } from "@/lib/supabase/client";
 import type { Project } from "@/lib/services/projectService";
 import type { Client } from "@/lib/services/clientService";
+import { formatPropertyAddress, type Property } from "@/lib/services/propertyService";
+import { PropertyForm } from "@/components/properties/PropertyForm";
 
 type Member = { id: string; email: string | null; role: string | null; fullName: string | null };
 
@@ -34,12 +36,17 @@ export function ProjectForm({
   onCancel?: () => void;
 }) {
   const router = useRouter();
-  const { projectService, clientService } = useServices();
+  const { projectService, clientService, propertyService } = useServices();
   const { profile } = useAuth();
 
   const [clients, setClients] = useState<Client[]>([]);
   const [name, setName] = useState(project?.name ?? "");
   const [clientId, setClientId] = useState(project?.clientId ?? defaultClientId ?? "");
+  // Properties belong to one client. Empty = no property; the free-text
+  // address below still works for jobs that have no property on file.
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [propertyId, setPropertyId] = useState(project?.propertyId ?? "");
+  const [showNewPropertyModal, setShowNewPropertyModal] = useState(false);
   const [description, setDescription] = useState(project?.description ?? "");
   const [address, setAddress] = useState(project?.address ?? "");
   const [startDate, setStartDate] = useState(project?.startDate ?? "");
@@ -57,6 +64,34 @@ export function ProjectForm({
     if (!profile?.companyId) return;
     clientService.list({ companyId: profile.companyId }).then(setClients);
   }, [clientService, profile?.companyId]);
+
+  useEffect(() => {
+    if (!profile?.companyId || !clientId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setProperties([]);
+      return;
+    }
+    // Properties are additive: if they can't be loaded, the form still
+    // works with the free-text address, exactly as it did before.
+    propertyService
+      .list({ companyId: profile.companyId, clientId })
+      .then(setProperties)
+      .catch(() => setProperties([]));
+  }, [propertyService, profile?.companyId, clientId]);
+
+  function handlePropertyPicked(id: string) {
+    setPropertyId(id);
+    const picked = properties.find((p) => p.id === id);
+    // Fill the printed address from the property so the job's address
+    // text matches the house it is attached to. The field stays editable.
+    if (picked) setAddress(formatPropertyAddress(picked));
+  }
+
+  function handleClientChanged(nextClientId: string) {
+    setClientId(nextClientId);
+    // A property belongs to one client, so changing the client clears it.
+    setPropertyId("");
+  }
 
   useEffect(() => {
     if (!profile?.companyId) return;
@@ -82,6 +117,9 @@ export function ProjectForm({
         await projectService.update(project.id, {
           name,
           clientId: clientId || null,
+          // Undefined (not null) when the job never had a property and still
+          // doesn't, so the column is left alone entirely.
+          propertyId: propertyId || (project.propertyId ? null : undefined),
           description: description || null,
           address: address || null,
           startDate: startDate || null,
@@ -100,6 +138,7 @@ export function ProjectForm({
         const created = await projectService.create({
           companyId: profile.companyId,
           clientId: clientId || null,
+          propertyId: propertyId || null,
           name,
           description: description || undefined,
           address: address || undefined,
@@ -139,7 +178,7 @@ export function ProjectForm({
         <div className="flex items-center gap-2">
           <select
             value={clientId ?? ""}
-            onChange={(e) => setClientId(e.target.value)}
+            onChange={(e) => handleClientChanged(e.target.value)}
             className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
           >
             <option value="">No client</option>
@@ -159,6 +198,31 @@ export function ProjectForm({
           </button>
         </div>
         {clients.length === 0 && <p className="text-xs text-muted-foreground">No clients yet — add one with &ldquo;+ New Client&rdquo;.</p>}
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-foreground">Property</label>
+        <div className="flex items-center gap-2">
+          <select
+            value={propertyId}
+            onChange={(e) => handlePropertyPicked(e.target.value)}
+            disabled={!clientId}
+            className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 disabled:opacity-60"
+          >
+            <option value="">{clientId ? "No property (type an address below)" : "Choose a client first"}</option>
+            {properties.map((p) => (
+              <option key={p.id} value={p.id}>{p.nickname || formatPropertyAddress(p)}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={!clientId}
+            onClick={() => setShowNewPropertyModal(true)}
+            className="shrink-0 whitespace-nowrap rounded-lg border border-input px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-60"
+          >
+            + New Property
+          </button>
+        </div>
       </div>
 
       <div className="space-y-1">
@@ -230,6 +294,22 @@ export function ProjectForm({
           setShowNewClientModal(false);
         }}
       />
+    </Modal>
+    <Modal open={showNewPropertyModal} onClose={() => setShowNewPropertyModal(false)} title="New Property">
+      {showNewPropertyModal && clientId && (
+        <PropertyForm
+          clientId={clientId}
+          onCancel={() => setShowNewPropertyModal(false)}
+          onSaved={(created) => {
+            // Same pattern as the new-client modal above: add it to the
+            // list, select it, and fill the address from it.
+            setProperties((prev) => [...prev, created]);
+            setPropertyId(created.id);
+            setAddress(formatPropertyAddress(created));
+            setShowNewPropertyModal(false);
+          }}
+        />
+      )}
     </Modal>
     </>
   );

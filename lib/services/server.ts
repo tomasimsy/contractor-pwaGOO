@@ -24,10 +24,17 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAuditService } from "./auditService";
 import { createSupabaseAuditLogRepository } from "./supabase/auditLogRepository";
 import { createSupabaseClientService } from "./supabase/clientService";
+import { createSupabasePropertyService } from "./supabase/propertyService";
+import type { PropertyService } from "./propertyService";
+import { createSupabaseEmployeeService } from "./supabase/employeeService";
+import type { EmployeeService } from "./employeeService";
+import { createSupabaseTimeEntryService } from "./supabase/timeEntryService";
+import type { TimeEntryService } from "./timeEntryService";
 import { createSupabaseProjectService } from "./supabase/projectService";
 import { createSupabaseEstimateService } from "./supabase/estimateService";
 import { createSupabaseChangeOrderService } from "./supabase/changeOrderService";
 import { createSupabaseInvoiceService } from "./supabase/invoiceService";
+import { createSupabaseEmployeeWageReader } from "./supabase/payeePaymentService";
 import { createSupabasePaymentService } from "./supabase/paymentService";
 import { createRoofingAreaService } from "./supabase/roofingAreaService";
 import { createSupabaseEstimateAreaLineItemService } from "./supabase/estimateAreaLineItemService";
@@ -53,6 +60,9 @@ import type { PushSubscriptionService } from "./pushSubscriptionService";
 
 export interface ServerAppServices {
   clientService: ClientService;
+  propertyService: PropertyService;
+  employeeService: EmployeeService;
+  timeEntryService: TimeEntryService;
   projectService: ProjectService;
   estimateService: EstimateService;
   changeOrderService: ChangeOrderService;
@@ -92,6 +102,9 @@ export function createServerAppServices(
   const auditService = createAuditService(auditLogRepository);
 
   const clientService = createSupabaseClientService(supabase, validationService, currentUserId);
+  const propertyService = createSupabasePropertyService(supabase, validationService, currentUserId);
+  const employeeService = createSupabaseEmployeeService(supabase, validationService, currentUserId);
+  const timeEntryService = createSupabaseTimeEntryService(supabase, validationService, currentUserId);
   const projectService = createSupabaseProjectService(supabase, validationService, auditService, currentUserId, clientService);
   const estimateService = createSupabaseEstimateService(supabase, validationService, auditService, currentUserId, projectService);
   const changeOrderService = createSupabaseChangeOrderService(
@@ -123,10 +136,17 @@ export function createServerAppServices(
   const changeOrderWorkflow = createChangeOrderWorkflow({ changeOrderService, estimateService, invoiceService });
   // Cash-basis only — see cpaPackageService.ts's header for why this is
   // never given financialEngine.
-  const cpaPackageService = createCpaPackageService({ expenseService, paymentService, invoiceService, projectService, clientService });
+  const cpaPackageService = createCpaPackageService({
+    expenseService, paymentService, invoiceService, projectService, clientService,
+    // W-2 wages paid through Payroll — not expense rows, so passed in.
+    listEmployeeWages: createSupabaseEmployeeWageReader(supabase),
+  });
 
   return {
     clientService,
+    propertyService,
+    employeeService,
+    timeEntryService,
     projectService,
     estimateService,
     changeOrderService,

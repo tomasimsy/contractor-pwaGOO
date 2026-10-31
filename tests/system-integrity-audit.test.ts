@@ -722,7 +722,7 @@ describe("J. Soft delete and restore", () => {
 //    SAME underlying expense must read differently at each level.
 // ======================================================================
 describe("K. Date-range filtering (cash-basis vs. committed)", () => {
-  test("only paid expenses within the date range count at company level; project level counts all of them, unpaid or not", async () => {
+  test("company level counts PAID expenses within the date range; project level counts all of them", async () => {
     const suite = "K. Date-range filtering";
     const services = createInMemoryServices();
     const companyId = "company-K";
@@ -732,7 +732,7 @@ describe("K. Date-range filtering (cash-basis vs. committed)", () => {
     await services.expenseService.create({ companyId, projectId: project.id, expenseType: "materials", amount: 100, expenseDate: "2026-02-15", isPaid: true });
     // Out of range, paid.
     await services.expenseService.create({ companyId, projectId: project.id, expenseType: "materials", amount: 250, expenseDate: "2026-05-01", isPaid: true });
-    // In range, NOT paid (a bill) — must be excluded at company level (cash-basis) but still counted at project level (committed).
+    // In range, NOT paid (a bill) — counted at project level (job cost), not yet at company level (cash basis).
     await services.expenseService.create({ companyId, projectId: project.id, expenseType: "materials", amount: 75, expenseDate: "2026-02-20", isPaid: false, dueDate: "2026-03-01" });
 
     const ids = { projectId: project.id };
@@ -741,11 +741,11 @@ describe("K. Date-range filtering (cash-basis vs. committed)", () => {
     const projFin = await services.financialEngine.getProjectFinancials(project.id);
     check(suite, "project.expenseItems (committed — all 3 rows, paid or not, any date)", money(100 + 250 + 75), projFin.expenseItems, ids);
 
-    // Company level, February only: ONLY the $100 row (in range AND paid).
+    // Company level, February only: just the $100 paid row (cash basis, like revenue).
     const companyFin = await services.financialEngine.getCompanyFinancials({
       companyId, dateRange: { start: new Date("2026-02-01"), end: new Date("2026-02-28") },
     });
-    check(suite, "company.expenseItems for Feb range (cash-basis: only the $100 in-range, PAID row)", 100, companyFin.expenseItems, ids);
+    check(suite, "company.expenseItems for Feb range (cash: the $100 paid row only)", 100, companyFin.expenseItems, ids);
 
     assertSuitePassed(suite);
   });

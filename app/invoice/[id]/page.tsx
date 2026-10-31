@@ -31,6 +31,12 @@ import { formatPaymentMethod } from "@/components/payments/paymentMethods";
  * renders its "not available" state for anonymous visitors rather than
  * appearing to work. Documented in the deliverables, not papered over.
  */
+
+/** Same orange as the staff invoice page, so a customer and staff see one invoice identity. */
+const BAND = "bg-[#b4530e] text-white";
+const LABEL = "text-[10px] font-bold uppercase tracking-[0.08em] text-[#7a5238]";
+const TABLE_HEAD = "px-2 py-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-[#7a5238]";
+
 export default async function PublicInvoicePage({
   params,
   searchParams,
@@ -69,9 +75,9 @@ export default async function PublicInvoicePage({
   // which invoice ids exist.
   if (!invoice) {
     return (
-      <main className="mx-auto max-w-2xl px-6 py-20 text-center">
-        <h1 className="text-xl font-semibold text-foreground">Invoice not available</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
+      <main className="mx-auto max-w-2xl px-4 py-16 text-center">
+        <h1 className="text-lg font-semibold text-foreground">Invoice not available</h1>
+        <p className="mt-2 text-[13px] text-muted-foreground">
           This invoice may have been removed, or the link is incorrect. Please contact the sender for an updated link.
         </p>
       </main>
@@ -85,6 +91,9 @@ export default async function PublicInvoicePage({
   // a pending or rejected change order can never reach this page even
   // if one exists on the estimate.
   const changeOrders = payload?.change_orders ?? [];
+  // The job's scope, from the source estimate (see the job_description
+  // field in get_public_invoice). Null when the invoice has no estimate.
+  const jobDescription = typeof invoice.job_description === "string" && invoice.job_description.trim() ? invoice.job_description.trim() : null;
 
   // Which brand this invoice presents as — get_public_invoice can't
   // safely be rewritten to return profile_id itself (its body lives
@@ -126,93 +135,105 @@ export default async function PublicInvoicePage({
   const pdfHref = `/api/invoices/${id}/pdf?customerToken=${encodeURIComponent(token ?? "")}`;
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-10">
-      <header className="flex flex-wrap items-start justify-between gap-4 border-b border-border pb-6">
-        <div>
-          <h1 className="text-lg font-semibold text-foreground">{company.company_name}</h1>
-          <p className="text-xs text-muted-foreground">{company.company_phone} · {company.company_email}</p>
+    <main className="mx-auto max-w-3xl px-4 py-6 text-[13px] text-foreground sm:px-6 sm:py-8">
+      {/* Invoice band: sender, the invoice number and its status */}
+      <header className={`flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-xl px-4 py-3 sm:px-5 ${BAND}`}>
+        <div className="min-w-0">
+          <div className="text-[15px] font-semibold">{company.company_name}</div>
+          <div className="text-[11px] text-[#fde3c8]">{[company.company_phone, company.company_email].filter(Boolean).join(" · ")}</div>
         </div>
-        <div className="text-right">
-          <div className="text-xl font-bold tracking-wide text-foreground">INVOICE</div>
-          <div className="text-sm text-muted-foreground">#{invoice.invoice_number || id.slice(0, 8)}</div>
-          <div className="mt-1 inline-block rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold uppercase text-muted-foreground">
-            {status.replace(/_/g, " ")}
-          </div>
+        <div className="flex items-center gap-2.5 text-right">
+          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#fde3c8]">Invoice</div>
+          <div className="text-[15px] font-bold">#{invoice.invoice_number || id.slice(0, 8)}</div>
+          <span className="rounded-full bg-[#ffd98a] px-2 py-0.5 text-[11px] font-semibold capitalize text-[#2a1c10]">{status.replace(/_/g, " ")}</span>
         </div>
       </header>
 
-      <section className="grid grid-cols-1 gap-6 py-6 sm:grid-cols-2">
+      {/* Who it's for, and the key dates */}
+      <section className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bill To</h2>
-          <p className="mt-1 font-medium text-foreground">{client?.name ?? "—"}</p>
-          {client?.email && <p className="text-sm text-muted-foreground">{client.email}</p>}
-          {client?.phone && <p className="text-sm text-muted-foreground">{client.phone}</p>}
-          {client?.address && <p className="text-sm text-muted-foreground">{client.address}</p>}
+          <div className={LABEL}>Bill to</div>
+          <div className="mt-0.5 font-semibold">{client?.name ?? "—"}</div>
+          {client?.email && <div className="text-[12px] text-[#7a5238]">{client.email}</div>}
+          {client?.phone && <div className="text-[12px] text-[#7a5238]">{client.phone}</div>}
+          {client?.address && <div className="text-[12px] text-[#7a5238]">{client.address}</div>}
         </div>
         <div className="sm:text-right">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Dates</h2>
-          <p className="mt-1 text-sm text-foreground">Issued: {invoice.issue_date ?? "—"}</p>
-          <p className="text-sm text-foreground">Due: {invoice.due_date ?? "—"}</p>
+          <div className={LABEL}>Dates</div>
+          <div className="mt-0.5 text-[12px]">Issued {invoice.issue_date ?? "—"}</div>
+          <div className="text-[12px]">Due {invoice.due_date ?? "—"}</div>
         </div>
       </section>
 
-      <section className="overflow-x-auto rounded-xl border border-border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50">
-            <tr>
-              <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Item</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Qty</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Unit Price</th>
-              <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {lineItems.length === 0 ? (
-              <tr><td colSpan={4} className="px-3 py-6 text-center text-sm text-muted-foreground">No items on this invoice.</td></tr>
-            ) : (
-              lineItems.map((item) => (
-                <tr key={item.id}>
-                  <td className="px-3 py-2">
-                    <div className="font-medium text-foreground">{item.name}</div>
-                    {item.description && <div className="text-xs text-muted-foreground">{item.description}</div>}
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground">{item.quantity ?? 0}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{money(item.unit_price ?? 0)}</td>
-                  <td className="px-3 py-2 text-right font-medium text-foreground">{money(item.total ?? 0)}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+      {/* The job, as described on the invoice */}
+      {jobDescription && (
+        <section className="mt-4">
+          <div className={LABEL}>Job description</div>
+          <p className="mt-1 whitespace-pre-line border-l-[3px] border-[#f0a866] pl-3 text-[12px] leading-relaxed text-[#2a1c10]">{jobDescription}</p>
+        </section>
+      )}
+
+      {/* Line items */}
+      <section className="mt-4">
+        <div className="overflow-x-auto rounded-lg border border-[#f0d2b4]">
+          <table className="w-full text-[12px]">
+            <thead className="bg-[#fdf1e5]">
+              <tr>
+                <th className={`${TABLE_HEAD} text-left`}>Item</th>
+                <th className={`${TABLE_HEAD} text-right`}>Qty</th>
+                <th className={`${TABLE_HEAD} text-right`}>Unit price</th>
+                <th className={`${TABLE_HEAD} text-right`}>Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#f7e4cf]">
+              {lineItems.length === 0 ? (
+                <tr><td colSpan={4} className="px-2 py-4 text-center text-[12px] text-[#7a5238]">No items on this invoice.</td></tr>
+              ) : (
+                lineItems.map((item) => (
+                  <tr key={item.id} className="align-top">
+                    <td className="px-2 py-1.5">
+                      <div className="font-semibold">{item.name}</div>
+                      {item.description && !item.description.startsWith("change-order:") && (
+                        <div className="text-[11px] leading-snug text-[#7a5238]">{item.description}</div>
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 text-right tabular-nums text-[#7a5238]">{item.quantity ?? 0}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums text-[#7a5238]">{money(item.unit_price ?? 0)}</td>
+                    <td className="px-2 py-1.5 text-right font-semibold tabular-nums">{money(item.total ?? 0)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
 
+      {/* Approved change orders, already counted in the total below */}
       {changeOrders.length > 0 && (
-        <section className="mt-6">
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Approved Change Orders</h2>
-          <p className="mb-2 text-xs text-muted-foreground">
-            Additional work approved after the original estimate. These amounts are already included in the invoice total below.
-          </p>
-          <div className="overflow-x-auto rounded-xl border border-border">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50">
+        <section className="mt-4">
+          <div className={LABEL}>Approved change orders</div>
+          <p className="mt-0.5 text-[11px] text-[#7a5238]">Included in the invoice total below.</p>
+          <div className="mt-1.5 overflow-x-auto rounded-lg border border-[#f0d2b4]">
+            <table className="w-full text-[12px]">
+              <thead className="bg-[#fdf1e5]">
                 <tr>
-                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Change Order</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Approved</th>
-                  <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Amount</th>
+                  <th className={`${TABLE_HEAD} text-left`}>Change order</th>
+                  <th className={`${TABLE_HEAD} text-left`}>Approved</th>
+                  <th className={`${TABLE_HEAD} text-right`}>Amount</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody className="divide-y divide-[#f7e4cf]">
                 {changeOrders.map((co, i) => (
-                  <tr key={co.change_order_number ?? i}>
-                    <td className="px-3 py-2">
-                      <div className="font-medium text-foreground">{co.change_order_number ?? "—"}</div>
-                      {co.title && <div className="text-xs text-muted-foreground">{co.title}</div>}
-                      {co.description && <div className="text-xs text-muted-foreground">{co.description}</div>}
+                  <tr key={co.change_order_number ?? i} className="align-top">
+                    <td className="px-2 py-1.5">
+                      <div className="font-semibold">{co.change_order_number ?? "—"}</div>
+                      {co.title && <div className="text-[11px] text-[#7a5238]">{co.title}</div>}
+                      {co.description && <div className="text-[11px] text-[#7a5238]">{co.description}</div>}
                     </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
+                    <td className="px-2 py-1.5 text-[11px] text-[#7a5238]">
                       {co.approved_at ? new Date(co.approved_at).toLocaleDateString() : "—"}
                     </td>
-                    <td className="px-3 py-2 text-right font-medium text-foreground">{money(co.amount ?? 0)}</td>
+                    <td className="px-2 py-1.5 text-right font-semibold tabular-nums">{money(co.amount ?? 0)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -221,39 +242,43 @@ export default async function PublicInvoicePage({
         </section>
       )}
 
-      <section className="mt-4 space-y-1 rounded-xl bg-muted/50 px-4 py-3 text-sm">
-        <div className="flex justify-between text-muted-foreground"><span>Subtotal</span><span>{money(subtotal)}</span></div>
-        {tax !== 0 && <div className="flex justify-between text-muted-foreground"><span>Tax</span><span>{money(tax)}</span></div>}
-        <div className="flex justify-between border-t border-border pt-1 font-semibold text-foreground"><span>Total</span><span>{money(total)}</span></div>
-        <div className="flex justify-between text-muted-foreground"><span>Amount Paid</span><span>−{money(amountPaid)}</span></div>
-        <div className="flex justify-between border-t border-border pt-1 text-base font-bold text-foreground"><span>Balance Due</span><span>{money(balanceDue)}</span></div>
+      {/* Totals and balance */}
+      <section className="mt-4 flex justify-end">
+        <div className="w-full max-w-[260px] space-y-0.5 rounded-lg bg-[#fdf1e5] px-3 py-2.5 text-[12px] tabular-nums">
+          <div className="flex justify-between text-[#7a5238]"><span>Subtotal</span><span>{money(subtotal)}</span></div>
+          {tax !== 0 && <div className="flex justify-between text-[#7a5238]"><span>Tax</span><span>{money(tax)}</span></div>}
+          <div className="flex justify-between border-t border-[#f0d2b4] pt-1 font-semibold"><span>Total</span><span>{money(total)}</span></div>
+          <div className="flex justify-between text-[#7a5238]"><span>Amount paid</span><span>−{money(amountPaid)}</span></div>
+          <div className="flex justify-between border-t-2 border-[#b4530e] pt-1 text-[14px] font-bold text-[#b4530e]"><span>Balance due</span><span>{money(balanceDue)}</span></div>
+        </div>
       </section>
 
-      <section className="mt-6">
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Payment History</h2>
+      {/* Payments received */}
+      <section className="mt-4">
+        <div className={LABEL}>Payments received</div>
         {paymentRows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No payments received yet.</p>
+          <p className="mt-1 text-[12px] text-[#7a5238]">No payments received yet.</p>
         ) : (
-          <ul className="divide-y divide-border rounded-xl border border-border">
+          <ul className="mt-1.5 divide-y divide-[#f7e4cf] rounded-lg border border-[#f0d2b4]">
             {paymentRows.map((p, i) => (
-              <li key={i} className="flex items-center justify-between px-3 py-2 text-sm">
-                <span className="text-muted-foreground">{p.payment_date ?? "—"}{p.method ? ` · ${formatPaymentMethod(p.method)}` : ""}</span>
-                <span className="font-medium text-foreground">{money(p.amount ?? 0)}</span>
+              <li key={i} className="flex items-center justify-between px-2.5 py-1.5 text-[12px]">
+                <span className="text-[#7a5238]">{p.payment_date ?? "—"}{p.method ? ` · ${formatPaymentMethod(p.method)}` : ""}</span>
+                <span className="font-semibold tabular-nums">{money(p.amount ?? 0)}</span>
               </li>
             ))}
           </ul>
         )}
       </section>
 
-      <section className="mt-6 flex flex-wrap gap-3">
-        <Link href={pdfHref} target="_blank" className="inline-flex items-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+      <section className="mt-5">
+        <Link href={pdfHref} target="_blank" className="inline-flex items-center rounded-lg bg-[#b4530e] px-3.5 py-1.5 text-[13px] font-semibold text-white hover:bg-[#9a460b]">
           Download PDF
         </Link>
       </section>
 
-      <footer className="mt-10 border-t border-border pt-4 text-center text-xs text-muted-foreground">
+      <footer className="mt-8 border-t border-[#f0d2b4] pt-3 text-center text-[11px] text-[#7a5238]">
         <p>{company.company_name} · {company.company_phone}</p>
-        <p className="mt-1">{company.footer_message}</p>
+        <p className="mt-0.5">{company.footer_message}</p>
       </footer>
     </main>
   );

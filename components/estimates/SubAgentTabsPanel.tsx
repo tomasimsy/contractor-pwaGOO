@@ -18,7 +18,8 @@
  * reimbursement balance without the user having to switch tabs first.
  */
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
-import { HardHat, Briefcase, UsersRound } from "lucide-react";
+import { HardHat, Briefcase, UsersRound, Clock } from "lucide-react";
+import { EstimateEmployeesPanel } from "@/components/estimates/EstimateEmployeesPanel";
 import { SubcontractorAssignmentPanel } from "@/components/subcontractors/SubcontractorAssignmentPanel";
 import { AgentAssignmentPanel, type AgentAssignmentPanelRef } from "@/components/agents/AgentAssignmentPanel";
 import { TeamMembersPanel, type TeamMembersPanelRef } from "@/components/estimates/TeamMembersPanel";
@@ -43,7 +44,7 @@ export const SubAgentTabsPanel = forwardRef<SubAgentTabsPanelRef, {
   estimateId?: string | null;
   onChanged?: () => void;
 }>(function SubAgentTabsPanel({ companyId, projectId, estimateId, onChanged }, ref) {
-  const [tab, setTab] = useState<"subcontractors" | "agents" | "team">("subcontractors");
+  const [tab, setTab] = useState<"subcontractors" | "agents" | "team" | "employees">("subcontractors");
   const agentPanelRef = useRef<AgentAssignmentPanelRef>(null);
   const teamPanelRef = useRef<TeamMembersPanelRef>(null);
 
@@ -57,13 +58,13 @@ export const SubAgentTabsPanel = forwardRef<SubAgentTabsPanelRef, {
   }), []);
 
   return (
-    <div className="rounded-lg border border-border/60 bg-card">
-      <div className="flex border-b border-border/60">
+    <div className="rounded-2xl border border-[#E2E5E0] bg-white p-4">
+      <div className="mb-3 flex gap-1 border-b border-[#E2E5E0] pb-2">
         <button
           type="button"
           onClick={() => setTab("subcontractors")}
-          className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold ${
-            tab === "subcontractors" ? "border-b-2 border-primary text-primary" : "text-muted-foreground hover:text-foreground"
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium ${
+            tab === "subcontractors" ? "bg-[#1B2430] text-white" : "bg-[#F8F9F7] text-[#5B6675] hover:text-[#1B2430]"
           }`}
         >
           <HardHat className="size-3.5" /> Subs
@@ -71,8 +72,8 @@ export const SubAgentTabsPanel = forwardRef<SubAgentTabsPanelRef, {
         <button
           type="button"
           onClick={() => setTab("agents")}
-          className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold ${
-            tab === "agents" ? "border-b-2 border-primary text-primary" : "text-muted-foreground hover:text-foreground"
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium ${
+            tab === "agents" ? "bg-[#1B2430] text-white" : "bg-[#F8F9F7] text-[#5B6675] hover:text-[#1B2430]"
           }`}
         >
           <Briefcase className="size-3.5" /> Agents
@@ -80,11 +81,20 @@ export const SubAgentTabsPanel = forwardRef<SubAgentTabsPanelRef, {
         <button
           type="button"
           onClick={() => setTab("team")}
-          className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold ${
-            tab === "team" ? "border-b-2 border-primary text-primary" : "text-muted-foreground hover:text-foreground"
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium ${
+            tab === "team" ? "bg-[#1B2430] text-white" : "bg-[#F8F9F7] text-[#5B6675] hover:text-[#1B2430]"
           }`}
         >
           <UsersRound className="size-3.5" /> Team
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("employees")}
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium ${
+            tab === "employees" ? "bg-[#1B2430] text-white" : "bg-[#F8F9F7] text-[#5B6675] hover:text-[#1B2430]"
+          }`}
+        >
+          <Clock className="size-3.5" /> Employees
         </button>
       </div>
 
@@ -103,6 +113,13 @@ export const SubAgentTabsPanel = forwardRef<SubAgentTabsPanelRef, {
             projectId={projectId} onChanged={onChanged} compact />
           ) : (
             <p className="text-xs text-muted-foreground">Team assignments require an estimate.</p>
+          )}
+        </div>
+        <div className={tab === "employees" ? "" : "hidden"}>
+          {estimateId ? (
+            <EstimateEmployeesPanel companyId={companyId} estimateId={estimateId} onChanged={onChanged} />
+          ) : (
+            <p className="text-xs text-muted-foreground">Employee assignments require an estimate.</p>
           )}
         </div>
       </div>

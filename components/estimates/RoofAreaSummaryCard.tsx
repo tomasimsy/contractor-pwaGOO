@@ -1,24 +1,24 @@
 "use client";
 
 /**
- * Read-only, compact summary card for one Roof Area — used on the
- * Estimate Detail page's "Roof Areas" section. Displays fields already
- * on the RoofingArea model (lib/services/roofingAreaService.ts); adds
- * no new calculations — `estimatedRepairCost` is read straight off the
- * row (RoofingAreaService always keeps it in sync with material/labor/
- * tax on write, see calculateAreaRepairCost in financialCalculations.ts).
+ * Read-only summary row for one Roof Area on the Estimate Detail page.
+ * Shows a table row (No., description, quantity, repair cost) that
+ * expands to the area's defect, location, corrective action, materials
+ * and cost split. Displays fields already on the RoofingArea model
+ * (lib/services/roofingAreaService.ts); adds no new calculations.
  * Photos are read only for an "Images Available"/"No Images" status —
  * thumbnails are intentionally never rendered here (see
  * RoofingAreasEditorV2 / the Edit page for the full photo UI).
  */
 import { useState } from "react";
-import { ImageIcon, ImageOff } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import type { RoofingArea } from "@/lib/services/roofingAreaService";
 
-const formatMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+/** Column template shared with the table header in EstimateDetail. */
+export const ROOF_AREA_ROW_GRID =
+  "grid grid-cols-[28px_minmax(0,1fr)_16px] items-center gap-3 sm:grid-cols-[40px_minmax(0,1fr)_96px_110px_16px]";
 
-/** White card background for clear readability. */
-const AREA_CARD_TONE = "bg-white";
+const formatMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 const TRUNCATE_AT = 90;
 
@@ -32,7 +32,7 @@ function TruncatedText({ text, className = "" }: { text: string; className?: str
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="mt-0.5 text-[11px] font-medium text-primary hover:underline"
+          className="mt-0.5 text-[11px] font-medium text-[#0B5F5E] hover:underline"
         >
           {expanded ? "Show less" : "Show more"}
         </button>
@@ -45,64 +45,74 @@ function Field({ label, value, emphasize = false }: { label: string; value: stri
   if (!value) return null;
   return (
     <div>
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</span>
-      <div className={`mt-0.5 text-[12px] leading-snug ${emphasize ? "font-semibold text-foreground" : "text-foreground/80"}`}>
-        <TruncatedText text={value} className={emphasize ? "font-semibold text-foreground" : ""} />
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-[#5B6675]">{label}</span>
+      <div className={`mt-0.5 text-[13px] leading-snug ${emphasize ? "font-semibold text-[#1B2430]" : "text-[#1B2430]"}`}>
+        <TruncatedText text={value} className={emphasize ? "font-semibold text-[#1B2430]" : ""} />
       </div>
     </div>
   );
 }
 
 export function RoofAreaSummaryCard({ area, index, areaSubtotal }: { area: RoofingArea; index: number; areaSubtotal: number }) {
+  const [open, setOpen] = useState(false);
   const hasImages = (area.beforePhotos?.length ?? 0) > 0 || (area.afterPhotos?.length ?? 0) > 0;
   const hasDetail = area.defect || area.location || area.correctiveAction || area.materialsIncluded;
   const hasQuantity = !!area.quantity;
   const repairCost = area.estimatedRepairCost || areaSubtotal || area.areaTotal;
 
   return (
-    <div className={`rounded-xl border border-l-4 border-border border-l-primary ${AREA_CARD_TONE} p-4 shadow-sm`}>
-      {/* Header — Roof Area N + title, emphasized */}
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[10px] font-bold uppercase tracking-wider text-primary">Roof Area {index + 1}</div>
-          <div className="mt-0.5 text-base font-bold text-foreground">{area.areaName}</div>
-        </div>
-        <div className="text-right">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Est. Repair Cost</div>
-          <div className="text-base font-bold text-foreground">{formatMoney(repairCost)}</div>
-        </div>
-      </div>
+    <div className="border-t border-[#E2E5E0] first:border-t-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className={`${ROOF_AREA_ROW_GRID} w-full px-3 py-3 text-left hover:bg-[#F8F9F7]`}
+      >
+        <span className="text-xs font-semibold text-[#8A93A0]">{String(index + 1).padStart(2, "0")}</span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold text-[#1B2430]">{area.areaName}</span>
+          {area.location && <span className="block truncate text-xs text-[#5B6675]">{area.location}</span>}
+        </span>
+        <span className="hidden text-right text-xs text-[#5B6675] sm:block">
+          {hasQuantity ? `${area.quantity}${area.quantityUnit ? ` ${area.quantityUnit}` : ""}` : "—"}
+        </span>
+        <span className="text-right text-sm font-semibold text-[#1B2430]">{formatMoney(repairCost)}</span>
+        <ChevronDown className={`size-4 text-[#5B6675] transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />
+      </button>
 
-      {area.measurements && <div className="mt-1.5 text-[11px] text-muted-foreground">Measurements: {area.measurements}</div>}
+      {open && (
+        <div className="space-y-3 px-3 pb-4 pl-[52px] sm:pl-[52px]">
+          {area.measurements && <div className="text-xs text-[#5B6675]">Measurements: {area.measurements}</div>}
 
-      {(hasDetail || hasQuantity) && (
-        <div className="mt-3 grid grid-cols-1 gap-x-5 gap-y-2.5 border-t border-border pt-3 sm:grid-cols-2">
-          <Field label="Location" value={area.location} emphasize />
-          <Field label="Defect" value={area.defect} />
-          <Field label="Corrective Action" value={area.correctiveAction} />
-          <Field label="Materials Included" value={area.materialsIncluded} />
-          {hasQuantity && (
-            <div>
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Quantity</span>
-              <div className="mt-0.5 text-[12px] text-foreground/80">
-                {area.quantity}{area.quantityUnit ? ` ${area.quantityUnit}` : ""}
-              </div>
+          {(hasDetail || hasQuantity) && (
+            <div className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
+              <Field label="Location" value={area.location} emphasize />
+              <Field label="Defect" value={area.defect} />
+              <Field label="Corrective action" value={area.correctiveAction} />
+              <Field label="Materials included" value={area.materialsIncluded} />
+              {hasQuantity && (
+                <div>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-[#5B6675]">Quantity</span>
+                  <div className="mt-0.5 text-[13px] text-[#1B2430]">
+                    {area.quantity}{area.quantityUnit ? ` ${area.quantityUnit}` : ""}
+                  </div>
+                </div>
+              )}
             </div>
           )}
+
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#E2E5E0] pt-3">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#5B6675]">
+              <span>Material <strong className="text-[#1B2430]">{formatMoney(area.materialCost)}</strong></span>
+              <span>Labor <strong className="text-[#1B2430]">{formatMoney(area.laborCost)}</strong></span>
+              <span>Tax <strong className="text-[#1B2430]">{formatMoney(area.tax)}</strong></span>
+            </div>
+            <span className={`text-xs font-medium ${hasImages ? "text-[#0B5F5E]" : "text-[#8A93A0]"}`}>
+              {hasImages ? "Images available" : "No images"}
+            </span>
+          </div>
         </div>
       )}
-
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-          <span>Material <strong className="text-foreground">{formatMoney(area.materialCost)}</strong></span>
-          <span>Labor <strong className="text-foreground">{formatMoney(area.laborCost)}</strong></span>
-          <span>Tax <strong className="text-foreground">{formatMoney(area.tax)}</strong></span>
-        </div>
-        <span className={`inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-medium ${hasImages ? "text-emerald-700 dark:text-emerald-700" : "text-muted-foreground"}`}>
-          {hasImages ? <ImageIcon className="size-3.5" /> : <ImageOff className="size-3.5" />}
-          {hasImages ? "Images Available" : "No Images"}
-        </span>
-      </div>
     </div>
   );
 }

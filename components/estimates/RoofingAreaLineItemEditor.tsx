@@ -51,6 +51,8 @@ export interface RoofingAreaLineItemEditorHandle {
    * area's first save).
    */
   save: (companyIdOverride?: UUID, areaIdOverride?: UUID) => Promise<void>;
+  /** Adds an empty row of the given category. */
+  addItem: (category?: DraftAreaLineItem["category"]) => void;
 }
 
 export type DraftAreaLineItem = Omit<EstimateAreaLineItemCreateInput, "areaId" | "companyId">;
@@ -84,9 +86,17 @@ export const RoofingAreaLineItemEditor = forwardRef<RoofingAreaLineItemEditorHan
    * EstimateService.
    */
   onSaved?: () => void;
-}>(function RoofingAreaLineItemEditor({ areaId, companyId, disabled = false, onSaved }, ref) {
+  /** Button text; the area editor's document layout names the area here. */
+  addLabel?: string;
+  /** Reports the rows as they are on screen, so the form's tables can show them before save. */
+  onItemsChange?: (items: DraftAreaLineItem[]) => void;
+}>(function RoofingAreaLineItemEditor({ areaId, companyId, disabled = false, onSaved, addLabel, onItemsChange }, ref) {
   const { estimateAreaLineItemService } = useServices();
   const [items, setItems] = useState<DraftAreaLineItem[]>([]);
+  useEffect(() => {
+    onItemsChange?.(items);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -115,10 +125,10 @@ export const RoofingAreaLineItemEditor = forwardRef<RoofingAreaLineItemEditorHan
     setItems((prev) => prev.map((item, i) => (i === index ? { ...item, ...changes } : item)));
   }
 
-  function addItem() {
+  function addItem(category: DraftAreaLineItem["category"] = "material") {
     setItems((prev) => [
       ...prev,
-      { category: "material", name: "", description: null, quantity: 1, unitPrice: 0, unit: null, taxable: true, sequenceNumber: prev.length },
+      { category, name: "", description: null, quantity: 1, unitPrice: 0, unit: null, taxable: true, sequenceNumber: prev.length },
     ]);
   }
 
@@ -167,7 +177,7 @@ export const RoofingAreaLineItemEditor = forwardRef<RoofingAreaLineItemEditorHan
     }
   }, [areaId, companyId, items, estimateAreaLineItemService, onSaved]);
 
-  useImperativeHandle(ref, () => ({ save: handleSave }), [handleSave]);
+  useImperativeHandle(ref, () => ({ save: handleSave, addItem }), [handleSave]);
 
   const subtotal = calculateSubtotal(items.map((item) => ({ total: calculateLineItemTotal(item) })));
 
@@ -360,10 +370,10 @@ export const RoofingAreaLineItemEditor = forwardRef<RoofingAreaLineItemEditorHan
       <div className="flex items-center justify-between gap-2">
         <button
           type="button"
-          onClick={addItem}
+          onClick={() => addItem()}
           className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100"
         >
-          <Plus className="size-3.5" /> Add line item
+          <Plus className="size-3.5" /> {addLabel ?? "Add line item"}
         </button>
         <div className="text-xs text-gray-600">
           Area subtotal: <span className="font-semibold text-gray-900">{subtotal.toLocaleString("en-US", { style: "currency", currency: "USD" })}</span>

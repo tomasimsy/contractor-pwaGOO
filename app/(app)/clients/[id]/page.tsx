@@ -13,6 +13,10 @@ import { useAuth } from "@/components/providers/AuthProvider";
 import { RequirePermission } from "@/components/layout/RequirePermission";
 import type { Client } from "@/lib/services/clientService";
 import type { Project } from "@/lib/services/projectService";
+import type { Estimate } from "@/lib/services/estimateService";
+import { formatPropertyAddress, type Property } from "@/lib/services/propertyService";
+import { Modal } from "@/components/ui/Modal";
+import { PropertyForm } from "@/components/properties/PropertyForm";
 import type { ProjectStatus } from "@/lib/services";
 
 const STATUS_TONE: Record<ProjectStatus, "neutral" | "success" | "warning" | "danger"> = {
@@ -38,11 +42,15 @@ const STATUS_TONE: Record<ProjectStatus, "neutral" | "success" | "warning" | "da
 function ClientDetailContent() {
   const params = useParams();
   const clientId = params.id as string;
-  const { clientService, projectService } = useServices();
+  const { clientService, projectService, propertyService, estimateService } = useServices();
   const { profile } = useAuth();
 
   const [client, setClient] = useState<Client | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [estimates, setEstimates] = useState<Estimate[]>([]);
+  // undefined = closed; "new" = adding; a Property = editing that one.
+  const [propertyModal, setPropertyModal] = useState<"new" | Property | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,18 +59,26 @@ function ClientDetailContent() {
     setLoading(true);
     setError(null);
     try {
-      const [c, allProjects] = await Promise.all([
+      const [c, allProjects, clientProperties, allEstimates] = await Promise.all([
         clientService.getById(clientId),
         projectService.list({ companyId: profile.companyId }),
+        // Properties are additive. If the properties table is not there
+        // yet, show the page with no properties rather than failing it.
+        propertyService.list({ companyId: profile.companyId, clientId }).catch(() => [] as Property[]),
+        estimateService.list({ companyId: profile.companyId }),
       ]);
       setClient(c);
       setProjects(allProjects.filter((p) => p.clientId === clientId));
+      setProperties(clientProperties);
+      // Only this client's estimates; they are shown under their project.
+      const clientProjectIds = new Set(allProjects.filter((p) => p.clientId === clientId).map((p) => p.id));
+      setEstimates(allEstimates.filter((e) => clientProjectIds.has(e.projectId) && !e.deletedAt));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load client.");
     } finally {
       setLoading(false);
     }
-  }, [clientService, projectService, clientId, profile]);
+  }, [clientService, projectService, propertyService, estimateService, clientId, profile]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -85,6 +101,51 @@ function ClientDetailContent() {
           <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <MapPin className="size-4 text-muted-foreground" /> Properties
+              </h2>
+              <button
+                type="button"
+                onClick={() => setPropertyModal("new")}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                <Plus className="size-4" /> Add Property
+              </button>
+            </div>
+
+            {properties.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No properties yet. Add the addresses this client owns so each job can be tied to the right house.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {properties.map((property) => {
+                  const jobCount = projects.filter((p) => p.propertyId === property.id).length;
+                  return (
+                    <li key={property.id} className="flex items-center justify-between gap-2 py-2.5">
+                      <div className="min-w-0">
+                        <div className="font-medium text-foreground">{property.nickname || formatPropertyAddress(property) || "Unnamed property"}</div>
+                        {property.nickname && <div className="text-xs text-muted-foreground">{formatPropertyAddress(property)}</div>}
+                        <div className="text-xs text-muted-foreground">
+                          {jobCount} job{jobCount === 1 ? "" : "s"}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPropertyModal(property)}
+                        className="shrink-0 rounded-lg bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                      >
+                        Edit
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+
+          <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 <FolderKanban className="size-4 text-muted-foreground" /> Projects
               </h2>
               <Link
@@ -103,17 +164,29 @@ function ClientDetailContent() {
               />
             ) : (
               <ul className="divide-y divide-border">
-                {projects.map((project) => (
-                  <li key={project.id}>
-                    <Link href={`/projects/${project.id}`} className="flex items-center justify-between gap-2 py-2.5 hover:text-primary">
-                      <div>
-                        <div className="font-medium text-foreground">{project.name}</div>
+                {projects.map((project) => {
+                  const projectEstimates = estimates.filter((e) => e.projectId === project.id);
+                  return (
+                    <li key={project.id} className="flex items-start justify-between gap-2 py-2.5">
+                      <div className="min-w-0">
+                        <Link href={`/projects/${project.id}`} className="font-medium text-foreground hover:text-primary">
+                          {project.name}
+                        </Link>
                         {project.address && <div className="text-xs text-muted-foreground">{project.address}</div>}
+                        {projectEstimates.map((estimate) => (
+                          <Link
+                            key={estimate.id}
+                            href={`/estimates/${estimate.id}`}
+                            className="mt-0.5 block text-xs text-primary hover:underline"
+                          >
+                            Estimate {estimate.estimateNumber ?? ""}{estimate.title ? ` · ${estimate.title}` : ""}
+                          </Link>
+                        ))}
                       </div>
                       <Badge tone={STATUS_TONE[project.status]}>{project.status.replace("_", " ")}</Badge>
-                    </Link>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>
@@ -148,6 +221,23 @@ function ClientDetailContent() {
           </section>
         </div>
       </div>
+      <Modal
+        open={propertyModal !== undefined}
+        onClose={() => setPropertyModal(undefined)}
+        title={propertyModal && propertyModal !== "new" ? "Edit property" : "Add property"}
+      >
+        {propertyModal !== undefined && (
+          <PropertyForm
+            clientId={client.id}
+            property={propertyModal === "new" ? undefined : propertyModal}
+            onCancel={() => setPropertyModal(undefined)}
+            onSaved={() => {
+              setPropertyModal(undefined);
+              load();
+            }}
+          />
+        )}
+      </Modal>
     </PageContainer>
   );
 }

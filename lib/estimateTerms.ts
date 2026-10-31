@@ -47,7 +47,7 @@ export const DEFAULT_ESTIMATE_TERMS_TEMPLATE: EstimateTermsTemplateKey = "custom
 export const ESTIMATE_TERMS_TEMPLATES: Record<EstimateTermsTemplateKey, EstimateTermsTemplate> = {
   custom: {
     key: "custom",
-    label: "Custom / General",
+    label: "Standard Terms and Conditions",
     body: `The Contractor's standard Terms and Conditions are incorporated herein by reference and made a part of this Proposal/Agreement as if wholly re-written herein. The Terms and Conditions may be reviewed or a copy may be obtained by contacting our office. These Terms and Conditions are the only terms and conditions that apply to this Proposal/Agreement. The Contractor rejects any changes made by the Owner to this Proposal/Agreement unless the Contractor approves such changes in a writing signed by our authorized representative.
 
 Contractor reserves the right to subcontract any or all of the work to one or more of its qualified affiliates.`,

@@ -10,6 +10,7 @@ import { useServices } from "@/components/providers/ServicesProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { ClientForm } from "@/components/clients/ClientForm";
 import { RequirePermission } from "@/components/layout/RequirePermission";
+import { useConfirmDialog } from "@/components/ui/useConfirmDialog";
 import type { Client } from "@/lib/services/clientService";
 
 /**
@@ -46,8 +47,10 @@ function ClientsContent() {
     load();
   }, [load]);
 
+  const { ask, dialog } = useConfirmDialog();
+
   async function handleDelete(client: Client) {
-    const reason = window.prompt(`Why are you deleting "${client.name}"?`);
+    const reason = await ask({ title: `Delete "${client.name}"?`, confirmLabel: "Delete", destructive: true, reasonLabel: "Why are you deleting this client?" });
     if (!reason) return;
     try {
       await clientService.softDelete(client.id, reason);
@@ -127,6 +130,7 @@ function ClientsContent() {
           </table>
         </div>
       )}
+    {dialog}
     </PageContainer>
   );
 }

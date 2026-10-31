@@ -18,6 +18,7 @@ import {
   FolderOpen,
   CalendarDays,
   UsersRound,
+  Clock,
   History,
   Settings,
   Home,
@@ -26,6 +27,7 @@ import {
   LayoutTemplate,
 } from "lucide-react";
 import type { Resource, PermissionAction } from "@/lib/services";
+import type { Role } from "@/lib/services/permissions";
 
 export interface NavItem {
   id: string;
@@ -44,6 +46,8 @@ export interface NavItem {
    * data" — an imperfect mapping worth revisiting once those modules
    * get their own real resource types, not a permanent decision. */
   permission?: { resource: Resource; action: PermissionAction };
+  /** If set, the item is shown only to these roles, whatever their permissions. */
+  roles?: Role[];
 }
 
 export interface NavGroup {
@@ -68,7 +72,6 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Projects",
     items: [
       { id: "projects", label: "Projects", href: "/projects", icon: FolderKanban, permission: { resource: "project", action: "view" } },
-      { id: "estimates", label: "Estimates", href: "/estimates", icon: FileText, permission: { resource: "estimate", action: "view" } },
       { id: "estimate-roof", label: "Estimate Roof", href: "/estimates-roof", icon: Home, permission: { resource: "estimate", action: "view" } },
       { id: "roof-templates", label: "Roof Templates", href: "/roof-templates", icon: LayoutTemplate, permission: { resource: "estimate", action: "view" } },
       { id: "change-orders", label: "Change Orders", href: "/change-orders", icon: GitPullRequest, permission: { resource: "estimate", action: "view" } },
@@ -80,10 +83,9 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Billing",
     items: [
       { id: "invoices", label: "Invoices", href: "/invoices", icon: Receipt, permission: { resource: "invoice", action: "view" } },
-      { id: "payments", label: "Payments", href: "/payments", icon: Wallet, permission: { resource: "payment", action: "view" } },
-      { id: "bills", label: "Bills", href: "/bills", icon: ReceiptText, permission: { resource: "expense", action: "view" } },
-      { id: "expenses", label: "Expenses", href: "/expenses", icon: ReceiptText, permission: { resource: "expense", action: "view" } },
-      { id: "expenses-v2", label: "Expenses V2", href: "/expense-v2", icon: ReceiptText, permission: { resource: "expense", action: "view" } },
+      { id: "payments", label: "Payments received", href: "/payments", icon: Wallet, permission: { resource: "payment", action: "view" } },
+      { id: "bills", label: "Vendor bills", href: "/bills", icon: ReceiptText, permission: { resource: "expense", action: "view" } },
+      { id: "expenses-v2", label: "Job Expenses", href: "/expense-v2", icon: ReceiptText, permission: { resource: "expense", action: "view" } },
       
     ],
   },
@@ -103,6 +105,10 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: "documents", label: "Documents", href: "/documents", icon: FolderOpen, permission: { resource: "workspace", action: "view" } },
       { id: "calendar", label: "Calendar", href: "/calendar", icon: CalendarDays, permission: { resource: "workspace", action: "view" } },
       { id: "team", label: "Team", href: "/team", icon: UsersRound, permission: { resource: "user_roles", action: "view" } },
+      { id: "employees", label: "Employees", href: "/employees", icon: UsersRound, permission: { resource: "employee", action: "view" } },
+      { id: "timesheets", label: "Timesheets", href: "/timesheets", icon: Clock, permission: { resource: "time_entry", action: "view" } },
+      { id: "my-pay", label: "My pay", href: "/my-pay", icon: Banknote, permission: { resource: "time_entry", action: "view" }, roles: ["employee"] },
+      { id: "crew", label: "Crew", href: "/crew", icon: UsersRound, permission: { resource: "time_entry", action: "approve" } },
       { id: "audit-logs", label: "Audit Logs", href: "/audit-logs", icon: History, permission: { resource: "audit_log", action: "view" } },
     ],
   },

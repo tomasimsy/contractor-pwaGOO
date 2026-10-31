@@ -55,7 +55,9 @@ import { CreateOrSelect, type DirectoryOption } from "@/components/shared/Create
 import { createVendorDirectory } from "./directories";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { scanReceipt } from "@/lib/receiptOcr";
+import { entryLaborCosts } from "@/lib/services/timeEntryService";
 import { compressImageForUpload } from "@/lib/imageResize";
+import { useConfirmDialog } from "@/components/ui/useConfirmDialog";
 import {
   EXPENSE_TYPES,
   EXPENSE_TYPE_LABEL,
@@ -122,7 +124,9 @@ export function ExpenseFormV2({
   /** Called after a delete so the page can refresh its own figures. */
   onChanged?: () => Promise<void> | void;
 }) {
-  const { expenseService } = useServices();
+  const { expenseService, timeEntryService } = useServices();
+  // Approved time-entry labor already on this estimate (see the labor warning below).
+  const [approvedLaborOnEstimate, setApprovedLaborOnEstimate] = useState<{ hours: number; amount: number } | null>(null);
 
   // Only the six fields the user actually fills in.
   const [expenseType, setExpenseType] = useState<ExpenseType>("materials");
@@ -234,6 +238,29 @@ export function ExpenseFormV2({
   const [jobExpenses, setJobExpenses] = useState<Expense[] | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // Labor typed here is a vendor-style expense. If the estimate already has
+  // approved hours from time entries, the same work could be counted twice.
+  // This only warns; it never blocks the save.
+  useEffect(() => {
+    if (!estimateId || expenseType !== "labor") {
+      setApprovedLaborOnEstimate(null);
+      return;
+    }
+    timeEntryService
+      .listForCompany({ companyId })
+      .then((entries) => {
+        const approved = entries.filter((e) => e.estimateId === estimateId && e.status === "approved" && e.hours !== null);
+        if (approved.length === 0) return setApprovedLaborOnEstimate(null);
+        // Costed over all company entries, so a split day is shared correctly.
+        const costs = entryLaborCosts(entries);
+        setApprovedLaborOnEstimate({
+          hours: approved.reduce((sum, e) => sum + (e.hours ?? 0), 0),
+          amount: approved.reduce((sum, e) => sum + (costs.get(e.id) ?? 0), 0),
+        });
+      })
+      .catch(() => setApprovedLaborOnEstimate(null));
+  }, [estimateId, expenseType, companyId, timeEntryService]);
+
   const loadJobExpenses = useCallback(async () => {
     if (!estimateId && !projectId) {
       setJobExpenses([]);
@@ -267,8 +294,11 @@ export function ExpenseFormV2({
    * The service refuses to delete an expense whose reimbursement has
    * already been PAID OUT — that is settled cash, not a typo. That
    * error is surfaced verbatim rather than swallowed. */
+  const { ask, dialog } = useConfirmDialog();
+
   async function handleDelete(e: Expense) {
-    if (!window.confirm(`Delete this ${money(e.amount)} cost? It can be restored later.`)) return;
+    const confirmed = await ask({ title: `Delete this ${money(e.amount)} cost?`, message: "It can be restored later.", confirmLabel: "Delete", destructive: true });
+    if (confirmed === null) return;
     setDeletingId(e.id);
     setError(null);
     try {
@@ -483,6 +513,12 @@ export function ExpenseFormV2({
           </div>
 
           <div>
+            {approvedLaborOnEstimate && (
+              <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                This estimate already has {approvedLaborOnEstimate.hours.toFixed(2)} approved hours from time entries
+                ({money(approvedLaborOnEstimate.amount)}). Recording labor here as well can count the same work twice. Save only if this is a different cost.
+              </div>
+            )}
             <span className={LABEL}>Type</span>
             <div className="flex flex-wrap gap-1.5">
               {GENERAL_EXPENSE_TYPES.map((t) => (
@@ -629,6 +665,7 @@ export function ExpenseFormV2({
           </div>
         </footer>
       </form>
+      {dialog}
     </div>
   );
 }

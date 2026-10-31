@@ -8,6 +8,7 @@ import {
   Receipt,
   Wallet,
   Settings,
+  Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hidesMobileBottomNav } from "@/lib/layout/mobileBottomNav";
@@ -22,8 +23,14 @@ const items: { label: string; href: string; icon: typeof LayoutDashboard; permis
     permission: { resource: "dashboard", action: "view" },
   },
   {
-    label: "Estimates",
-    href: "/estimates",
+    label: "Timesheets",
+    href: "/timesheets",
+    icon: Clock,
+    permission: { resource: "time_entry", action: "view" },
+  },
+  {
+    label: "Estimate Roof",
+    href: "/estimates-roof",
     icon: FileText,
     permission: { resource: "estimate", action: "view" },
   },
@@ -34,7 +41,7 @@ const items: { label: string; href: string; icon: typeof LayoutDashboard; permis
     permission: { resource: "invoice", action: "view" },
   },
   {
-    label: "Expenses-v2",
+    label: "Job Expenses",
     href: "/expense-v2",
     icon: Wallet,
     permission: { resource: "expense", action: "view" },

@@ -15,6 +15,8 @@ import { createSupabaseBillScheduleService } from "@/lib/services/supabase/billS
 import { createAccountsReceivableService } from "@/lib/services/accountsReceivableService";
 import { createAccountsPayableService } from "@/lib/services/accountsPayableService";
 import { createSupabaseCompanyDocumentService } from "@/lib/services/supabase/companyDocumentService";
+import { createSupabaseSubcontractorDocumentService } from "@/lib/services/supabase/subcontractorDocumentService";
+import { createSupabaseEmployeeWageReader } from "@/lib/services/supabase/payeePaymentService";
 import { createSupabaseCompanyProfileService } from "@/lib/services/supabase/companyProfileService";
 import { createSupabaseEmailAutomationService } from "@/lib/services/supabase/emailAutomationService";
 import { createCpaPackageService } from "@/lib/services/cpaPackageService";
@@ -22,6 +24,9 @@ import { createReconciliationCashFlowAdapter } from "@/lib/services/reconciliati
 import { createBankReconciliationService } from "@/lib/services/bankReconciliationService";
 import { createFinancialEngine } from "@/lib/services";
 import type { ClientService } from "@/lib/services/clientService";
+import type { PropertyService } from "@/lib/services/propertyService";
+import type { EmployeeService } from "@/lib/services/employeeService";
+import type { TimeEntryService } from "@/lib/services/timeEntryService";
 import type { ProjectService } from "@/lib/services/projectService";
 import type { EstimateService } from "@/lib/services/estimateService";
 import type { EstimatePhotoService } from "@/lib/services/estimatePhotoService";
@@ -43,6 +48,7 @@ import type { BillScheduleService } from "@/lib/services/billScheduleService";
 import type { AccountsReceivableService } from "@/lib/services/accountsReceivableService";
 import type { AccountsPayableService } from "@/lib/services/accountsPayableService";
 import type { CompanyDocumentService } from "@/lib/services/companyDocumentService";
+import type { SubcontractorDocumentService } from "@/lib/services/subcontractorDocumentService";
 import type { CompanyProfileService } from "@/lib/services/companyProfileService";
 import type { EmailAutomationService } from "@/lib/services/emailAutomationService";
 import type { CpaPackageService } from "@/lib/services/cpaPackageService";
@@ -54,6 +60,9 @@ import { supabase } from "@/lib/supabase/client";
 
 export interface AppServices extends InMemoryServices {
   clientService: ClientService;
+  propertyService: PropertyService;
+  employeeService: EmployeeService;
+  timeEntryService: TimeEntryService;
   projectService: ProjectService;
   estimateService: EstimateService;
   estimatePhotoService: EstimatePhotoService;
@@ -81,6 +90,8 @@ export interface AppServices extends InMemoryServices {
   accountsReceivableService: AccountsReceivableService;
   accountsPayableService: AccountsPayableService;
   companyDocumentService: CompanyDocumentService;
+  /** W-9s, insurance certificates, licenses and agreements per subcontractor. */
+  subcontractorDocumentService: SubcontractorDocumentService;
   /** Customer-facing brand identities (e.g. a dba operating under a
    * second name) — selected per estimate/invoice via their profile_id
    * column, layered on top of CompanySettings by lib/company.ts's
@@ -165,7 +176,7 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
     // shared wiring path rather than a second copy of it here.
     const server = createServerAppServices(supabase, currentUserId);
     const {
-      auditService, clientService, projectService, estimateService, changeOrderService, invoiceService, paymentService,
+      auditService, clientService, propertyService, employeeService, timeEntryService, projectService, estimateService, changeOrderService, invoiceService, paymentService,
       expenseService, subcontractorService, agentCommissionService, estimateWorkflow, changeOrderWorkflow, pushSubscriptionService,
     } = server;
 
@@ -179,6 +190,7 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
     const billScheduleService = createSupabaseBillScheduleService(supabase, expenseService, inMemory.validationService, currentUserId);
     const accountsReceivableService = createAccountsReceivableService({ invoiceService, paymentService });
     const companyDocumentService = createSupabaseCompanyDocumentService(supabase, inMemory.validationService, currentUserId);
+    const subcontractorDocumentService = createSupabaseSubcontractorDocumentService(supabase, inMemory.validationService, currentUserId);
     const companyProfileService = createSupabaseCompanyProfileService(supabase, inMemory.validationService, currentUserId);
     const emailAutomationService = createSupabaseEmailAutomationService(supabase, currentUserId);
 
@@ -188,7 +200,10 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
     // subcontractorService/agentCommissionService are now real too
     // (Prompts 42/43) — every project/estimate cost figure reflects the
     // live database, not just invoice/expense figures as before.
+    const listEmployeeWages = createSupabaseEmployeeWageReader(supabase);
     const financialEngine = createFinancialEngine({
+      timeEntryService,
+      employeeService,
       projectService,
       estimateService,
       changeOrderService,
@@ -200,6 +215,8 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
       transactionService: inMemory.transactionService,
       filteringService: inMemory.filteringService,
       teamAssignmentService,
+      // Employee wages count when Payroll pays them, like every other cost.
+      listEmployeeWages,
     });
     // After financialEngine — AP is a re-shape of getPayablesSummary.
     const accountsPayableService = createAccountsPayableService({ financialEngine });
@@ -207,7 +224,7 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
     // header: the CPA package is cash-basis only and must never blend
     // FinancialEngine's committed-cost model into a report a CPA relies
     // on for what was actually paid.
-    const cpaPackageService = createCpaPackageService({ expenseService, paymentService, invoiceService, projectService, clientService });
+    const cpaPackageService = createCpaPackageService({ expenseService, paymentService, invoiceService, projectService, clientService, listEmployeeWages });
     const reconciliationCashFlowAdapter = createReconciliationCashFlowAdapter({ paymentService, expenseService });
     const bankReconciliationService = createBankReconciliationService({ financialStatementsService: reconciliationCashFlowAdapter });
 
@@ -215,6 +232,9 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
       ...inMemory,
       auditService,
       clientService,
+      propertyService,
+      employeeService,
+      timeEntryService,
       projectService,
       estimateService,
       estimatePhotoService,
@@ -235,6 +255,7 @@ export function ServicesProvider({ children }: { children: ReactNode }) {
       accountsReceivableService,
       accountsPayableService,
       companyDocumentService,
+      subcontractorDocumentService,
       companyProfileService,
       emailAutomationService,
       cpaPackageService,

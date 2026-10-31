@@ -39,13 +39,15 @@ export default function LoginPage() {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
     setSubmitting(false);
     if (signInError) {
       setError(signInError.message);
       return;
     }
-    router.push("/dashboard");
+    // Send each role to its first page (an employee lands on Timesheets).
+    const userId = signInData.user?.id;
+    router.push(userId ? await resolveLandingPage(userId) : "/dashboard");
     router.refresh();
   }
 

@@ -17,6 +17,7 @@
 import { useCallback, useState } from "react";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { useRefreshableResource } from "./useAsyncResource";
+import { balancesForAssignments } from "./estimateScopedBalances";
 import type { Agent, AgentAssignment, Expense, PayeeBalance } from "../services";
 
 export function useAgentAssignments(companyId: string, projectId: string, estimateId?: string | null) {
@@ -52,12 +53,24 @@ export function useAgentAssignments(companyId: string, projectId: string, estima
       agentCommissionService.listAssignments({ companyId, projectId }),
     ]);
     setRoster(rosterList);
-    setAssignments(assignmentList);
-
-    const payeeBalances = await financialEngine.getPayeeBalances({ companyId, projectId }, "agent");
-    setBalances(Object.fromEntries(payeeBalances.map((b) => [b.payeeId, b] as const)));
+    // On an estimate, only that estimate's assignments, with balances for that job alone.
+    // Otherwise every assignment on the project and each agent's project-wide balance.
+    const shown = estimateId ? assignmentList.filter((a) => a.estimateId === estimateId) : assignmentList;
+    setAssignments(shown);
 
     const payables = await financialEngine.getPayablesSummary({ companyId, projectId });
+    if (estimateId) {
+      setBalances(
+        balancesForAssignments(
+          payables.lines,
+          shown.map((a) => ({ id: a.id, payeeId: a.agentId, payeeName: a.agentName, projectId: a.projectId })),
+          "agent"
+        )
+      );
+    } else {
+      const payeeBalances = await financialEngine.getPayeeBalances({ companyId, projectId }, "agent");
+      setBalances(Object.fromEntries(payeeBalances.map((b) => [b.payeeId, b] as const)));
+    }
     setPaidByAssignment(
       Object.fromEntries(payables.lines.filter((l) => l.role === "agent").map((l) => [l.assignmentId, l.paid] as const))
     );
@@ -80,7 +93,7 @@ export function useAgentAssignments(companyId: string, projectId: string, estima
       rosterList.map(async (agent) => [agent.id, await agentCommissionService.getCompensationSummary(agent.id, currentYear)] as const)
     );
     setCompensationByAgent(Object.fromEntries(compensationEntries));
-  }, [agentCommissionService, expenseService, financialEngine, companyId, projectId]);
+  }, [agentCommissionService, expenseService, financialEngine, companyId, projectId, estimateId]);
 
   const assign = useCallback(
     async (agentId: string, assignedAmount: number, notes?: string) => {

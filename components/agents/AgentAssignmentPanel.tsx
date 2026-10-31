@@ -1,12 +1,10 @@
 "use client";
 
 /**
- * Commission assignment + commission payments + reimbursement payments
- * for agents on one project. The commission-vs-reimbursement UI split
- * exists because they need different inputs (a reimbursement must pick
- * which expense it settles), not because this component treats them as
- * different financial concepts — that distinction lives entirely in
- * AgentCommissionService/ExpenseService.
+ * Commission assignments for agents on one project, and what each is owed.
+ * Commission AND reimbursements (expenses the agent paid for) are paid on
+ * Payroll only — each row links there — so every check gets a date, method
+ * and number and shows as one payment.
  *
  * Balance breakdown per agent:
  *   Commission Earned   = balances[assignment.id].committed  (AgentCommissionService.getBalance)
@@ -23,8 +21,11 @@
  * reimbursement record, it only reads it via useAgentAssignments.
  */
 import { forwardRef, useImperativeHandle, useState } from "react";
+import Link from "next/link";
 import { Briefcase, Plus, Receipt, Trash2, Lock } from "lucide-react";
 import { useAgentAssignments } from "@/lib/hooks/useAgentAssignments";
+import { useConfirmDialog } from "@/components/ui/useConfirmDialog";
+import { useToast } from "@/components/ui/useToast";
 import { calculateAgentOutstandingBalance } from "@/lib/services/financialCalculations";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -42,13 +43,10 @@ export const AgentAssignmentPanel = forwardRef<AgentAssignmentPanelRef, {
 }>(function AgentAssignmentPanel({ companyId, projectId, estimateId, onChanged, compact = false }, ref) {
   const {
     roster, assignments, balances, paidByAssignment, pendingReimbursements, reimbursementsOwedByAgent,
-    loading, error, assign, recordCommissionPayment, recordReimbursementPayment, removeAssignment, createAgent, refresh,
+    loading, error, assign, removeAssignment, createAgent, refresh,
   } = useAgentAssignments(companyId, projectId, estimateId);
   const [agentId, setAgentId] = useState("");
   const [assignedAmount, setAssignedAmount] = useState(0);
-  const [commissionAmounts, setCommissionAmounts] = useState<Record<string, number>>({});
-  const [reimbursementAmount, setReimbursementAmount] = useState<Record<string, number>>({});
-  const [reimbursementExpense, setReimbursementExpense] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [showNewAgent, setShowNewAgent] = useState(false);
@@ -57,16 +55,25 @@ export const AgentAssignmentPanel = forwardRef<AgentAssignmentPanelRef, {
 
   useImperativeHandle(ref, () => ({ refresh }), [refresh]);
 
+  const { ask, dialog } = useConfirmDialog();
+  const { notify, toast } = useToast();
+
   if (loading) return <div className={compact ? "text-xs text-muted-foreground" : "rounded-xl border border-border bg-card p-3 text-xs text-muted-foreground"}>Loading agents…</div>;
 
   async function handleRemove(a: (typeof assignments)[number]) {
-    if (!window.confirm(`Remove ${a.agentName} from this estimate? Their recorded payments are not affected.`)) return;
+    const confirmed = await ask({
+      title: `Remove ${a.agentName} from this estimate?`,
+      message: "Their recorded payments are not affected.",
+      confirmLabel: "Remove",
+      destructive: true,
+    });
+    if (confirmed === null) return;
     setBusyId(a.id);
     try {
       await removeAssignment(a.id, "User removed assignment via UI");
       onChanged?.();
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "Could not remove this assignment.");
+      notify(err instanceof Error ? err.message : "Could not remove this assignment.");
     } finally {
       setBusyId(null);
     }
@@ -214,9 +221,9 @@ export const AgentAssignmentPanel = forwardRef<AgentAssignmentPanelRef, {
                         type="button"
                         onClick={() => handleRemove(a)}
                         disabled={busyId === a.id}
-                        className="rounded p-0.5 text-gray-300 hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
+                        title="Remove" aria-label="Remove" className="rounded p-1 text-gray-600 hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
                       >
-                        <Trash2 className="size-3" />
+                        <Trash2 className="size-4" />
                       </button>
                     )}
                   </div>
@@ -244,80 +251,26 @@ export const AgentAssignmentPanel = forwardRef<AgentAssignmentPanelRef, {
                   </div>
                 </div>
 
-                {/* Commission Payment */}
+                {/* Commission and reimbursements are paid on Payroll, in one check. */}
                 <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                  <span className="text-[9px] text-gray-400">Commission:</span>
-                  <input
-                    type="number" min="0" step="any" placeholder="$"
-                    value={commissionAmounts[a.id] || ""}
-                    onChange={(e) => setCommissionAmounts({ ...commissionAmounts, [a.id]: parseFloat(e.target.value) || 0 })}
-                    className="h-6 w-20 rounded border border-gray-200 bg-white px-1.5 text-xs text-gray-700 focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400/30"
-                  />
-                  <button
-                    type="button"
-                    disabled={!commissionAmounts[a.id]}
-                    onClick={async () => {
-                      await recordCommissionPayment(
-                        a.agentId,
-                        a.agentName,
-                        commissionAmounts[a.id] ?? 0,
-                        a.estimateId ?? estimateId ?? null
-                      );
-                      onChanged?.();
-                      setCommissionAmounts({ ...commissionAmounts, [a.id]: 0 });
-                    }}
-                    className="inline-flex h-6 items-center rounded bg-emerald-600 px-2 text-[10px] font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                  <Link
+                    href={`/payroll?person=${encodeURIComponent(`agent:${a.agentId}`)}`}
+                    className="inline-flex h-6 items-center rounded border border-emerald-600/40 px-2 text-[10px] font-medium text-emerald-700 hover:bg-emerald-50"
                   >
-                    Pay
-                  </button>
+                    {owedExpenses.length > 0 ? "Pay commission and reimbursements in Payroll →" : "Pay commission in Payroll →"}
+                  </Link>
                 </div>
 
-                {/* Reimbursement Payments - compact */}
+                {/* What they paid for and are owed back — paid in Payroll. */}
                 {owedExpenses.length > 0 && (
-                  <div className="mt-1.5 space-y-1">
-                    <div className="flex flex-wrap items-center gap-1">
-                      <span className="text-[9px] text-gray-400">Reimburse:</span>
-                      <select
-                        value={reimbursementExpense[a.agentId] ?? ""}
-                        onChange={(e) => setReimbursementExpense({ ...reimbursementExpense, [a.agentId]: e.target.value })}
-                        className="h-6 min-w-[100px] flex-1 rounded border border-gray-200 bg-white px-1.5 text-[10px] text-gray-700 focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400/30"
-                      >
-                        <option value="">Select expense…</option>
-                        {owedExpenses.map((exp) => (
-                          <option key={exp.id} value={exp.id}>
-                            {exp.category} · {exp.expenseDate} — {money(exp.amount)}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        type="number" min="0" step="any" placeholder="$"
-                        value={reimbursementAmount[a.agentId] || ""}
-                        onChange={(e) => setReimbursementAmount({ ...reimbursementAmount, [a.agentId]: parseFloat(e.target.value) || 0 })}
-                        className="h-6 w-16 rounded border border-gray-200 bg-white px-1.5 text-xs text-gray-700 focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400/30"
-                      />
-                      <button
-                        type="button"
-                        disabled={!reimbursementExpense[a.agentId] || !reimbursementAmount[a.agentId]}
-                        onClick={async () => {
-                          await recordReimbursementPayment(a.agentId, reimbursementAmount[a.agentId] ?? 0, reimbursementExpense[a.agentId]);
-                          onChanged?.();
-                          setReimbursementAmount({ ...reimbursementAmount, [a.agentId]: 0 });
-                          setReimbursementExpense({ ...reimbursementExpense, [a.agentId]: "" });
-                        }}
-                        className="inline-flex h-6 items-center rounded border border-gray-200 px-2 text-[10px] font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-50"
-                      >
-                        Reimburse
-                      </button>
-                    </div>
-                    {/* Pending reimbursements list - compact */}
-                    <div className="flex flex-wrap gap-1">
-                      {owedExpenses.map((exp) => (
-                        <span key={exp.id} className="inline-flex items-center gap-0.5 rounded bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-500">
-                          <Receipt className="size-2" />
-                          {money(exp.amount)}
-                        </span>
-                      ))}
-                    </div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                    <span className="text-[9px] text-gray-400">Owed back:</span>
+                    {owedExpenses.map((exp) => (
+                      <span key={exp.id} className="inline-flex items-center gap-0.5 rounded bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-500">
+                        <Receipt className="size-2" />
+                        {exp.description || exp.vendor || exp.category} · {money(exp.amount)}
+                      </span>
+                    ))}
                   </div>
                 )}
               </li>
@@ -325,6 +278,8 @@ export const AgentAssignmentPanel = forwardRef<AgentAssignmentPanelRef, {
           })}
         </ul>
       )}
+      {dialog}
+      {toast}
     </Wrapper>
   );
 });

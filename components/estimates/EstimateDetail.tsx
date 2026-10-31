@@ -39,6 +39,8 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { SkeletonLines } from "@/components/ui/Skeleton";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
+import { buttonClass } from "@/components/ui/Button";
+import { DocPill, CompletedBanner, DOC_BUTTON, DOC_BUTTON_PRIMARY, DOC_BUTTON_TEAL, DOC_BUTTON_DANGER } from "@/components/ui/DocKit";
 import { useServices } from "@/components/providers/ServicesProvider";
 import { SignaturePad } from "@/components/estimates/SignaturePad";
 import { SharePortalPanel, normalizePhone, buildSmsHref } from "@/components/portal/SharePortalPanel";
@@ -48,19 +50,23 @@ import {
 } from "@/components/expenses/ProjectExpensesPanel";
 import { InvoicePaymentsPanel, type InvoicePaymentsPanelRef } from "@/components/payments/InvoicePaymentsPanel";
 import { EstimateProfitSummaryCard } from "@/components/shared/EstimateProfitSummaryCard";
-import { RoofAreaSummaryCard } from "@/components/estimates/RoofAreaSummaryCard";
+import { RoofAreaSummaryCard, ROOF_AREA_ROW_GRID } from "@/components/estimates/RoofAreaSummaryCard";
 import { SubAgentTabsPanel, type SubAgentTabsPanelRef } from "@/components/estimates/SubAgentTabsPanel";
 import { usePermission } from "@/lib/hooks/usePermission";
 import type { CompanySettings } from "@/lib/services/companyService";
 import { sumApprovedChangeOrderRevenue, calculateRevisedEstimateTotal, calculateChangeOrderRevenue, calculateSubtotal, calculateLineItemTotal } from "@/lib/services/financialCalculations";
 import type { Estimate, EstimateLineItem } from "@/lib/services/estimateService";
 import type { Project } from "@/lib/services/projectService";
+import { formatPropertyAddress, type Property } from "@/lib/services/propertyService";
+import { laborBreakdownByEmployee, type LaborLine } from "@/lib/services/laborBreakdown";
 import type { Client } from "@/lib/services/clientService";
 import type { ChangeOrder } from "@/lib/services/changeOrderService";
 import type { Invoice } from "@/lib/services/invoiceService";
 import type { CustomerPayment } from "@/lib/services/paymentService";
 import { isOutstandingInvoiceStatus } from "@/components/invoices/invoiceStatus";
 import type { RoofingArea } from "@/lib/services/roofingAreaService";
+import type { EstimatePhoto } from "@/lib/services/estimatePhotoService";
+import { ROOFING_LINE_ITEMS_ENABLED } from "@/lib/featureFlags";
 import type { EstimateAreaLineItem } from "@/lib/services/estimateAreaLineItemService";
 import type { AuditLogEntry, EstimateStatus, ChangeOrderStatus, EstimateFinancials } from "@/lib/services";
 import type { ScopeLine } from "@/lib/services/estimateService";
@@ -86,7 +92,7 @@ const formatMoney = (n: number) => n.toLocaleString("en-US", { style: "currency"
 
 export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { estimateId: string; editBasePath?: string }) {
   const router = useRouter();
-  const { estimateService, projectService, clientService, changeOrderService, auditService, financialEngine, roofingAreaService, estimateAreaLineItemService, invoiceService, paymentService, estimateWorkflow, companyService, expenseService } = useServices();
+  const { estimateService, projectService, clientService, propertyService, changeOrderService, auditService, financialEngine, roofingAreaService, estimatePhotoService, estimateAreaLineItemService, invoiceService, paymentService, estimateWorkflow, companyService, expenseService, timeEntryService, employeeService } = useServices();
   const { profile, user } = useAuth();
   const canEditExpenses = usePermission("expense", "create");
   const canEditPayments = usePermission("payment", "create");
@@ -94,16 +100,20 @@ export function EstimateDetail({ estimateId, editBasePath = "/estimates" }: { es
   const [isLineItemsOpen, setIsLineItemsOpen] = useState(true);
 const [changeOrdersOpen, setChangeOrdersOpen] = useState(true);
 const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
+  /** Which panel of the Money card is showing. Panels stay mounted (hidden, not unmounted) so their refs keep working. */
+  const [moneyTab, setMoneyTab] = useState<'invoice' | 'expenses' | 'jobcost'>('invoice');
 
   const expensesPanelRef = useRef<ProjectExpensesPanelRef>(null);
   const paymentsPanelRef = useRef<InvoicePaymentsPanelRef>(null);
   const subAgentTabsRef = useRef<SubAgentTabsPanelRef>(null);
   const [estimate, setEstimate] = useState<(Estimate & { lineItems: EstimateLineItem[] }) | null>(null);
   const [project, setProject] = useState<Project | null>(null);
+  const [property, setProperty] = useState<Property | null>(null);
   const [client, setClient] = useState<Client | null>(null);
   const [changeOrders, setChangeOrders] = useState<ChangeOrder[]>([]);
   const [activity, setActivity] = useState<AuditLogEntry[]>([]);
   const [financials, setFinancials] = useState<EstimateFinancials | null>(null);
+  const [laborLines, setLaborLines] = useState<LaborLine[]>([]);
   const [roofingAreas, setRoofingAreas] = useState<RoofingArea[]>([]);
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [emailHistoryRefreshKey, setEmailHistoryRefreshKey] = useState(0);
@@ -133,6 +143,20 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
    * estimate_items rows: a "$9" line under a $24 total. */
   const [scopeLines, setScopeLines] = useState<ScopeLine[]>([]);
   const [areaLineItems, setAreaLineItems] = useState<Record<string, EstimateAreaLineItem[]>>({});
+  const [estimatePhotos, setEstimatePhotos] = useState<{ before: EstimatePhoto[]; after: EstimatePhoto[] }>({ before: [], after: [] });
+
+  // Every photo on the estimate: estimate-level photos plus each roof area's
+  // photos, each with the area it came from. Photos are served by the same
+  // download route the editors use.
+  const photoUrl = (storagePath: string) => `/api/estimate-photos/download?path=${encodeURIComponent(storagePath)}`;
+  const photoItems = [
+    ...estimatePhotos.before.map((p) => ({ key: p.id, photoType: "before" as const, url: photoUrl(p.storagePath), label: "Estimate" })),
+    ...estimatePhotos.after.map((p) => ({ key: p.id, photoType: "after" as const, url: photoUrl(p.storagePath), label: "Estimate" })),
+    ...roofingAreas.flatMap((area) => [
+      ...(area.beforePhotos ?? []).map((p) => ({ key: p.id, photoType: "before" as const, url: photoUrl(p.storagePath), label: area.areaName })),
+      ...(area.afterPhotos ?? []).map((p) => ({ key: p.id, photoType: "after" as const, url: photoUrl(p.storagePath), label: area.areaName })),
+    ]),
+  ];
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [paymentsByInvoice, setPaymentsByInvoice] = useState<Record<string, CustomerPayment[]>>({});
   const [paidTotalByInvoice, setPaidTotalByInvoice] = useState<Record<string, number>>({});
@@ -192,7 +216,29 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
     } catch {
       setFinancials(null);
     }
-  }, [financialEngine, estimateId]);
+    // Who the labor cost is for: approved hours on this estimate, with names
+    // (former employees included, so their hours keep a name).
+    const companyId = estimate?.companyId;
+    if (!companyId) return;
+    try {
+      const [entries, people, jobPays] = await Promise.all([
+        timeEntryService.listForCompany({ companyId }),
+        employeeService.list({ companyId, includeDeleted: true }),
+        employeeService.listJobPays(companyId),
+      ]);
+      setLaborLines(
+        laborBreakdownByEmployee({
+          entries,
+          nameById: new Map(people.map((p) => [p.id, p.name])),
+          estimateIds: new Set([estimateId]),
+          jobPays,
+          completedEstimateIds: project?.status === "completed" ? new Set([estimateId]) : new Set(),
+        })
+      );
+    } catch {
+      setLaborLines([]);
+    }
+  }, [financialEngine, timeEntryService, employeeService, estimateId, estimate?.companyId, project?.status]);
 
   useEffect(() => {
     loadFinancials();
@@ -227,7 +273,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
         // includeDeleted: true on project/client — this estimate's own
         // context must never disappear just because either was later
         // deleted; financial history is permanent.
-        const [p, c, cos, scope, history, projectInvoices, companySettingsResult, estimateExpenses] = await Promise.all([
+        const [p, c, cos, scope, history, projectInvoices, companySettingsResult, estimateExpenses, estimatePhotoResult] = await Promise.all([
           projectService.getById(e.projectId, true),
           e.clientId ? clientService.getById(e.clientId, true) : Promise.resolve(null),
           changeOrderService.listForEstimate(e.id),
@@ -239,8 +285,17 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
           // default — see the "Email Customer" modal below.
           companyService.getByCompanyId(e.companyId, e.profileId),
           expenseService.listForEstimate(e.id),
+          // Photos are additive: if they fail to load, the rest of the page still shows.
+          estimatePhotoService.getForEstimate(e.id).catch(() => ({ before: [], after: [] })),
         ]);
+        setEstimatePhotos(estimatePhotoResult);
         setProject(p);
+        // Properties are additive: a failed lookup just hides the property line.
+        if (p?.propertyId) {
+          propertyService.getById(p.propertyId, true).then(setProperty).catch(() => setProperty(null));
+        } else {
+          setProperty(null);
+        }
         if (c) setClient(c);
         setChangeOrders(cos);
         setScopeLines(scope);
@@ -298,7 +353,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
       setLoading(false);
       setPanelsLoading(false);
     }
-  }, [estimateService, projectService, clientService, changeOrderService, auditService, roofingAreaService, estimateAreaLineItemService, invoiceService, paymentService, estimateId]);
+  }, [estimateService, projectService, clientService, changeOrderService, auditService, roofingAreaService, estimatePhotoService, estimateAreaLineItemService, invoiceService, paymentService, estimateId]);
 
   useEffect(() => {
     load();
@@ -526,16 +581,70 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
   });
   const ungroupedScopeLines = scopeGroupOrder.length > 0 ? scopeLines.filter((l) => !l.groupName) : scopeLines;
 
+  // Totals for the Line Items block. Shown on their own for roofing estimates
+  // while the line item list is turned off (see lib/featureFlags.ts).
+  const totalsBlock = (
+        <div className="mt-3 ml-auto w-full max-w-[300px] space-y-1.5 text-[13px]">
+          {/* <div className="flex justify-between text-[#1B2430]">
+            <span>Subtotal</span>
+            <span className="text-[#1B2430]">{formatMoney(estimate.subtotal)}</span>
+          </div> */}
+          {estimate.markup !== 0 && (
+            <div className="flex justify-between text-[#1B2430]">
+              <span>Markup</span>
+              <span className="text-[#1B2430]">{formatMoney(estimate.markup)}</span>
+            </div>
+          )}
+          {estimate.discount !== 0 && (
+            <div className="flex justify-between text-[#1B2430]">
+              <span>Discount</span>
+              <span className="text-[#1B2430]">-{formatMoney(estimate.discount)}</span>
+            </div>
+          )}
+          {estimate.taxRate !== 0 && (
+            <div className="flex justify-between text-[#1B2430]">
+              <span>Tax ({estimate.taxRate}%)</span>
+            </div>
+          )}
+          <div className="flex justify-between bg-[#1B2430] px-2.5 py-2 font-semibold text-sm text-white">
+            <span>Total</span>
+            <span>{formatMoney(estimate.total)}</span>
+          </div>
+          {estimate.depositAmount > 0 && (
+            <div className="flex justify-between text-[#1B2430]  pt-1">
+              <span>Requested deposit</span>
+              <span className="text-[#1B2430]">{formatMoney(estimate.depositAmount)}</span>
+            </div>
+          )}
+          {hasApprovedChangeOrders && (
+            <>
+              <div className="flex justify-between text-[#1B2430]  pt-1">
+                <span>Approved change orders</span>
+                <span className="text-[#1B2430]">{formatMoney(approvedChangeOrderRevenue)}</span>
+              </div>
+              <div className="flex justify-between border-t border-[#E2E5E0]  pt-2 font-bold text-[#5B6675]  text-sm">
+                <span>Revised total</span>
+                <span className="text-[#1B2430]">{formatMoney(revisedTotal)}</span>
+              </div>
+            </>
+          )}
+        </div>
+  );
+
   return (
-    <PageContainer>
+    <PageContainer className="font-[family-name:var(--font-doc-body)] sm:px-0 sm:py-0 lg:px-0">
       {/* Top Toolbar / Header — wraps to a second row on narrow screens
           instead of squeezing six icon buttons into one, which is what
-          "quick-access buttons aligned cleanly" actually requires on a
+ "quick-access buttons aligned cleanly" actually requires on a
           phone; `justify-between` alone only worked down to tablet
           width. */}
-<div className="flex flex-wrap items-center justify-between gap-3 pb-3 mb-4 border-b border-border/60">
-        <div className="min-w-0 flex items-center gap-2">
-          <h1 className="text-base sm:text-lg font-bold tracking-tight text-foreground capitalize truncate">{estimate.title || "Untitled Estimate"}</h1>
+<div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#E2E5E0] bg-white px-4 py-3">
+        <div className="min-w-0 flex items-center gap-3">
+          <Link href={editBasePath} className="shrink-0 text-xs font-medium text-[#5B6675] hover:text-[#1B2430]">
+            ← Estimates
+          </Link>
+          <span aria-hidden="true" className="h-5 w-px shrink-0 bg-[#E2E5E0]" />
+          <h1 className="truncate font-[family-name:var(--font-doc-display)] text-base font-semibold tracking-tight text-[#1B2430] capitalize sm:text-lg">{estimate.title || "Untitled Estimate"}</h1>
           <Badge tone={STATUS_TONE[estimate.status]} className="shrink-0">{estimate.status.replace(/_/g, " ")}</Badge>
           {/* Project lifecycle status — a separate fact from the
               estimate status badge above (see EstimateService.listPage's
@@ -543,18 +652,19 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
               completed/archived describe the JOB). Only shown once the
               project has actually reached one of those two, so it
               doesn't duplicate/clutter the common draft/active states. */}
-          {project && (project.status === "completed" || project.status === "archived") && (
-            <span className="shrink-0 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-              {project.status}
-            </span>
-          )}
+          {project?.status === "completed" && <DocPill tone="done" className="shrink-0">✓ Completed</DocPill>}
+          {project?.status === "archived" && <DocPill tone="neutral" className="shrink-0">Archived</DocPill>}
           <span className="hidden md:inline text-xs text-muted-foreground truncate">· {project?.name} {estimate.estimateNumber ?? estimate.id.slice(0, 8)}</span>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
-            onClick={() => expensesPanelRef.current?.openNewExpense()}
-            className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
+            onClick={() => {
+              // The panel lives in the Expenses tab; show it so the dialog is visible.
+              setMoneyTab("expenses");
+              expensesPanelRef.current?.openNewExpense();
+            }}
+            className={DOC_BUTTON}
             title="Expense"
           >
             <Receipt className="size-3.5" />
@@ -565,7 +675,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
             onClick={() => paymentsPanelRef.current?.openNewPayment()}
             disabled={invoices.length === 0 || !canEditPayments}
             title={invoices.length === 0 ? "Sign estimate to generate invoice." : "Payment"}
-            className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            className={DOC_BUTTON}
           >
             <Wallet className="size-3.5" />
             <span className="hidden sm:inline">Payment</span>
@@ -574,7 +684,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
             type="button"
             onClick={handleDownloadPdf}
              
-            className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors  "
+            className={DOC_BUTTON}
             title="PDF"
           >
             <Download className="size-3.5" />
@@ -583,7 +693,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
           <button
             type="button"
             onClick={() => setEmailModalOpen(true)}
-            className="relative inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors"
+            className={`relative ${DOC_BUTTON}`}
             title={
               emailStatus
                 ? `Email Customer — last send ${EMAIL_STATUS_DOT_LABEL[emailStatus]}`
@@ -612,7 +722,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
             if (!estimate.customerToken || !smsPhone) {
               return (
                 <span
-                  className="inline-flex cursor-not-allowed items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground opacity-50"
+                  className={`${DOC_BUTTON} cursor-not-allowed opacity-50`}
                   title={!estimate.customerToken ? "No portal link yet — re-save this estimate to generate one." : "This client has no phone number on file."}
                 >
                   <MessageSquare className="size-3.5" />
@@ -630,7 +740,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
             return (
               <a
                 href={buildSmsHref(smsPhone, smsBody)}
-                className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors"
+                className={DOC_BUTTON}
                 title="Text the estimate link to the customer"
               >
                 <MessageSquare className="size-3.5" />
@@ -638,7 +748,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
               </a>
             );
           })()}
-                    <Link href={`${editBasePath}/${estimate.id}/edit`} className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors" title="Edit">
+                    <Link href={`${editBasePath}/${estimate.id}/edit`} className={DOC_BUTTON} title="Edit">
             <Pencil className="size-3.5" />
             <span className="hidden sm:inline">Edit</span>
           </Link>
@@ -654,7 +764,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
               type="button"
               onClick={() => { setCompleteError(null); setShowCompleteConfirm(true); }}
               disabled={!canMarkComplete}
-              className="inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-emerald-700 transition-colors"
+              className={DOC_BUTTON_TEAL}
               title={completeBlockedReason ?? "Mark Project Complete"}
             >
               <CheckCircle2 className="size-3.5" />
@@ -671,7 +781,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
             <button
               type="button"
               onClick={() => { setUndoError(null); setShowUndoConfirm(true); }}
-              className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-muted transition-colors"
+              className={DOC_BUTTON}
               title="Undo Complete — move this job back to In Progress"
             >
               <RotateCcw className="size-3.5" />
@@ -683,7 +793,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
             type="button"
             onClick={openDeleteConfirm}
             disabled={!!deleteBlockedReason}
-            className="inline-flex items-center gap-1 rounded-lg border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-danger hover:bg-danger/10 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-card transition-colors"
+            className={DOC_BUTTON_DANGER}
             title={deleteBlockedReason ?? "Delete this estimate (requires a reason)"}
           >
             <Trash2 className="size-3.5" />
@@ -695,61 +805,13 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
       {error && <div className="mb-4 rounded-xl bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>}
       {notice && <div className="mb-4 rounded-xl bg-warning/15 px-4 py-3 text-sm font-medium text-warning-foreground">{notice}</div>}
 
-      {/* Top Summary Strip — every figure here is read straight from
-          estimate.total / FinancialEngine.getEstimateFinancials, never
-          recomputed. "Project Total Cost" = financials.totalExpenses,
-          the exact same figure EstimateProfitSummaryCard's own "Total
-          job cost" row shows further down — one number, shown twice at
-          different points of emphasis, not two calculations. */}
-<     div className="mb-4 grid grid-cols-4 gap-2 sm:gap-3">
-        {/* Shows the REVISED total once a change order is approved.
-            The original quote alone was the loudest number on the page
-            and the only one that ignored approved change orders, while
-            the invoice, revised-total row and net profit right beside
-            it all counted them — so a $24 estimate with a $100 approved
-            change order billed the customer $124 under a headline
-            reading "$24". Same figure the Line Items block already
-            shows (revisedTotal, from calculateRevisedEstimateTotal),
-            not a second calculation; the original stays visible
-            underneath so the quoted-vs-revised comparison isn't lost. */}
-        <div className="rounded-lg border border-border/60 bg-card px-2.5 py-2 sm:px-3.5 sm:py-2.5">
-          <div className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-muted-foreground truncate">
-            {hasApprovedChangeOrders ? "Revised Total" : "Estimate Total"}
-          </div>
-          <div className="mt-0.5 text-sm sm:text-lg font-bold text-foreground truncate">
-            {formatMoney(hasApprovedChangeOrders ? revisedTotal : estimate.total)}
-          </div>
-          {hasApprovedChangeOrders && (
-            <div className="text-[9px] sm:text-[10px] text-muted-foreground truncate">
-              quoted {formatMoney(estimate.total)}
-            </div>
-          )}
-        </div>
-        <div className="rounded-lg border border-border/60 bg-card px-2.5 py-2 sm:px-3.5 sm:py-2.5">
-          <div className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-muted-foreground truncate">Project Total Cost</div>
-          <div className="mt-0.5 text-sm sm:text-lg font-bold text-foreground truncate">{financials ? formatMoney(financials.totalExpenses) : "—"}</div>
-        </div>
-        <div className="rounded-lg border border-border/60 bg-card px-2.5 py-2 sm:px-3.5 sm:py-2.5">
-          <div className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-muted-foreground truncate">Net Profit</div>
-          <div className={`mt-0.5 text-sm sm:text-lg font-bold truncate ${financials ? (financials.netProfit >= 0 ? "text-success" : "text-danger") : "text-foreground"}`}>
-            {financials ? formatMoney(financials.netProfit) : "—"}
-          </div>
-        </div>
-        <div className="rounded-lg border border-border/60 bg-card px-2.5 py-2 sm:px-3.5 sm:py-2.5">
-          <div className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-muted-foreground truncate">Status</div>
-          <div className={`mt-0.5 text-sm sm:text-lg font-bold truncate ${financials ? (financials.netProfit >= 0 ? "text-success" : "text-danger") : "text-foreground"}`}>
-            {financials ? (financials.netProfit >= 0 ? "Profit" : "Loss") : "—"}
-          </div>
-        </div>
-      </div>
-
       {/* Main Grid Content — flattened (no left/right wrapper divs) so
           every top-level section can carry its own `order` + explicit
-          `lg:col-start`. On mobile (no lg: prefix) `order` alone
+ `lg:col-start`. On mobile (no lg: prefix) `order` alone
           controls stacking, since grid-cols-1 has one column anyway.
           On lg:+ each section's `lg:col-start`/`lg:col-span` pins it to
           the left (1-8) or right (9-12) column regardless of order, and
-          `lg:order` restores each column's original top-to-bottom
+ `lg:order` restores each column's original top-to-bottom
           sequence — the standard "explicit column, ordered row"
           CSS Grid technique. Only the Job Costing card has a mobile
           order different from its desktop one (pushed to the very end
@@ -758,101 +820,77 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
           every width; it's the main point of this page and must never
           require scrolling past Invoices/Expenses to reach. Everything
           else keeps the same relative order at every width. */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:gap-x-6 lg:gap-y-8">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-x-6 lg:gap-y-8">
+          <div className="contents lg:flex lg:flex-col lg:gap-6 lg:col-start-1 lg:row-start-1 lg:self-start">
           {/* Consolidated Section Card: Project Info, Line Items, and Change Orders */}
-<section className="order-first lg:order-1 lg:col-start-1 lg:col-span-8 rounded-2xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950 p-4 sm:p-6 shadow-md space-y-6 text-emerald-950 dark:text-emerald-50">
+<section className="order-first lg:order-1 lg:col-start-1 space-y-6 rounded-2xl border border-[#E2E5E0] bg-white p-4 text-[#1B2430] shadow-sm sm:p-6">
             
             {/* Quick Info Bar / Project Details — Compact mobile layout with clear hierarchy */}
-            <div className="-mx-4 -mt-4 sm:-mx-6 sm:-mt-6 rounded-t-2xl border-b border-emerald-200 dark:border-emerald-800 bg-emerald-100/70 dark:bg-emerald-900/90 px-4 py-3 sm:px-6 sm:py-4 sm:pl-[calc(1.5rem-6px)]">
-  <h2 className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-    <FolderOpen className="size-3.5 text-emerald-700 dark:text-emerald-400" />
-    Project Details
-  </h2>
-
-{/* Project + Client */}
-<div className="mt-1.5 min-w-0">
-  {/* Estimate Title — primary */}
-  <div className="text-2xl sm:text-3xl font-extrabold leading-tight text-emerald-950 dark:text-white break-words capitalize">
-    {estimate.title || "Untitled Estimate"}
+            <div className="-mx-4 -mt-4 sm:-mx-6 sm:-mt-6 rounded-t-2xl border-b border-[#E2E5E0] bg-white px-4 py-3 sm:px-6 sm:py-4">
+  {/* Title row: estimate title on the left, number and date on the right */}
+  <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-[#E2E5E0] pb-3">
+    <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+      <div className="min-w-0 font-[family-name:var(--font-doc-display)] text-xl font-semibold leading-tight text-[#1B2430] sm:text-[22px] break-words capitalize">
+        {estimate.title || "Untitled Estimate"}
+      </div>
+      <DocPill tone="neutral" className="capitalize">{estimate.estimateType || "Standard"}</DocPill>
+    </div>
+    <div className="text-xs text-[#5B6675]">
+      {estimate.estimateNumber ?? estimate.id.slice(0, 8)} · {new Date(estimate.createdAt).toLocaleDateString()}
+    </div>
   </div>
 
-{/* Project + Metadata */}
-<div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-  {/* Project Name */}
-  <div className="font-medium text-emerald-700 dark:text-emerald-300">
+  {project?.status === "completed" && (
+    <div className="mt-3">
+      <CompletedBanner text={`Completed${project.endDate ? ` on ${project.endDate}` : ""}. Use Undo Complete to reopen this job.`} />
+    </div>
+  )}
+
+{/* Project + Client */}
+<div className="mt-3 min-w-0">
+
+{/* Info grid: client, estimate, project and type in four boxes, as in
+    the estimate design. Same values and links as the old text lines. */}
+<div className="grid grid-cols-1 gap-3 text-[13px] sm:grid-cols-2">
+  <div className="rounded-lg border border-[#E2E5E0] p-3">
+    <div className="text-[11px] text-[#5B6675]">Client</div>
+    {client ? (
+      <>
+        <Link href={`/clients/${client.id}`} className="font-semibold text-[#1B2430] hover:underline">
+          {client.name}
+        </Link>
+        {client.phone && (
+          <div>
+            <a href={`tel:${client.phone}`} className="text-[#5B6675] hover:underline">
+              {client.phone}
+            </a>
+          </div>
+        )}
+        {client.address && (
+          <div className="text-[#5B6675]">{client.address.replace(/\s*\n\s*/g, ", ")}</div>
+        )}
+        {property && (
+          <div className="text-[#5B6675]">Property: {formatPropertyAddress(property)}</div>
+        )}
+      </>
+    ) : (
+      <div className="text-[#5B6675]">No client</div>
+    )}
+  </div>
+  <div className="rounded-lg border border-[#E2E5E0] p-3">
+    <div className="text-[11px] text-[#5B6675]">Estimate no.</div>
+    <div className="font-semibold text-[#1B2430]">
+      {estimate.estimateNumber ?? estimate.id.slice(0, 8)} · {new Date(estimate.createdAt).toLocaleDateString()}
+    </div>
+    <div className="mt-2 text-[11px] text-[#5B6675]">Project</div>
     {project ? (
-      <Link
-        href={`/projects/${project.id}`}
-        className="hover:text-emerald-900 dark:hover:text-white hover:underline"
-      >
+      <Link href={`/projects/${project.id}`} className="font-semibold text-[#1B2430] hover:underline">
         {project.name}
       </Link>
     ) : (
-      <span className="text-emerald-600 dark:text-emerald-400">
-        No project
-      </span>
+      <div className="text-[#5B6675]">No project</div>
     )}
   </div>
-
-  <span className="text-emerald-300 dark:text-emerald-700">·</span>
-
-  {/* Created */}
-  <div>
-    <span className="text-emerald-700 dark:text-emerald-400">
-      Created:
-    </span>{" "}
-    <span className="font-medium text-emerald-950 dark:text-white">
-      {new Date(estimate.createdAt).toLocaleDateString()}
-    </span>
-  </div>
-
-  <span className="text-emerald-300 dark:text-emerald-700">·</span>
-
-  {/* Type */}
-  <div>
-    <span className="text-emerald-700 dark:text-emerald-400">
-      Type:
-    </span>{" "}
-    <span className="font-medium capitalize text-emerald-950 dark:text-white">
-      {estimate.estimateType || "Standard"}
-    </span>
-  </div>
-</div>
-
-{/* Client */}
-<div className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs text-emerald-800 dark:text-emerald-200">
-  <User className="size-3 shrink-0 text-emerald-700 dark:text-emerald-400" />
-
-  {client ? (
-    <>
-      <Link
-        href={`/clients/${client.id}`}
-        className="font-semibold text-emerald-950 dark:text-white hover:underline"
-      >
-        {client.name}
-      </Link>
-
-      {client.phone && (
-        <>
-          <span>·</span>
-          <a href={`tel:${client.phone}`} className="hover:underline">
-            {client.phone}
-          </a>
-        </>
-      )}
-
-      {client.address && (
-        <>
-          <span>·</span>
-          <span className="max-w-[300px] truncate">
-            {client.address.replace(/\s*\n\s*/g, ", ")}
-          </span>
-        </>
-      )}
-    </>
-  ) : (
-    <span>No client</span>
-  )}
 </div>
 
 
@@ -862,25 +900,34 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
 
   {/* Compact description */}
 {estimate.description && (
-  <div className="mt-2 border-t border-emerald-200 pt-2 dark:border-emerald-800/80">
-    <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+  <div className="mt-2 border-t border-[#E2E5E0] pt-2">
+    <div className="text-[10px] font-semibold uppercase tracking-wider text-[#5B6675]">
       Description
     </div>
 
-    <div className="mt-0.5 whitespace-pre-wrap text-xs leading-relaxed text-emerald-900/80 dark:text-emerald-100/90 break-words">
+    <div className="mt-0.5 whitespace-pre-wrap text-xs leading-relaxed text-[#1B2430]  break-words">
       {estimate.description}
     </div>
   </div>
 )}
 </div>
 
-            {/* Roof Areas (If applicable) */}
+            {/* Roof Areas (If applicable): one table, each row expands to its detail */}
             {estimate.estimateType === "roofing" && roofingAreas.length > 0 && (
-              <div className="pt-2 border-t border-emerald-200 dark:border-emerald-800/60">
-                <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-                  <Home className="size-4 text-emerald-700 dark:text-emerald-400" /> Roof Areas ({roofingAreas.length})
-                </h3>
-                <div className="space-y-4">
+              <div>
+                <div className="mb-2 flex items-baseline justify-between">
+                  <h3 className="font-[family-name:var(--font-doc-display)] text-base font-semibold text-[#1B2430]">
+                    Roof areas <span className="ml-1 font-sans text-xs font-normal text-[#8A93A0]">{roofingAreas.length}</span>
+                  </h3>
+                </div>
+                <div className="overflow-hidden rounded-xl border border-[#E2E5E0]">
+                  <div className={`${ROOF_AREA_ROW_GRID} bg-[#F8F9F7] px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-[#5B6675]`}>
+                    <span>No.</span>
+                    <span>Description</span>
+                    <span className="hidden text-right sm:block">Qty</span>
+                    <span className="text-right">Amount</span>
+                    <span aria-hidden="true" />
+                  </div>
                   {roofingAreas.map((area, idx) => {
                     const items = areaLineItems[area.id] ?? [];
                     const areaSubtotal = calculateSubtotal(items.map((li) => ({ total: calculateLineItemTotal(li) })));
@@ -897,21 +944,26 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
                 heavy and wasting space. Flattened to a plain divided
                 section, matching how Roof Areas above it already just
                 uses a top border, not its own box. */}
-  <div className="pt-2 border-t border-emerald-200 dark:border-emerald-800/60">
+  {estimate.estimateType === "roofing" && !ROOFING_LINE_ITEMS_ENABLED ? (
+    <div className="pt-2 border-t border-[#E2E5E0]">
+      {totalsBlock}
+    </div>
+  ) : (
+  <div className="pt-2 border-t border-[#E2E5E0]">
   {/* Header with toggle */}
   <div
     className="flex items-center justify-between cursor-pointer select-none"
     onClick={() => setIsLineItemsOpen(!isLineItemsOpen)}
   >
-    <h2 className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+    <h2 className="text-xs font-bold uppercase tracking-wider text-[#1B2430]  flex items-center gap-2">
       Line Items
-      <span className="text-[10px] font-normal text-emerald-600 dark:text-emerald-400">
+      <span className="text-[10px] font-normal text-[#5B6675]">
         ({scopeLines.length})
       </span>
     </h2>
     <button
       type="button"
-      className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-200 transition-transform"
+      className="text-[#5B6675]  hover:text-[#1B2430]  transition-transform"
       aria-label={isLineItemsOpen ? "Collapse" : "Expand"}
     >
       <svg
@@ -946,29 +998,29 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
             description on their own lines, then qty/unit/price on one
             line with the total right-aligned. Read-only either way —
             same values, same formatting, same palette. */}
-        <div className="divide-y divide-emerald-100 rounded-lg border border-emerald-200 bg-white dark:divide-emerald-900/80 dark:border-emerald-800/80 dark:bg-emerald-950 sm:hidden">
+        <div className="divide-y divide-[#E2E5E0] rounded-lg border border-[#E2E5E0] bg-white    sm:hidden">
           {scopeGroups.map((group) => (
             <div key={group.name}>
-              <div className="flex items-center justify-between bg-emerald-50/80 dark:bg-emerald-900/40 px-2.5 py-1.5">
-                <span className="text-[11px] font-bold text-emerald-900 dark:text-emerald-200">{group.name}</span>
-                <span className="text-[11px] font-semibold text-emerald-800 dark:text-emerald-300">{formatMoney(group.subtotal)}</span>
+              <div className="flex items-center justify-between bg-[#F8F9F7]  px-2.5 py-1.5">
+                <span className="text-[11px] font-bold text-[#1B2430]">{group.name}</span>
+                <span className="text-[11px] font-semibold text-[#1B2430]">{formatMoney(group.subtotal)}</span>
               </div>
               {group.lines.map((item) => (
                 <div key={item.id} className="px-2.5 py-2 pl-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <div className="font-semibold text-emerald-950 dark:text-white">{item.name}</div>
+                      <div className="flex flex-wrap items-center gap-1.5 font-semibold text-[#1B2430]">{item.name}<span className="rounded-full bg-[#EEF0EC] px-1.5 py-px text-[10px] font-medium capitalize text-[#5B6675]">{item.category}</span></div>
                       {item.description && (
-                        <div className="mt-0.5 text-[11px] text-emerald-700/80 dark:text-emerald-300/80">
+                        <div className="mt-0.5 text-[11px] text-[#5B6675]">
                           {item.description}
                         </div>
                       )}
                     </div>
-                    <div className="shrink-0 text-right text-xs font-semibold text-emerald-950 dark:text-white">
+                    <div className="shrink-0 text-right text-xs font-semibold text-[#1B2430]">
                       {formatMoney(item.total)}
                     </div>
                   </div>
-                  <div className="mt-1 text-[11px] text-emerald-800 dark:text-emerald-200">
+                  <div className="mt-1 text-[11px] text-[#1B2430]">
                     {item.quantity}
                     {item.unit ? ` ${item.unit}` : ""} × {formatMoney(item.unitPrice)}
                   </div>
@@ -980,18 +1032,18 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
             <div key={item.id} className="px-2.5 py-2">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <div className="font-semibold text-emerald-950 dark:text-white">{item.name}</div>
+                  <div className="flex flex-wrap items-center gap-1.5 font-semibold text-[#1B2430]">{item.name}<span className="rounded-full bg-[#EEF0EC] px-1.5 py-px text-[10px] font-medium capitalize text-[#5B6675]">{item.category}</span></div>
                   {item.description && (
-                    <div className="mt-0.5 text-[11px] text-emerald-700/80 dark:text-emerald-300/80">
+                    <div className="mt-0.5 text-[11px] text-[#5B6675]">
                       {item.description}
                     </div>
                   )}
                 </div>
-                <div className="shrink-0 text-right text-xs font-semibold text-emerald-950 dark:text-white">
+                <div className="shrink-0 text-right text-xs font-semibold text-[#1B2430]">
                   {formatMoney(item.total)}
                 </div>
               </div>
-              <div className="mt-1 text-[11px] text-emerald-800 dark:text-emerald-200">
+              <div className="mt-1 text-[11px] text-[#1B2430]">
                 {item.quantity}
                 {item.unit ? ` ${item.unit}` : ""} × {formatMoney(item.unitPrice)}
               </div>
@@ -999,9 +1051,9 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
           ))}
         </div>
 
-        <div className="hidden overflow-x-auto rounded-lg border border-emerald-200 dark:border-emerald-800/80 bg-white dark:bg-emerald-950 sm:block">
-          <table className="w-full text-xs text-emerald-950 dark:text-emerald-100">
-            <thead className="bg-emerald-100/80 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border-b border-emerald-200 dark:border-emerald-800">
+        <div className="hidden overflow-x-auto rounded-lg border border-[#E2E5E0]  bg-white  sm:block">
+          <table className="w-full text-xs text-[#1B2430]">
+            <thead className="bg-[#F8F9F7]  text-[#1B2430]  border-b border-[#E2E5E0]">
               <tr>
                 <th className="px-2 py-1.5 text-left font-semibold uppercase tracking-wider">Item</th>
                 <th className="px-2 py-1.5 text-center font-semibold uppercase tracking-wider">Qty</th>
@@ -1010,130 +1062,86 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
                 <th className="px-2 py-1.5 text-right font-semibold uppercase tracking-wider">Total</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-emerald-100 dark:divide-emerald-900/80">
+            <tbody className="divide-y divide-[#E2E5E0]">
               {scopeGroups.map((group) => (
                 <Fragment key={group.name}>
-                  <tr className="bg-emerald-50/80 dark:bg-emerald-900/40">
-                    <td colSpan={4} className="px-2 py-1.5 text-[11px] font-bold text-emerald-900 dark:text-emerald-200">{group.name}</td>
-                    <td className="px-2 py-1.5 text-right text-[11px] font-semibold text-emerald-800 dark:text-emerald-300">{formatMoney(group.subtotal)}</td>
+                  <tr className="bg-[#F8F9F7]">
+                    <td colSpan={4} className="px-2 py-1.5 text-[11px] font-bold text-[#1B2430]">{group.name}</td>
+                    <td className="px-2 py-1.5 text-right text-[11px] font-semibold text-[#1B2430]">{formatMoney(group.subtotal)}</td>
                   </tr>
                   {group.lines.map((item) => (
-                    <tr key={item.id} className="hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors">
+                    <tr key={item.id} className="hover:bg-[#F8F9F7]  transition-colors">
                       <td className="px-2 py-1.5 pl-4">
-                        <div className="font-semibold text-emerald-950 dark:text-white">{item.name}</div>
+                        <div className="flex flex-wrap items-center gap-1.5 font-semibold text-[#1B2430]">{item.name}<span className="rounded-full bg-[#EEF0EC] px-1.5 py-px text-[10px] font-medium capitalize text-[#5B6675]">{item.category}</span></div>
                         {item.description && (
                           <div
-                            className="text-[11px] text-emerald-700/80 dark:text-emerald-300/80 truncate max-w-[180px]"
+                            className="text-[11px] text-[#5B6675]  truncate max-w-[180px]"
                             title={item.description}
                           >
                             {item.description}
                           </div>
                         )}
                       </td>
-                      <td className="px-2 py-1.5 text-center text-emerald-800 dark:text-emerald-200">{item.quantity}</td>
-                      <td className="px-2 py-1.5 text-center text-emerald-800 dark:text-emerald-200">{item.unit ?? "—"}</td>
-                      <td className="px-2 py-1.5 text-right text-emerald-800 dark:text-emerald-200">{formatMoney(item.unitPrice)}</td>
-                      <td className="px-2 py-1.5 text-right font-semibold text-emerald-950 dark:text-white">{formatMoney(item.total)}</td>
+                      <td className="px-2 py-1.5 text-center text-[#1B2430]">{item.quantity}</td>
+                      <td className="px-2 py-1.5 text-center text-[#1B2430]">{item.unit ?? "—"}</td>
+                      <td className="px-2 py-1.5 text-right text-[#1B2430]">{formatMoney(item.unitPrice)}</td>
+                      <td className="px-2 py-1.5 text-right font-semibold text-[#1B2430]">{formatMoney(item.total)}</td>
                     </tr>
                   ))}
                 </Fragment>
               ))}
               {ungroupedScopeLines.map((item) => (
-                <tr key={item.id} className="hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors">
+                <tr key={item.id} className="hover:bg-[#F8F9F7]  transition-colors">
                   <td className="px-2 py-1.5">
-                    <div className="font-semibold text-emerald-950 dark:text-white">{item.name}</div>
+                    <div className="flex flex-wrap items-center gap-1.5 font-semibold text-[#1B2430]">{item.name}<span className="rounded-full bg-[#EEF0EC] px-1.5 py-px text-[10px] font-medium capitalize text-[#5B6675]">{item.category}</span></div>
                     {item.description && (
                       <div
-                        className="text-[11px] text-emerald-700/80 dark:text-emerald-300/80 truncate max-w-[180px]"
+                        className="text-[11px] text-[#5B6675]  truncate max-w-[180px]"
                         title={item.description}
                       >
                         {item.description}
                       </div>
                     )}
                   </td>
-                  <td className="px-2 py-1.5 text-center text-emerald-800 dark:text-emerald-200">{item.quantity}</td>
-                  <td className="px-2 py-1.5 text-center text-emerald-800 dark:text-emerald-200">{item.unit ?? "—"}</td>
-                  <td className="px-2 py-1.5 text-right text-emerald-800 dark:text-emerald-200">{formatMoney(item.unitPrice)}</td>
-                  <td className="px-2 py-1.5 text-right font-semibold text-emerald-950 dark:text-white">{formatMoney(item.total)}</td>
+                  <td className="px-2 py-1.5 text-center text-[#1B2430]">{item.quantity}</td>
+                  <td className="px-2 py-1.5 text-center text-[#1B2430]">{item.unit ?? "—"}</td>
+                  <td className="px-2 py-1.5 text-right text-[#1B2430]">{formatMoney(item.unitPrice)}</td>
+                  <td className="px-2 py-1.5 text-right font-semibold text-[#1B2430]">{formatMoney(item.total)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
-        {/* Totals – more compact */}
-        <div className="mt-3 rounded-xl border border-emerald-200 dark:border-emerald-700/80 bg-white dark:bg-emerald-900/70 p-2 sm:p-3 space-y-1.5 text-xs shadow-xs dark:shadow-inner">
-          {/* <div className="flex justify-between text-emerald-800 dark:text-emerald-200">
-            <span>Subtotal</span>
-            <span className="text-emerald-950 dark:text-white">{formatMoney(estimate.subtotal)}</span>
-          </div> */}
-          {estimate.markup !== 0 && (
-            <div className="flex justify-between text-emerald-800 dark:text-emerald-200">
-              <span>Markup</span>
-              <span className="text-emerald-950 dark:text-white">{formatMoney(estimate.markup)}</span>
-            </div>
-          )}
-          {estimate.discount !== 0 && (
-            <div className="flex justify-between text-emerald-800 dark:text-emerald-200">
-              <span>Discount</span>
-              <span className="text-emerald-950 dark:text-white">-{formatMoney(estimate.discount)}</span>
-            </div>
-          )}
-          {estimate.taxRate !== 0 && (
-            <div className="flex justify-between text-emerald-800 dark:text-emerald-200">
-              <span>Tax ({estimate.taxRate}%)</span>
-            </div>
-          )}
-          <div className="flex justify-between border-t border-emerald-200 dark:border-emerald-700 pt-2 font-bold text-sm text-emerald-950 dark:text-white">
-            <span>Total</span>
-            <span>{formatMoney(estimate.total)}</span>
-          </div>
-          {estimate.depositAmount > 0 && (
-            <div className="flex justify-between text-emerald-800 dark:text-emerald-200 pt-1">
-              <span>Requested deposit</span>
-              <span className="text-emerald-950 dark:text-white">{formatMoney(estimate.depositAmount)}</span>
-            </div>
-          )}
-          {hasApprovedChangeOrders && (
-            <>
-              <div className="flex justify-between text-emerald-800 dark:text-emerald-200 pt-1">
-                <span>Approved change orders</span>
-                <span className="text-emerald-950 dark:text-white">{formatMoney(approvedChangeOrderRevenue)}</span>
-              </div>
-              <div className="flex justify-between border-t border-emerald-200 dark:border-emerald-700 pt-2 font-bold text-emerald-700 dark:text-emerald-300 text-sm">
-                <span>Revised total</span>
-                <span className="text-emerald-950 dark:text-white">{formatMoney(revisedTotal)}</span>
-              </div>
-            </>
-          )}
-        </div>
+        {totalsBlock}
       </>
     )}
   </div>
 </div>
+  )}
 
             {/* Change Orders — same flattened treatment as Line Items above. */}
-<div className="pt-2 border-t border-emerald-200 dark:border-emerald-800/60">
+<div className="pt-2 border-t border-[#E2E5E0]">
   {/* Header – always visible, clickable toggle */}
   <div
     className="flex flex-wrap items-center justify-between gap-2 cursor-pointer select-none"
     onClick={() => setChangeOrdersOpen(!changeOrdersOpen)}
   >
-    <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
-      <GitPullRequest className="size-4 text-emerald-700 dark:text-emerald-400" />
+    <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#1B2430]">
+      <GitPullRequest className="size-4 text-[#5B6675]" />
       Change Orders ({changeOrders.length})
     </h2>
     <div className="flex items-center gap-2">
       <Link
         href={`/change-orders/new?projectId=${estimate.projectId}&estimateId=${estimate.id}`}
-        className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:text-emerald-950 dark:hover:text-white hover:underline"
+        className="text-xs font-semibold text-[#5B6675]  hover:text-[#1B2430] hover:underline"
         onClick={(e) => e.stopPropagation()} // Prevent toggle when clicking the link
       >
         + New change order
       </Link>
       <button
         type="button"
-        className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-200 transition-transform"
+        className="text-[#5B6675]  hover:text-[#1B2430]  transition-transform"
         aria-label={changeOrdersOpen ? "Collapse" : "Expand"}
       >
         <svg
@@ -1157,22 +1165,22 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
     {panelsLoading && changeOrders.length === 0 ? (
       <SkeletonLines rows={2} className="py-1" />
     ) : changeOrders.length === 0 ? (
-      <p className="text-xs text-emerald-700/80 dark:text-emerald-400/80 italic py-1">No change orders recorded yet.</p>
+      <p className="text-xs text-[#5B6675]  italic py-1">No change orders recorded yet.</p>
     ) : (
-      <ul className="divide-y divide-emerald-100 dark:divide-emerald-900 rounded-lg border border-emerald-200 dark:border-emerald-800/80 bg-white dark:bg-emerald-950/60 px-3">
+      <ul className="divide-y divide-[#E2E5E0]  rounded-lg border border-[#E2E5E0]  bg-white  px-3">
         {changeOrders.map((co) => (
           <li key={co.id}>
             <Link
               href={`/change-orders/${co.id}`}
-              className="flex items-center justify-between gap-2 py-2.5 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
+              className="flex items-center justify-between gap-2 py-2.5 hover:text-[#5B6675]  transition-colors"
             >
               <div>
-                <div className="text-xs font-semibold text-emerald-950 dark:text-white">
+                <div className="text-xs font-semibold text-[#1B2430]">
                   {co.changeOrderNumber} - {co.title}
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-emerald-950 dark:text-white">
+                <span className="text-xs font-semibold text-[#1B2430]">
                   {formatMoney(calculateChangeOrderRevenue(co.totalAmount, co.tax))}
                 </span>
                 <Badge tone={CHANGE_ORDER_STATUS_TONE[co.status]}>{co.status}</Badge>
@@ -1186,17 +1194,241 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
 </div>
 
           </section>
+          {/* Attachments (Docs & Photos) — secondary, compact */}
+          <div className="order-3 lg:order-3 lg:col-start-1 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <section className="rounded-2xl border border-[#E2E5E0] bg-white p-4">
+              <h3 className="mb-2 font-[family-name:var(--font-doc-display)] text-[15px] font-semibold text-[#1B2430]">Documents</h3>
+              <p className="text-xs text-[#8A93A0]">No attached documents.</p>
+            </section>
+            <section className="rounded-2xl border border-[#E2E5E0] bg-white p-4">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="font-[family-name:var(--font-doc-display)] text-[15px] font-semibold text-[#1B2430]">Photos</h3>
+                <Link href={`${editBasePath}/${estimate.id}/edit`} className={buttonClass("secondary", "h-7 px-2.5 text-xs")}>
+                  Add photos
+                </Link>
+              </div>
+              {photoItems.length === 0 ? (
+                <p className="text-xs text-[#8A93A0]">No attached photos.</p>
+              ) : (
+                <div className="space-y-3">
+                  {(["before", "after"] as const).map((type) => {
+                    const items = photoItems.filter((item) => item.photoType === type);
+                    if (items.length === 0) return null;
+                    return (
+                      <div key={type}>
+                        <div className="mb-1.5 text-[11px] font-medium text-[#5B6675]">
+                          {type === "before" ? "Before" : "After"} <span className="text-[#8A93A0]">{items.length}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                          {items.map((item) => (
+                            <a key={item.key} href={item.url} target="_blank" rel="noreferrer" className="block min-w-0" title={`${item.label}, ${type}`}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={item.url}
+                                alt={`${type} photo, ${item.label}`}
+                                loading="lazy"
+                                className="aspect-square w-full rounded-lg border border-[#E2E5E0] object-cover"
+                              />
+                              <span className="mt-1 block truncate text-[11px] text-[#8A93A0]">{item.label}</span>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          </div>
+          </div>
 
 
 
           {/* Side-by-Side Compact Cards for Invoices/Payments and Expenses — secondary, compact */}
-          <div className="order-1 lg:order-2 lg:col-start-1 lg:col-span-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            
+          
+
+
+          {/* Right column (desktop): one sticky stack in the order of the new
+              estimate view: customer, subs/agents, invoices and expenses, job
+              costing, notes, activity. Same panels as before, grouped. */}
+          <aside className="order-2 lg:col-start-2 lg:sticky lg:top-6 lg:self-start flex flex-col gap-4">
+<section className="rounded-2xl border border-[#E2E5E0] bg-white p-4 shadow-sm">
+    {/* Tab Navigation */}
+    <div className="flex gap-1 border-b border-[#E2E5E0] pb-1.5">
+      <button
+        type="button"
+        onClick={() => setActiveTab('customer')}
+        className={`flex-1 rounded-t-md px-2 py-1 text-[11px] font-medium transition-all ${
+          activeTab === 'customer'
+            ? 'bg-[#0B5F5E] text-white shadow-sm'
+            : 'bg-[#F8F9F7] text-[#5B6675] hover:bg-[#F8F9F7]'
+        }`}
+      >
+        <span className="flex items-center justify-center gap-1">
+          <Share2 className="size-3" /> Customer
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={() => setActiveTab('email')}
+        className={`flex-1 rounded-t-md px-2 py-1 text-[11px] font-medium transition-all ${
+          activeTab === 'email'
+            ? 'bg-[#0B5F5E] text-white shadow-sm'
+            : 'bg-[#F8F9F7] text-[#5B6675] hover:bg-[#F8F9F7]'
+        }`}
+      >
+        <span className="flex items-center justify-center gap-1">
+          <Mail className="size-3" /> Email History
+        </span>
+      </button>
+    </div>
+
+    {/* Tab Content */}
+    <div className="pt-2">
+      {/* Tab 1: Customer Portal + Signature */}
+      {activeTab === 'customer' && (
+        <div className="space-y-2">
+          {/* Header with Send Email button */}
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="flex items-center gap-1 text-[11px] font-semibold text-[#1B2430]">
+              <Share2 className="size-3 text-[#5B6675]" /> Share Portal
+            </h2>
+            <button
+              type="button"
+              onClick={() => setEmailModalOpen(true)}
+              className="inline-flex h-6 items-center gap-1 rounded-md bg-[#0B5F5E] px-2 text-[11px] font-medium text-white hover:bg-[#0B5F5E]"
+            >
+              <Mail className="size-3" /> Send Email
+            </button>
+          </div>
+
+          {estimate.customerToken ? (
+            <SharePortalPanel
+              portalUrl={`${portalOrigin}/portal/${estimate.customerToken}`}
+              clientName={client?.name ?? null}
+              clientPhone={client?.phone ?? null}
+              clientEmail={client?.email ?? null}
+              documentLabel="estimate"
+            />
+          ) : (
+            <p className="text-[11px] text-[#5B6675] italic">
+              No portal link yet — re-save or migrate tokens to enable client view.
+            </p>
+          )}
+
+          {/* Client + signature — full name always visible */}
+          <div className="flex items-center justify-between gap-2 rounded bg-[#F8F9F7] px-2 py-1.5">
+            <div className="min-w-0 flex-1">
+              {client ? (
+                <div className="text-[11px] font-medium text-[#1B2430] whitespace-nowrap">
+                  {client.name}
+                </div>
+              ) : (
+                <div className="text-[11px] text-[#5B6675] italic">No client attached</div>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <CheckCircle2 className={`size-3.5 ${estimate.signature ? "text-[#5B6675]" : "text-[#8A93A0]"}`} />
+              <span className={`text-[11px] font-medium ${estimate.signature ? "text-[#5B6675]" : "text-[#8A93A0]"}`}>
+                {estimate.signature ? "Signed" : "Unsigned"}
+              </span>
+              <button
+                type="button"
+                onClick={() => { setSignatureNotice(null); setShowSignatureModal(!showSignatureModal); }}
+                className="rounded px-1.5 py-0.5 text-[11px] font-medium text-[#5B6675] hover:bg-[#F8F9F7] hover:text-[#5B6675]"
+              >
+                {showSignatureModal ? "Close" : "Manage"}
+              </button>
+            </div>
+          </div>
+
+          {/* Signature modal */}
+          {showSignatureModal && (
+            <div className="border-t border-[#E2E5E0] pt-2">
+              {signatureNotice && (
+                <div
+                  role="status"
+                  className={`mb-1.5 rounded px-2 py-1 text-[11px] ${
+                    signatureNotice.tone === "error"
+                      ? "bg-rose-50 text-rose-700 border border-rose-200"
+                      : "bg-[#F8F9F7] text-[#5B6675] border border-[#E2E5E0]"
+                  }`}
+                >
+                  {signatureNotice.message}
+                </div>
+              )}
+              <div className={signatureBusy ? "pointer-events-none opacity-60" : ""}>
+                <SignaturePad
+                  existingSignature={estimate.signature}
+                  onSave={handleSignature}
+                  onRemove={handleRemoveSignature}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab 2: Email History */}
+      {activeTab === 'email' && (
+        <div>
+          <h3 className="flex items-center gap-1 text-[11px] font-semibold text-[#1B2430] mb-2">
+            <Mail className="size-3 text-[#5B6675]" /> Email History
+          </h3>
+          <div className="max-h-56 overflow-y-auto pr-1">
+            <EmailHistoryPanel key={emailHistoryRefreshKey} estimateId={estimate.id} />
+          </div>
+        </div>
+      )}
+    </div>
+  </section>
+
+<div>
+            {estimate.projectId && (
+              <SubAgentTabsPanel
+                ref={subAgentTabsRef}
+                companyId={estimate.companyId}
+                projectId={estimate.projectId}
+                // So a payment recorded here is tagged with THIS job and
+                // shows up in its expenses, like every other cost on it.
+                estimateId={estimate.id}
+                onChanged={async () => {
+                  await loadFinancials();
+                  await expensesPanelRef.current?.refresh();
+                }}
+              />
+            )}
+          </div>
+
+{/* Money card: invoices & payments, expenses and job costing as tabs (design: Money). */}
+<div className="rounded-2xl border border-[#E2E5E0] bg-white p-4">
+            <div role="tablist" aria-label="Money" className="mb-3 flex gap-1 border-b border-[#E2E5E0] pb-2">
+              {([
+                ["invoice", "Invoice & payments"],
+                ["expenses", "Expenses"],
+                ["jobcost", "Job cost"],
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={moneyTab === key}
+                  onClick={() => setMoneyTab(key)}
+                  className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium transition-colors ${
+                    moneyTab === key ? "bg-[#1B2430] text-white" : "bg-[#F8F9F7] text-[#5B6675] hover:text-[#1B2430]"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className={moneyTab === "invoice" ? "" : "hidden"}>
             {/* Invoice & Payments Feed Card */}
-            <section className="rounded-lg border border-border/60 bg-card p-3.5 flex flex-col justify-between">
+            <section className="flex flex-col justify-between">
               <div>
                 <h2 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  <Receipt className="size-4 text-primary" /> Invoice & Payments
+                  <Receipt className="size-4 text-[#0B5F5E]" /> Invoice & Payments
                 </h2>
                 {panelsLoading && invoices.length === 0 ? (
                   <SkeletonLines rows={2} className="py-1" />
@@ -1207,7 +1439,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
                     <ul className="divide-y divide-border/60">
                       {invoices.map((inv) => (
                         <li key={inv.id}>
-                          <Link href={`/invoices/${inv.id}`} className="flex items-center justify-between gap-2 py-1.5 text-xs hover:text-primary transition-colors">
+                          <Link href={`/invoices/${inv.id}`} className="flex items-center justify-between gap-2 py-1.5 text-xs hover:text-[#0B5F5E] transition-colors">
                             <div>
                               <span className="font-semibold text-foreground">{inv.invoiceNumber}</span>
                               <span className="ml-1.5 text-muted-foreground capitalize">({inv.status.replace(/_/g, " ")})</span>
@@ -1239,11 +1471,14 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
               </div>
             </section>
 
+            </div>
+
+            <div className={moneyTab === "expenses" ? "" : "hidden"}>
             {/* Expenses Card */}
-            <section className="rounded-lg border border-border/60 bg-card p-3.5 flex flex-col justify-between">
+            <section className="flex flex-col justify-between">
               <div>
                 <h2 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  <Receipt className="size-4 text-primary" /> Expenses
+                  <Receipt className="size-4 text-[#0B5F5E]" /> Expenses
                 </h2>
                 {estimate.projectId && (
                   <ProjectExpensesPanel
@@ -1266,198 +1501,14 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
                 )}
               </div>
             </section>
-
-          </div>
-
-
-          {/* Attachments (Docs & Photos) — secondary, compact */}
-          <div className="order-2 lg:order-3 lg:col-start-1 lg:col-span-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <section className="rounded-lg border border-border/60 bg-card p-3.5">
-              <h3 className="mb-1.5 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                <FolderOpen className="size-3.5 text-primary" /> Documents
-              </h3>
-              <p className="text-xs text-muted-foreground italic">No attached documents.</p>
-            </section>
-            <section className="rounded-lg border border-border/60 bg-card p-3.5">
-              <h3 className="mb-1.5 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                <Camera className="size-3.5 text-primary" /> Photos
-              </h3>
-              <p className="text-xs text-muted-foreground italic">No attached photos.</p>
-            </section>
-          </div>
-
-             
-          <div className="order-8 lg:order-4 lg:col-start-1 lg:col-span-8">
-            <EstimateProfitSummaryCard financials={financials} />
-          </div>
-
-          {/* Right Sidebar (Sub/Agent, Portal, Client & Signature, Activity Timeline) */}
-          {/* Kept at the top of the sidebar (not the bottom of the left
-              column) so assigning/paying a subcontractor or agent never
-              requires scrolling past Roof Areas/Line Items/Financial
-              Summary first — same panels, just tabbed instead of
-              stacked (see SubAgentTabsPanel). */}
-          {/* Subcontractor/agent payments are their own domain models,
-              but they DO appear in the unified Costs list above (via
-              FinancialEngine.getEstimateCostEntries) — so refresh that
-              list too, not just the profit figures, whenever one is
-              recorded. */}
-          <div className="order-3 lg:order-1 lg:col-start-9 lg:col-span-4">
-            {estimate.projectId && (
-              <SubAgentTabsPanel
-                ref={subAgentTabsRef}
-                companyId={estimate.companyId}
-                projectId={estimate.projectId}
-                // So a payment recorded here is tagged with THIS job and
-                // shows up in its expenses, like every other cost on it.
-                estimateId={estimate.id}
-                onChanged={async () => {
-                  await loadFinancials();
-                  await expensesPanelRef.current?.refresh();
-                }}
-              />
-            )}
-          </div>
-
-          {/* Combined card — Customer Portal + Client Details &
-              Signature merged into one flat block (no sub-headers/tabs)
-              per request: the previous tabbed version still spent a
-              full header + divider on each of two closely related
-              things. Email History moved to a collapsed <details> at
-              the bottom — present, but not taking space by default. */}
-
-<section className="order-4 lg:order-2 lg:col-start-9 lg:col-span-4 rounded-lg border border-emerald-200/60 bg-white p-3 shadow-sm">
-    {/* Tab Navigation */}
-    <div className="flex gap-1 border-b border-emerald-200/50 pb-1.5">
-      <button
-        type="button"
-        onClick={() => setActiveTab('customer')}
-        className={`flex-1 rounded-t-md px-2 py-1 text-[11px] font-medium transition-all ${
-          activeTab === 'customer'
-            ? 'bg-emerald-600 text-white shadow-sm'
-            : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-        }`}
-      >
-        <span className="flex items-center justify-center gap-1">
-          <Share2 className="size-3" /> Customer
-        </span>
-      </button>
-      <button
-        type="button"
-        onClick={() => setActiveTab('email')}
-        className={`flex-1 rounded-t-md px-2 py-1 text-[11px] font-medium transition-all ${
-          activeTab === 'email'
-            ? 'bg-emerald-600 text-white shadow-sm'
-            : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-        }`}
-      >
-        <span className="flex items-center justify-center gap-1">
-          <Mail className="size-3" /> Email History
-        </span>
-      </button>
-    </div>
-
-    {/* Tab Content */}
-    <div className="pt-2">
-      {/* Tab 1: Customer Portal + Signature */}
-      {activeTab === 'customer' && (
-        <div className="space-y-2">
-          {/* Header with Send Email button */}
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="flex items-center gap-1 text-[11px] font-semibold text-emerald-800">
-              <Share2 className="size-3 text-emerald-600" /> Share Portal
-            </h2>
-            <button
-              type="button"
-              onClick={() => setEmailModalOpen(true)}
-              className="inline-flex h-6 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[11px] font-medium text-white hover:bg-emerald-700"
-            >
-              <Mail className="size-3" /> Send Email
-            </button>
-          </div>
-
-          {estimate.customerToken ? (
-            <SharePortalPanel
-              portalUrl={`${portalOrigin}/portal/${estimate.customerToken}`}
-              clientName={client?.name ?? null}
-              clientPhone={client?.phone ?? null}
-              clientEmail={client?.email ?? null}
-              documentLabel="estimate"
-            />
-          ) : (
-            <p className="text-[11px] text-emerald-700/70 italic">
-              No portal link yet — re-save or migrate tokens to enable client view.
-            </p>
-          )}
-
-          {/* Client + signature — full name always visible */}
-          <div className="flex items-center justify-between gap-2 rounded bg-emerald-50/50 px-2 py-1.5">
-            <div className="min-w-0 flex-1">
-              {client ? (
-                <div className="text-[11px] font-medium text-emerald-900 whitespace-nowrap">
-                  {client.name}
-                </div>
-              ) : (
-                <div className="text-[11px] text-emerald-700/60 italic">No client attached</div>
-              )}
             </div>
-            <div className="flex shrink-0 items-center gap-1.5">
-              <CheckCircle2 className={`size-3.5 ${estimate.signature ? "text-emerald-600" : "text-emerald-300"}`} />
-              <span className={`text-[11px] font-medium ${estimate.signature ? "text-emerald-700" : "text-emerald-500"}`}>
-                {estimate.signature ? "Signed" : "Unsigned"}
-              </span>
-              <button
-                type="button"
-                onClick={() => { setSignatureNotice(null); setShowSignatureModal(!showSignatureModal); }}
-                className="rounded px-1.5 py-0.5 text-[11px] font-medium text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700"
-              >
-                {showSignatureModal ? "Close" : "Manage"}
-              </button>
+
+            <div className={moneyTab === "jobcost" ? "" : "hidden"}>
+              <EstimateProfitSummaryCard financials={financials} laborLines={laborLines} />
             </div>
           </div>
 
-          {/* Signature modal */}
-          {showSignatureModal && (
-            <div className="border-t border-emerald-200/50 pt-2">
-              {signatureNotice && (
-                <div
-                  role="status"
-                  className={`mb-1.5 rounded px-2 py-1 text-[11px] ${
-                    signatureNotice.tone === "error"
-                      ? "bg-rose-50 text-rose-700 border border-rose-200"
-                      : "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                  }`}
-                >
-                  {signatureNotice.message}
-                </div>
-              )}
-              <div className={signatureBusy ? "pointer-events-none opacity-60" : ""}>
-                <SignaturePad
-                  existingSignature={estimate.signature}
-                  onSave={handleSignature}
-                  onRemove={handleRemoveSignature}
-                />
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Tab 2: Email History */}
-      {activeTab === 'email' && (
-        <div>
-          <h3 className="flex items-center gap-1 text-[11px] font-semibold text-emerald-800 mb-2">
-            <Mail className="size-3 text-emerald-600" /> Email History
-          </h3>
-          <div className="max-h-56 overflow-y-auto pr-1">
-            <EmailHistoryPanel key={emailHistoryRefreshKey} estimateId={estimate.id} />
-          </div>
-        </div>
-      )}
-    </div>
-  </section>
-
-          <div className="order-5 lg:order-3 lg:col-start-9 lg:col-span-4">
+<div>
             <EstimateNotesPanel
               companyId={estimate.companyId}
               estimateId={estimate.id}
@@ -1466,10 +1517,10 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
             />
           </div>
 
-          <details className="order-6 lg:order-4 lg:col-start-9 lg:col-span-4 group rounded-xl border border-border bg-card p-5 shadow-xs">
+<details className="group rounded-2xl border border-[#E2E5E0] bg-white p-5 shadow-sm">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
               <span className="flex items-center gap-2">
-                <History className="size-4 text-primary" /> Activity Timeline
+                <History className="size-4 text-[#0B5F5E]" /> Activity Timeline
                 {activity.length > 0 && (
                   <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold normal-case text-foreground">{activity.length}</span>
                 )}
@@ -1486,7 +1537,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
                   <ol className="space-y-3 border-l-2 border-border/80 pl-3.5">
                     {activity.map((entry) => (
                       <li key={entry.id} className="relative">
-                        <span className="absolute -left-[19px] top-1 size-2.5 rounded-full bg-primary ring-4 ring-card" />
+                        <span className="absolute -left-[19px] top-1 size-2.5 rounded-full bg-[#0E7C7B] ring-4 ring-card" />
                         <div className="text-xs font-semibold capitalize text-foreground">
                           {entry.action.replace(/_/g, " ")}
                         </div>
@@ -1500,6 +1551,37 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
               )}
             </div>
           </details>
+          </aside>
+
+
+             
+          
+
+          {/* Right Sidebar (Sub/Agent, Portal, Client & Signature, Activity Timeline) */}
+          {/* Kept at the top of the sidebar (not the bottom of the left
+              column) so assigning/paying a subcontractor or agent never
+              requires scrolling past Roof Areas/Line Items/Financial
+              Summary first — same panels, just tabbed instead of
+              stacked (see SubAgentTabsPanel). */}
+          {/* Subcontractor/agent payments are their own domain models,
+              but they DO appear in the unified Costs list above (via
+              FinancialEngine.getEstimateCostEntries) — so refresh that
+              list too, not just the profit figures, whenever one is
+              recorded. */}
+          
+
+          {/* Combined card — Customer Portal + Client Details &
+              Signature merged into one flat block (no sub-headers/tabs)
+              per request: the previous tabbed version still spent a
+              full header + divider on each of two closely related
+              things. Email History moved to a collapsed <details> at
+              the bottom — present, but not taking space by default. */}
+
+
+
+          
+
+          
       </div>
 
       <EmailCustomerModal
@@ -1542,7 +1624,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
               type="button"
               onClick={handleMarkProjectComplete}
               disabled={completeBusy || !canMarkComplete}
-              className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
+              className="rounded-lg bg-[#0B5F5E] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0B5F5E] disabled:opacity-60"
             >
               {completeBusy ? "Marking Complete…" : "Mark Complete"}
             </button>
@@ -1572,7 +1654,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
               type="button"
               onClick={handleUndoComplete}
               disabled={undoBusy}
-              className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
+              className="rounded-lg bg-[#0B5F5E] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0B5F5E] disabled:opacity-60"
             >
               {undoBusy ? "Undoing…" : "Undo Complete"}
             </button>
