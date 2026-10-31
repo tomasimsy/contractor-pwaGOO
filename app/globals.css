@@ -39,6 +39,9 @@
   /* Estimate page faces (components/ui/docFonts.ts). Both use the root layout's Geist. */
   --font-doc-display: var(--font-geist-sans);
   --font-doc-body: var(--font-geist-sans);
+  /* Landing page faces (components/landing). Both use the root layout's Geist. */
+  --font-landing-display: var(--font-geist-sans);
+  --font-landing-body: var(--font-geist-sans);
   --background: #ffffff;
   --foreground: #171717;
   --card: #ffffff;
