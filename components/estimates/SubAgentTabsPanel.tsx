@@ -58,7 +58,7 @@ export const SubAgentTabsPanel = forwardRef<SubAgentTabsPanelRef, {
   }), []);
 
   return (
-    <div className="rounded-2xl border border-[#E2E5E0] bg-[#fdf2e6] p-4 [&_.bg-emerald-700]:bg-[#b4540f] [&_.bg-emerald-600]:bg-[#b4540f] [&_.bg-emerald-50]:bg-white [&_.bg-gray-50]:bg-white [&_.bg-gray-100]:bg-white">
+    <div className="rounded-2xl border border-[#E2E5E0] bg-[#fdf2e6] p-4 [&_.bg-emerald-700]:bg-[#b4540f] [&_.bg-emerald-600]:bg-[#b4540f] [&_.bg-emerald-50]:bg-white [&_.bg-gray-50]:bg-white [&_.bg-gray-100]:bg-white [&_.text-emerald-700]:text-[#b4540f] [&_.text-emerald-600]:text-[#b4540f] [&_.text-emerald-500]:text-[#b4540f] [&_input:focus]:border-[#b4540f] [&_select:focus]:border-[#b4540f] [&_input:focus]:[--tw-ring-color:rgba(180,84,15,0.3)] [&_select:focus]:[--tw-ring-color:rgba(180,84,15,0.3)]">
       <div className="mb-3 flex gap-1 border-b border-[#E2E5E0] pb-2">
         <button
           type="button"

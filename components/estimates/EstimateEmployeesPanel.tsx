@@ -122,7 +122,7 @@ export function EstimateEmployeesPanel({
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs">
                 {jobPay.has(e.id) ? (
                   <>
-                    <span className="rounded-full bg-[#E7F3F2] px-2 py-0.5 font-medium text-[#0B5F5E]">
+                    <span className="rounded-full bg-white px-2 py-0.5 font-medium text-[#b4540f]">
                       Job pay ${jobPay.get(e.id)?.amount.toFixed(2)} · {jobPay.get(e.id)?.mode === "add" ? "plus hourly" : "replaces hourly"}
                     </span>
                     <span className="text-gray-600">paid when the project is completed</span>

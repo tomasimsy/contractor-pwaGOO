@@ -213,7 +213,7 @@ export const TeamMembersPanel = forwardRef<
       <div className="flex items-center justify-between mb-2">
         {!compact ? (
           <h2 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gray-600">
-            <UsersRound className="size-3.5 text-[#0B5F5E]" /> Team Members
+            <UsersRound className="size-3.5 text-[#b4540f]" /> Team Members
           </h2>
         ) : (
           <span />
@@ -243,7 +243,7 @@ export const TeamMembersPanel = forwardRef<
 
       {/* Assign Form - Compact */}
       {adding && (
-        <div className="mb-2 space-y-1.5 rounded border border-[#E2E5E0] bg-[#F8F9F7] p-2">
+        <div className="mb-2 space-y-1.5 rounded border border-[#E2E5E0] bg-white p-2">
           <CreateOrSelect
             adapter={memberDir}
             value={memberId}
@@ -264,13 +264,13 @@ export const TeamMembersPanel = forwardRef<
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="$"
-              className="h-7 w-20 rounded border border-gray-200 bg-gray-50 px-1.5 text-xs text-gray-700 focus:border-[#0E7C7B] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0E7C7B]"
+              className="h-7 w-20 rounded border border-gray-200 bg-gray-50 px-1.5 text-xs text-gray-700 focus:border-[#0E7C7B] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#b4540f]"
             />
             <input
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Notes"
-              className="h-7 flex-1 min-w-[80px] rounded border border-gray-200 bg-gray-50 px-1.5 text-xs text-gray-700 focus:border-[#0E7C7B] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0E7C7B]"
+              className="h-7 flex-1 min-w-[80px] rounded border border-gray-200 bg-gray-50 px-1.5 text-xs text-gray-700 focus:border-[#0E7C7B] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#b4540f]"
             />
             <button
               type="button"
@@ -349,7 +349,7 @@ export const TeamMembersPanel = forwardRef<
                   <div className="text-[9px] font-medium uppercase tracking-wider text-gray-400">
                     Reimbursed
                   </div>
-                  <div className="text-xs font-semibold text-[#0B5F5E]">{money(c.reimbursed)}</div>
+                  <div className="text-xs font-semibold text-[#b4540f]">{money(c.reimbursed)}</div>
                 </div>
                 <div>
                   <div className="text-[9px] font-medium uppercase tracking-wider text-gray-400">

@@ -643,9 +643,9 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
           <Link href={editBasePath} className="shrink-0 text-xs font-medium text-[#5B6675] hover:text-[#1B2430]">
             ← Estimates
           </Link>
-          <span aria-hidden="true" className="h-5 w-px shrink-0 bg-[#E2E5E0]" />
-          <h1 className="truncate font-[family-name:var(--font-doc-display)] text-base font-semibold tracking-tight text-[#1B2430] capitalize sm:text-lg">{estimate.title || "Untitled Estimate"}</h1>
-          <Badge tone={STATUS_TONE[estimate.status]} className="shrink-0">{estimate.status.replace(/_/g, " ")}</Badge>
+          <span aria-hidden="true" className="hidden h-5 w-px shrink-0 bg-[#E2E5E0] sm:block" />
+          <h1 className="hidden truncate font-[family-name:var(--font-doc-display)] text-base font-semibold tracking-tight text-[#1B2430] capitalize sm:block sm:text-lg">{estimate.title || "Untitled Estimate"}</h1>
+          <Badge tone={STATUS_TONE[estimate.status]} className="shrink-0">{estimate.status === "converted_to_invoice" ? "Signed & Converted to Invoice" : estimate.status.replace(/_/g, " ")}</Badge>
           {/* Project lifecycle status — a separate fact from the
               estimate status badge above (see EstimateService.listPage's
               doc comment: signed/invoiced describe the DOCUMENT,
@@ -823,19 +823,19 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
       <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-x-6 lg:gap-y-8">
           <div className="contents lg:flex lg:flex-col lg:gap-6 lg:col-start-1 lg:row-start-1 lg:self-start">
           {/* Consolidated Section Card: Project Info, Line Items, and Change Orders */}
-<section className="order-first lg:order-1 lg:col-start-1 space-y-4 text-[#1B2430] sm:space-y-6 sm:rounded-2xl sm:border sm:border-[#E2E5E0] sm:bg-white sm:p-6 sm:shadow-sm">
+<section className="order-first lg:order-1 lg:col-start-1 space-y-4 rounded-xl border border-[#E2E5E0] bg-white p-3 text-[#1B2430] shadow-md sm:space-y-6 sm:rounded-2xl sm:p-6 sm:shadow-sm">
             
             {/* Quick Info Bar / Project Details — Compact mobile layout with clear hierarchy */}
             <div className="sm:-mx-6 sm:-mt-6 sm:rounded-t-2xl border-b border-[#E2E5E0] bg-white px-0 py-2 sm:px-6 sm:py-4">
   {/* Title row: estimate title on the left, number and date on the right */}
   <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-[#E2E5E0] pb-3">
     <div className="flex min-w-0 flex-wrap items-center gap-2.5">
-      <div className="min-w-0 font-[family-name:var(--font-doc-display)] text-xl font-semibold leading-tight text-[#1B2430] sm:text-[22px] break-words capitalize">
+      <div className="min-w-0 font-[family-name:var(--font-doc-display)] text-sm font-semibold leading-tight text-[#1B2430] sm:text-xl sm:text-[22px] break-words capitalize">
         {estimate.title || "Untitled Estimate"}
       </div>
       <DocPill tone="neutral" className="capitalize">{estimate.estimateType || "Standard"}</DocPill>
     </div>
-    <div className="text-xs text-[#5B6675]">
+    <div className="text-[10px] text-[#5B6675] sm:text-xs">
       {estimate.estimateNumber ?? estimate.id.slice(0, 8)} · {new Date(estimate.createdAt).toLocaleDateString()}
     </div>
   </div>
@@ -851,7 +851,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
 
 {/* Info grid: client, estimate, project and type in four boxes, as in
     the estimate design. Same values and links as the old text lines. */}
-<div className="grid grid-cols-3 gap-x-3 text-[13px] sm:grid-cols-2 sm:gap-3">
+<div className="grid grid-cols-1 gap-x-3 text-[11px] sm:grid-cols-2 sm:gap-3 sm:text-[13px]">
   <div className="min-w-0 py-2 sm:rounded-lg sm:border sm:border-[#E2E5E0] sm:p-3">
     <div className="text-[11px] text-[#5B6675]">Client</div>
     {client ? (
@@ -879,7 +879,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
   </div>
   {/* On phones the estimate number and project are two more cells in the
       same row (contents); on sm+ they stay together in one box. */}
-  <div className="contents sm:block sm:min-w-0 sm:rounded-lg sm:border sm:border-[#E2E5E0] sm:p-3">
+  <div className="hidden sm:block sm:min-w-0 sm:rounded-lg sm:border sm:border-[#E2E5E0] sm:p-3">
     <div className="min-w-0 py-2 sm:py-0">
       <div className="text-[11px] text-[#5B6675]">Estimate no.</div>
       <div className="font-semibold text-[#1B2430]">
@@ -1124,10 +1124,8 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
 </div>
   )}
 
-            {/* Divider above Change Orders, so it reads as its own section on phones. */}
-            <hr className="border-t-2 border-[#E2E5E0] lg:hidden" />
             {/* Change Orders — same flattened treatment as Line Items above. */}
-<div className="pt-2 border-t border-[#E2E5E0]">
+<div className="pt-2 sm:border-t border-[#E2E5E0]">
   {/* Header – always visible, clickable toggle */}
   <div
     className="flex flex-wrap items-center justify-between gap-2 cursor-pointer select-none"

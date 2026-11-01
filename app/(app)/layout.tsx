@@ -38,8 +38,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // bottom tab bar, and a tighter gutter. They have a "← Estimates" link back.
   // The estimate view page keeps the full shell so navigation stays available.
   const estimatePage = /^\/estimates(-roof)?\/(new$|[0-9a-f]{8}-[0-9a-f-]{27}\/edit$)/i.test(pathname);
+  // The estimate detail page: a smaller top gap on phones only; desktop keeps the standard spacing.
+  const estimateDetailPage = /^\/estimates\/[0-9a-f-]{36}$/i.test(pathname);
   // These pages keep the sidebar and top bar but use the tighter gutter.
-  const tightTopPage = pathname === "/estimates-roof" || pathname === "/accounting" || pathname === "/payroll" || /^\/(projects|subcontractors)\/[0-9a-f-]{36}$/i.test(pathname) || pathname === "/subcontractors" || pathname === "/bills" || pathname === "/payments";
+  const tightTopPage =pathname === "/estimates-roof" || pathname === "/accounting" || pathname === "/payroll" || /^\/(projects|subcontractors)\/[0-9a-f-]{36}$/i.test(pathname) || pathname === "/subcontractors" || pathname === "/bills" || pathname === "/payments";
 
   useEffect(() => {
     if (!authResolving && !user) router.replace("/login");
@@ -64,7 +66,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
            that nav isn't rendered (edit screens — see
            hidesMobileBottomNav) the reservation would just be 96px of
            dead space at the bottom of the page. */}
-       <main className={`flex-1 ${estimatePage ? "px-3 py-3 sm:px-4 lg:px-4" : tightTopPage ? "px-3 py-3 sm:px-4 lg:px-4" : "px-4 py-6 sm:px-6 lg:px-8"} ${navHidden || estimatePage ? "pb-6" : "pb-24"}`}>
+       <main className={`flex-1 ${estimateDetailPage ? "px-4 py-2 sm:px-6 sm:py-6 lg:px-8" : estimatePage ? "px-3 py-3 sm:px-4 lg:px-4" : tightTopPage ? "px-3 py-3 sm:px-4 lg:px-4" : "px-4 py-6 sm:px-6 lg:px-8"} ${navHidden || estimatePage ? "pb-6" : "pb-24"}`}>
         {children}
       </main>
 
