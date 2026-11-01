@@ -904,12 +904,6 @@ const [pricingOpen, setPricingOpen] = useState(true);
               </label>
             </div>
           </div>
-          {estimateType !== "roofing" && (
-            <div ref={focusBlockRef} {...focusHandlers} className="relative z-30 rounded-xl border border-[#E2E5E0] bg-white p-3">
-              {titleScopeFields}
-              {focusRail}
-            </div>
-          )}
           </>
         );
       })()}
@@ -1336,10 +1330,22 @@ const [pricingOpen, setPricingOpen] = useState(true);
           line from $10 to $9, saw it save, and the total never moved.
           EstimateService now refuses such a write outright; this stops
           the UI offering it in the first place. */}
-      {showStep(2) && estimateType !== "roofing" && (
-        <Section icon={ListChecks} title="Scope — Line Items">
-          <LineItemEditor items={lineItems} onChange={setLineItems} cards />
-        </Section>
+      {layout === "document" && estimateType !== "roofing" ? (
+        <div ref={focusBlockRef} {...focusHandlers} className="relative z-30 space-y-3">
+          {focusRail}
+          <div className="rounded-xl border border-[#E2E5E0] bg-white p-3">{titleScopeFields}</div>
+          {showStep(2) && (
+            <Section icon={ListChecks} title="Scope — Line Items">
+              <LineItemEditor items={lineItems} onChange={setLineItems} cards />
+            </Section>
+          )}
+        </div>
+      ) : (
+        showStep(2) && estimateType !== "roofing" && (
+          <Section icon={ListChecks} title="Scope — Line Items">
+            <LineItemEditor items={lineItems} onChange={setLineItems} cards />
+          </Section>
+        )
       )}
 
       </div>
