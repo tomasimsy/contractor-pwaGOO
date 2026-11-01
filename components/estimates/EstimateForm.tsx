@@ -215,6 +215,8 @@ const DOC_FIELD = "w-full rounded-lg border border-[#D0D5CD] bg-white px-2 py-1 
 // Inputs in the item, labour, and totals tables look like plain text until hovered or focused.
 const DOC_CELL_INPUT = "w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-[#1B2430] outline-none hover:border-[#D0D5CD] focus:border-[#0E7C7B]";
 
+const DOC_COMPACT_CONTROL = "h-8 w-full rounded-lg border border-[#D0D5CD] bg-white px-2.5 text-[13px] text-[#1B2430] focus:border-[#0E7C7B] focus:outline-none";
+
 const FORM_CONTROL = "h-9 rounded-lg border border-[#D0D5CD] bg-white px-2.5 text-[13px] text-[#1B2430] focus:border-[#0E7C7B] focus:outline-none";
 
 export function EstimateForm({
@@ -320,6 +322,20 @@ const [pricingOpen, setPricingOpen] = useState(true);
   const [pickedProjectProperty, setPickedProjectProperty] = useState<Property | null>(null);
   const [title, setTitle] = useState(estimate?.title ?? "");
   const [description, setDescription] = useState(estimate?.description ?? "");
+  // True while focus is inside the Title / Scope / Area block; the other
+  // document sections dim so the block being edited stands out.
+  const [areaFocused, setAreaFocused] = useState(false);
+  const focusBlockRef = useRef<HTMLDivElement>(null);
+  // Clicking anywhere outside the block ends the focus, including plain
+  // background that never takes focus (focus-based checks miss those).
+  useEffect(() => {
+    if (!areaFocused) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (focusBlockRef.current && !focusBlockRef.current.contains(e.target as Node)) setAreaFocused(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [areaFocused]);
   // A ref (not just the onChange resize) so the "Load Emergency
   // Response Template" button below — which sets this via
   // setDescription programmatically, not through the textarea's own
@@ -689,6 +705,38 @@ const [pricingOpen, setPricingOpen] = useState(true);
     }
   }
 
+  // Title + scope overview, shared by the Area details card (roofing) and a
+  // standalone card (standard estimates, which have no Area details card).
+  const focusHandlers = {
+    onFocus: (e: React.FocusEvent<HTMLDivElement>) => {
+      if (areaFocused) return;
+      setAreaFocused(true);
+      e.currentTarget.scrollIntoView({ behavior: "smooth", block: "start" });
+    },
+    onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key !== "Escape") return;
+      (document.activeElement as HTMLElement | null)?.blur();
+      setAreaFocused(false);
+    },
+  };
+  // Left rail that marks the block being edited.
+  const focusRail = areaFocused && (
+    <span aria-hidden className="pointer-events-none absolute -left-2.5 inset-y-0 w-1 rounded-full bg-[#0E7C7B]" />
+  );
+
+  const titleScopeFields = (
+    <div className="space-y-2">
+      <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-[#5B6675]">
+        Title *
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="For example, Front slope repair" aria-label="Title" className={DOC_COMPACT_CONTROL} />
+      </label>
+      <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-[#5B6675]">
+        Scope overview, shown on the PDF
+        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="Describe the work in a sentence or two" aria-label="Scope" className="resize-y rounded-lg border border-[#D0D5CD] bg-white px-2.5 py-1.5 text-[13px] text-[#1B2430] focus:border-[#0E7C7B] focus:outline-none" />
+      </label>
+    </div>
+  );
+
   return (
     <SectionStyleContext.Provider value={layout === "document" ? "document" : layout === "flat" ? "flat" : "card"}>
     <>
@@ -696,6 +744,9 @@ const [pricingOpen, setPricingOpen] = useState(true);
         nav when it's there — 65px less to reserve when it isn't. */}
     <form
       onSubmit={handleSubmit}
+      onFocusCapture={(e) => {
+        if (focusBlockRef.current && !focusBlockRef.current.contains(e.target as Node)) setAreaFocused(false);
+      }}
       className={`${layout === "document" ? "w-full" : "mx-auto max-w-6xl"} lg:pb-28 ${navHidden ? "pb-24" : "pb-40"} ${
         layout === "document"
           ? "w-full lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start lg:gap-5"
@@ -791,86 +842,75 @@ const [pricingOpen, setPricingOpen] = useState(true);
 
 
 
+      {layout === "document" && areaFocused && (
+        <div aria-hidden className="pointer-events-none fixed inset-0 z-20 bg-[#1B2430]/95 transition-opacity duration-200" />
+      )}
       {layout === "document" && (() => {
         const selectedClient = clients.find((c) => c.id === manualClientId);
         return (
-          <div className="space-y-3">
-            <section id="client" className="rounded-xl border border-[#E2E5E0] bg-white p-4">
-              <div className="mb-2.5 flex flex-wrap items-baseline gap-2">
-                <h2 className="font-[family-name:var(--font-doc-display)] text-[15px] font-semibold text-[#1B2430]">Client</h2>
-                <span className="text-[13px] text-[#8A93A0]">Who is this estimate for?</span>
-                <button type="button" onClick={() => setShowNewClientModal(true)} className="ml-auto text-[13px] font-medium text-[#0E7C7B] hover:underline">
-                  + New client
-                </button>
+          <>
+          <div className="rounded-xl border border-[#E2E5E0] bg-white p-3">
+            <div id="client" className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="flex min-w-0 flex-col gap-1">
+                <div className="flex items-baseline gap-2 text-xs font-medium text-[#5B6675]">
+                  <span>Client</span>
+                  <span className="min-w-0 truncate text-[11px] font-normal text-[#8A93A0]">
+                    Phone {selectedClient?.phone || "—"} · Email {selectedClient?.email || "—"}
+                  </span>
+                  <button type="button" onClick={() => setShowNewClientModal(true)} className="ml-auto shrink-0 text-[11px] font-medium text-[#0E7C7B] hover:underline">
+                    + New client
+                  </button>
+                </div>
+                <select value={manualClientId} onChange={(e) => setManualClientId(e.target.value)} aria-label="Client" className={DOC_COMPACT_CONTROL}>
+                  <option value="">No client</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
               </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <label className="flex flex-col gap-1.5 text-xs font-medium text-[#5B6675]">
-                  Client
-                  <select value={manualClientId} onChange={(e) => setManualClientId(e.target.value)} aria-label="Client" className={FORM_CONTROL}>
-                    <option value="">No client</option>
-                    {clients.map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
+              <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-[#5B6675]">
+                Property
+                <span className="flex items-center gap-2">
+                  <select value={propertyId} onChange={(e) => setPropertyId(e.target.value)} aria-label="Property" className={`${DOC_COMPACT_CONTROL} min-w-0 flex-1`}>
+                    <option value="">{clientProperties.length > 1 ? "Choose a property…" : "No property"}</option>
+                    {clientProperties.map((p) => (
+                      <option key={p.id} value={p.id}>{p.nickname || formatPropertyAddress(p)}</option>
                     ))}
                   </select>
-                </label>
-                <label className="flex flex-col gap-1.5 text-xs font-medium text-[#5B6675]">
-                  Property
-                  <span className="flex items-center gap-2">
-                    <select value={propertyId} onChange={(e) => setPropertyId(e.target.value)} aria-label="Property" className={`${FORM_CONTROL} min-w-0 flex-1`}>
-                      <option value="">{clientProperties.length > 1 ? "Choose a property…" : "No property"}</option>
-                      {clientProperties.map((p) => (
-                        <option key={p.id} value={p.id}>{p.nickname || formatPropertyAddress(p)}</option>
-                      ))}
-                    </select>
-                    {manualClientId && (
-                      <button type="button" onClick={() => setShowNewPropertyModal(true)} className="shrink-0 text-xs font-medium text-[#0E7C7B] hover:underline">+ New</button>
-                    )}
-                  </span>
-                </label>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-4 text-[13px] text-[#5B6675]">
-                <span>Phone <b className="font-medium text-[#1B2430]">{selectedClient?.phone || "—"}</b></span>
-                <span>Email <b className="font-medium text-[#1B2430]">{selectedClient?.email || "—"}</b></span>
-              </div>
-            </section>
-
-            <section id="project" className="rounded-xl border border-[#E2E5E0] bg-white p-4">
-              <div className="mb-2.5 flex flex-wrap items-baseline gap-2">
-                <h2 className="font-[family-name:var(--font-doc-display)] text-[15px] font-semibold text-[#1B2430]">Project</h2>
-                <span className="text-[13px] text-[#8A93A0]">Leave the project on Auto to use the client’s job</span>
-              </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <label className="flex flex-col gap-1.5 text-xs font-medium text-[#5B6675]">
-                  Title *
-                  <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="For example, Front slope repair" aria-label="Title" className={FORM_CONTROL} />
-                </label>
-                <label className="flex flex-col gap-1.5 text-xs font-medium text-[#5B6675]">
-                  Project
-                  <span className="flex items-center gap-2">
-                    <select value={projectId} onChange={(e) => setProjectId(e.target.value)} aria-label="Project" className={`${FORM_CONTROL} min-w-0 flex-1`}>
-                      <option value="">Auto — use the client’s project</option>
-                      {projects.map((p) => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))}
-                    </select>
-                    <button type="button" onClick={() => setShowNewProjectModal(true)} className="shrink-0 text-xs font-medium text-[#0E7C7B] hover:underline">+ New</button>
-                  </span>
-                </label>
-                <label className="flex flex-col gap-1.5 text-xs font-medium text-[#5B6675]">
-                  Terms
-                  <select value={termsTemplate} onChange={(e) => setTermsTemplate(e.target.value as EstimateTermsTemplateKey)} aria-label="Terms and conditions" className={FORM_CONTROL}>
-                    {ESTIMATE_TERMS_TEMPLATE_OPTIONS.map((t) => (
-                      <option key={t.key} value={t.key}>{t.label}</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <label className="mt-3 flex flex-col gap-1.5 text-xs font-medium text-[#5B6675]">
-                Scope overview, shown on the PDF
-                <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="Describe the work in a sentence or two" aria-label="Scope" className="rounded-lg border border-[#D0D5CD] bg-white px-2.5 py-2 text-sm text-[#1B2430] focus:border-[#0E7C7B] focus:outline-none" />
+                  {manualClientId && (
+                    <button type="button" onClick={() => setShowNewPropertyModal(true)} className="shrink-0 text-[11px] font-medium text-[#0E7C7B] hover:underline">+ New</button>
+                  )}
+                </span>
               </label>
-            </section>
+              <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-[#5B6675]">
+                Project
+                <span className="flex items-center gap-2">
+                  <select value={projectId} onChange={(e) => setProjectId(e.target.value)} aria-label="Project" className={`${DOC_COMPACT_CONTROL} min-w-0 flex-1`}>
+                    <option value="">Auto — use the client’s project</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                  <button type="button" onClick={() => setShowNewProjectModal(true)} className="shrink-0 text-[11px] font-medium text-[#0E7C7B] hover:underline">+ New</button>
+                </span>
+              </label>
+              <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-[#5B6675]">
+                Terms
+                <select value={termsTemplate} onChange={(e) => setTermsTemplate(e.target.value as EstimateTermsTemplateKey)} aria-label="Terms and conditions" className={DOC_COMPACT_CONTROL}>
+                  {ESTIMATE_TERMS_TEMPLATE_OPTIONS.map((t) => (
+                    <option key={t.key} value={t.key}>{t.label}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
           </div>
+          {estimateType !== "roofing" && (
+            <div ref={focusBlockRef} {...focusHandlers} className="relative z-30 rounded-xl border border-[#E2E5E0] bg-white p-3">
+              {titleScopeFields}
+              {focusRail}
+            </div>
+          )}
+          </>
         );
       })()}
 
@@ -1205,7 +1245,14 @@ const [pricingOpen, setPricingOpen] = useState(true);
         );
       })()}
 
-    <details open className={layout === "document" ? (estimateType === "roofing" ? "rounded-xl border border-[#E2E5E0] bg-white p-4" : "hidden") : "contents"}>
+    <div ref={focusBlockRef} {...focusHandlers} className={layout !== "document" ? "contents" : estimateType === "roofing" ? "relative z-30" : "hidden"}>
+    {layout === "document" && estimateType === "roofing" && (
+      // Shares one outline with the Area details card below: no bottom
+      // border here, the card's top border is the divider between them.
+      <div className="rounded-t-xl border border-b-0 border-[#8FC4C0] bg-[#F1F7F6] p-3">{titleScopeFields}</div>
+    )}
+    {layout === "document" && estimateType === "roofing" && focusRail}
+    <details open className={layout === "document" ? (estimateType === "roofing" ? "rounded-b-xl border border-[#8FC4C0] bg-[#F1F7F6] p-4" : "hidden") : "contents"}>
       <summary className={layout === "document" ? "mb-2.5 cursor-pointer font-[family-name:var(--font-doc-display)] text-[15px] font-semibold text-[#1B2430]" : "hidden"}>
         Area details: defects, photos, notes and templates
       </summary>
@@ -1258,6 +1305,7 @@ const [pricingOpen, setPricingOpen] = useState(true);
       <p className="text-sm text-muted-foreground">Loading company details…</p>
     )}
     </details>
+    </div>
 
       {layout === "document" && estimateType === "roofing" && !estimate && (
         <section id="photos" className="rounded-xl border border-[#E2E5E0] bg-white p-4">
@@ -1352,37 +1400,37 @@ const [pricingOpen, setPricingOpen] = useState(true);
                 value={value}
                 onChange={(e) => set(parseFloat(e.target.value) || 0)}
                 aria-label={label}
-                className="h-[30px] w-20 rounded-md border border-[#D0D5CD] bg-white px-2 text-right text-[13px] text-[#1B2430] focus:border-[#0E7C7B] focus:outline-none"
+                className="h-[30px] w-20 rounded-md border border-[#8FC4C0] bg-white px-2 text-right text-[13px] text-[#0B5F5E] focus:border-[#0E7C7B] focus:outline-none"
               />
-              {suffix && <span className="text-[13px] text-[#8A93A0]">{suffix}</span>}
+              {suffix && <span className="text-[13px] text-[#0B5F5E]">{suffix}</span>}
             </span>
           </div>
         );
         return (
           <div className="space-y-4">
-            <div className="rounded-xl border border-[#E2E5E0] bg-white p-4">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-[#5B6675]">Estimate total</div>
-              <div className="mt-1 font-[family-name:var(--font-doc-display)] text-[30px] font-semibold leading-none text-[#1B2430]">{formatMoney(total)}</div>
-              <div className="mt-3 space-y-2 border-t border-[#E2E5E0] pt-3 text-[13px] text-[#5B6675]">
-                <div className="flex justify-between"><span>Items</span><span className="text-[#1B2430]">{formatMoney(itemsSum)}</span></div>
-                <div className="flex justify-between"><span>Labor</span><span className="text-[#1B2430]">{formatMoney(laborSum)}</span></div>
-                {taxSum > 0 && <div className="flex justify-between"><span>Area tax</span><span className="text-[#1B2430]">{formatMoney(taxSum)}</span></div>}
+            <div className="rounded-xl border border-[#8FC4C0] bg-[#F1F7F6] p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-[#0B5F5E]">Estimate total</div>
+              <div className="mt-1 font-[family-name:var(--font-doc-display)] text-[30px] font-semibold leading-none text-[#0B5F5E]">{formatMoney(total)}</div>
+              <div className="mt-3 space-y-2 border-t border-[#8FC4C0] pt-3 text-[13px] text-[#0B5F5E]">
+                <div className="flex justify-between"><span>Items</span><span className="font-medium">{formatMoney(itemsSum)}</span></div>
+                <div className="flex justify-between"><span>Labor</span><span className="font-medium">{formatMoney(laborSum)}</span></div>
+                {taxSum > 0 && <div className="flex justify-between"><span>Area tax</span><span className="font-medium">{formatMoney(taxSum)}</span></div>}
                 {field("Markup", markup, setMarkup, "%")}
                 {field("Discount", discount, setDiscount)}
                 {field("Tax", taxRate, setTaxRate, "%")}
                 {field("Deposit", depositAmount, setDepositAmount)}
               </div>
-              <div className="mt-3 flex justify-between rounded-[10px] bg-[#E7F3F2] p-2.5 text-sm font-semibold text-[#0B5F5E]">
+              <div className="mt-3 flex justify-between rounded-lg bg-[#0E7C7B] p-2.5 text-sm font-semibold text-white">
                 <span>Balance after deposit</span>
                 <span>{formatMoney(Math.max(0, total - depositAmount))}</span>
               </div>
             </div>
 
-            <div className="rounded-xl border border-[#E2E5E0] bg-white p-4 text-[13px]">
-              <div className="mb-2 font-semibold text-[#1B2430]">Before you create</div>
+            <div className="rounded-xl border border-[#8FC4C0] bg-[#F1F7F6] p-4 text-[13px]">
+              <div className="mb-2 font-semibold text-[#0B5F5E]">Before you create</div>
               <div className="flex flex-col gap-2">
-                <span className={hasClient ? "text-[#0E7C7B]" : "text-[#B45309]"}>{hasClient ? "✓ Client chosen" : "○ Choose a client"}</span>
-                <span className={hasTitle ? "text-[#0E7C7B]" : "text-[#B45309]"}>{hasTitle ? "✓ Title added" : "○ Add a title"}</span>
+                <span className={hasClient ? "text-[#0B5F5E]" : "text-[#B45309]"}>{hasClient ? "✓ Client chosen" : "○ Choose a client"}</span>
+                <span className={hasTitle ? "text-[#0B5F5E]" : "text-[#B45309]"}>{hasTitle ? "✓ Title added" : "○ Add a title"}</span>
               </div>
             </div>
           </div>
