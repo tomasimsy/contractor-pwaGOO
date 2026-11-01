@@ -58,13 +58,13 @@ export const SubAgentTabsPanel = forwardRef<SubAgentTabsPanelRef, {
   }), []);
 
   return (
-    <div className="rounded-2xl border border-[#E2E5E0] bg-white p-4">
+    <div className="rounded-2xl border border-[#E2E5E0] bg-[#fdf2e6] p-4 [&_.bg-emerald-700]:bg-[#b4540f] [&_.bg-emerald-600]:bg-[#b4540f] [&_.bg-emerald-50]:bg-white [&_.bg-gray-50]:bg-white [&_.bg-gray-100]:bg-white">
       <div className="mb-3 flex gap-1 border-b border-[#E2E5E0] pb-2">
         <button
           type="button"
           onClick={() => setTab("subcontractors")}
           className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium ${
-            tab === "subcontractors" ? "bg-[#1B2430] text-white" : "bg-[#F8F9F7] text-[#5B6675] hover:text-[#1B2430]"
+            tab === "subcontractors" ? "bg-[#b4540f] text-white" : "bg-white text-[#5B6675] hover:text-[#b4540f]"
           }`}
         >
           <HardHat className="size-3.5" /> Subs
@@ -73,7 +73,7 @@ export const SubAgentTabsPanel = forwardRef<SubAgentTabsPanelRef, {
           type="button"
           onClick={() => setTab("agents")}
           className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium ${
-            tab === "agents" ? "bg-[#1B2430] text-white" : "bg-[#F8F9F7] text-[#5B6675] hover:text-[#1B2430]"
+            tab === "agents" ? "bg-[#b4540f] text-white" : "bg-white text-[#5B6675] hover:text-[#b4540f]"
           }`}
         >
           <Briefcase className="size-3.5" /> Agents
@@ -82,7 +82,7 @@ export const SubAgentTabsPanel = forwardRef<SubAgentTabsPanelRef, {
           type="button"
           onClick={() => setTab("team")}
           className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium ${
-            tab === "team" ? "bg-[#1B2430] text-white" : "bg-[#F8F9F7] text-[#5B6675] hover:text-[#1B2430]"
+            tab === "team" ? "bg-[#b4540f] text-white" : "bg-white text-[#5B6675] hover:text-[#b4540f]"
           }`}
         >
           <UsersRound className="size-3.5" /> Team
@@ -91,7 +91,7 @@ export const SubAgentTabsPanel = forwardRef<SubAgentTabsPanelRef, {
           type="button"
           onClick={() => setTab("employees")}
           className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium ${
-            tab === "employees" ? "bg-[#1B2430] text-white" : "bg-[#F8F9F7] text-[#5B6675] hover:text-[#1B2430]"
+            tab === "employees" ? "bg-[#b4540f] text-white" : "bg-white text-[#5B6675] hover:text-[#b4540f]"
           }`}
         >
           <Clock className="size-3.5" /> Employees

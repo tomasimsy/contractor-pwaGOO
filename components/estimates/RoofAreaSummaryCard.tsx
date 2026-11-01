@@ -16,7 +16,7 @@ import type { RoofingArea } from "@/lib/services/roofingAreaService";
 
 /** Column template shared with the table header in EstimateDetail. */
 export const ROOF_AREA_ROW_GRID =
-  "grid grid-cols-[28px_minmax(0,1fr)_16px] items-center gap-3 sm:grid-cols-[40px_minmax(0,1fr)_96px_110px_16px]";
+  "grid grid-cols-[28px_minmax(0,1fr)_auto_16px] items-center gap-2 sm:grid-cols-[40px_minmax(0,1fr)_96px_110px_16px] sm:gap-3";
 
 const formatMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 

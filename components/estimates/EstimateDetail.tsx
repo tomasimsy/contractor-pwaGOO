@@ -638,7 +638,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
  "quick-access buttons aligned cleanly" actually requires on a
           phone; `justify-between` alone only worked down to tablet
           width. */}
-<div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#E2E5E0] bg-white px-4 py-3">
+<div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E5E0] bg-white px-0 py-2 sm:mb-4 sm:gap-3 sm:rounded-2xl sm:border sm:px-4 sm:py-3">
         <div className="min-w-0 flex items-center gap-3">
           <Link href={editBasePath} className="shrink-0 text-xs font-medium text-[#5B6675] hover:text-[#1B2430]">
             ← Estimates
@@ -820,13 +820,13 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
           every width; it's the main point of this page and must never
           require scrolling past Invoices/Expenses to reach. Everything
           else keeps the same relative order at every width. */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-x-6 lg:gap-y-8">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-x-6 lg:gap-y-8">
           <div className="contents lg:flex lg:flex-col lg:gap-6 lg:col-start-1 lg:row-start-1 lg:self-start">
           {/* Consolidated Section Card: Project Info, Line Items, and Change Orders */}
-<section className="order-first lg:order-1 lg:col-start-1 space-y-6 rounded-2xl border border-[#E2E5E0] bg-white p-4 text-[#1B2430] shadow-sm sm:p-6">
+<section className="order-first lg:order-1 lg:col-start-1 space-y-4 text-[#1B2430] sm:space-y-6 sm:rounded-2xl sm:border sm:border-[#E2E5E0] sm:bg-white sm:p-6 sm:shadow-sm">
             
             {/* Quick Info Bar / Project Details — Compact mobile layout with clear hierarchy */}
-            <div className="-mx-4 -mt-4 sm:-mx-6 sm:-mt-6 rounded-t-2xl border-b border-[#E2E5E0] bg-white px-4 py-3 sm:px-6 sm:py-4">
+            <div className="sm:-mx-6 sm:-mt-6 sm:rounded-t-2xl border-b border-[#E2E5E0] bg-white px-0 py-2 sm:px-6 sm:py-4">
   {/* Title row: estimate title on the left, number and date on the right */}
   <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-[#E2E5E0] pb-3">
     <div className="flex min-w-0 flex-wrap items-center gap-2.5">
@@ -851,8 +851,8 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
 
 {/* Info grid: client, estimate, project and type in four boxes, as in
     the estimate design. Same values and links as the old text lines. */}
-<div className="grid grid-cols-1 gap-3 text-[13px] sm:grid-cols-2">
-  <div className="rounded-lg border border-[#E2E5E0] p-3">
+<div className="grid grid-cols-3 gap-x-3 text-[13px] sm:grid-cols-2 sm:gap-3">
+  <div className="min-w-0 py-2 sm:rounded-lg sm:border sm:border-[#E2E5E0] sm:p-3">
     <div className="text-[11px] text-[#5B6675]">Client</div>
     {client ? (
       <>
@@ -877,19 +877,25 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
       <div className="text-[#5B6675]">No client</div>
     )}
   </div>
-  <div className="rounded-lg border border-[#E2E5E0] p-3">
-    <div className="text-[11px] text-[#5B6675]">Estimate no.</div>
-    <div className="font-semibold text-[#1B2430]">
-      {estimate.estimateNumber ?? estimate.id.slice(0, 8)} · {new Date(estimate.createdAt).toLocaleDateString()}
+  {/* On phones the estimate number and project are two more cells in the
+      same row (contents); on sm+ they stay together in one box. */}
+  <div className="contents sm:block sm:min-w-0 sm:rounded-lg sm:border sm:border-[#E2E5E0] sm:p-3">
+    <div className="min-w-0 py-2 sm:py-0">
+      <div className="text-[11px] text-[#5B6675]">Estimate no.</div>
+      <div className="font-semibold text-[#1B2430]">
+        {estimate.estimateNumber ?? estimate.id.slice(0, 8)} · {new Date(estimate.createdAt).toLocaleDateString()}
+      </div>
     </div>
-    <div className="mt-2 text-[11px] text-[#5B6675]">Project</div>
-    {project ? (
-      <Link href={`/projects/${project.id}`} className="font-semibold text-[#1B2430] hover:underline">
-        {project.name}
-      </Link>
-    ) : (
-      <div className="text-[#5B6675]">No project</div>
-    )}
+    <div className="min-w-0 py-2 sm:mt-2 sm:py-0">
+      <div className="text-[11px] text-[#5B6675]">Project</div>
+      {project ? (
+        <Link href={`/projects/${project.id}`} className="font-semibold text-[#1B2430] hover:underline">
+          {project.name}
+        </Link>
+      ) : (
+        <div className="text-[#5B6675]">No project</div>
+      )}
+    </div>
   </div>
 </div>
 
@@ -946,7 +952,6 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
                 uses a top border, not its own box. */}
   {estimate.estimateType === "roofing" && !ROOFING_LINE_ITEMS_ENABLED ? (
     <div className="pt-2 border-t border-[#E2E5E0]">
-      {totalsBlock}
     </div>
   ) : (
   <div className="pt-2 border-t border-[#E2E5E0]">
@@ -1113,13 +1118,14 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
           </table>
         </div>
 
-        {totalsBlock}
       </>
     )}
   </div>
 </div>
   )}
 
+            {/* Divider above Change Orders, so it reads as its own section on phones. */}
+            <hr className="border-t-2 border-[#E2E5E0] lg:hidden" />
             {/* Change Orders — same flattened treatment as Line Items above. */}
 <div className="pt-2 border-t border-[#E2E5E0]">
   {/* Header – always visible, clickable toggle */}
@@ -1193,6 +1199,8 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
   </div>
 </div>
 
+          {/* Totals sit below Change Orders, the last item of the contract. */}
+          {totalsBlock}
           </section>
           {/* Attachments (Docs & Photos) — secondary, compact */}
           <div className="order-3 lg:order-3 lg:col-start-1 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -1252,6 +1260,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
               estimate view: customer, subs/agents, invoices and expenses, job
               costing, notes, activity. Same panels as before, grouped. */}
           <aside className="order-2 lg:col-start-2 lg:sticky lg:top-6 lg:self-start flex flex-col gap-4">
+<hr className="border-t-2 border-[#E2E5E0] lg:hidden" />
 <section className="rounded-2xl border border-[#E2E5E0] bg-white p-4 shadow-sm">
     {/* Tab Navigation */}
     <div className="flex gap-1 border-b border-[#E2E5E0] pb-1.5">
@@ -1401,7 +1410,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
           </div>
 
 {/* Money card: invoices & payments, expenses and job costing as tabs (design: Money). */}
-<div className="rounded-2xl border border-[#E2E5E0] bg-white p-4">
+<div className="rounded-2xl border border-[#c9e3d3] bg-[#edf7f1] p-4 [&_.bg-gray-50]:bg-white [&_.bg-gray-100]:bg-white [&_.bg-emerald-50]:bg-white">
             <div role="tablist" aria-label="Money" className="mb-3 flex gap-1 border-b border-[#E2E5E0] pb-2">
               {([
                 ["invoice", "Invoice & payments"],
@@ -1415,7 +1424,7 @@ const [activeTab, setActiveTab] = useState<'customer' | 'email'>('customer');
                   aria-selected={moneyTab === key}
                   onClick={() => setMoneyTab(key)}
                   className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium transition-colors ${
-                    moneyTab === key ? "bg-[#1B2430] text-white" : "bg-[#F8F9F7] text-[#5B6675] hover:text-[#1B2430]"
+                    moneyTab === key ? "bg-[#16794f] text-white" : "bg-white text-[#5B6675] hover:text-[#16794f]"
                   }`}
                 >
                   {label}
