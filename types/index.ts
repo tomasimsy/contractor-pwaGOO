@@ -49,6 +49,23 @@ export type Project = {
   line_items: LineItem[];
 };
 
+export type RoofingPhoto = {
+  id: string;
+  storage_path: string;
+  display_order: number;
+  created_at: string;
+};
+
+export type RoofingArea = {
+  id: string;
+  area_name: string;
+  sequence_number: number;
+  scope_items: string | null;
+  area_total: number;
+  before_photos: RoofingPhoto[];
+  after_photos: RoofingPhoto[];
+};
+
 export type Estimate = {
   id: string;
   client_id: string;
@@ -63,7 +80,7 @@ export type Estimate = {
   total: number;
   deposit_amount: number;
   deposit_paid: boolean;
-  status: "pending" | "approved" | "converted" | "completed";  // ← Add "completed" here
+  status: "pending" | "approved" | "converted" | "completed";
   signature: Signature | null;
   created_at: string;
   clients?: Client;
@@ -75,6 +92,9 @@ export type Estimate = {
   view_locations?: any[];
   unique_locations?: number;
   is_completed: boolean;
+  // Roofing estimate fields
+  estimate_type?: 'standard' | 'roofing';
+  roofing_areas?: RoofingArea[];
 };
 
 export type Invoice = {

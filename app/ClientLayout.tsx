@@ -21,6 +21,8 @@ export default function ClientLayout({
   const isDesktopDashboard = pathname === '/dashboard-v2';
 
   useEffect(() => {
+    // No service worker (and so no install prompt) on customer-facing pages.
+    if (isPublicPage || pathname === '/') return;
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js')
         .then((registration) => {
@@ -30,7 +32,7 @@ export default function ClientLayout({
           console.error('Service Worker registration failed:', error);
         });
     }
-  }, []);
+  }, [isPublicPage, pathname]);
 
   return (
     <>

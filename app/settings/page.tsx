@@ -9,6 +9,7 @@ import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import DesktopShell from "@/components/layout/DesktopShell";
 import Link from "next/link";
 import toast from "react-hot-toast";
+import { useUnsavedChanges } from "@/lib/hooks/useUnsavedChanges";
 import {
   Building2,
   Users,
@@ -104,6 +105,7 @@ export default function SettingsPage() {
   const { reload: reloadCompanyContext } = useCompany();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const unsaved = useUnsavedChanges({ onSave: () => saveSettings() });
   const [settingsId, setSettingsId] = useState<string | null>(null);
 
   const [companyId, setCompanyId] = useState<string | null>(null);
@@ -184,6 +186,7 @@ export default function SettingsPage() {
     if (error) {
       toast.error("Error saving settings: " + error.message);
     } else {
+      unsaved.markClean();
       toast.success("Settings saved");
       loadSettings();
       reloadCompanyContext(); // so every other open page picks up the change immediately
@@ -206,7 +209,8 @@ export default function SettingsPage() {
   return (
     <ProtectedRoute>
       <DesktopShell title="Settings">
-      <div className="min-h-screen md:min-h-0 bg-slate-50/70 md:bg-transparent pb-28 md:pb-16">
+      {unsaved.dialog}
+      <div className="min-h-screen md:min-h-0 bg-slate-50/70 md:bg-transparent pb-28 md:pb-16" {...unsaved.trackProps}>
         <Header title="Settings" backLink="/" mdHidden />
 
         <div className="mx-auto max-w-2xl md:max-w-3xl md:mx-0 space-y-5 p-4 md:p-0">

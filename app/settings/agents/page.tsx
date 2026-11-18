@@ -8,6 +8,7 @@ import Header from "@/components/ui/Header";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import DesktopShell from "@/components/layout/DesktopShell";
 import Modal from "@/components/ui/Modal";
+import { useUnsavedChanges } from "@/lib/hooks/useUnsavedChanges";
 import DeleteModal from "@/components/ui/DeleteModal";
 import toast from "react-hot-toast";
 import { Plus, Pencil, Trash2 } from "lucide-react";
@@ -31,6 +32,7 @@ function AgentsContent() {
   const [editing, setEditing] = useState<Agent | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const unsaved = useUnsavedChanges({ active: modalOpen, onSave: () => handleSave() });
   const [deleteTarget, setDeleteTarget] = useState<Agent | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -189,8 +191,9 @@ function AgentsContent() {
         )}
       </div>
 
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? "Edit Agent" : "Add Agent"}>
-        <div className="space-y-3">
+      <Modal isOpen={modalOpen} onClose={unsaved.guard(() => setModalOpen(false))} title={editing ? "Edit Agent" : "Add Agent"}>
+        {unsaved.dialog}
+        <div className="space-y-3" {...unsaved.trackProps}>
           <Field label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="e.g. Jane Smith" />
           <div className="grid grid-cols-2 gap-3">
             <Field label="Phone" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} optional />

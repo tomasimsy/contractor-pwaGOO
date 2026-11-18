@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils/formatting";
 import { filterActive } from '@/lib/queries/softDeleteFilter';
 import { X, Plus, Trash2 } from "lucide-react";
+import { useUnsavedChanges } from "@/lib/hooks/useUnsavedChanges";
 
 interface LineItem {
   id: string;
@@ -36,6 +37,7 @@ export default function ChangeOrderForm({
     { id: crypto.randomUUID(), description: "", quantity: 1, unit_price: 0, total: 0, type: "addition" },
   ]);
   const [saving, setSaving] = useState(false);
+  const unsaved = useUnsavedChanges({ onSave: () => handleSave() });
 
   useEffect(() => {
     if (existingOrder) {
@@ -186,6 +188,7 @@ export default function ChangeOrderForm({
         }
       }
 
+      unsaved.markClean();
       onSaved();
       onClose();
     } catch (err: any) {
@@ -198,10 +201,11 @@ export default function ChangeOrderForm({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      {unsaved.dialog}
+      <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" {...unsaved.trackProps}>
         <div className="sticky top-0 bg-white border-b px-5 py-4 flex justify-between items-center">
           <h3 className="text-lg font-semibold">{existingOrder ? "Edit Change Order" : "New Change Order"}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <button onClick={unsaved.guard(onClose)} className="text-gray-400 hover:text-gray-600">
             <X size={20} />
           </button>
         </div>
@@ -310,7 +314,7 @@ export default function ChangeOrderForm({
           </div>
 
           <div className="flex gap-2 pt-3">
-            <button onClick={onClose} className="flex-1 py-2 border rounded-lg text-sm">
+            <button onClick={unsaved.guard(onClose)} className="flex-1 py-2 border rounded-lg text-sm">
               Cancel
             </button>
             <button

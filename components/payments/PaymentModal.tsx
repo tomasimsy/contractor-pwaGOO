@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { formatCurrency } from "@/lib/utils/formatting";
+import { useUnsavedChanges } from "@/lib/hooks/useUnsavedChanges";
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -20,12 +21,14 @@ export default function PaymentModal({
 }: PaymentModalProps) {
   const [amount, setAmount] = useState(remainingBalance);
   const [method, setMethod] = useState("cash");
+  const unsaved = useUnsavedChanges({ active: isOpen, onSave: () => onSave(amount, method) });
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-md w-full p-6">
+      {unsaved.dialog}
+      <div className="bg-white rounded-xl max-w-md w-full p-6" {...unsaved.trackProps}>
         <h3 className="font-bold text-lg mb-4">Record Payment</h3>
         
         <div className="space-y-4">
@@ -80,7 +83,7 @@ export default function PaymentModal({
         </div>
 
         <div className="flex gap-3 mt-6">
-          <button onClick={onClose} className="flex-1 py-2 border rounded-lg">
+          <button onClick={unsaved.guard(onClose)} className="flex-1 py-2 border rounded-lg">
             Cancel
           </button>
           <button 

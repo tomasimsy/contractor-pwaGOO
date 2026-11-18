@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Modal from "@/components/ui/Modal";
+import { useUnsavedChanges } from "@/lib/hooks/useUnsavedChanges";
 import type { ChangeOrderRow } from "@/lib/types";
 import type { NewChangeOrderInput } from "@/lib/queries/changeOrders";
 
@@ -24,6 +25,7 @@ export default function ChangeOrderModal({
   const [tax, setTax] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const unsaved = useUnsavedChanges({ active: isOpen, onSave: () => handleSave() });
 
   useEffect(() => {
     if (isOpen) {
@@ -49,6 +51,7 @@ export default function ChangeOrderModal({
         tax: Number(tax || 0),
         notes: notes.trim() || null,
       });
+      unsaved.markClean();
       onClose();
     } finally {
       setSaving(false);
@@ -56,8 +59,9 @@ export default function ChangeOrderModal({
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={editing ? "Edit Change Order" : "New Change Order"}>
-      <div className="space-y-3">
+    <Modal isOpen={isOpen} onClose={unsaved.guard(onClose)} title={editing ? "Edit Change Order" : "New Change Order"}>
+      {unsaved.dialog}
+      <div className="space-y-3" {...unsaved.trackProps}>
         <div>
           <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Title</label>
           <input

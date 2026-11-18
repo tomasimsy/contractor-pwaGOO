@@ -3,6 +3,7 @@
 import { useState } from "react";
 import toast from "react-hot-toast";
 import { X } from "lucide-react";
+import { useUnsavedChanges } from "@/lib/hooks/useUnsavedChanges";
 import { addEntry } from "@/lib/queries/expenses";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import { formatCurrency } from "@/lib/utils/formatting";
@@ -27,6 +28,7 @@ export default function BatchPaymentModal({
     Object.fromEntries(payouts.map((p) => [p.assignmentId, p.remainingAmount]))
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const unsaved = useUnsavedChanges({ active: isOpen, onSave: () => handleSubmit() });
 
   const totalAmount = Object.values(amounts).reduce((sum, a) => sum + a, 0);
 
@@ -104,13 +106,14 @@ export default function BatchPaymentModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      {unsaved.dialog}
+      <div className="bg-white rounded-xl shadow-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto" {...unsaved.trackProps}>
         {/* Header */}
         <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900">Confirm Batch Payment</h2>
           <button
             type="button"
-            onClick={onClose}
+            onClick={unsaved.guard(onClose)}
             disabled={isSubmitting}
             className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
           >
@@ -159,7 +162,7 @@ export default function BatchPaymentModal({
         <div className="flex gap-3 px-6 py-4 border-t border-gray-200">
           <button
             type="button"
-            onClick={onClose}
+            onClick={unsaved.guard(onClose)}
             disabled={isSubmitting}
             className="flex-1 h-10 rounded-lg border border-gray-300 bg-white text-[13px] font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
           >

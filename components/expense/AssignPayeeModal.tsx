@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import Modal from "@/components/ui/Modal";
+import { useUnsavedChanges } from "@/lib/hooks/useUnsavedChanges";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils/formatting";
 import { getProjectFinancialSnapshot } from "@/lib/queries/expenses";
@@ -45,6 +46,7 @@ export default function AssignPayeeModal({
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [quickAddName, setQuickAddName] = useState("");
   const [saving, setSaving] = useState(false);
+  const unsaved = useUnsavedChanges({ active: isOpen, onSave: () => handleAssign() });
   // Company/agent profit split — the same two presets ProjectFinancialsModal
   // offers (30% company / 70% agent, or 60% / 40%). There's no per-agent
   // "commission rate" column that's actually wired up anywhere in the app
@@ -132,8 +134,9 @@ export default function AssignPayeeModal({
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="Assign Payout">
-      <div className="space-y-3">
+    <Modal isOpen={isOpen} onClose={unsaved.guard(handleClose)} title="Assign Payout">
+      {unsaved.dialog}
+      <div className="space-y-3" {...unsaved.trackProps}>
         <div className="grid grid-cols-2 gap-2">
           {(["subcontractor", "agent"] as Role[]).map((r) => (
             <button

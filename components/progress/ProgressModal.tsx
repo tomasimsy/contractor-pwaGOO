@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { X, CheckCircle, Circle } from "lucide-react";
 import toast from "react-hot-toast";
+import { useUnsavedChanges } from "@/lib/hooks/useUnsavedChanges";
 import { getCompanyId } from "@/lib/supabase/getCompanyId"; // 👈 import
 
 interface Milestone {
@@ -32,6 +33,7 @@ export default function ProgressModal({ isOpen, onClose, estimateId, projects, o
   const [loading, setLoading] = useState(false);
   const [milestonesMap, setMilestonesMap] = useState<Record<string, Milestone[]>>({});
   const [companyId, setCompanyId] = useState<string | null>(null);
+  const unsaved = useUnsavedChanges({ active: isOpen, onSave: () => saveAll() });
 
   // Fetch company_id once when modal opens
   useEffect(() => {
@@ -94,6 +96,7 @@ export default function ProgressModal({ isOpen, onClose, estimateId, projects, o
   };
 
   const updateMilestone = (projectName: string, milestoneOrder: number, field: "note" | "completed_at", value: any) => {
+    unsaved.markDirty();
     setMilestonesMap((prev) => {
       const newMap = { ...prev };
       const projectMilestones = [...(prev[projectName] || [])];
@@ -159,10 +162,11 @@ export default function ProgressModal({ isOpen, onClose, estimateId, projects, o
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      {unsaved.dialog}
       <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white border-b px-5 py-4 flex justify-between items-center">
           <h3 className="text-lg font-semibold">Project Milestones</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <button onClick={unsaved.guard(onClose)} className="text-gray-400 hover:text-gray-600">
             <X size={20} />
           </button>
         </div>
@@ -218,7 +222,7 @@ export default function ProgressModal({ isOpen, onClose, estimateId, projects, o
           )}
         </div>
         <div className="sticky bottom-0 bg-white border-t px-5 py-4 flex justify-end gap-3">
-          <button onClick={onClose} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
+          <button onClick={unsaved.guard(onClose)} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
           <button onClick={saveAll} disabled={loading} className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm disabled:opacity-50">
             {loading ? "Saving..." : "Save All Changes"}
           </button>

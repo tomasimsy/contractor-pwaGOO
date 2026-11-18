@@ -14,6 +14,7 @@ import {
   type FormAssignedSubcontractor,
   type FormAssignedAgent,
   type FormPayment,
+  type FormRoofingArea,
 } from "@/lib/queries/estimates";
 import {
   createChangeOrder,
@@ -100,6 +101,8 @@ export function useEstimateForm({ mode, estimateId }: { mode: EstimateFormMode; 
   const [assignedAgents, setAssignedAgents] = useState<FormAssignedAgent[]>([]);
   const [payments, setPayments] = useState<FormPayment[]>([]);
   const [existingInvoiceId, setExistingInvoiceId] = useState<string | null>(null);
+  const [estimateType, setEstimateType] = useState<'standard' | 'roofing'>('standard');
+  const [roofingAreas, setRoofingAreas] = useState<FormRoofingArea[]>([]);
 
   // --- company id, once ---
   useEffect(() => {
@@ -140,6 +143,8 @@ export function useEstimateForm({ mode, estimateId }: { mode: EstimateFormMode; 
       setAssignedAgents(data.assignedAgents);
       setPayments(data.payments);
       setExistingInvoiceId(data.existingInvoiceId);
+      setEstimateType(data.estimate.estimate_type || 'standard');
+      setRoofingAreas(data.roofingAreas || []);
     } catch (err) {
       console.error(err);
       setNotFound(true);
@@ -309,7 +314,19 @@ export function useEstimateForm({ mode, estimateId }: { mode: EstimateFormMode; 
     setSaving(true);
     try {
       const result = await saveEstimate(
-        { clientId, title, description, notes, markup, discount, taxRate, depositAmount, projects },
+        {
+          clientId,
+          title,
+          description,
+          notes,
+          markup,
+          discount,
+          taxRate,
+          depositAmount,
+          projects,
+          estimateType,
+          roofingAreas: estimateType === 'roofing' ? roofingAreas : undefined,
+        },
         mode,
         companyId,
         formId
@@ -324,7 +341,7 @@ export function useEstimateForm({ mode, estimateId }: { mode: EstimateFormMode; 
     } finally {
       setSaving(false);
     }
-  }, [clientId, projects, companyId, title, description, notes, markup, discount, taxRate, depositAmount, mode, formId, loadEstimate]);
+  }, [clientId, projects, companyId, title, description, notes, markup, discount, taxRate, depositAmount, mode, formId, loadEstimate, estimateType, roofingAreas]);
 
   // --- change orders — delegates fully to the shared lib/queries/changeOrders.ts
   // module (create/update/submit/approve/reject/delete). No more page-local
@@ -681,6 +698,11 @@ export function useEstimateForm({ mode, estimateId }: { mode: EstimateFormMode; 
     assignedAgents,
     payments,
     existingInvoiceId,
+
+    estimateType,
+    setEstimateType,
+    roofingAreas,
+    setRoofingAreas,
 
     save,
     saveSignature,

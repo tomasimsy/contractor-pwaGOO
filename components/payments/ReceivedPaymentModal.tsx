@@ -3,6 +3,7 @@
 import { useState } from "react";
 import toast from "react-hot-toast";
 import { X } from "lucide-react";
+import { useUnsavedChanges } from "@/lib/hooks/useUnsavedChanges";
 import { recordCustomerPayment } from "@/lib/queries/customerPayments";
 
 interface ReceivedPaymentModalProps {
@@ -32,6 +33,10 @@ export default function ReceivedPaymentModal({
   const [referenceNumber, setReferenceNumber] = useState("");
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const unsaved = useUnsavedChanges({
+    active: isOpen,
+    onSave: () => handleSubmit({ preventDefault() {} } as React.FormEvent),
+  });
 
   if (!isOpen) return null;
 
@@ -111,6 +116,7 @@ export default function ReceivedPaymentModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      {unsaved.dialog}
       <div className="bg-white rounded-lg shadow-lg max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-gray-200 sticky top-0 bg-white">
           <div>
@@ -118,14 +124,14 @@ export default function ReceivedPaymentModal({
             <p className="text-xs text-gray-500 mt-1">Invoice #{invoiceNumber} • {clientName}</p>
           </div>
           <button
-            onClick={handleClose}
+            onClick={unsaved.guard(handleClose)}
             className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X size={18} className="text-gray-400" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="p-5 space-y-4" {...unsaved.trackProps}>
           {/* Invoice Summary */}
           <div className="bg-gray-50 rounded-lg p-3 space-y-1.5 text-[13px]">
             <div className="flex justify-between">
@@ -248,7 +254,7 @@ export default function ReceivedPaymentModal({
           <div className="flex gap-2 pt-4 border-t border-gray-200">
             <button
               type="button"
-              onClick={handleClose}
+              onClick={unsaved.guard(handleClose)}
               className="flex-1 px-4 py-2 rounded-lg text-[13px] font-medium text-gray-600 hover:bg-gray-100 transition-colors"
             >
               Cancel

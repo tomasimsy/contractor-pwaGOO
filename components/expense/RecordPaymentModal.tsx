@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { supabase } from "@/lib/supabase/client";
 import { filterActive } from '@/lib/queries/softDeleteFilter';
 import { X } from "lucide-react";
+import { useUnsavedChanges } from "@/lib/hooks/useUnsavedChanges";
 import type { ProjectBundle } from "@/lib/types";
 
 type PayeeType = "subcontractor" | "agent" | "";
@@ -27,6 +28,10 @@ export default function RecordPaymentModal({
   const [paymentMethod, setPaymentMethod] = useState("bank_transfer");
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const unsaved = useUnsavedChanges({
+    active: isOpen,
+    onSave: () => handleSubmit({ preventDefault() {} } as React.FormEvent),
+  });
 
   if (!isOpen) return null;
 
@@ -132,18 +137,19 @@ export default function RecordPaymentModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      {unsaved.dialog}
       <div className="bg-white rounded-lg shadow-lg max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-gray-200 sticky top-0 bg-white">
           <h2 className="text-lg font-semibold text-gray-900">Record Payment</h2>
           <button
-            onClick={handleClose}
+            onClick={unsaved.guard(handleClose)}
             className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X size={18} className="text-gray-400" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="p-5 space-y-4" {...unsaved.trackProps}>
           {/* Payee Type Selection */}
           <div>
             <label className="block text-[13px] font-medium text-gray-700 mb-2">
@@ -274,7 +280,7 @@ export default function RecordPaymentModal({
           <div className="flex gap-2 pt-4 border-t border-gray-200">
             <button
               type="button"
-              onClick={handleClose}
+              onClick={unsaved.guard(handleClose)}
               className="flex-1 px-4 py-2 rounded-lg text-[13px] font-medium text-gray-600 hover:bg-gray-100 transition-colors"
             >
               Cancel

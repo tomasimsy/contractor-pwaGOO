@@ -8,6 +8,7 @@ import Header from "@/components/ui/Header";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import DesktopShell from "@/components/layout/DesktopShell";
 import Modal from "@/components/ui/Modal";
+import { useUnsavedChanges } from "@/lib/hooks/useUnsavedChanges";
 import DeleteModal from "@/components/ui/DeleteModal";
 import SubcontractorDetailPanel from "@/components/subcontractors/SubcontractorDetailPanel";
 import { getSubcontractorDetail, type SubcontractorDetail } from "@/lib/queries/subcontractors";
@@ -34,6 +35,7 @@ function SubcontractorsContent() {
   const [editing, setEditing] = useState<Subcontractor | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const unsaved = useUnsavedChanges({ active: modalOpen, onSave: () => handleSave() });
   const [deleteTarget, setDeleteTarget] = useState<Subcontractor | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -235,8 +237,9 @@ function SubcontractorsContent() {
         )}
       </div>
 
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? "Edit Subcontractor" : "Add Subcontractor"}>
-        <div className="space-y-3">
+      <Modal isOpen={modalOpen} onClose={unsaved.guard(() => setModalOpen(false))} title={editing ? "Edit Subcontractor" : "Add Subcontractor"}>
+        {unsaved.dialog}
+        <div className="space-y-3" {...unsaved.trackProps}>
           <Field label="Company / Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="e.g. ABC Roofing" />
           <Field label="Trade" value={form.trade} onChange={(v) => setForm({ ...form, trade: v })} placeholder="e.g. Roofing" optional />
           <Field label="Contact Person" value={form.contact_person} onChange={(v) => setForm({ ...form, contact_person: v })} optional />

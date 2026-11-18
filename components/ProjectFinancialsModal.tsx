@@ -6,6 +6,7 @@ import { formatCurrency } from "@/lib/utils/formatting";
 import { filterActive } from '@/lib/queries/softDeleteFilter';
 import { X, Trash2, Edit2, Check, DollarSign, Users, Plus, Receipt, Eye } from "lucide-react";
 import ChangeOrderTab from "@/components/changeOrder/ChangeOrderTab";
+import { useUnsavedChanges } from "@/lib/hooks/useUnsavedChanges";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import { splitEvenly, splitProfit, type CompanyPercentage } from "@/lib/utils/profitSplit";
 import { softDeleteAgentPayment, softDeleteExpense, softDeleteSubcontractorPayment } from "@/lib/queries/expenses";
@@ -148,6 +149,9 @@ export default function ProjectFinancialsModal({
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Only the "add/record" sub-forms are tracked — inline amount edits in
+  // the lists save themselves immediately.
+  const unsaved = useUnsavedChanges({ active: isOpen });
 
   // ---- company_id state ----
   const [companyId, setCompanyId] = useState<string | null>(null);
@@ -315,6 +319,7 @@ export default function ProjectFinancialsModal({
     } else if (data) {
       setSubcontractors([data, ...subcontractors]);
       setSelectedSubId(data.id);
+      unsaved.markClean();
       setShowNewSubForm(false);
       setNewSub({ name: "", company_name: "", phone: "", email: "" });
       alert("Subcontractor created!");
@@ -452,6 +457,7 @@ export default function ProjectFinancialsModal({
       onRefresh();
       alert(`Payment of ${formatCurrency(subPaymentAmount)} recorded!`);
     }
+    unsaved.markClean();
     setShowSubPaymentModal(false);
     setSubPaymentAmount(0);
     setSaving(false);
@@ -524,6 +530,7 @@ export default function ProjectFinancialsModal({
         expense_date: new Date().toISOString().split("T")[0],
         notes: "",
       });
+      unsaved.markClean();
       setShowExpenseForm(false);
       await loadAllData();
       onRefresh();
@@ -583,6 +590,7 @@ export default function ProjectFinancialsModal({
     } else if (data) {
       setAgents([data, ...agents]);
       setSelectedAgentId(data.id);
+      unsaved.markClean();
       setShowNewAgentForm(false);
       setNewAgent({ name: "", email: "", phone: "" });
       alert("Agent created!");
@@ -734,6 +742,7 @@ export default function ProjectFinancialsModal({
       onRefresh();
       alert(`Payment of ${formatCurrency(agentPaymentAmount)} recorded!`);
     }
+    unsaved.markClean();
     setShowAgentPaymentModal(false);
     setAgentPaymentAmount(0);
     setSaving(false);
@@ -786,10 +795,11 @@ export default function ProjectFinancialsModal({
   // ---- RENDER (JSX) – completely unchanged ----
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      {unsaved.dialog}
       <div className="bg-white rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white border-b px-5 py-4 flex justify-between items-center">
           <h2 className="text-lg font-semibold text-gray-800">Project Financials</h2>
-          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600">
+          <button onClick={unsaved.guard(onClose)} className="p-1 text-gray-400 hover:text-gray-600">
             <X size={20} />
           </button>
         </div>
@@ -902,13 +912,13 @@ export default function ProjectFinancialsModal({
                 </div>
 
                 {showNewSubForm && (
-                  <div className="mb-3 p-3 bg-gray-50 rounded-lg space-y-2">
+                  <div className="mb-3 p-3 bg-gray-50 rounded-lg space-y-2" {...unsaved.trackProps}>
                     <input type="text" placeholder="Name *" value={newSub.name} onChange={(e) => setNewSub({ ...newSub, name: e.target.value })} className="w-full border rounded-lg p-2 text-sm" />
                     <input type="text" placeholder="Company Name" value={newSub.company_name} onChange={(e) => setNewSub({ ...newSub, company_name: e.target.value })} className="w-full border rounded-lg p-2 text-sm" />
                     <input type="tel" placeholder="Phone" value={newSub.phone} onChange={(e) => setNewSub({ ...newSub, phone: e.target.value })} className="w-full border rounded-lg p-2 text-sm" />
                     <input type="email" placeholder="Email" value={newSub.email} onChange={(e) => setNewSub({ ...newSub, email: e.target.value })} className="w-full border rounded-lg p-2 text-sm" />
                     <div className="flex gap-2">
-                      <button onClick={() => setShowNewSubForm(false)} className="flex-1 py-2 border rounded-lg text-sm">Cancel</button>
+                      <button onClick={unsaved.guard(() => setShowNewSubForm(false))} className="flex-1 py-2 border rounded-lg text-sm">Cancel</button>
                       <button onClick={createSubcontractor} disabled={saving} className="flex-1 py-2 bg-green-700 text-white rounded-lg text-sm">Create</button>
                     </div>
                   </div>
@@ -969,7 +979,7 @@ export default function ProjectFinancialsModal({
               {!showExpenseForm ? (
                 <button onClick={() => setShowExpenseForm(true)} className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-green-600 text-sm font-medium hover:bg-green-50">+ Add Expense</button>
               ) : (
-                <div className="border rounded-lg p-3 space-y-3">
+                <div className="border rounded-lg p-3 space-y-3" {...unsaved.trackProps}>
                   <select value={expenseForm.category} onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })} className="w-full border rounded-lg p-2 text-sm">
                     {EXPENSE_CATEGORIES.map((cat) => (<option key={cat.value} value={cat.value}>{cat.icon} {cat.label}</option>))}
                   </select>
@@ -978,7 +988,7 @@ export default function ProjectFinancialsModal({
                   <input type="date" value={expenseForm.expense_date} onChange={(e) => setExpenseForm({ ...expenseForm, expense_date: e.target.value })} className="w-full border rounded-lg p-2 text-sm" />
                   <textarea placeholder="Notes (optional)" value={expenseForm.notes} onChange={(e) => setExpenseForm({ ...expenseForm, notes: e.target.value })} className="w-full border rounded-lg p-2 text-sm" rows={2} />
                   <div className="flex gap-2">
-                    <button onClick={() => setShowExpenseForm(false)} className="flex-1 py-2 border rounded-lg text-sm">Cancel</button>
+                    <button onClick={unsaved.guard(() => setShowExpenseForm(false))} className="flex-1 py-2 border rounded-lg text-sm">Cancel</button>
                     <button onClick={addExpense} disabled={saving} className="flex-1 py-2 bg-green-700 text-white rounded-lg text-sm">{saving ? "Adding..." : "Add Expense"}</button>
                   </div>
                 </div>
@@ -1030,12 +1040,12 @@ export default function ProjectFinancialsModal({
                 </div>
 
                 {showNewAgentForm && (
-                  <div className="mb-3 p-3 bg-gray-50 rounded-lg space-y-2">
+                  <div className="mb-3 p-3 bg-gray-50 rounded-lg space-y-2" {...unsaved.trackProps}>
                     <input type="text" placeholder="Name *" value={newAgent.name} onChange={(e) => setNewAgent({ ...newAgent, name: e.target.value })} className="w-full border rounded-lg p-2 text-sm" />
                     <input type="email" placeholder="Email" value={newAgent.email} onChange={(e) => setNewAgent({ ...newAgent, email: e.target.value })} className="w-full border rounded-lg p-2 text-sm" />
                     <input type="tel" placeholder="Phone" value={newAgent.phone} onChange={(e) => setNewAgent({ ...newAgent, phone: e.target.value })} className="w-full border rounded-lg p-2 text-sm" />
                     <div className="flex gap-2">
-                      <button onClick={() => setShowNewAgentForm(false)} className="flex-1 py-2 border rounded-lg text-sm">Cancel</button>
+                      <button onClick={unsaved.guard(() => setShowNewAgentForm(false))} className="flex-1 py-2 border rounded-lg text-sm">Cancel</button>
                       <button onClick={createAgent} disabled={saving} className="flex-1 py-2 bg-green-700 text-white rounded-lg text-sm">Create</button>
                     </div>
                   </div>
@@ -1112,15 +1122,15 @@ export default function ProjectFinancialsModal({
 
       {showSubPaymentModal && selectedSubForPayment && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-xl w-full max-w-md">
+          <div className="bg-white rounded-xl w-full max-w-md" {...unsaved.trackProps}>
             <div className="border-b px-5 py-4 flex justify-between items-center">
               <h3 className="text-lg font-semibold">Record Payment - {selectedSubForPayment.subcontractors?.name}</h3>
-              <button onClick={() => setShowSubPaymentModal(false)} className="p-1 text-gray-400"><X size={20} /></button>
+              <button onClick={unsaved.guard(() => setShowSubPaymentModal(false))} className="p-1 text-gray-400"><X size={20} /></button>
             </div>
             <div className="p-5 space-y-4">
               <div><label className="block text-sm font-medium mb-1">Amount</label><input type="number" value={subPaymentAmount} onChange={(e) => setSubPaymentAmount(Number(e.target.value))} className="w-full border rounded-lg p-2" step="0.01" autoFocus /></div>
               <div><label className="block text-sm font-medium mb-1">Payment Method</label><select value={subPaymentMethod} onChange={(e) => setSubPaymentMethod(e.target.value)} className="w-full border rounded-lg p-2"><option value="cash">Cash</option><option value="check">Check</option><option value="bank_transfer">Bank Transfer</option></select></div>
-              <div className="flex gap-2 pt-2"><button onClick={() => setShowSubPaymentModal(false)} className="flex-1 py-2 border rounded-lg">Cancel</button><button onClick={recordSubPayment} disabled={saving} className="flex-1 py-2 bg-green-700 text-white rounded-lg">Record Payment</button></div>
+              <div className="flex gap-2 pt-2"><button onClick={unsaved.guard(() => setShowSubPaymentModal(false))} className="flex-1 py-2 border rounded-lg">Cancel</button><button onClick={recordSubPayment} disabled={saving} className="flex-1 py-2 bg-green-700 text-white rounded-lg">Record Payment</button></div>
             </div>
           </div>
         </div>
@@ -1170,12 +1180,12 @@ export default function ProjectFinancialsModal({
 
       {showAgentPaymentModal && selectedAgentForPayment && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-xl w-full max-w-md">
-            <div className="border-b px-5 py-4 flex justify-between items-center"><h3 className="text-lg font-semibold">Pay Agent - {selectedAgentForPayment.agents?.name}</h3><button onClick={() => setShowAgentPaymentModal(false)} className="p-1 text-gray-400"><X size={20} /></button></div>
+          <div className="bg-white rounded-xl w-full max-w-md" {...unsaved.trackProps}>
+            <div className="border-b px-5 py-4 flex justify-between items-center"><h3 className="text-lg font-semibold">Pay Agent - {selectedAgentForPayment.agents?.name}</h3><button onClick={unsaved.guard(() => setShowAgentPaymentModal(false))} className="p-1 text-gray-400"><X size={20} /></button></div>
             <div className="p-5 space-y-4">
               <div><label className="block text-sm font-medium mb-1">Amount</label><input type="number" value={agentPaymentAmount} onChange={(e) => setAgentPaymentAmount(Number(e.target.value))} className="w-full border rounded-lg p-2" step="0.01" autoFocus /></div>
               <div><label className="block text-sm font-medium mb-1">Payment Method</label><select value={agentPaymentMethod} onChange={(e) => setAgentPaymentMethod(e.target.value)} className="w-full border rounded-lg p-2"><option value="bank_transfer">Bank Transfer</option><option value="cash">Cash</option><option value="check">Check</option><option value="venmo">Venmo</option></select></div>
-              <div className="flex gap-2 pt-2"><button onClick={() => setShowAgentPaymentModal(false)} className="flex-1 py-2 border rounded-lg">Cancel</button><button onClick={recordAgentPayment} disabled={saving} className="flex-1 py-2 bg-green-700 text-white rounded-lg">Record Payment</button></div>
+              <div className="flex gap-2 pt-2"><button onClick={unsaved.guard(() => setShowAgentPaymentModal(false))} className="flex-1 py-2 border rounded-lg">Cancel</button><button onClick={recordAgentPayment} disabled={saving} className="flex-1 py-2 bg-green-700 text-white rounded-lg">Record Payment</button></div>
             </div>
           </div>
         </div>

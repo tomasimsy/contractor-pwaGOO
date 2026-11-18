@@ -36,6 +36,9 @@ const PUBLIC_ROUTES = [
 
   // Hide BottomNav on public pages
   const isPublicPage = pathname?.startsWith('/public');
+  // Customer-facing pages (website home, shared estimate/invoice links)
+  // must not offer "Install app" — the PWA is for staff only.
+  const isCustomerPage = pathname === '/' || !!isPublicPage;
   const isAuthPage = pathname === '/login' || pathname === '/signup';
   const showBottomNav = !isPublicPage && !isAuthPage;
   // Exact routes wrapped in the shared DesktopShell (sidebar nav) — the
@@ -114,7 +117,7 @@ useEffect(() => {
     <html lang="en">
       <head>
         {/* PWA & Mobile */}
-        <link rel="manifest" href="/manifest.json" />
+        {!isCustomerPage && <link rel="manifest" href="/manifest.json" />}
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
         <link rel="apple-touch-icon" sizes="57x57" href="/icons/apple-icon-57x57.png" />
         <link rel="apple-touch-icon" sizes="60x60" href="/icons/apple-icon-60x60.png" />
@@ -126,7 +129,7 @@ useEffect(() => {
         <link rel="apple-touch-icon" sizes="152x152" href="/icons/apple-icon-152x152.png" />
         <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-icon-180x180.png" />
         
-        <meta name="apple-mobile-web-app-capable" content="yes" />
+        {!isCustomerPage && <meta name="apple-mobile-web-app-capable" content="yes" />}
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="OSR Pros" />
         <meta name="theme-color" content="#d4a048" />

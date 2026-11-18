@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Modal from "@/components/ui/Modal";
+import { useUnsavedChanges } from "@/lib/hooks/useUnsavedChanges";
 import { formatCurrency } from "@/lib/utils/formatting";
 import type { PendingPayout } from "@/lib/types";
 
@@ -25,6 +26,7 @@ export default function PayoutModal({
 }) {
   const [amount, setAmount] = useState("");
   const [paying, setPaying] = useState(false);
+  const unsaved = useUnsavedChanges({ active: isOpen, onSave: () => handlePay() });
 
   useEffect(() => {
     if (isOpen && payout) setAmount(payout.remainingAmount.toFixed(2));
@@ -42,6 +44,7 @@ export default function PayoutModal({
     setPaying(true);
     try {
       await onConfirm(Math.min(parsedAmount, payout.remainingAmount));
+      unsaved.markClean();
       onClose();
     } finally {
       setPaying(false);
@@ -49,8 +52,9 @@ export default function PayoutModal({
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Pay ${payout.name}`}>
-      <div className="space-y-3">
+    <Modal isOpen={isOpen} onClose={unsaved.guard(onClose)} title={`Pay ${payout.name}`}>
+      {unsaved.dialog}
+      <div className="space-y-3" {...unsaved.trackProps}>
         <div className="rounded-xl bg-slate-50 border border-slate-200/70 p-3 space-y-1.5 text-sm">
           <Row label="Role" value={payout.role === "agent" ? "Agent" : payout.roleDetail || "Subcontractor"} />
           <Row label="Project" value={projectLabel} />
@@ -91,7 +95,7 @@ export default function PayoutModal({
         <div className="flex gap-2 pt-1">
           <button
             type="button"
-            onClick={onClose}
+            onClick={unsaved.guard(onClose)}
             className="flex-1 h-11 rounded-xl border border-slate-200/70 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors"
           >
             Cancel

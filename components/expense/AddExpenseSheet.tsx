@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { X, Camera, Check } from "lucide-react";
+import { useUnsavedChanges } from "@/lib/hooks/useUnsavedChanges";
 import {
   EXPENSE_CATEGORIES,
   EXPENSE_CATEGORY_LABEL,
@@ -73,6 +74,7 @@ export default function AddExpenseSheet({
   const [agentPercentages, setAgentPercentages] = useState<Record<string, number>>({});
   const [notes, setNotes] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const unsaved = useUnsavedChanges({ onSave: () => handleSubmit() });
   const [companyPercentage, setCompanyPercentage] = useState<CompanyPercentage>(30);
   const [recentVendors, setRecentVendors] = useState<string[]>([]);
   const [changeOrderId, setChangeOrderId] = useState(""); // "" = original estimate scope
@@ -261,6 +263,7 @@ export default function AddExpenseSheet({
           });
         }
       }
+      unsaved.markClean();
       onClose();
     } finally {
       setIsSaving(false);
@@ -269,15 +272,16 @@ export default function AddExpenseSheet({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center">
-      <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
+      {unsaved.dialog}
+      <div className="absolute inset-0 bg-slate-900/40" onClick={unsaved.guard(onClose)} />
 
-      <div className="relative w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl max-h-[92vh] overflow-y-auto">
+      <div className="relative w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl max-h-[92vh] overflow-y-auto" {...unsaved.trackProps}>
         <div className="sticky top-0 bg-white flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100">
           <div className="min-w-0">
             <div className="text-sm font-black text-slate-800">Add Expense</div>
             <div className="text-xs text-slate-400 truncate">{bundle.project.title || "Untitled Estimate"}</div>
           </div>
-          <button type="button" onClick={onClose} className="shrink-0 p-2 text-slate-400 hover:text-slate-600">
+          <button type="button" onClick={unsaved.guard(onClose)} className="shrink-0 p-2 text-slate-400 hover:text-slate-600">
             <X size={18} />
           </button>
         </div>

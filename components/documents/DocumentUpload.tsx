@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase/client';
 import { getCompanyId } from '@/lib/supabase/getCompanyId';
 import { Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useUnsavedChanges } from '@/lib/hooks/useUnsavedChanges';
 
 interface DocumentUploadProps {
   onUploaded: () => void;
@@ -16,6 +17,7 @@ export function DocumentUpload({ onUploaded }: DocumentUploadProps) {
   const [category, setCategory] = useState('insurance');
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const unsaved = useUnsavedChanges({ onSave: () => handleSubmit({ preventDefault() {} } as React.FormEvent) });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) setFile(e.target.files[0]);
@@ -55,6 +57,7 @@ export function DocumentUpload({ onUploaded }: DocumentUploadProps) {
         });
       if (insertError) throw insertError;
 
+      unsaved.markClean();
       toast.success('Document uploaded.');
       setTitle('');
       setDescription('');
@@ -71,7 +74,8 @@ export function DocumentUpload({ onUploaded }: DocumentUploadProps) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
+    <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm p-4 border border-gray-100" {...unsaved.trackProps}>
+      {unsaved.dialog}
       <h3 className="text-lg font-semibold text-gray-800 mb-3">Upload Document</h3>
       <div className="space-y-3">
         <input

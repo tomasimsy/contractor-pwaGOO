@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -14,6 +14,8 @@ import ClientSelector from "@/components/forms/ClientSelector";
 import { EstimateCamera } from "@/components/ui/EstimateCamera";
 import SignaturePad from "@/components/signature/SignaturePad";
 import EstimateTimeline from "@/components/estimates/EstimateTimeline";
+import { RoofingAreasSection } from "@/components/estimates/RoofingAreasSection";
+import { useUnsavedChanges } from "@/lib/hooks/useUnsavedChanges";
 
 /**
  * The unified Estimate Create/Edit form. All state, calculation, and
@@ -39,6 +41,40 @@ export default function EstimateForm({
   const [showCOSheet, setShowCOSheet] = useState(false);
   const [editingCO, setEditingCO] = useState<FormChangeOrder | null>(null);
 
+  // Unsaved-changes guard: compare the editable fields against a baseline
+  // taken once the form is ready (and re-taken after every successful save).
+  const unsaved = useUnsavedChanges({ onSave: () => handleSave() });
+  const snapshot = JSON.stringify([
+    form.clientId,
+    form.title,
+    form.description,
+    form.notes,
+    form.markup,
+    form.discount,
+    form.taxRate,
+    form.depositAmount,
+    form.estimateType,
+    form.projects,
+    form.roofingAreas,
+  ]);
+  const baselineRef = useRef<string | null>(null);
+  // Bumped after each successful save so the (possibly reloaded) form
+  // state becomes the new baseline.
+  const [savedTick, setSavedTick] = useState(0);
+  const lastSavedTickRef = useRef(0);
+  const { markDirty, markClean } = unsaved;
+  useEffect(() => {
+    if (form.loading) return;
+    if (baselineRef.current === null || savedTick !== lastSavedTickRef.current) {
+      lastSavedTickRef.current = savedTick;
+      markClean();
+      baselineRef.current = snapshot;
+      return;
+    }
+    if (snapshot !== baselineRef.current) markDirty();
+    else markClean();
+  }, [snapshot, form.loading, savedTick, markDirty, markClean]);
+
   if (mode === "edit" && form.loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -63,6 +99,10 @@ export default function EstimateForm({
 
   const handleSave = async () => {
     const result = await form.save();
+    if (result) {
+      unsaved.markClean();
+      setSavedTick((t) => t + 1);
+    }
     if (result && mode === "create") {
       router.push(`/estimates/${result.id}`);
     }
@@ -93,11 +133,12 @@ export default function EstimateForm({
 
   return (
     <div className="min-h-screen bg-gray-100 pb-44 lg:pb-10">
+      {unsaved.dialog}
       {/* Sticky Header */}
       <div className="sticky top-0 z-40 bg-white border-b border-gray-200">
         <div className="max-w-6xl mx-auto flex items-center justify-between px-4 py-3">
           <button
-            onClick={() => router.back()}
+            onClick={unsaved.guard(() => router.back())}
             className="min-h-[44px] min-w-[44px] -ml-2 flex items-center justify-center text-gray-600 text-xl"
           >
             ←
@@ -189,6 +230,46 @@ export default function EstimateForm({
             />
           </div>
 
+          {/* Estimate Type Selector */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
+            <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider block mb-2">Estimate Type</label>
+            <div className="flex gap-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="estimateType"
+                  value="standard"
+                  checked={form.estimateType === 'standard'}
+                  onChange={(e) => form.setEstimateType(e.target.value as 'standard' | 'roofing')}
+                  className="size-4"
+                />
+                <span className="text-sm text-gray-700">Standard (Line Items)</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="estimateType"
+                  value="roofing"
+                  checked={form.estimateType === 'roofing'}
+                  onChange={(e) => form.setEstimateType(e.target.value as 'standard' | 'roofing')}
+                  className="size-4"
+                />
+                <span className="text-sm text-gray-700">Roofing (Areas & Photos)</span>
+              </label>
+            </div>
+          </div>
+
+          {/* Roofing Areas Section (conditional) */}
+          {form.estimateType === 'roofing' && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
+              <RoofingAreasSection
+                estimateId={form.formId}
+                areas={form.roofingAreas}
+                onChange={form.setRoofingAreas}
+              />
+            </div>
+          )}
+
           {/* Photos — EstimateCamera alone covers this: its "Add Photo" modal
               offers both "Upload from Gallery" and "Take Photo" with stage
               tagging, and its own gallery only renders Before/During/After
@@ -197,33 +278,39 @@ export default function EstimateForm({
               it — both duplicated the same photos in an always-visible
               3-column grid with dashed "Add" tiles even at zero photos,
               which is the bulky placeholder this section used to show. */}
-          <div id="section-photos" className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 space-y-3 scroll-mt-24">
-            <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Photos</div>
-            {form.photosEnabled ? (
-              <EstimateCamera estimateId={form.formId} onUploaded={form.bumpGallery} />
-            ) : (
-              <p className="text-xs text-gray-400">Select a client above to enable photo uploads.</p>
-            )}
-          </div>
-
-          {/* Projects / Line Items */}
-          {form.isLocked && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
-              {lockReason} Use a Change Order to modify scope.
+          {form.estimateType === 'standard' && (
+            <div id="section-photos" className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 space-y-3 scroll-mt-24">
+              <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Photos</div>
+              {form.photosEnabled ? (
+                <EstimateCamera estimateId={form.formId} onUploaded={form.bumpGallery} />
+              ) : (
+                <p className="text-xs text-gray-400">Select a client above to enable photo uploads.</p>
+              )}
             </div>
           )}
-          <div id="section-line-items" className="space-y-3 scroll-mt-24">
-            {form.projects.map((project, projectIdx) => (
-              <ProjectCard key={project.id} project={project} projectIdx={projectIdx} form={form} locked={form.isLocked} />
-            ))}
-          </div>
-          {!form.isLocked && (
-            <button
-              onClick={form.addProject}
-              className="w-full py-3 rounded-xl border border-green-300 bg-green-50 text-green-700 text-sm font-medium hover:bg-green-100 transition-all duration-200 min-h-[44px]"
-            >
-              + Add Project
-            </button>
+
+          {/* Projects / Line Items (only for standard estimates) */}
+          {form.estimateType === 'standard' && (
+            <>
+              {form.isLocked && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
+                  {lockReason} Use a Change Order to modify scope.
+                </div>
+              )}
+              <div id="section-line-items" className="space-y-3 scroll-mt-24">
+                {form.projects.map((project, projectIdx) => (
+                  <ProjectCard key={project.id} project={project} projectIdx={projectIdx} form={form} locked={form.isLocked} />
+                ))}
+              </div>
+              {!form.isLocked && (
+                <button
+                  onClick={form.addProject}
+                  className="w-full py-3 rounded-xl border border-green-300 bg-green-50 text-green-700 text-sm font-medium hover:bg-green-100 transition-all duration-200 min-h-[44px]"
+                >
+                  + Add Project
+                </button>
+              )}
+            </>
           )}
 
           {/* Pricing summary — inline card on mobile/tablet, replaced by the sticky right panel at lg: */}
@@ -952,6 +1039,7 @@ function ChangeOrderSheet({
       : [{ id: crypto.randomUUID(), description: "", quantity: 1, unit_price: 0, type: "addition" }]
   );
   const [saving, setSaving] = useState(false);
+  const unsaved = useUnsavedChanges({ onSave: () => handleSubmit() });
 
   const addLineItem = () =>
     setLineItems((prev) => [...prev, { id: crypto.randomUUID(), description: "", quantity: 1, unit_price: 0, type: "addition" }]);
@@ -991,6 +1079,7 @@ function ChangeOrderSheet({
           type: li.type,
         })),
       });
+      unsaved.markClean();
     } finally {
       setSaving(false);
     }
@@ -998,11 +1087,12 @@ function ChangeOrderSheet({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center">
-      <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
-      <div className="relative w-full sm:max-w-lg bg-white rounded-t-2xl sm:rounded-2xl max-h-[92vh] overflow-y-auto">
+      {unsaved.dialog}
+      <div className="absolute inset-0 bg-slate-900/40" onClick={unsaved.guard(onClose)} />
+      <div className="relative w-full sm:max-w-lg bg-white rounded-t-2xl sm:rounded-2xl max-h-[92vh] overflow-y-auto" {...unsaved.trackProps}>
         <div className="sticky top-0 bg-white flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100 z-10">
           <div className="text-sm font-black text-slate-800">{existing ? "Edit Change Order" : "New Change Order"}</div>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 min-h-[36px] min-w-[36px]">
+          <button onClick={unsaved.guard(onClose)} className="p-2 text-slate-400 hover:text-slate-600 min-h-[36px] min-w-[36px]">
             <X size={18} />
           </button>
         </div>
@@ -1104,7 +1194,7 @@ function ChangeOrderSheet({
         </div>
 
         <div className="sticky bottom-0 bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] border-t border-slate-100 flex gap-2">
-          <button onClick={onClose} className="flex-1 min-h-[44px] py-2 border border-slate-200 rounded-xl text-sm text-slate-600">
+          <button onClick={unsaved.guard(onClose)} className="flex-1 min-h-[44px] py-2 border border-slate-200 rounded-xl text-sm text-slate-600">
             Cancel
           </button>
           <button

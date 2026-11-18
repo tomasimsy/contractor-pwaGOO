@@ -1,5 +1,4 @@
 "use client";
-import Link from "next/link";
 import { EstimateCtaButton } from "@/components/LandingPage/EstimateCta";
 
 export default function Footer() {
@@ -94,12 +93,6 @@ export default function Footer() {
           Home Remodeling · Business Renovation · Construction Services
         </p>
 
-        <Link
-          href="/installPWA"
-          className="text-[10px] uppercase tracking-[0.15em] text-white/30 transition-colors hover:text-amber-400/70"
-        >
-          Install App
-        </Link>
       </div>
     </div>
   </div>

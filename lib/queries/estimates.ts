@@ -287,6 +287,7 @@ export type EstimateFormData = {
   assignedAgents: FormAssignedAgent[];
   existingInvoiceId: string | null;
   payments: FormPayment[];
+  roofingAreas?: FormRoofingArea[];
 };
 
 function groupItemsIntoProjects(items: any[]): FormProject[] {
@@ -442,6 +443,26 @@ export async function getEstimateFormData(
     }
   }
 
+  let roofingAreas: FormRoofingArea[] = [];
+  if (estimate?.estimate_type === 'roofing') {
+    const { data: areaRows, error: areaError } = await supabase
+      .from("estimate_areas")
+      .select("*")
+      .eq("estimate_id", estimateId)
+      .eq("company_id", companyId)
+      .is("deleted_at", null)
+      .order("sequence_number", { ascending: true });
+
+    if (areaError) throw areaError;
+
+    roofingAreas = (areaRows || []).map((area: any) => ({
+      id: area.id,
+      area_name: area.area_name,
+      scope_items: area.scope_items,
+      area_total: area.area_total,
+    }));
+  }
+
   return {
     estimate: estimate as Estimate,
     client,
@@ -451,8 +472,16 @@ export async function getEstimateFormData(
     assignedAgents,
     existingInvoiceId: invoiceRow?.id ?? null,
     payments,
+    roofingAreas: roofingAreas.length > 0 ? roofingAreas : undefined,
   };
 }
+
+export type FormRoofingArea = {
+  id: string;
+  area_name: string;
+  scope_items: string | null;
+  area_total: number;
+};
 
 export type SaveEstimateInput = {
   clientId: string;
@@ -464,6 +493,8 @@ export type SaveEstimateInput = {
   taxRate: number;
   depositAmount: number;
   projects: FormProject[];
+  estimateType?: 'standard' | 'roofing';
+  roofingAreas?: FormRoofingArea[];
 };
 
 /**
@@ -526,6 +557,7 @@ export async function saveEstimate(
         deposit_amount: input.depositAmount,
         subtotal,
         total,
+        estimate_type: input.estimateType || 'standard',
         status: "pending",
         company_id: companyId,
       },
@@ -546,6 +578,7 @@ export async function saveEstimate(
         deposit_amount: input.depositAmount,
         subtotal,
         total,
+        estimate_type: input.estimateType || 'standard',
       })
       .eq("id", estimateId)
       .eq("company_id", companyId);
@@ -576,6 +609,40 @@ export async function saveEstimate(
   if (itemsToInsert.length > 0) {
     const { error: itemsError } = await supabase.from("estimate_items").insert(itemsToInsert);
     if (itemsError) throw itemsError;
+  }
+
+  // Handle roofing areas. Upsert by the form's area id (rather than
+  // delete + re-insert) so each area keeps its id across saves — its
+  // before/after photos in estimate_area_photos reference that id.
+  if (input.estimateType === 'roofing') {
+    const keepIds = (input.roofingAreas ?? []).map((a) => a.id);
+    if (mode === "edit") {
+      let removeQuery = supabase
+        .from("estimate_areas")
+        .delete()
+        .eq("estimate_id", estimateId)
+        .eq("company_id", companyId)
+        .is("deleted_at", null);
+      if (keepIds.length > 0) removeQuery = removeQuery.not("id", "in", `(${keepIds.join(",")})`);
+      const { error: deleteAreasError } = await removeQuery;
+      if (deleteAreasError) throw deleteAreasError;
+    }
+
+    if (input.roofingAreas && input.roofingAreas.length > 0) {
+      const areasToInsert = input.roofingAreas.map((area, idx) => ({
+        id: area.id,
+        deleted_at: null,
+        estimate_id: estimateId,
+        company_id: companyId,
+        area_name: area.area_name,
+        sequence_number: idx,
+        scope_items: area.scope_items || null,
+        area_total: area.area_total,
+      }));
+
+      const { error: areasError } = await supabase.from("estimate_areas").upsert(areasToInsert, { onConflict: "id" });
+      if (areasError) throw areasError;
+    }
   }
 
   // Keep any already-generated invoice's total in lock-step with the

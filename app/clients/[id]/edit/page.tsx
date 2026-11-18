@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase/client";
 import { getCompanyId } from "@/lib/supabase/getCompanyId";
 import { filterActive } from '@/lib/queries/softDeleteFilter';
 import Header from "@/components/ui/Header";
+import { useUnsavedChanges } from "@/lib/hooks/useUnsavedChanges";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 
 export default function EditClientPage() {
@@ -13,6 +14,7 @@ export default function EditClientPage() {
   const { id } = useParams();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const unsaved = useUnsavedChanges({ onSave: () => saveClient() });
   const [client, setClient] = useState({
     name: "",
     phone: "",
@@ -67,6 +69,7 @@ export default function EditClientPage() {
     if (error) {
       alert("Error saving: " + error.message);
     } else {
+      unsaved.markClean();
       alert("Client updated successfully!");
       router.push(`/clients`);
     }
@@ -86,7 +89,8 @@ export default function EditClientPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-50 pb-24">
+      <div className="min-h-screen bg-gray-50 pb-24" {...unsaved.trackProps}>
+        {unsaved.dialog}
         <Header title="Edit Client" backLink="/clients" />
 
         <div className="max-w-4xl mx-auto p-4 space-y-4">
